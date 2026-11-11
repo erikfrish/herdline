@@ -4,6 +4,10 @@ Adds an option in Settings › Composer to hide the phone's message composer in 
 
 Chat-local pane and tab choices no longer resize the shared host panes. Terminal owns the shared grid; returning to Terminal fits its actual layout. The existing Send, dialog, instance and uncertain-delivery guards remain in force. Photo-only drafts now show the same refusal and target-mismatch explanations as text; a caption is not required.
 
+Chat shows thumbnails for user, assistant and tool images, with a tap-to-open viewer and explicit loading/error states. Images are read lazily from the same OMP instance, as inline data or confined, content-addressed blobs; source bytes and decoded pixels are bounded. Blob resolution needs host /proc and a supported OMP data layout. GIF/WebP show their first frame; the viewer has no pinch zoom. Large media reads are serialized but remain memory-intensive.
+
+Chat's current OMP status follows Herdr's live pane state instead of the last transcript poll. Persisted steering messages are labelled as such; liveSteered metadata is distinguished from a pending message. No queue or consumption state is inferred from a terminal receipt.
+
 Integrates the approved braided-crook Herdline brand: Default, Mono, Contrast and themed launcher icons, notification icon, and light/dark system splash on Android 12+. Android 10–11 retain their existing startup surface.
 
 Android promotion status is not a claim of Samsung Now Bar placement. Android 16 QPR1 (36.1) or newer is required for the standard promotion request. A pinned running task is distinct from the ordinary Attached service notification.
