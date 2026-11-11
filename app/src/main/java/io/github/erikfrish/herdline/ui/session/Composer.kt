@@ -1194,8 +1194,8 @@ private fun Editor(
     // the agent works (lab.3 D2).
     val draftPath = titleWhere.takeIf { it.isNotEmpty() } ?: draftTitle
     // §9: a non-empty draft keeps its pane while the user views another.
-    val mismatched = hasText && viewed != null && viewed != key.pane && pending == null && !steer.active
-    val targetGone = hasText && check?.paneExists == false
+    val mismatched = holdsDraft && viewed != null && viewed != key.pane && pending == null && !steer.active
+    val targetGone = holdsDraft && check?.paneExists == false
     // The sent confirmation is a moment, not a state: it shows for a few
     // seconds after the receipt, then the slot is free again.
     val confirmedAt = draft.sent?.takeIf { it.state == SentState.Confirmed }?.at
@@ -1212,7 +1212,7 @@ private fun Editor(
     // Why Send is off before it is tapped: a disabled button cannot be
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
-    val precheck = check?.send?.takeIf { !it.ok && hasText && binding == Binding.Bound && pending == null && !steer.active }?.reason
+    val precheck = check?.send?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }
@@ -1279,7 +1279,7 @@ private fun Editor(
     // Which single notice the slot shows, highest priority first.
     val notice = when {
         // Held while offline: the unconfirmed delivery stays said (R8).
-        binding == Binding.Offline && hasText -> Notice(
+        binding == Binding.Offline && holdsDraft -> Notice(
             stringResource(if (draft.unsettled) R.string.composer_offline_held else R.string.composer_offline),
         )
         pending != null -> Notice(stringResource(R.string.composer_pending), warning = false)
@@ -1445,7 +1445,7 @@ private fun Editor(
             )
         }
         else -> null
-    } ?: when (silentSendHold(sendEnabled, hasText, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason))) {
+    } ?: when (silentSendHold(sendEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason))) {
         // Never a silent dead Send: while a reason settles, or the tap is
         // being checked, the slot says so (lab.8 Chat report), and names a
         // resize the check sees right now (10018 RZ-text).

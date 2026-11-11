@@ -111,6 +111,10 @@ instance was read, or the draft already holds its 10 files
   for exactly the draft's target (`attachmentsState`). After a rebind,
   move or new agent instance, the earlier copy no longer counts. Steer is
   off while the draft has files.
+- **Images without text.** A staged image is a non-empty draft; no caption
+  is required. The same refusal, offline and target-mismatch notices shown
+  for text also explain why a photo-only draft cannot be sent. Working,
+  terminal visibility and uncertain-delivery guards are not bypassed.
 - **Sent once.** A confirmed delivery takes its files out of the draft. A
   refused or uncertain one keeps them, and the hold applies as for text.
 - **Remove** cancels an upload under way and deletes a staged copy from the
