@@ -6,9 +6,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.util.UUID
 
 /**
  * One attached daemon. A reader thread drains the native event queue and
@@ -465,6 +467,94 @@ class Connection(val node: Node) {
         val outcome = deliveryOutcome { Native.composerDeliver(session, request.toString()) }
         if (outcome is Delivery.Queued) track(outcome.receipt, session)
         return outcome
+    }
+
+    /**
+     * Hands [text] and [attachments] to exactly [target]'s OMP instance
+     * through its ingress endpoint, as request [id]; [deliverAs] is `auto`
+     * (steers a working agent, starts an idle one's turn) or `steer`. Only
+     * [IngressSend.Absent] lets the caller use [deliver] instead: it is
+     * answered when the instance publishes no endpoint, before anything is
+     * sent. Never retried. Blocks on the host: call it off the main thread.
+     */
+    fun ingressSend(
+        target: ComposerTarget,
+        id: String,
+        text: String,
+        attachments: List<Attachment>,
+        deliverAs: String,
+    ): IngressSend {
+        val session = live()
+        if (session == 0L || target.nodeId != node.id || target.session != node.session) {
+            return IngressSend.Refused("not_connected")
+        }
+        // Without the instance there is no endpoint to name.
+        if (target.instance == null) return IngressSend.Absent
+        val request = ingressRequest("send", target, id)
+            .put("text", text)
+            .put("attachments", org.json.JSONArray(attachments.map { it.toJson() }))
+            .put("deliverAs", deliverAs)
+        return ingressSendOutcome(id) { Native.ingress(session, request.toString()) }
+    }
+
+    /** What OMP recorded for request [id]; asks without sending anything. Blocks on the host. */
+    fun ingressStatus(target: ComposerTarget, id: String): Result<IngressSend> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressStatusOutcome(id) {
+            Native.ingress(session, ingressRequest("status", target, id).toString())
+        }
+    }
+
+    /** Whether [target]'s instance has an endpoint, and its queue. Blocks on the host. */
+    fun ingressState(target: ComposerTarget): Result<IngressProbe> {
+        if (target.instance == null) return Result.success(IngressProbe.Absent)
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        // A status query for an id never sent records nothing and answers the queue.
+        val request = ingressRequest("state", target, UUID.randomUUID().toString())
+        return ingressProbe { Native.ingress(session, request.toString()) }
+    }
+
+    /** Takes queued entry [requestId] back out of OMP's queue; false when it had left it. Blocks on the host. */
+    fun ingressWithdraw(target: ComposerTarget, requestId: String): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressWithdrawn {
+            Native.ingress(session, ingressRequest("withdraw", target, requestId).toString())
+        }
+    }
+
+    /**
+     * OMP's open dialogs on exactly [target]'s instance, its snapshot as
+     * given (`{dialogId, kind, source, html?, form?, title?, options?, createdAt}`
+     * each). Blocks on the host.
+     */
+    fun ingressDialogs(target: ComposerTarget): Result<JSONArray> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressDialogsOutcome {
+            Native.ingress(session, ingressRequest("dialogs", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
+    /**
+     * The user's [answer] to the one dialog [dialogId] on [target]'s
+     * instance, as OMP takes it for that kind (a form's is `{data: …}`).
+     * OMP's result comes back as it said it: `submitted`, `not_open`,
+     * `invalid` or `kind_mismatch`. Anything less is a failure, never taken
+     * for submitted. Blocks on the host.
+     */
+    fun ingressSubmitDialog(target: ComposerTarget, dialogId: String, answer: JSONObject): Result<String> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        val request = ingressRequest("dialog_submit", target, UUID.randomUUID().toString())
+            .put("dialogId", dialogId)
+            .put("answer", answer)
+        return ingressSubmitOutcome(dialogId) { Native.ingress(session, request.toString()) }
+    }
+
+    private fun ingressSession(target: ComposerTarget): Long? {
+        val session = live()
+        if (session == 0L || target.nodeId != node.id || target.session != node.session || target.instance == null) {
+            return null
+        }
+        return session
     }
 
     /**

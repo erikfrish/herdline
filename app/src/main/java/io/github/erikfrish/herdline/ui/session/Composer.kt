@@ -88,6 +88,11 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.IngressProbe
+import io.github.erikfrish.herdline.core.IngressQueued
+import io.github.erikfrish.herdline.core.IngressSend
+import io.github.erikfrish.herdline.core.REASON_UNSUPPORTED
+import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Viewport
@@ -123,6 +128,7 @@ import io.github.erikfrish.herdline.data.DraftAttachment
 import io.github.erikfrish.herdline.data.MAX_ATTACHMENTS
 import io.github.erikfrish.herdline.data.attachmentsState
 import kotlin.math.ceil
+import java.util.UUID
 
 /** A delivery handed to the daemon and not yet settled, with the IDs of the files it carried. */
 private data class Pending(val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet())
@@ -763,6 +769,13 @@ private fun Editor(
     var moveAsk by remember { mutableStateOf<String?>(null) }
     // Unlock asks first: the held text may already be in the pane.
     var unlockAsk by remember(key) { mutableStateOf(false) }
+    // Chat's OMP endpoint for the draft's instance (ChatIngress.kt): the
+    // last probe, a Check under way or come back empty, and a withdraw.
+    var probeRead by remember(key, connection) { mutableStateOf<ProbeRead?>(null) }
+    var checking by remember(key) { mutableStateOf(false) }
+    var checkUnknown by remember(key, draft.sent?.receipt) { mutableStateOf(false) }
+    var withdrawing by remember(key) { mutableStateOf<String?>(null) }
+    var withdrawNote by remember(key) { mutableStateOf<Int?>(null) }
     val state = connection.state.value
     val check: ComposerCheck? = remember(connection, view, frame, state, key.pane, viewport, draft.boot, draft.instance) {
         connection.composerCheck(key.pane, viewport, draft.boot, draft.instance)
@@ -919,6 +932,21 @@ private fun Editor(
         agent = draft.agent,
         instance = draft.instance,
     )
+
+    // In Chat the endpoint and its queue are read at the instance poll's
+    // pace, also while nothing is queued: a steer queued at the desktop must
+    // show here too. A failed read shows nothing rather than an old queue.
+    val probeTarget = composerTarget()?.takeIf { reading && it.instance != null }
+    LaunchedEffect(probeTarget, connection) {
+        val target = probeTarget ?: return@LaunchedEffect
+        val instance = target.instance ?: return@LaunchedEffect
+        while (true) {
+            val read = withContext(Dispatchers.IO) { connection.ingressState(target) }
+            probeRead = read.getOrNull()?.let { ProbeRead(instance, it) }
+            delay(INSTANCE_POLL_MS)
+        }
+    }
+    val probe = probeFor(probeRead, draft.instance)
 
     // UR3: the uploads under way, by attachment ID, and how far each got.
     // They belong to this destination: leaving it cancels them, and what
@@ -1102,7 +1130,54 @@ private fun Editor(
         }
     }
 
-    fun deliver(submit: Boolean) {
+    /**
+     * Sends the draft through Chat's OMP endpoint as [deliverAs]. Only an
+     * instance that publishes no endpoint, known before anything left, runs
+     * [typeIn] instead; every other answer stands, and doubt is uncertain.
+     */
+    fun endpointSend(deliverAs: String, typeIn: () -> Unit) {
+        val target = composerTarget() ?: return
+        val instance = target.instance ?: return
+        val staged = draft.attachments.mapNotNull { it.staged }
+        val carried = draft.attachments.map { it.id }.toSet()
+        val text = value.text
+        val before = draft.sent
+        val via = connection
+        val id = UUID.randomUUID().toString()
+        refusal = null
+        sending = true
+        onDeliveryStart()
+        // As for the pane route: on disk before the request may leave, so a
+        // restart before the answer reads back unconfirmed, with the id Check asks for.
+        save(draft.copy(sent = SentRecord(text, ingressReceipt(id), true, SentState.Queued, System.currentTimeMillis())))
+        val ahead = draft
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                afterWriteAhead({ store.writeAhead(key, ahead) }, IngressSend.Refused(WRITE_AHEAD_FAILED)) {
+                    via.ingressSend(target, id, text, staged, deliverAs)
+                }
+            }
+            val sent = sentAfterIngress(outcome, before, text, System.currentTimeMillis())
+            if (outcome is IngressSend.Accepted) {
+                // OMP holds it: the text and its files leave the editor. Nothing
+                // was typed into the pane, so the terminal is not brought up.
+                write(if (value.text == text) "" else value.text)
+                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }))
+                outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
+            } else {
+                save(draft.copy(sent = sent))
+            }
+            sending = false
+            when (outcome) {
+                IngressSend.Absent -> typeIn()
+                is IngressSend.Refused -> refusal = outcome.reason
+                is IngressSend.Accepted, is IngressSend.Uncertain -> {}
+            }
+        }
+    }
+
+    /** The draft typed into the pane, with Enter when [submit]: Terminal, Insert, and Chat with no endpoint. */
+    fun typeIn(submit: Boolean) {
         // The buttons say the same; this holds against a tap that raced them.
         if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
         // Every file uploaded for exactly this target, or nothing goes.
@@ -1149,11 +1224,17 @@ private fun Editor(
         }
     }
 
+    fun deliver(submit: Boolean) {
+        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
+        if (endpointRoute(reading, draft.instance, submit)) endpointSend("auto") { typeIn(submit) } else typeIn(submit)
+    }
+
     /**
-     * Steer: the paste alone first, then one Enter once its receipt is
-     * confirmed and the pane shows it. Its own tap only; Send never becomes it.
+     * The pane's steer: the paste alone first, then one Enter once its
+     * receipt is confirmed and the pane shows it.
      */
-    fun steerStart() {
+    fun pasteSteer() {
         // A steer carries no files (docs/attachments.md).
         if (sending || pending != null || steer.active || !draft.mayDeliver(binding) || draft.attachments.isNotEmpty()) return
         val target = composerTarget() ?: return
@@ -1181,6 +1262,73 @@ private fun Editor(
             if (outcome is Connection.SteerStart.Staged) {
                 early.remove(outcome.receipt)?.let { steerOn(SteerEvent.Answer(it, SystemClock.uptimeMillis())) }
             }
+        }
+    }
+
+    /**
+     * Steer: in Chat through the endpoint as an explicit steer, else
+     * [pasteSteer]. Its own tap only; Send never becomes it.
+     */
+    fun steerStart() {
+        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (endpointRoute(reading, draft.instance, submit = true)) {
+            if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
+            endpointSend("steer", ::pasteSteer)
+        } else {
+            pasteSteer()
+        }
+    }
+
+    /**
+     * Check on an uncertain endpoint send: OMP's own durable record for its
+     * id. It sends nothing; only a stored accept or refusal settles the
+     * draft, and anything else leaves it held as it was.
+     */
+    fun ingressCheck() {
+        val sent = draft.sent ?: return
+        val id = ingressId(sent) ?: return
+        val target = composerTarget()?.takeIf { it.instance != null } ?: return
+        val via = connection
+        checking = true
+        checkUnknown = false
+        scope.launch {
+            val found = ingressChecked(withContext(Dispatchers.IO) { via.ingressStatus(target, id) })
+            checking = false
+            // Unlocked or replaced while the host was asked: that stands.
+            if (draft.sent != sent) return@launch
+            when (found) {
+                IngressCheck.Accepted -> {
+                    write(if (value.text == sent.text) "" else value.text)
+                    // The draft was frozen since the tap, so the files it holds are the ones sent.
+                    save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
+                    via.unlock(key.nodeId, key.session, key.pane)
+                }
+                is IngressCheck.Refused -> {
+                    save(draft.copy(sent = null))
+                    via.unlock(key.nodeId, key.session, key.pane)
+                    refusal = found.reason
+                }
+                IngressCheck.Unknown -> checkUnknown = true
+            }
+        }
+    }
+
+    /** Takes [entry] back out of OMP's queue, then reads the queue again. */
+    fun withdraw(entry: IngressQueued) {
+        val requestId = entry.requestId ?: return
+        val target = composerTarget() ?: return
+        val instance = target.instance ?: return
+        val via = connection
+        withdrawing = requestId
+        withdrawNote = null
+        scope.launch {
+            val done = withContext(Dispatchers.IO) { via.ingressWithdraw(target, requestId) }
+            val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
+            withdrawing = null
+            probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
+            withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
+            // Withdrawn is taken back, not lost: into an empty, free editor.
+            if (done.getOrNull() == true && value.text.isEmpty() && !sending && !draft.unsettled) write(entry.text)
         }
     }
 
@@ -1212,7 +1360,10 @@ private fun Editor(
     // Why Send is off before it is tapped: a disabled button cannot be
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
-    val precheck = check?.send?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
+    // A live endpoint takes Chat's Send without the pane: the box checks,
+    // which read what the pane shows, neither gate nor explain it then.
+    val endpointReady = reading && probe is IngressProbe.Live
+    val precheck = check?.send?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }
@@ -1237,7 +1388,7 @@ private fun Editor(
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
-    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && check?.send?.ok == true
+    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || check?.send?.ok == true)
     // Its own gate: never derived from Send's, and never offered for a
     // draft without the agent instance the native side compares, or with files.
     val steerEnabled = !busy && draft.mayDeliver(binding) && draft.attachments.isEmpty() && !mismatched &&
@@ -1301,6 +1452,14 @@ private fun Editor(
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
         }
+        // Sent through the endpoint: Check asks OMP for its record of the id.
+        draft.sent?.state == SentState.Uncertain && ingressId(draft.sent) != null -> Notice(
+            stringResource(if (checkUnknown) R.string.ingress_check_unknown else R.string.ingress_uncertain),
+            NoticeAction(stringResource(R.string.composer_check), tag = "composer:ingress_check", description = stringResource(R.string.ingress_check_description)) {
+                ingressCheck()
+            }.takeIf { !checking },
+            NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
+        )
         draft.sent?.state == SentState.Uncertain -> Notice(
             stringResource(R.string.composer_uncertain),
             NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
@@ -1453,6 +1612,10 @@ private fun Editor(
         SendHold.CheckingResizing -> Notice(stringResource(R.string.composer_checking_resizing), warning = false)
         SendHold.Unsettled -> Notice(reasonText("unsettled"))
         null -> null
+    }
+
+    if (reading) {
+        IngressQueuePanel(queuePanel(probe), withdrawing, withdrawNote, ::withdraw)
     }
 
     // Compact (J2): the notice is the field's top line (ComposerBand); its
@@ -2380,6 +2543,16 @@ internal fun reasonRes(reason: String): Int =
         "attachment_steer" -> R.string.reason_attachment_steer
         "attachment_missing" -> R.string.reason_attachment_missing
         "unconfirmed" -> R.string.composer_uncertain
+        // Chat's OMP endpoint (ChatIngress.kt, host/omp/herdline-ingress.ts).
+        "instance_changed" -> R.string.reason_agent_restarted
+        "dialog_open" -> R.string.reason_dialog_open
+        "collab" -> R.string.reason_collab
+        "collab_state_unknown" -> R.string.reason_collab_state_unknown
+        "unsupported_type" -> R.string.reason_unsupported_type
+        "empty" -> R.string.reason_empty
+        "dropped" -> R.string.reason_dropped
+        REASON_UNSUPPORTED -> R.string.reason_endpoint_unsupported
+        REASON_UNUSABLE -> R.string.reason_endpoint_unusable
         else -> if (reason.startsWith("editor_")) R.string.reason_editor_unrecognized else R.string.reason_unknown
     }
 

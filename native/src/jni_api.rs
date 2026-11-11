@@ -651,6 +651,22 @@ pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_transcript<
     .resolve::<ThrowIo>()
 }
 
+/// Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_ingress<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let reply = session(id)?.ingress(&request)?;
+        Ok(env.new_string(reply)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_setTheme<'local>(
     mut env: EnvUnowned<'local>,

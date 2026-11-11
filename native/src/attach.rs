@@ -203,6 +203,16 @@ pub fn pastes(text: &str, attachments: &[Attachment]) -> Vec<ClientPaneInputEven
         .filter(|a| a.kind == Kind::Image)
         .map(|a| ClientPaneInputEvent::Paste(a.path.clone()))
         .collect();
+    let body = with_files(text, attachments);
+    if !body.is_empty() {
+        events.push(ClientPaneInputEvent::Paste(body));
+    }
+    events
+}
+
+/// `text` with each staged file mentioned after it as OMP's `@"path"`; an
+/// image is never mentioned, it goes as an image.
+pub fn with_files(text: &str, attachments: &[Attachment]) -> String {
     let mut body = text.to_owned();
     for file in attachments.iter().filter(|a| a.kind == Kind::File) {
         if !body.is_empty() && !body.ends_with(char::is_whitespace) {
@@ -210,10 +220,7 @@ pub fn pastes(text: &str, attachments: &[Attachment]) -> Vec<ClientPaneInputEven
         }
         body.push_str(&format!("@\"{}\"", file.path));
     }
-    if !body.is_empty() {
-        events.push(ClientPaneInputEvent::Paste(body));
-    }
-    events
+    body
 }
 
 /// The staging root under `$HOME`; the scripts refuse a root that is not

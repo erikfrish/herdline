@@ -107,6 +107,13 @@ object Native {
     external fun transcript(id: Long, requestJson: String): String
 
     /**
+     * One call to an OMP instance's ingress endpoint (send, status, state or
+     * withdraw; see core/Ingress.kt); blocks on the host, so never call it
+     * on the main thread.
+     */
+    external fun ingress(id: Long, requestJson: String): String
+
+    /**
      * Opens one attachment upload over an SSH exec with stdin into the
      * host's private staging directory (see docs/attachments.md). Answers
      * `{"outcome":"open","upload":N}` or a refusal; blocks.

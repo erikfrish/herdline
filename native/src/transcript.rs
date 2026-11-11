@@ -575,12 +575,24 @@ pub fn instance(exec: &Exec, session: &str, pane: &str) -> Result<Option<Identit
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&script(session, pane, None))
+            shell_quote(&instance_script(session, pane))
         ),
         TIMEOUT,
         HEADER_ROOM,
     )?;
-    let reply = parse_reply(output.exit_status, &output.tail)?;
+    parse_instance(output.exit_status, &output.tail)
+}
+
+/// The pane report [`instance`] runs, for a caller that appends its own
+/// steps after it in the same command; they run only once the pane is read.
+pub(crate) fn instance_script(session: &str, pane: &str) -> String {
+    script(session, pane, None)
+}
+
+/// The instance an [`instance_script`] report names; `bytes` ends where the
+/// caller's own output begins.
+pub(crate) fn parse_instance(exit_status: Option<u32>, bytes: &[u8]) -> Result<Option<Identity>> {
+    let reply = parse_reply(exit_status, bytes)?;
     match identity(&reply.pane, &reply.process) {
         Ok((identity, _)) => Ok(Some(identity)),
         Err(Error::NoTranscript) => Ok(None),

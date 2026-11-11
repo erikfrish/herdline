@@ -505,12 +505,83 @@ User, assistant and tool-result images are read through the existing
   `unsupported`, `version`. Link failures stay errors, not refusals.
 - **Steering labels.** A user message OMP saved with `steering: true` reads
   "Steering message"; with `liveSteered: true`, "Steered into active
-  response". Neither means it is still queued.
-- **Not available: the pending queue.** Chat does not show texts waiting in
-  OMP's queue, cancel them, or say when one was consumed. That needs OMP to
-  expose a queue peek/dequeue to extensions, an awaitable acceptance of a
-  send, and the request id on the entry that consumed it. It is never
-  inferred from the terminal.
+  response". Neither means it is still queued: the queue is the ingress
+  panel's, below.
+
+### Chat Send through the OMP endpoint
+
+Chat's Send goes into OMP through the `herdline-ingress` extension
+(`host/omp/herdline-ingress.ts`, a repository asset: installed only on the
+user's own decision), using only OMP's public extension API (Slices O and
+O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
+
+- **Route.** With a Live endpoint for exactly the draft's instance, Send and
+  steer go through it and the PTY box checks do not gate them; `auto`
+  steers a working agent and starts an idle one's turn. Insert stays on PTY.
+- **Fallback.** Only `{"endpoint":"absent"}` (this instance publishes no
+  endpoint, known before anything was sent) lets Send type into the pane.
+  `unsupported` (extension installed, OMP lacks hooks; the sidecar lists
+  them), `unusable` (discovery failed, stale, unreachable, permissions) and
+  every refusal show an explicit error; nothing is typed. Once a request may
+  have reached the socket, doubt is `uncertain`, and nothing is resent.
+- **Discovery.** Over the link's exec: the pane report gives the OMP pid;
+  `$XDG_RUNTIME_DIR/herdline-ingress/<sessionId>-<pid>.json` from that
+  process's environment, the directory 0700 and the sidecar 0600, both this
+  user's and no links, and its `sessionFile` exactly the instance's. The
+  exchange re-checks the sidecar bytes and the 0600 socket, then talks
+  through `socat` (20 s idle) without half-closing before the answer.
+- **Wire.** Newline-delimited compact JSON:
+  ```
+  send     {v:1, id, instance:{sessionId, sessionFile, pid, nonce}, text, attachments?:[{path, mimeType}], deliverAs}
+        -> {id, outcome: accepted|admitted|replayed|refused|uncertain, reason?, state:{idle, queued:[{requestId|null, text, queue}]}}
+  status   {v:1, id, op:"status"}        -> stored outcome or uncertain; never sends
+  withdraw {v:1, id, op:"withdraw"}      -> {id, withdrawn, state}
+  dialogs  {v:1, id, op:"dialogs"}       -> {id, dialogs:[OpenDialog…]}
+  dialog_submit {v:1, id, op:"dialog_submit", dialogId, answer} -> {id, dialogId, result}
+  push     {queue:[…], liveSteered}  |  {dialogs:[…]}
+  ```
+  A send is refused in this order: `instance_changed`, then a known id is
+  answered from its record, `dialog_open`, `collab` (`ctx.isCollabSession()`
+  true) or `collab_state_unknown` (it throws or this OMP lacks it),
+  `unsupported_type` (not PNG/JPEG/GIF/WebP, or not a regular file inside
+  Herdline's staging root by real path), `too_large` (over 20 MiB),
+  `empty`, and `dropped` when OMP drops it. Collab is asked per request,
+  never published as `unsupported`.
+- **Outcomes.** `accepted`: OMP's queue showed the request id; `admitted`:
+  an idle send's user message reached `message_end` with it; `replayed`: a
+  repeated id with a durable accepted/admitted record. A pending record or
+  another digest under the same id is `uncertain`; a stored refusal
+  repeats with its reason.
+- **Durability.** Every record is a `herdline-ingress` session entry:
+  `appendEntry`, then `await sessionManager.ensureOnDisk()` before the
+  pending record's `sendUserMessage` and before any answer. OMP has no
+  public flush, and `ensureOnDisk` returns early when it thinks the file is
+  current, so the last append's fsync is not proven. A restart rebuilds the
+  records from the session.
+- **Dialogs.** The snapshot and the submit pass OMP's O2 types through
+  verbatim; a submit answers only its exact `dialogId` (a form's answer is
+  `{data: …}`), never a PTY Enter, never a default or auto-approval. A
+  submit with no result for that dialog is a failure, never `submitted`.
+  Send still refuses `dialog_open` while any dialog is open. The forms UI is
+  `core/ChatDialog.kt` and `ui/chat/ChatForms.kt`.
+- **Native ↔ Kotlin.** `Native.ingress(session, json)`; the request is
+  `{op: send|status|state|withdraw|dialogs|dialog_submit, node, session,
+  boot, pane, agent, instance:{pane_id, terminal_id, pid, path}, id, text?,
+  attachments?, deliverAs?: auto|steer, dialogId?, answer?}`. Replies:
+  `{"endpoint":"absent"}`, `{"endpoint":"unsupported","missing":[…]}`,
+  `{"endpoint":"unusable","reason"}`, `{"endpoint":"live", "id", "outcome",
+  "reason"?, "state"?}` (send, status), `{"endpoint":"live","state"}`,
+  `{"endpoint":"live","id","withdrawn"}`, `{"endpoint":"live","dialogs"}`,
+  `{"endpoint":"live","dialogId","result"}`, and the core's own
+  `{"outcome":"refused","reason"}` before anything left (`unsettled` while a
+  PTY delivery holds the pane, attachment reasons). A send whose call fails
+  after it may have left is uncertain; the other ops fail.
+- **Pending queue.** Chat polls the endpoint's state at the instance poll
+  interval, also while the queue is empty, and shows the waiting entries
+  with Withdraw; a desktop-queued entry (no request id) reads "From the
+  desktop". It never infers a pending entry from history or the terminal.
+- **Recovery.** An endpoint send writes ahead a Queued record with receipt
+  `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
 
 ## Verified against
 

@@ -12,6 +12,7 @@ mod delivery;
 mod error;
 pub mod herdr_setup;
 mod hold;
+mod ingress;
 pub mod input;
 mod jni_api;
 pub mod keys;

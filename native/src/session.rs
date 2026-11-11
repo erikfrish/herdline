@@ -8,7 +8,7 @@
 use crate::{
     Error, Result, attach, clipboard,
     composer::{self, Refusal, Registry},
-    delivery, hold,
+    delivery, hold, ingress,
     input::{self, Modifiers, Touch},
     render::RenderFrame,
     screen::Screen,
@@ -395,6 +395,25 @@ impl Session {
         let request = serde_json::from_str(request)?;
         let response = transcript::fetch(&exec, &self.shared.session, &request)?;
         Ok(serde_json::to_string(&response)?)
+    }
+
+    /// One call to the pane's OMP ingress endpoint, as JSON; see
+    /// [`ingress`]. A send is refused while the pane's last PTY delivery
+    /// is unsettled, as a PTY delivery would be. Blocks on the host: call
+    /// it from a background thread.
+    pub fn ingress(&self, request: &str) -> Result<String> {
+        let request: ingress::Request = serde_json::from_str(request)?;
+        if request.op == ingress::Op::Send && hold::holds().is_held(&request.target()) {
+            return Ok(delivery::refused(Refusal::Unsettled));
+        }
+        let Some(exec) = lock(&self.shared.exec).clone() else {
+            // Nothing was sent: a send is refused, the rest have no answer.
+            return match request.op {
+                ingress::Op::Send => Ok(json!({"outcome": "refused", "reason": "not_connected"}).to_string()),
+                _ => Err(Error::NotReady),
+            };
+        };
+        ingress::run(&exec, &self.shared.session, request)
     }
 
     /// The agent instance in `pane` now, as JSON `{"instance": …}`, `null`
