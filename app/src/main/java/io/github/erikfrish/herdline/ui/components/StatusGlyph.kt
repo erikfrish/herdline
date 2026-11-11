@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.components
 
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -12,12 +13,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -45,13 +49,35 @@ fun statusSpoken(status: AgentStatus): String? = when (status) {
     AgentStatus.Unknown -> null
 }
 
+/** The outline a status or link is drawn as; each one tells itself apart in grayscale and when still. */
+internal enum class GlyphShape { None, Arc, Disc, SmallDisc, Diamond, Ring, Cross }
+
+internal fun AgentStatus.shape(): GlyphShape = when (this) {
+    AgentStatus.Unknown -> GlyphShape.None
+    AgentStatus.Working -> GlyphShape.Arc
+    AgentStatus.Done -> GlyphShape.Disc
+    AgentStatus.Idle -> GlyphShape.SmallDisc
+    AgentStatus.Blocked -> GlyphShape.Diamond
+}
+
 /**
- * An agent's status as a shape, never colour alone: Blocked is a
- * diamond, Idle a smaller neutral circle, Working and Done circles in the
- * status text colours, Unknown nothing. It occupies [slot] (at least [size]),
- * so rows keep their 24 dp column with `slot = 24.dp`. On a selected row pass
- * that row's content colour as [tint]. The spoken status is its state
- * description, which a merged row or tab reads with its own label.
+ * Whether going from [before] to [now] earns the one-off bump: only a real
+ * change to a status that asks for a look (Blocked, Done), never the first
+ * status a glyph shows ([before] null), so opening a list or scrolling a row
+ * in does not bump everything already blocked.
+ */
+internal fun bumps(before: AgentStatus?, now: AgentStatus): Boolean =
+    before != null && before != now && (now == AgentStatus.Blocked || now == AgentStatus.Done)
+
+/**
+ * An agent's status as a shape, never colour or motion alone: Working is an
+ * open arc (turning while motion is allowed, still otherwise), Done a filled
+ * circle, Idle a smaller neutral circle, Blocked a diamond, Unknown nothing.
+ * A change to Blocked or Done bumps the shape once. It occupies [slot] (at
+ * least [size]), so rows keep their 24 dp column with `slot = 24.dp`; motion
+ * is drawn only (graphicsLayer), never laid out. On a selected row pass that
+ * row's content colour as [tint]. The spoken status is its state description,
+ * which a merged row or tab reads with its own label.
  */
 @Composable
 fun StatusGlyph(
@@ -69,29 +95,92 @@ fun StatusGlyph(
             else -> text.of(status)
         }
     }
+    val motion = motionAllowed()
+    val bump = remember { Animatable(1f) }
+    val last = remember { LastStatus() }
+    LaunchedEffect(status) {
+        val before = last.status
+        last.status = status
+        if (motion && bumps(before, status)) {
+            bump.animateTo(1.4f, tween(120))
+            bump.animateTo(1f, tween(180))
+        } else {
+            bump.snapTo(1f)
+        }
+    }
     Box(
         modifier
             .size(maxOf(slot, size))
             .then(if (spoken != null) Modifier.semantics { stateDescription = spoken } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        when (status) {
-            AgentStatus.Unknown -> Unit
+        val shape = Modifier.graphicsLayer {
+            scaleX = bump.value
+            scaleY = bump.value
+        }
+        when (status.shape()) {
             // A square rotated 45°: its 0.9 × size side gives the circle's visual weight.
-            AgentStatus.Blocked -> Box(Modifier.size(size * 0.9f).rotate(45f).background(color))
-            AgentStatus.Idle -> Box(Modifier.size(size * 0.7f).clip(CircleShape).background(color))
-            AgentStatus.Working, AgentStatus.Done -> Box(Modifier.size(size).clip(CircleShape).background(color))
+            GlyphShape.Diamond -> Box(shape.size(size * 0.9f).rotate(45f).background(color))
+            GlyphShape.SmallDisc -> Box(shape.size(size * 0.7f).clip(CircleShape).background(color))
+            GlyphShape.Disc -> Box(shape.size(size).clip(CircleShape).background(color))
+            GlyphShape.Arc -> Arc(color, shape.size(size), turning = motion)
+            GlyphShape.None, GlyphShape.Ring, GlyphShape.Cross -> Unit
         }
     }
 }
 
-private enum class Link { Up, Trying, Lost, Failed }
+/** The status a glyph showed last, read only by its change effect, so it is no state of its own. */
+private class LastStatus {
+    var status: AgentStatus? = null
+}
+
+/**
+ * A 270° arc: its 90° gap keeps it apart from Lost's full ring even when still.
+ * The turn is read in the layer only, so it redraws without recomposing, and
+ * its transition exists only while an arc is shown and may move.
+ */
+@Composable
+private fun Arc(color: Color, modifier: Modifier, turning: Boolean) {
+    val turn = if (turning) {
+        rememberInfiniteTransition(label = "arc").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+            label = "turn",
+        )
+    } else {
+        null
+    }
+    Canvas(modifier.graphicsLayer { rotationZ = turn?.value ?: 0f }) {
+        val stroke = (size.minDimension * 0.16f).coerceIn(1.5.dp.toPx(), 2.dp.toPx())
+        val inset = stroke / 2
+        drawArc(
+            color,
+            startAngle = -90f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - stroke, size.height - stroke),
+            // Butt ends: round caps would eat into the gap that tells it from a ring.
+            style = Stroke(stroke, cap = StrokeCap.Butt),
+        )
+    }
+}
+
+internal enum class Link { Up, Trying, Lost, Failed }
 
 private fun Connection.State.link(): Link = when (this) {
     is Connection.State.Connected -> Link.Up
     is Connection.State.Connecting, is Connection.State.SettingUp -> Link.Trying
     is Connection.State.Disconnected -> Link.Lost
     else -> Link.Failed
+}
+
+internal fun Link.shape(): GlyphShape = when (this) {
+    Link.Up -> GlyphShape.Disc
+    Link.Trying -> GlyphShape.Arc
+    Link.Lost -> GlyphShape.Ring
+    Link.Failed -> GlyphShape.Cross
 }
 
 /** What TalkBack says for the session's link. */
@@ -105,9 +194,10 @@ fun connectionSpoken(state: Connection.State): String = when (state.link()) {
 }
 
 /**
- * The session's link, 12 dp: a filled circle when connected,
- * the same circle pulsing while connecting or setting up, a hollow ring when
- * lost, ✕ when it cannot connect. Tagged `session:state:<State>`.
+ * The session's link, 12 dp: a filled circle when connected, the Working
+ * arc (turning while motion is allowed) while connecting or setting up, a
+ * hollow full ring when lost, ✕ when it cannot connect. Tagged
+ * `session:state:<State>`.
  */
 @Composable
 fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
@@ -120,37 +210,29 @@ fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
         Link.Lost -> MaterialTheme.colorScheme.onSurfaceVariant
         Link.Failed -> MaterialTheme.colorScheme.error
     }
-    val pulse = if (link == Link.Trying) {
-        rememberInfiniteTransition(label = "pulse").animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-            label = "alpha",
-        ).value
-    } else {
-        1f
-    }
     val spoken = connectionSpoken(state)
-    Canvas(
-        modifier
-            .size(12.dp)
-            .graphicsLayer { alpha = pulse }
-            .semantics { stateDescription = spoken }
-            .testTag("session:state:" + state::class.simpleName),
-    ) {
-        when (link) {
-            Link.Up, Link.Trying -> drawCircle(color)
-            Link.Lost -> {
+    val tagged = modifier
+        .size(12.dp)
+        .semantics { stateDescription = spoken }
+        .testTag("session:state:" + state::class.simpleName)
+    if (link.shape() == GlyphShape.Arc) {
+        Arc(color, tagged, turning = motionAllowed())
+        return
+    }
+    Canvas(tagged) {
+        when (link.shape()) {
+            GlyphShape.Ring -> {
                 val stroke = 1.5.dp.toPx()
                 drawCircle(color, radius = (size.minDimension - stroke) / 2, style = Stroke(stroke))
             }
-            Link.Failed -> {
+            GlyphShape.Cross -> {
                 val stroke = 2.dp.toPx()
                 val inset = stroke / 2 + 1.dp.toPx()
                 val end = size.width - inset
                 drawLine(color, Offset(inset, inset), Offset(end, end), stroke, StrokeCap.Round)
                 drawLine(color, Offset(end, inset), Offset(inset, end), stroke, StrokeCap.Round)
             }
+            else -> drawCircle(color)
         }
     }
 }
