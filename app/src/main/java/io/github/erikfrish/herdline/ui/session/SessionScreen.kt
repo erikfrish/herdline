@@ -129,6 +129,10 @@ import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
+import io.github.erikfrish.herdline.data.SheetSection
+import io.github.erikfrish.herdline.data.SheetSections
+import io.github.erikfrish.herdline.data.TabsView
+import io.github.erikfrish.herdline.ui.inbox.hostLabels
 import io.github.erikfrish.herdline.data.DraftKey
 import io.github.erikfrish.herdline.data.ModeChoice
 import io.github.erikfrish.herdline.data.DraftStore
@@ -293,6 +297,8 @@ fun SessionScreen(
     val imeVisible = WindowInsets.isImeVisible
     val monitored by app.monitor.monitored.collectAsState()
     val node = connection.node
+    // The Tabs overview's chosen workspace (TB1 §4): kept across closing the sheet, Grid ⇄ List and rotation.
+    var tabsScope by rememberSaveable(node.id, node.session) { mutableStateOf<String?>(null) }
     // The node's colour label marks this session: the bar under the tabs, the
     // selected tab, and the terminal cursor. A chosen app accent overrides it.
     val accent = sessionAccent(settings.accent, node.color)
@@ -579,6 +585,8 @@ fun SessionScreen(
     }
 
     fun openSwitcher() {
+        // The phone sheet starts each open on the saved filter, once, so Grid ⇄ List keeps a chip tap (TB1 §4).
+        if (SheetSections.shows(settings.sheetSections, SheetSection.Filters)) filter = settings.startFilter.switcherFilter
         switcherOpen = true
         // Held before the keyboard starts to go, not on the next effect pass.
         terminal?.holdGrid = true
@@ -1159,7 +1167,50 @@ fun SessionScreen(
                 containerColor = menuColor(),
                 modifier = Modifier.testTag("switcher:sheet"),
             ) {
-                switcher(Modifier.fillMaxWidth())
+                // TB1: the overview, or today's list; either one's header switches to the other.
+                val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
+                when (settings.tabsView) {
+                    TabsView.Grid -> TabsOverview(
+                        node = node,
+                        host = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title,
+                        view = view,
+                        state = state,
+                        pins = pins[node.id].orEmpty(),
+                        monitored = { MonitorKey(node.id, it) in monitored },
+                        query = query,
+                        onQuery = { query = it },
+                        filter = filter,
+                        onFilter = { filter = it },
+                        filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
+                        scope = tabsScope,
+                        onScope = { tabsScope = it },
+                        actions = actions,
+                        onShowList = { showAs(TabsView.List) },
+                        modifier = Modifier.fillMaxWidth(),
+                        here = focusedPane,
+                        reading = chatMode,
+                    )
+                    TabsView.List -> Switcher(
+                        node = node,
+                        view = view,
+                        state = state,
+                        accent = accent,
+                        order = settings.targetOrder,
+                        pins = pins[node.id].orEmpty(),
+                        recent = recent[node.id].orEmpty(),
+                        monitored = { MonitorKey(node.id, it) in monitored },
+                        query = query,
+                        onQuery = { query = it },
+                        filter = filter,
+                        onFilter = { filter = it },
+                        actions = actions,
+                        modifier = Modifier.fillMaxWidth(),
+                        here = focusedPane,
+                        reading = chatMode,
+                        onShowGrid = { showAs(TabsView.Grid) },
+                        appliesStartFilter = false,
+                    )
+                }
             }
         }
     }

@@ -146,6 +146,14 @@ fun Switcher(
     here: String? = view?.focusedPane,
     /** Chat: the here row says "Reading here" and Herdr's focused row "On desktop" to TalkBack. */
     reading: Boolean = false,
+    /** The phone sheet's "Show as grid" in the header (TB1); null where the list is the only view. */
+    onShowGrid: (() -> Unit)? = null,
+    /**
+     * Whether this list applies the saved start filter when it first shows.
+     * The phone sheet applies it once per open itself, so Grid ⇄ List keeps
+     * the filter the user chose.
+     */
+    appliesStartFilter: Boolean = true,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     // Pinned then recent places, each once: a one-pane tab remembered under
@@ -165,7 +173,7 @@ fun Switcher(
     LaunchedEffect(Unit) {
         if (!started) {
             started = true
-            store?.let { if (filtersShown) onFilter(it.settings.value.startFilter.switcherFilter) }
+            store?.let { if (filtersShown && appliesStartFilter) onFilter(it.settings.value.startFilter.switcherFilter) }
         }
     }
     LaunchedEffect(filtersShown) {
@@ -239,8 +247,16 @@ fun Switcher(
             Modifier.fillMaxWidth().testTag("switcher"),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
-            item(key = "header") { HostLine(node, view, state) }
-            item(key = "search") { SearchField(query, onQuery) }
+            item(key = "header") {
+                HostLine(node, view, state) {
+                    if (onShowGrid != null) {
+                        IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-grid")) {
+                            Icon(GridIcon, stringResource(R.string.overview_as_grid), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            item(key = "search") { SearchField(query, onQuery, stringResource(R.string.switcher_search)) }
             if (store != null) {
                 item(key = "order:select") {
                     OrderSelector(order, accent) { picked -> store.update { it.copy(targetOrder = picked) } }
@@ -403,10 +419,11 @@ private fun SwitchTarget.TabRow.tabTitle(): String = title
 
 /**
  * One 48 dp line instead of the stats card: the host's name and how much is
- * waiting there. Connecting and disconnected states still say so.
+ * waiting there. Connecting and disconnected states still say so; the
+ * Tabs overview shows it while there is no live view. [trailing] ends the row.
  */
 @Composable
-private fun HostLine(node: Node, view: ShellView?, state: Connection.State) {
+internal fun HostLine(node: Node, view: ShellView?, state: Connection.State, trailing: @Composable () -> Unit = {}) {
     val summary = when (state) {
         is Connection.State.Connecting -> stringResource(R.string.connecting)
         is Connection.State.SettingUp -> stringResource(R.string.herdr_setup_pill)
@@ -442,15 +459,17 @@ private fun HostLine(node: Node, view: ShellView?, state: Connection.State) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        trailing()
     }
 }
 
+/** The search pill; [minHeight] is the overview's font-scaled one (TB1 §4), else the list's 44 dp. */
 @Composable
-private fun SearchField(query: String, onQuery: (String) -> Unit) {
+internal fun SearchField(query: String, onQuery: (String) -> Unit, placeholder: String, minHeight: Dp = 44.dp) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .heightIn(min = minHeight)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -469,7 +488,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
                 Box {
                     if (query.isEmpty()) {
                         Text(
-                            stringResource(R.string.switcher_search),
+                            placeholder,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1,

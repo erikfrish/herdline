@@ -25,6 +25,7 @@ class SettingsResetTest {
         sidebarOpen = false,
         targetOrder = TargetOrder.LastActivity,
         startFilter = StartFilter.NeedsYou,
+        tabsView = TabsView.List,
         hideShells = true,
         hideIdleDone = true,
         composerMenu = listOf("larger_editor", "insert"),
@@ -56,6 +57,7 @@ class SettingsResetTest {
         "sidebarOpen" to { it.sidebarOpen },
         "targetOrder" to { it.targetOrder },
         "startFilter" to { it.startFilter },
+        "tabsView" to { it.tabsView },
         "hideShells" to { it.hideShells },
         "composerMenu" to { it.composerMenu },
         "sheetSections" to { it.sheetSections },
@@ -74,7 +76,7 @@ class SettingsResetTest {
         ResetScope.Appearance to setOf("themeMode", "appTheme", "darkScheme", "lightScheme", "uiScale", "density", "accent", "iconVariant"),
         ResetScope.Terminal to setOf("font", "fontSize", "vibrateOnBell", "keepScreenOn", "extraKeys", "showExtraKeys"),
         ResetScope.Composer to setOf("terminalSuggestions"),
-        ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "hideShells", "hideIdleDone", "composerMenu", "sheetSections"),
+        ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "tabsView", "hideShells", "hideIdleDone", "composerMenu", "sheetSections"),
         ResetScope.Notifications to setOf("notifyAttention", "notifyDone", "notifyConnection", "liveActivity", "lockDetail"),
     )
 
