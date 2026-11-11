@@ -148,6 +148,23 @@ class ComposerFitTest {
     }
 
     @Test
+    fun aChipsBudgetIsItsTallestChildSoNothingClipsAndNothingIsWasted() {
+        // Remove is an IconButton: Material's 48 dp touch target, never shrunk.
+        val remove = 48f
+        for (scale in listOf(0.85f, 1.0f, 1.1f, 1.125f, 1.15f, 1.3f, 1.45f, 2.0f)) {
+            // The name over the state, each at its style's real line height, inside the text's padding.
+            val text = 2 * CHIP_PAD + (HerdlineTypography.labelMedium.lineHeight.value + HerdlineTypography.bodySmall.lineHeight.value) * scale
+            val chip = attachmentChipDp(scale)
+            assertTrue("chip $chip dp clips Remove at $scale", chip >= remove)
+            assertTrue("chip $chip dp clips its text ($text dp) at $scale", chip >= text - 0.001f)
+            // No slack beyond the taller of the two: the field keeps every other dp.
+            assertEquals("chip at $scale", maxOf(remove, text), chip, 0.001f)
+        }
+        // At the default font size a chip is exactly its Remove: the compact row stays 48 dp.
+        assertEquals(48f, attachmentChipDp(1.0f), 0f)
+    }
+
+    @Test
     fun zoomIsOfferedOnlyWhileTheTabIsKnownUnzoomed() {
         assertEquals(listOf(ShortPaneOffer.Zoom), offers(tabZoomed = false))
         // Already zoomed and still short: only the reason; unknown: no guess.

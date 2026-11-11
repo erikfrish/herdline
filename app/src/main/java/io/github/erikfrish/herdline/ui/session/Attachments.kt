@@ -207,13 +207,14 @@ private const val BADGE_DP = 14
 
 // [AttachmentChips]' layout, shared with its budget in [attachmentsRowDp], in
 // dp: the consent line (bodySmall, 16 sp a line, at most two lines) and the
-// gap under it, a chip (labelMedium over bodySmall, 16 sp each, inside 6 dp
-// above and below, at least its 48 dp Remove) and the gap under the chip row.
+// gap under it, a chip ([attachmentChipDp]) and the gap under the chip row.
 internal const val ATTACH_LABEL_LINE = 16
 private const val CONSENT_LINES = 2
 private const val CONSENT_GAP = 4
 private const val CHIP_MIN = 48
-private const val CHIP_PAD = 6
+
+/** Above and below a chip's two text lines only; Remove and the thumbnail take the chip's height as it is. */
+internal const val CHIP_PAD = 6
 private const val CHIP_ROW_GAP = 6
 private const val CHIP_MAX = 260
 
@@ -260,8 +261,17 @@ internal fun spokenPercent(fraction: Float): Int = (fraction * 4).toInt().coerce
 
 /** [AttachmentChips] at its tallest at [fontScale], in dp: what a draft with files adds above the band. */
 internal fun attachmentsRowDp(fontScale: Float): Float =
-    CONSENT_LINES * ATTACH_LABEL_LINE * fontScale + CONSENT_GAP +
-        maxOf(CHIP_MIN.toFloat(), 2 * CHIP_PAD + 2 * ATTACH_LABEL_LINE * fontScale) + CHIP_ROW_GAP
+    CONSENT_LINES * ATTACH_LABEL_LINE * fontScale + CONSENT_GAP + attachmentChipDp(fontScale) + CHIP_ROW_GAP
+
+/**
+ * A chip's height at [fontScale], in dp: the tallest of its children laid
+ * side by side, the 48 dp Remove (also the chip's floor), the 36 dp
+ * thumbnail, and the name over the state inside [CHIP_PAD] above and below.
+ * The padding sits on the text alone, so a chip is 48 dp up to font scale
+ * 1.125, then grows with its text.
+ */
+internal fun attachmentChipDp(fontScale: Float): Float =
+    maxOf(CHIP_MIN.toFloat(), THUMB_DP.toFloat(), 2 * CHIP_PAD + 2 * ATTACH_LABEL_LINE * fontScale)
 
 /**
  * The draft's attachments as a row of chips over the field: a small
@@ -380,7 +390,7 @@ private fun AttachmentChip(
                     Modifier
                 },
             )
-            .padding(start = 4.dp, top = CHIP_PAD.dp, bottom = CHIP_PAD.dp)
+            .padding(start = 4.dp)
             .testTag("composer:attachment"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -400,7 +410,7 @@ private fun AttachmentChip(
         Column(
             Modifier
                 .weight(1f, fill = false)
-                .padding(horizontal = 8.dp)
+                .padding(horizontal = 8.dp, vertical = CHIP_PAD.dp)
                 .semantics(mergeDescendants = true) {
                     contentDescription = spoken
                     liveRegion = LiveRegionMode.Polite
