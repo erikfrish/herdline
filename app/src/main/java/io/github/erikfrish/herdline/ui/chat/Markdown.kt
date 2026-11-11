@@ -38,8 +38,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -195,9 +195,9 @@ fun inlineMarkdown(text: String, code: SpanStyle, link: TextLinkStyles? = null):
 private val IDENTIFIER = Regex("^[\\w./:@#-]+$")
 
 /**
- * Text whose [INLINE_CODE] ranges sit on a chip (§16.3): codeChip fill, a
- * 1 dp border and 4 dp corners, drawn behind the glyphs line by line so a
- * wrapped span gets one chip per line.
+ * Text whose [INLINE_CODE] ranges sit on a chip (§16.3): a borderless
+ * codeChip fill with 6 dp corners and 4 dp either side, drawn behind the
+ * glyphs line by line so a wrapped span gets one chip per line.
  */
 @Composable
 private fun InlineText(
@@ -211,13 +211,11 @@ private fun InlineText(
     val chips = remember(text) { text.getStringAnnotations(INLINE_CODE, 0, text.length) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val fill = colors.codeChip
-    val stroke = colors.border
     val chipped = if (chips.isEmpty()) modifier else modifier.drawBehind {
         val laid = layout?.takeIf { it.layoutInput.text == text } ?: return@drawBehind
-        val pad = 2.dp.toPx()
+        val pad = 4.dp.toPx()
         val inset = 2.dp.toPx()
-        val width = 1.dp.toPx()
-        val corner = CornerRadius(4.dp.toPx())
+        val corner = CornerRadius(6.dp.toPx())
         chips.filter { it.end > it.start }.forEach { chip ->
             val first = laid.getLineForOffset(chip.start)
             val last = laid.getLineForOffset(chip.end - 1)
@@ -229,30 +227,38 @@ private fun InlineText(
                 val origin = Offset(left - pad, top)
                 val box = Size(right - left + 2 * pad, bottom - top)
                 drawRoundRect(fill, origin, box, corner)
-                drawRoundRect(stroke, origin + Offset(width / 2, width / 2), Size(box.width - width, box.height - width), corner, Stroke(width))
             }
         }
     }
     Text(text, style = style, softWrap = softWrap, maxLines = maxLines, onTextLayout = { layout = it }, modifier = chipped)
 }
 
+/** The gap between two paragraphs or other unlike blocks of a reply. */
+private val PARAGRAPH_GAP = 12.dp
+
+/**
+ * A reply's Markdown. [dense] sets the prose on 22 sp lines instead of 24,
+ * for the short window over the keyboard (see [ChatType.prose]).
+ */
 @Composable
-fun Markdown(text: String, colors: ChatColors, modifier: Modifier = Modifier, color: Color = colors.text) {
+fun Markdown(text: String, colors: ChatColors, modifier: Modifier = Modifier, color: Color = colors.text, dense: Boolean = false) {
     val blocks = remember(text) { markdownBlocks(text) }
     val code = SpanStyle(fontFamily = FontFamily.Monospace, fontSize = ChatType.inlineCode, color = colors.text)
     val link = TextLinkStyles(SpanStyle(color = colors.accentText, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline))
-    val body = ChatType.body.copy(color = color)
+    val body = ChatType.prose(dense).copy(color = color)
+    // The marker box is one prose line tall, so the dot centres on the first line at any font scale.
+    val markerLine = with(LocalDensity.current) { body.lineHeight.toDp() }
     SelectionContainer(modifier) {
         Column {
             blocks.forEachIndexed { index, block ->
                 val previous = blocks.getOrNull(index - 1)
                 val top = when {
                     previous == null -> 0.dp
-                    block is MdBlock.Heading && block.level == 1 -> 12.dp
+                    block is MdBlock.Heading -> 16.dp
                     previous is MdBlock.Heading -> 4.dp
-                    previous is MdBlock.Bullet && block is MdBlock.Bullet -> 4.dp
+                    previous is MdBlock.Bullet && block is MdBlock.Bullet -> 6.dp
                     previous is MdBlock.Quote && block is MdBlock.Quote -> 0.dp
-                    else -> ChatSpace.block
+                    else -> PARAGRAPH_GAP
                 }
                 val gap = Modifier.padding(top = top)
                 // Prose keeps a readable line; code and tables keep the full width.
@@ -267,7 +273,7 @@ fun Markdown(text: String, colors: ChatColors, modifier: Modifier = Modifier, co
                     )
                     is MdBlock.Bullet -> Row(prose.padding(start = (block.depth * 16).dp)) {
                         // A hanging indent: wrapped lines run under the text, not under the dot.
-                        Box(Modifier.width(16.dp).height(22.dp), contentAlignment = Alignment.CenterStart) {
+                        Box(Modifier.width(16.dp).height(markerLine), contentAlignment = Alignment.CenterStart) {
                             if (block.marker == "•") {
                                 Box(Modifier.size(4.8.dp).clip(CircleShape).background(colors.muted))
                             } else {
@@ -306,7 +312,7 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
     val total = remember(code) { code.trimEnd('\n').lines().size }
     var all by rememberSaveable(code) { mutableStateOf(!codeStartsCollapsed(code)) }
     val shown = remember(code, all) { if (all) code.trimEnd('\n') else capLines(code, CODE_COLLAPSED_LINES).first }
-    val shape = MaterialTheme.shapes.small
+    val shape = MaterialTheme.shapes.medium
     Box(modifier.fillMaxWidth()) {
         Column(
             Modifier
@@ -316,7 +322,7 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
                 .border(1.dp, colors.border, shape)
                 .testTag("chat:code"),
         ) {
-            Row(Modifier.fillMaxWidth().height(28.dp).padding(start = 10.dp, end = 58.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(28.dp).padding(start = 12.dp, end = 58.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(language, style = ChatType.codeBar.copy(color = colors.muted), maxLines = 1, modifier = Modifier.weight(1f))
             }
             Text(
@@ -326,7 +332,7 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(start = 10.dp, end = 10.dp, bottom = 8.dp),
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
             )
             if (!all) {
                 Text(
@@ -336,7 +342,7 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .clickable(role = Role.Button) { all = true }
-                        .padding(horizontal = 10.dp, vertical = 14.dp),
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
                 )
             }
         }
