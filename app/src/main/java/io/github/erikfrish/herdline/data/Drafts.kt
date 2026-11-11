@@ -263,6 +263,21 @@ fun composerDestination(bound: String?, viewed: String?, boundHasText: Boolean, 
 class DraftStore internal constructor(private val prefs: SharedPreferences) {
     private val generations = HashMap<DraftKey, Long>()
     private val flying = MutableStateFlow<Set<DraftKey>>(emptySet())
+    private val heldKeys = MutableStateFlow(prefs.all.keys.mapNotNull { encoded ->
+        val parts = encoded.split('\u0000')
+        if (parts.size != 3) null else DraftKey(parts[0], parts[1], parts[2]).takeIf { get(it)?.unsettled == true }
+    }.toSet())
+
+    /** Stored unconfirmed drafts; Unlock and confirmation update their badges without a host event. */
+    val unconfirmed: StateFlow<Set<DraftKey>> = heldKeys.asStateFlow()
+
+    private fun recordHeld(key: DraftKey, draft: Draft) = heldKeys.update { keys ->
+        when {
+            draft.unsettled && key !in keys -> keys + key
+            !draft.unsettled && key in keys -> keys - key
+            else -> keys
+        }
+    }
 
     /**
      * Destinations whose delivery or steer a live editor is still waiting on,
@@ -304,6 +319,7 @@ class DraftStore internal constructor(private val prefs: SharedPreferences) {
         } else {
             prefs.edit().putString(key.encode(), draft.toJson().toString()).apply()
         }
+        recordHeld(key, draft)
     }
 
     /**
@@ -315,7 +331,9 @@ class DraftStore internal constructor(private val prefs: SharedPreferences) {
      */
     fun writeAhead(key: DraftKey, draft: Draft): Boolean {
         synchronized(generations) { generations[key] = (generations[key] ?: 0L) + 1 }
-        return prefs.edit().putString(key.encode(), draft.toJson().toString()).commit()
+        return prefs.edit().putString(key.encode(), draft.toJson().toString()).commit().also { stored ->
+            if (stored) recordHeld(key, draft)
+        }
     }
 
     /** Destinations on [nodeId] holding unsent text or files, for showing where drafts wait. */
@@ -327,7 +345,7 @@ class DraftStore internal constructor(private val prefs: SharedPreferences) {
      * badge (AUDIT R7). Read only.
      */
     fun held(nodeId: String, session: String): Set<String> =
-        keysOn(nodeId).filter { it.session == session && get(it)?.unsettled == true }.mapTo(HashSet()) { it.pane }
+        heldKeys.value.filter { it.nodeId == nodeId && it.session == session }.mapTo(HashSet()) { it.pane }
 
     private fun keysOn(nodeId: String): List<DraftKey> = prefs.all.keys.mapNotNull { encoded ->
         val parts = encoded.split('\u0000')

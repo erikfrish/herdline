@@ -439,14 +439,15 @@ fun SessionScreen(
     val viewedPane = focusedPane
     // A delivery in flight keeps the composer on its pane until it settles (HB2).
     val flying by drafts.inFlight.collectAsState()
-    LaunchedEffect(viewedPane, composerText, flying) {
+    val unconfirmed by drafts.unconfirmed.collectAsState()
+    LaunchedEffect(viewedPane, composerText, flying, unconfirmed) {
         composerPane = composerDestination(composerPane, viewedPane, composerText, boundHeld = composerPane?.let { drafts.releasesComposer(DraftKey(node.id, node.session, it)) } == true)
     }
     // Panes whose delivery is unconfirmed: their tabs carry the lock (M5).
-    val held = remember(view, flying, node.id, node.session) { drafts.held(node.id, node.session) }
+    val held = remember(unconfirmed, node.id, node.session) { drafts.held(node.id, node.session) }
     // Terminal without the composer (Settings › Composer): the terminal and its extra keys take its place. A delivery
     // waiting on its receipt or steer, or left unconfirmed, keeps the composer: its editor holds that state and Unlock.
-    val composerPinned = composerPane?.let { it in held || DraftKey(node.id, node.session, it) in flying } == true
+    val composerPinned = receiptNotice || composerPane?.let { it in held || DraftKey(node.id, node.session, it) in flying } == true
     val composerHidden = !chatMode && !settings.terminalComposer && !composerPinned
     val composerKept = !chatMode && !settings.terminalComposer && composerPinned
     LaunchedEffect(composerKept) { if (composerKept) snackbar.showSnackbar(context.getString(R.string.terminal_composer_kept)) }

@@ -155,6 +155,27 @@ class DraftsTest {
     }
 
     @Test
+    fun unlockingPublishesTheHeldDraftChangeWithoutAHostUpdate() {
+        val prefs = MemoryPrefs()
+        val store = DraftStore(prefs)
+        val key = DraftKey("n", "s", "w1:p1")
+        val other = DraftKey("n", "other", "w1:p2")
+        val queued = Draft(text = "fix it", sent = SentRecord("fix it", "r", true, SentState.Queued, 1))
+        store.put(other, queued)
+        assertTrue(store.writeAhead(key, queued))
+        assertEquals(setOf(key, other), store.unconfirmed.value)
+
+        val restored = DraftStore(prefs)
+        assertEquals(setOf(key, other), restored.unconfirmed.value)
+        val unlocked = restored.get(key)!!.let { it.copy(sent = it.sent!!.copy(state = SentState.Unlocked)) }
+        restored.put(key, unlocked)
+        assertEquals(setOf(other), restored.unconfirmed.value)
+        assertEquals(emptySet<String>(), restored.held("n", "s"))
+        assertEquals("fix it", restored.get(key)?.text)
+        assertEquals(SentState.Unlocked, restored.get(key)?.sent?.state)
+    }
+
+    @Test
     fun aMovedDraftIsBoundToItsNewPaneAndNeverOverwritesOne() {
         val sent = SentRecord("old", "r1", submit = true, SentState.Confirmed, at = 1)
         val moved = written.copy(selectionStart = 3, selectionEnd = 3).movedOnto(Draft(sent = sent), "boot-2", "claude", now = 9)

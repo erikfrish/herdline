@@ -173,6 +173,12 @@ layout; it settles when the keyboard closes. The Session layout setting
 |Raw terminal|the composer's keyboard button: terminal keyboard plus extra keys, and Back to composer|the same|
 |Terminal without composer|Settings › Composer › Show message composer in Terminal, on by default. Off, Terminal shows the terminal and its extra keys under it, without Back to composer; a tap on the terminal brings its keyboard. Chat always has the composer. A delivery waiting on its receipt or steer, or left unconfirmed, keeps the composer, with a notice, until it settles or Unlock. Hidden, it takes no bottom or side slot, and its measured height, open space and held grid go, so the terminal gets the whole column. Drafts and files stay in the draft store; an upload under way is cancelled, as on leaving its pane, and its file reads back as not uploaded|the same|
 
+The hidden Terminal composer keeps an unconfirmed delivery and its safety
+notice visible. After Unlock, its warning remains visible until Dismiss or
+an edit; then the OFF preference takes effect without a tab or host update.
+The stored text and Unlocked record remain intact. Held badges observe the
+draft store's unconfirmed keys, not a cached host snapshot.
+
 A window shorter than 480 dp (a phone held sideways) merges the header and
 the tab row into one 48 dp row. It holds ←, the connection dot, the
 workspace name (at most 160 dp), the tab row with ‹ › and n/N, the need-you
