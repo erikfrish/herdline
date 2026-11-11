@@ -17,7 +17,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -224,7 +223,6 @@ internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier
     var returning by remember(image.key) { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val context = LocalContext.current
-    val talkBack = remember(context) { context.getSystemService(AccessibilityManager::class.java) }?.isTouchExplorationEnabled == true
     val load by produceState<ImageLoad>(ImageLoad.Loading, images, image.key, attempt) {
         value = images?.cached(image)?.let(ImageLoad::Shown) ?: run {
             value = ImageLoad.Loading
@@ -241,6 +239,8 @@ internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier
         returning = false
         // One frame on, once the viewer's window is gone and this one has focus to give.
         withFrameNanos { }
+        // Read now, not once at composition, so TalkBack turned on while in Chat counts.
+        val talkBack = context.getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true
         if (talkBack) focus.requestFocus()
     }
     Box(
@@ -249,9 +249,8 @@ internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier
             .clip(ThumbShape)
             .background(colors.codeBg)
             .border(1.dp, colors.border, ThumbShape)
+            // clickable is the one focus target; under TalkBack touch mode is off, so it can take focus.
             .focusRequester(focus)
-            // Focusable in touch mode only under TalkBack, where focus is how the reader is brought back.
-            .then(if (talkBack) Modifier.focusable() else Modifier)
             .clickable(role = Role.Button, enabled = load != ImageLoad.Loading) {
                 when (val now = load) {
                     is ImageLoad.Shown -> viewing = true
@@ -284,8 +283,9 @@ private const val VIEWER_FROM_SCALE = 0.92f
  * [image] read again at viewer size, over the whole screen, with its loading
  * and error states. It fades in while growing from [VIEWER_FROM_SCALE] (200 ms)
  * and leaves the same way in reverse (150 ms), drawn only, so nothing under it
- * moves; with motion off both are instant. Back, ✕ and a tap outside start
- * the exit, and [onClose] comes once it is over.
+ * moves; with motion off both are instant. Back and the close button start
+ * the exit (the viewer fills the screen, so there is no outside to tap), and
+ * [onClose] comes once it is over.
  */
 @Composable
 private fun ImageViewer(image: TranscriptImage, images: ChatImages, colors: ChatColors, onClose: () -> Unit) {
@@ -315,6 +315,8 @@ private fun ImageViewer(image: TranscriptImage, images: ChatImages, colors: Chat
     val scale = transition.animateFloat(spec, label = "scale") { if (it) 1f else VIEWER_FROM_SCALE }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // The window's own animation would run on top of this one, and even with motion off.
+        // Dialog shows its window before this content first composes and offers no
+        // animation setting, so this may only land after the first show (E-1 / E-3 frames decide).
         (LocalView.current.parent as? DialogWindowProvider)?.window?.let { window ->
             SideEffect { window.setWindowAnimations(0) }
         }
