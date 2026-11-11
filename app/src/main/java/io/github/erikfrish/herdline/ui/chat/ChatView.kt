@@ -544,6 +544,7 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         is ChatItem.User -> BoxWithConstraints(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             // The small corner points at the end edge, where the turn sits; it mirrors in RTL.
             val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 6.dp, bottomStart = 18.dp)
+            val bubbleWidth = minOf(maxWidth * 0.85f, BubbleMaxWidth)
             Column(horizontalAlignment = Alignment.End) {
                 // Already in the history: how OMP took it in, never a queue it still waits in.
                 item.steer?.let { steer ->
@@ -555,7 +556,7 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
                 }
                 Box(
                     Modifier
-                        .widthIn(max = minOf(maxWidth * 0.85f, BubbleMaxWidth))
+                        .widthIn(max = bubbleWidth)
                         .clip(shape)
                         .background(colors.userBubble)
                         .border(1.dp, colors.bubbleEdge, shape)
