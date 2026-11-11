@@ -1,0 +1,11 @@
+Herdline 0.2.0 — developer-checked candidate.
+
+Phone Tabs can be browsed as workspace-grouped cards or as a list, with search and attention filters. Split tabs have an explicit pane picker. In Chat, selecting a card or pane changes only the local reading target; it does not focus the desktop or create another agent. Tab previews use existing metadata, not captured terminal screenshots.
+
+The chat design adopts quiet tool heads with one output frame, expanded touch targets, completed-work summaries, more readable prose and code, and softer user bubbles. Dense chat retains its compact line height. Attachment chips distinguish uploads, failures and files staged for another pane, and keep a 48dp Remove action. Upload consent, delivery identity, receipts and uncertain holds remain unchanged.
+
+Verification: developer checks only, no runtime QA. Grid/List/picker layout, large-font and RTL appearance, TalkBack, rotation, work folding while reading older history, viewport changes, attachments and updater installation on a device remain unverified. Prompt delivery still uses guarded terminal input; explicit Fit can move and crop the desktop, never send automatically. Samsung Now Bar is unverified.
+
+Known deviations: a tool head's summary has no tappable links, by design, since the whole head toggles its output; links work inside the output frame. When a reply arrives, a finished run's folded row grows from about 54 to 61 dp at font scale 1.45, at the end of the list; this is runtime-unverified. The Tabs workspace scope is shared by the grid and the list, including pinned and recent places and the filter counts; a closed chosen workspace shows an explicit closed state instead of widening to all workspaces.
+
+The user and designer are independently developing the logo; this candidate does not change branding or approve a final launcher mark. No automatic phone installation. Dedicated isolated QA resumes after publication of this last developer-smoke candidate.
