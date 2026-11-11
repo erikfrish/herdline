@@ -86,6 +86,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Connection
@@ -937,7 +938,7 @@ private fun Editor(
     // In Chat the endpoint and its queue are read at the instance poll's
     // pace, also while nothing is queued: a steer queued at the desktop must
     // show here too. A failed read shows nothing rather than an old queue.
-    val probeTarget = composerTarget()?.takeIf { reading && it.instance != null && agentNamed(it.agent, ENDPOINT_AGENTS) }
+    val probeTarget = composerTarget()?.takeIf { reading && it.instance != null && agentNamed(it.agent, Harness.endpointAgents) }
     LaunchedEffect(probeTarget, connection) {
         val target = probeTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
@@ -1363,7 +1364,7 @@ private fun Editor(
     // same notice a refusal would, held steady by PrecheckHold.
     // A live endpoint takes Chat's Send without the pane: the box checks,
     // which read what the pane shows, neither gate nor explain it then.
-    val apiAgent = reading && draft.instance != null && agentNamed(draft.agent, API_AGENTS)
+    val apiAgent = reading && draft.instance != null && agentNamed(draft.agent, Harness.apiAgents)
     val apiReady = apiAgent && state is Connection.State.Connected && check?.paneExists == true && (check.status == AgentStatus.Idle || check.status == AgentStatus.Done)
     val endpointReady = reading && probe is IngressProbe.Live || apiReady
     val sendGate = if (reading) check?.chatSend else check?.send

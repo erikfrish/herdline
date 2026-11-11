@@ -30,9 +30,8 @@ data class TranscriptIdentity(
     }
 }
 
-/** Chat reads the existing session of these agent kinds; other terminals stay Terminal. */
-fun isChatAgent(agent: String?): Boolean = agent?.lowercase() in CHAT_AGENTS
-private val CHAT_AGENTS = setOf("omp", "pi", "opencode", "codex", "claude")
+/** Chat reads the existing session of these agent kinds ([Harness.chat]); other terminals stay Terminal. */
+fun isChatAgent(agent: String?): Boolean = agent != null && Harness.of(agent).chat
 
 /** Which bytes of the transcript to read next (see `transcript.rs`). */
 sealed interface TranscriptRead {

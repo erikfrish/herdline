@@ -65,17 +65,11 @@ data class Harness(
         // Lazy: [KNOWN] builds Harness rows, so reading it while this
         // companion initialises would see it still null.
 
-        /** Programs whose session Chat reads. */
-        val chatAgents: Set<String> by lazy { names { it.chat } }
-
         /** Programs whose live queue can be read and withdrawn through ingress. */
         val endpointAgents: Set<String> by lazy { names { it.send == SendRoute.Endpoint } }
 
         /** Programs Chat asks through their own API instead of typing into the pane. */
         val apiAgents: Set<String> by lazy { names { it.send == SendRoute.Api } }
-
-        /** Programs Steer may type into while they work. */
-        val steerWhileWorking: Set<String> by lazy { names { it.steer != Proof.None } }
 
         private fun names(keep: (Harness) -> Boolean): Set<String> =
             KNOWN.values.filter(keep).mapTo(linkedSetOf()) { it.name }

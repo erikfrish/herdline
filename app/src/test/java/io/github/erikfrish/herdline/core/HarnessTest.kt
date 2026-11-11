@@ -7,16 +7,6 @@ import org.junit.Test
 
 class HarnessTest {
     @Test
-    fun derived_sets_keep_the_routes_the_app_had_before_the_table() {
-        // The literals Transcript.kt CHAT_AGENTS, ChatIngress.kt ENDPOINT_AGENTS /
-        // API_AGENTS and the native steer gate (composer.rs steer_status) held.
-        assertEquals(setOf("omp", "pi", "opencode", "codex", "claude"), Harness.chatAgents)
-        assertEquals(setOf("omp"), Harness.endpointAgents)
-        assertEquals(setOf("codex", "opencode"), Harness.apiAgents)
-        assertEquals(setOf("omp"), Harness.steerWhileWorking)
-    }
-
-    @Test
     fun a_name_matches_in_any_case_and_keeps_herdrs_spelling() {
         val shown = Harness.of("OpenCode")
         assertEquals("OpenCode", shown.name)
@@ -25,25 +15,44 @@ class HarnessTest {
     }
 
     @Test
-    fun an_unknown_name_is_terminal_only_under_its_own_name() {
+    fun an_unknown_agent_never_offers_chat_only_its_terminal() {
         for (name in listOf("hermes", "agy", "copilot", "Gemini", "not-an-agent", "")) {
             val other = Harness.of(name)
-            assertEquals(Harness.terminalOnly(name), other)
+            assertEquals(name, other.name)
             assertFalse(name, other.chat)
+            assertFalse(name, isChatAgent(name))
+            assertEquals(SendRoute.None, other.send)
             assertEquals(listOf(HarnessItem.Terminal), other.worksHere().filter { it.second }.map { it.first })
         }
     }
 
     @Test
-    fun terminal_comes_first_and_only_verified_items_show_as_available() {
-        val rows = Harness.of("opencode").worksHere()
-        assertEquals(HarnessItem.Terminal to true, rows.first())
-        assertEquals(listOf(HarnessItem.Terminal, HarnessItem.Status), rows.filter { it.second }.map { it.first })
-        assertEquals(HarnessItem.entries.toSet(), rows.map { it.first }.toSet())
-        // Not yet: in the fixed order after every available one.
-        assertEquals(
-            listOf(HarnessItem.History, HarnessItem.Send, HarnessItem.Steer, HarnessItem.Questions, HarnessItem.Subagents, HarnessItem.Media),
-            rows.filterNot { it.second }.map { it.first },
+    fun opencode_never_shows_steer_while_working() {
+        // Its prompt API sends an ordinary prompt; steering a working turn is unproved (N1-CORRECTION).
+        val steer = Harness.of("opencode").worksHere().first { it.first == HarnessItem.Steer }
+        assertFalse(steer.second)
+    }
+
+    @Test
+    fun terminal_comes_first_and_an_unproved_item_never_shows_as_available() {
+        val fixture = Harness(
+            "fixture",
+            history = Proof.Verified,
+            send = SendRoute.Api,
+            sendProof = Proof.Unverified,
+            steer = Proof.None,
+            status = Proof.Verified,
+            questions = Proof.None,
+            subagents = Proof.None,
+            media = Proof.Unverified,
         )
+        val rows = fixture.worksHere()
+        assertEquals(HarnessItem.Terminal to true, rows.first())
+        assertEquals(HarnessItem.entries.size, rows.size)
+        assertEquals(HarnessItem.entries.toSet(), rows.map { it.first }.toSet())
+        val available = rows.filter { it.second }.map { it.first }.toSet()
+        assertFalse("an unverified Send must not read as working", HarnessItem.Send in available)
+        assertFalse(HarnessItem.Media in available)
+        assertTrue(HarnessItem.History in available)
     }
 }
