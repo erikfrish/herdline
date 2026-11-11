@@ -101,9 +101,12 @@ share the composer and its draft.
   a duration appears only when transcript timestamps support it. Tool heads
   are quiet rows with one frame around their output. Prose, code and user
   bubbles use the updated spacing; dense Chat keeps its compact line height.
-- **Verification:** 0.2.0 is a developer-checked candidate, not a runtime-QA
-  pass. Grid/List/picker, folding and scrolling, large-font chip layout,
-  TalkBack, RTL and device lifecycle still need isolated runtime checks.
+- **Verification:** 0.2.0 is not recommended. Partial runtime QA checked
+  Grid/List workspace filters and explicit closed-workspace handling, but
+  found that Terminal tab/pane selection can stay on the old target (S2).
+  Chat-dependent checks were blocked by the no-model fixture's missing
+  transcript. Send/no-replay observations carry an isolation-proof qualifier;
+  folding, large-font chips, TalkBack, RTL and device lifecycle remain unverified.
 
 ### Notifications
 

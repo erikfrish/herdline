@@ -11,8 +11,8 @@
     "size": 23034943,
     "minSdk": 29,
     "qa": {
-      "state": "not_tested",
-      "reason": "Developer checked; no runtime QA"
+      "state": "failed",
+      "reason": "S2: Terminal tab/pane selection can stay on the old target. QA partial; Chat and folding not exercised."
     },
     "accepted": false,
     "notes": {
