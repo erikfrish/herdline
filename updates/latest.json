@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10025,
-    "versionName": "0.2.0",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.2.0/herdline-0.2.0.apk",
-    "sha256": "450c7a11050ec8b668414ae6387a00dd79f23b8a499fc2498ea21dbb717d6023",
-    "size": 23034943,
+    "versionCode": 10032,
+    "versionName": "0.5.2",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.5.2/herdline-0.5.2.apk",
+    "sha256": "1aebfb943bab43d82867f13cf98bc71f649339472b5ab6e39e78b6fc214f0421",
+    "size": 23371631,
     "minSdk": 29,
     "qa": {
-      "state": "failed",
-      "reason": "S2: Terminal tab/pane selection can stay on the old target. QA partial; Chat and folding not exercised."
+      "state": "passed",
+      "reason": "Visual QA accepted; stock Samsung Now Bar, Terminal scrollback and full OMP integration remain unverified."
     },
-    "accepted": false,
+    "accepted": true,
     "notes": {
-      "en": "Herdline 0.2.0 — developer-checked candidate.\n\nPhone Tabs can be browsed as workspace-grouped cards or as a list, with search and attention filters. Split tabs have an explicit pane picker. In Chat, selecting a card or pane changes only the local reading target; it does not focus the desktop or create another agent. Tab previews use existing metadata, not captured terminal screenshots.\n\nThe chat design adopts quiet tool heads with one output frame, expanded touch targets, completed-work summaries, more readable prose and code, and softer user bubbles. Dense chat retains its compact line height. Attachment chips distinguish uploads, failures and files staged for another pane, and keep a 48dp Remove action. Upload consent, delivery identity, receipts and uncertain holds remain unchanged.\n\nVerification: developer checks only, no runtime QA. Grid/List/picker layout, large-font and RTL appearance, TalkBack, rotation, work folding while reading older history, viewport changes, attachments and updater installation on a device remain unverified. Prompt delivery still uses guarded terminal input; explicit Fit can move and crop the desktop, never send automatically. Samsung Now Bar is unverified.\n\nKnown deviations: a tool head's summary has no tappable links, by design, since the whole head toggles its output; links work inside the output frame. When a reply arrives, a finished run's folded row grows from about 54 to 61 dp at font scale 1.45, at the end of the list; this is runtime-unverified. The Tabs workspace scope is shared by the grid and the list, including pinned and recent places and the filter counts; a closed chosen workspace shows an explicit closed state instead of widening to all workspaces.\n\nThe user and designer are independently developing the logo; this candidate does not change branding or approve a final launcher mark. No automatic phone installation. Dedicated isolated QA resumes after publication of this last developer-smoke candidate."
+      "en": "Herdline 0.5.2 \u2014 final visual audit corrections\n\nHost workspace and agent chips now use localized singular/plural quantities, including 1 workspace and 1 agent. Launcher icon previews use the stronger Material outline role, keeping dark artwork distinguishable in Material You dark as well as High Contrast.\n\nThe preceding multi-theme screenshot and designer cycle verified the main visual refinements: form answer deduplication without losing choices, clearer validation and selected dropdown state, readable agent statuses, shorter header attention, aligned growable theme cards and the Preview separator. This update only corrects the two residual issues identified on 0.5.1; its changed-screen verification is recorded separately. No OMP, delivery, privacy or Samsung system-setting changes are included. Stock Samsung Now Bar placement is still not confirmed."
     }
   }
 }
