@@ -104,6 +104,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ChatDialog
+import io.github.erikfrish.herdline.core.visibleDialogs
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
 import io.github.erikfrish.herdline.core.TranscriptSteer
@@ -272,7 +273,7 @@ private fun ChatContent(
                 val result = withContext(Dispatchers.IO) { connection.ingressDialogs(target) }
                 result.onSuccess { array ->
                     try {
-                        dialogs = (0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) }
+                        dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) })
                         dialogProblem = null
                     } catch (error: IllegalArgumentException) {
                         dialogs = emptyList()
@@ -291,7 +292,7 @@ private fun ChatContent(
     }
     fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject) {
         val target = dialogTarget ?: return
-        if (!linkLive || submittingDialog != null || dialogs.none { it.id == dialog.id }) return
+        if (!linkLive || dialogProblem != null || submittingDialog != null || uncertainDialogs[dialog.id] == true || !dialog.submittable || dialogs.none { it.id == dialog.id }) return
         submittingDialog = dialog.id
         dialogErrors.remove(dialog.id)
         scope.launch {

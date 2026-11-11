@@ -161,6 +161,8 @@ fun formFieldError(field: FormField, value: Any?): String? {
 
 /** Snapshot identity is retained even when this host cannot render the dialog's kind. */
 data class ChatDialog(val id: String, val kind: String, val title: String, val form: ChatForm?, val raw: JSONObject) {
+    val parentId: String? get() = raw.optString("parentId").takeIf { it.isNotBlank() && !raw.isNull("parentId") }
+    val submittable: Boolean get() = raw.optBoolean("submittable", false)
     companion object {
         fun parse(json: JSONObject): ChatDialog {
             val id = json.getString("dialogId")
@@ -168,6 +170,12 @@ data class ChatDialog(val id: String, val kind: String, val title: String, val f
             return ChatDialog(id, json.getString("kind"), json.optString("title"), json.optJSONObject("form")?.let(ChatForm::parse), json)
         }
     }
+}
+
+/** Nested host surfaces represent the same question; only the outer open dialog is shown. */
+fun visibleDialogs(dialogs: List<ChatDialog>): List<ChatDialog> {
+    val ids = dialogs.mapTo(HashSet()) { it.id }
+    return dialogs.filter { it.parentId !in ids }
 }
 
 private fun spans(array: JSONArray?): List<FormSpan> = array?.objects().orEmpty().map { FormSpan(it.getString("text"), it.optString("style").takeIf(String::isNotEmpty)) }

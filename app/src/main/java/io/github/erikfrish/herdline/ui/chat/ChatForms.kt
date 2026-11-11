@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -215,7 +214,7 @@ fun ChatFormCard(
         if (form == null) {
             Unsupported(dialog.kind, colors)
         } else {
-            FormEditor(dialog.id, form, colors, submitting, submitError, onSubmit)
+            FormEditor(dialog.id, form, colors, submitting, submitError, onSubmit, dialog.submittable)
         }
     }
 }
@@ -257,10 +256,11 @@ private fun AnswerRow(answer: ChatFormAnswer, colors: ChatColors) {
         Text(question, style = ChatType.body.copy(color = colors.text, fontWeight = FontWeight.Medium))
         answer.options.forEach { option ->
             Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (option.selected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                    null, tint = if (option.selected) colors.accentText else colors.dim, modifier = Modifier.size(20.dp),
-                )
+                if (option.selected) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = colors.accentText, modifier = Modifier.size(20.dp))
+                } else {
+                    Box(Modifier.size(20.dp).border(1.dp, colors.dim, CircleShape))
+                }
                 Spacer(Modifier.width(12.dp))
                 Text(option.label, style = ChatType.body.copy(color = if (option.selected) colors.text else colors.muted), modifier = Modifier.weight(1f))
             }
@@ -305,13 +305,14 @@ private fun FormEditor(
     submitting: Boolean,
     submitError: String?,
     onSubmit: (JSONObject) -> Unit,
+    submittable: Boolean,
 ) {
     val saver = remember(form) { answersSaver(secretFields(form)) }
     var answers by rememberSaveable(id, stateSaver = saver) { mutableStateOf(initialAnswers(form)) }
     var tried by rememberSaveable(id) { mutableStateOf(false) }
     var touched by rememberSaveable(id) { mutableStateOf(listOf<String>()) }
     val closed = submitError == FORM_NOT_OPEN
-    val editable = !submitting && !closed
+    val editable = submittable && !submitting && !closed
     val errors = formErrors(form, answers).filterKeys { tried || it in touched }
     FormContent(form, answers, colors, editable, errors) { change ->
         answers = change.answers
@@ -332,7 +333,7 @@ private fun FormEditor(
             style = ChatType.meta.copy(color = colors.err),
         )
     }
-    if (!closed) {
+    if (submittable && !closed) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = {

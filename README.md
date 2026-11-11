@@ -90,18 +90,23 @@ share the composer and its draft.
 - Chat follows the pane **read here**, chosen on the phone (a tab, pane,
   switcher row, Agents row, banner or notification). It is kept apart from
   Herdr's shared focus, which the desktop and Terminal show: reading a pane in
-  Chat never moves the desktop. When the desktop is elsewhere, Chat says so,
-  and the composer says Send types into the read pane's terminal.
+  Chat never moves the desktop. When the desktop is elsewhere, Chat says so.
+  An installed, compatible `herdline-ingress` endpoint sends directly to the
+  read agent, including steering while it works, without Terminal Fit or Enter.
 - Terminal shows the desktop's pane as it is. Moving the desktop takes an
   explicit action labelled as such, for example **Show ‹pane› (moves the
   desktop)**.
-- Chat only reads. It asks Herdr which session file the pane's agent writes
-  and reads that file by byte range, only under `~/.omp/agent/sessions/`. It
-  starts no second OMP.
+- Transcript reading asks Herdr which session file the pane's agent writes
+  and reads that file by byte range, only under `~/.omp/agent/sessions/`.
+  Chat starts no second OMP. The optional endpoint runs inside that same OMP.
 - Newest messages load first; **Load older messages** brings back earlier
   ones, keeping your place.
-- When the agent asks a question, Chat shows it read-only and opens the
-  terminal to answer it. Chat never answers dialogs.
+- With the compatible endpoint, Chat renders open HTML forms and submits only
+  the user's explicit answer to the exact dialog. Nested host dialogs are hidden
+  while their parent is open; non-submittable dialogs have no Submit action.
+  Without the endpoint, questions remain read-only and are answered in Terminal.
+- Pending steering entries come from OMP's live queue, not transcript labels.
+  Withdraw removes an entry only while OMP still reports it queued.
 - Completed work can be folded into a summary with tool and thought counts;
   a duration appears only when transcript timestamps support it. Tool heads
   are quiet rows with one frame around their output. Prose, code and user

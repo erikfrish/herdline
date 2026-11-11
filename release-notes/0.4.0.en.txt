@@ -1,0 +1,11 @@
+Herdline 0.4.0 — private candidate
+
+Chat can send directly into its OMP agent through the optional herdline-ingress extension. With a compatible endpoint, an idle send starts a turn and a Working send steers it without Terminal Fit or a manual Enter. Photo-only messages are supported. Insert remains terminal input.
+
+Pending steering messages come from OMP's actual queue, with withdrawal while an entry is still queued. A saved steering label is not evidence that a message remains queued.
+
+Chat renders OMP's normalized HTML forms and submits only an explicit answer to the exact open dialog. Nested host dialogs are hidden while the outer ask is open; non-submittable dialogs have no Submit. OMP validates answers and keeps the first answer. Passwords are excluded from Android saved state.
+
+The endpoint requires the herdline-omp public queue, dialog, collab-state and persistence hooks. It is not installed automatically. Only an absent endpoint allows terminal fallback; unsupported, unusable or uncertain endpoints do not silently resend through the terminal.
+
+This candidate is not published or installed on the phone. Verification is recorded separately; compilation is not an end-to-end device verdict.

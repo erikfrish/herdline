@@ -602,6 +602,11 @@ hidden values. Only an explicit Submit sends `{data}` to the exact dialog
 ID. OMP validates the answer and races it against the local host: first
 answer wins. This is not a prompt, approval by default or terminal Enter.
 
+An outer ask and its nested host dialog share one question. Android hides a
+child while its `parentId` is open and submits only the visible outer dialog.
+`submittable: false` disables answers and removes Submit; waits and unsupported
+host surfaces are never turned into approvals or prompt sends.
+
 A failed submit is unconfirmed and is not retried automatically. The user's
 answers remain visible, with actions disabled until the dialog is resolved.
 An instance or dialog change never inherits an earlier answer. Password
