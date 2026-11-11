@@ -136,9 +136,10 @@ internal fun TabRow(
     onTabs: (() -> Unit)?,
     onRename: (Tab) -> Unit,
     onClose: (Tab) -> Unit,
+    // Required: the row draws on the header's colour, not surface, and a default would hide a missed caller.
+    backdrop: Color,
     heldPane: (Tab) -> String? = { null },
     tabState: (Tab) -> String? = { null },
-    backdrop: Color = MaterialTheme.colorScheme.surface,
 ) {
     val list = rememberLazyListState()
     val haptics = LocalHapticFeedback.current

@@ -807,6 +807,7 @@ fun SessionScreen(
                                             selectedId = tab?.id,
                                             heldPane = { view?.heldPaneOf(it.id, held) },
                                             accent = accent,
+                                            backdrop = headerColor,
                                             // In Chat the selection is the tab read here; the desktop's, if another, says so (CT-1).
                                             tabState = { t ->
                                                 when {
