@@ -10,7 +10,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 
 class OverviewModelTest {
     // Two workspaces share the label "api"; w1 has a split agent tab (t1),
@@ -57,42 +56,18 @@ class OverviewModelTest {
     private fun List<OverviewSection>.cards() = flatMap { it.cards }
 
     @Test
-    fun columnsFollowTheSpecTableAcrossWidthsAndFontScales() {
-        val expected = mapOf(
-            360f to listOf(2, 1, 1),
-            411f to listOf(2, 1, 1),
-            486f to listOf(2, 2, 2),
-            600f to listOf(3, 2, 2),
-            840f to listOf(4, 4, 3),
-        )
-        for ((width, columns) in expected) {
-            assertEquals("width $width", columns, listOf(1f, 1.3f, 1.45f).map { overviewColumns(width, it) })
-        }
-        // Never zero, never past four, however narrow or wide.
-        assertEquals(1, overviewColumns(120f, 2f))
-        assertEquals(4, overviewColumns(2000f, 1f))
+    fun twoColumnsOnlyWhenTwoRowsStayReadable() {
+        // A phone at font scale 1 keeps two columns; the accessibility scale
+        // or a narrow window falls back to one, which is the readability floor.
+        assertEquals(2, compactColumns(411f, 1f))
+        assertEquals(1, compactColumns(360f, 1.3f))
+        assertEquals(1, compactColumns(411f, 1.3f))
+        assertEquals(2, compactColumns(840f, 1.3f))
+        // Never past two, never one that cannot carry a row.
+        assertEquals(2, compactColumns(2000f, 1f))
+        assertEquals(1, compactColumns(320f, 1f))
     }
 
-    @Test
-    fun cardHeightsGrowWithTheFontAsTheSpecSays() {
-        for ((scale, height) in listOf(1f to 194f, 1.3f to 222f, 1.45f to 236f)) {
-            assertTrue("fs $scale: ${overviewCardDp(scale)}", abs(overviewCardDp(scale) - height) < 0.5f)
-        }
-    }
-
-    @Test
-    fun narrowCardsShowTwoTilesWideOnesThreeAndTheRestAsPlusK() {
-        val grid = sections().cards().single { it.tab.id == "t4" }
-        val (narrow, narrowMore) = grid.tiles(160f)
-        assertEquals(listOf("p6"), narrow.map { it.pane.id })
-        assertEquals(3, narrowMore)
-        val (wide, wideMore) = grid.tiles(260f)
-        assertEquals(listOf("p6", "p7"), wide.map { it.pane.id })
-        assertEquals(2, wideMore)
-        // Panes that fit are all shown, with no "+k".
-        val agents = sections().cards().single { it.tab.id == "t1" }
-        assertEquals(listOf("p1", "p2") to 0, agents.tiles(160f).let { (t, k) -> t.map { it.pane.id } to k })
-    }
 
     @Test
     fun onlyWorkspacesSharingALabelGetASuffix() {
@@ -111,13 +86,13 @@ class OverviewModelTest {
         assertEquals(listOf("t1"), sections(filter = SwitcherFilter.Working, scope = "w1").cards().map { it.tab.id })
         assertEquals(emptyList<String>(), sections(query = "hotfix", scope = "w1").cards().map { it.tab.id })
         assertEquals(listOf("t5"), sections(query = "hotfix").cards().map { it.tab.id })
-        assertEquals(1 to 1, w1.groups.agentCounts(""))
-        assertEquals(0 to 0, w1.groups.agentCounts("hotfix"))
+        assertEquals(FilterCounts(1, 1, 0), w1.groups.agentCounts(""))
+        assertEquals(FilterCounts(0, 0, 0), w1.groups.agentCounts("hotfix"))
         // A closed workspace is gone: nothing listed or counted, not All.
         val gone = tabsScope(groups, "gone", loaded = true)
         assertEquals(null to true, gone.chosen to gone.gone)
         assertTrue(gone.groups.isEmpty())
-        assertEquals(0 to 0, gone.groups.agentCounts(""))
+        assertEquals(FilterCounts(0, 0, 0), gone.groups.agentCounts(""))
         // Before the first view a saved choice is not gone yet.
         assertEquals(false, tabsScope(emptyList(), "w1", loaded = false).gone)
         assertEquals(listOf("w1", "w2", "w3"), tabsScope(groups, null, loaded = true).groups.map { it.workspace.id })
@@ -127,7 +102,6 @@ class OverviewModelTest {
     fun aOnePaneShellTabStillGetsItsPaneTileAndIsCurrent() {
         val logs = sections().cards().single { it.tab.id == "t2" }
         assertEquals(listOf("p3"), logs.panes.map { it.pane.id })
-        assertEquals("log", logs.panes.single().place)
         assertTrue(logs.current)
         assertEquals(false, logs.split)
         assertEquals(listOf("t2"), sections().cards().filter { it.current }.map { it.tab.id })
@@ -152,6 +126,8 @@ class OverviewModelTest {
         assertEquals(listOf("t1", "t5"), sections(filter = SwitcherFilter.NeedsYou).cards().map { it.tab.id })
         assertEquals(listOf("t1", "t3"), sections(filter = SwitcherFilter.Working).cards().map { it.tab.id })
         assertEquals(listOf("t1", "t2", "t4", "t3", "t5"), sections().cards().map { it.tab.id })
+        // Nothing idle or done lives in this fixture: Ready lists no card at all.
+        assertEquals(emptyList<String>(), sections(filter = SwitcherFilter.Ready).cards().map { it.tab.id })
     }
 
     @Test
@@ -168,10 +144,14 @@ class OverviewModelTest {
 
     @Test
     fun chipCountsFollowTheScopeAndTheQuery() {
-        assertEquals(2 to 2, groups.agentCounts(""))
-        assertEquals(1 to 1, groups.scoped("w1").agentCounts(""))
-        assertEquals(0 to 1, groups.scoped("w2").agentCounts(""))
-        assertEquals(1 to 0, groups.agentCounts("hotfix"))
+        assertEquals(FilterCounts(2, 2, 0), groups.agentCounts(""))
+        assertEquals(FilterCounts(1, 1, 0), groups.scoped("w1").agentCounts(""))
+        assertEquals(FilterCounts(0, 1, 0), groups.scoped("w2").agentCounts(""))
+        assertEquals(FilterCounts(1, 0, 0), groups.agentCounts("hotfix"))
+        // Ready counts idle and done agents the same way: one done agent in w1's shell tab.
+        val withDone = topology(view.copy(agents = view.agents + Agent("p3", "w1", "t2", null, "omp", null, AgentStatus.Done, false)))
+        assertEquals(FilterCounts(2, 2, 1), withDone.agentCounts(""))
+        assertEquals(FilterCounts(0, 0, 1), withDone.agentCounts("/var"))
     }
 
     @Test

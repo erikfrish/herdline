@@ -227,10 +227,17 @@ pub struct Check {
     pub status: Option<&'static str>,
     pub program: Program,
     pub editor: Editor,
-    /// OMP's box in frame rows, top border to `╰─` row, when it was read.
+    /// The editor box in frame rows: OMP's `╭──` top to `╰─` row, Pi's
+    /// and Claude's rule to rule, when it was read.
     pub editor_span: Option<[u16; 2]>,
     pub insert: Gate,
     pub send: Gate,
+    /// A send honoured on the host alone, without the phone gate: the same
+    /// verdict as `send` past every host check (boot, pane, popup, status,
+    /// the empty editor read off the pane's rows), but the app's Chat
+    /// window is not a terminal crop on the phone and never names one. A
+    /// Chat request by an instance no longer in the pane is still refused.
+    pub chat_send: Gate,
     /// The first step of a steer: its paste.
     pub steer: Gate,
     /// Whether the target is wholly on the phone; folded into the gates
@@ -238,14 +245,24 @@ pub struct Check {
     pub phone: Gate,
 }
 
-/// Programs whose submit behaviour is known.
+/// Programs whose submit behaviour is known. OMP, Chat Pi and Claude take a
+/// submit from the screen alone, read off the pane's rows; OMP alone is also
+/// verified for steer. Codex and OpenCode send through their own API from
+/// the app (a Kotlin `chat_send` request), never as an Enter here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Program {
     Omp,
+    /// Chat Pi (badlogic/pi-mono): its editor area between two plain
+    /// horizontal rules.
+    Pi,
+    /// Claude Code: a prompt line `❯` between two plain horizontal rules.
+    Claude,
     /// No agent was recognised: a shell or any other program.
     Terminal,
-    /// An agent this module has not been verified against.
+    /// An agent this module has not been verified against. The app may send
+    /// such an agent's prompt through its own API; the pane itself takes
+    /// text here only without Enter.
     OtherAgent,
 }
 
@@ -254,8 +271,43 @@ impl Program {
         match agent {
             None => Self::Terminal,
             Some(name) if name.eq_ignore_ascii_case("omp") => Self::Omp,
+            Some(name) if name.eq_ignore_ascii_case("pi") => Self::Pi,
+            Some(name) if name.eq_ignore_ascii_case("claude") => Self::Claude,
             Some(_) => Self::OtherAgent,
         }
+    }
+
+    /// Whether this module has verified the program's empty-box shape for a
+    /// submit without Enter: screen-verified programs only.
+    fn submits(self) -> bool {
+        matches!(self, Self::Omp | Self::Pi | Self::Claude)
+    }
+
+    /// Whether the phone gate may hold this program's whole editor box on
+    /// screen: only box-shaped editors whose span this module reads.
+    pub(crate) fn holds_box(self) -> bool {
+        matches!(self, Self::Omp | Self::Pi | Self::Claude)
+    }
+
+    /// Read the program's own input region from the pane's rows. Only the
+    /// shapes this module has verified parse; every other shape is
+    /// [`Unseen`], never empty.
+    fn read_editor(self, rows: &[String]) -> Result<Editor, Unseen> {
+        match self {
+            Self::Omp => omp_editor(rows),
+            Self::Pi => pi_editor(rows),
+            Self::Claude => claude_editor(rows),
+            Self::Terminal | Self::OtherAgent => Err(Unseen::None),
+        }
+    }
+
+    /// The editor's two stroke rows for a rule-based program: the top rule
+    /// and the last rule. `None` when the box shape failed.
+    fn rule_box(self, rows: &[String]) -> Option<(usize, usize)> {
+        let end = rows.iter().rposition(|row| !row.trim().is_empty())?;
+        let bottom = (0..=end).rev().find(|&row| plain_rule(&rows[row]))?;
+        let top = (0..bottom).rev().find(|&row| plain_rule(&rows[row]))?;
+        Some((top, bottom))
     }
 }
 
@@ -278,6 +330,13 @@ pub struct Request {
     pub text: String,
     /// Press Enter after the paste.
     pub submit: bool,
+    /// A Chat window send, from the app's own editor while the terminal
+    /// view does not draw the pane (hidden or cropped). Host checks alone
+    /// decide: the phone gate cannot gate a pane no terminal crop ever
+    /// named. `false` (the default) for every ordinary delivery keeps the
+    /// phone gate exactly as it was.
+    #[serde(default)]
+    pub chat: bool,
     /// What the phone drew at the tap; `None` is refused.
     #[serde(default)]
     pub viewport: Option<Viewport>,
@@ -331,23 +390,26 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
     let scroll = surface.scroll.and_then(|scroll| scroll.get(pane)).copied();
     let scrolled = scroll.is_some_and(|scroll| scroll.scrolled);
     let reading = match program {
-        Program::Omp => match &rows {
+        Program::Omp | Program::Pi | Program::Claude => match &rows {
             Some(_) if scrolled => Err(None),
-            Some(rows) => omp_editor(rows)
+            Some(rows) => program
+                .read_editor(rows)
                 .map_err(|unseen| Some(measured(unseen, rows, scroll, sized_here(surface)))),
             None => Err(None),
         },
         Program::Terminal | Program::OtherAgent => Ok(Editor::NotApplicable),
     };
     let editor = reading.unwrap_or(Editor::Unrecognized);
-    let span = match (program, surface.frame, &rows) {
-        (Program::Omp, Some(frame), Some(rows)) if !scrolled => editor_span(frame, pane, rows),
+    let span = match (surface.frame, &rows) {
+        (Some(frame), Some(rows)) if program.holds_box() && !scrolled => {
+            editor_span(program, frame, pane, rows)
+        }
         _ => None,
     };
     let on_phone = phone_gate(surface, pane, program, span.clone(), phone);
     let insert = insert_gate(registry, surface, pane, facts);
     let send = insert.and_then(|()| {
-        if program != Program::Omp {
+        if !program.submits() {
             return Err(Refusal::UnsupportedProgram);
         }
         match status {
@@ -357,7 +419,15 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
             Some(AgentStatus::Unknown) | None => return Err(Refusal::UnsupportedProgram),
         }
         box_on_screen(rows.is_some(), scroll)?;
-        empty_box(reading)
+        empty_box(reading)?;
+        if matches!(program, Program::Pi | Program::Claude)
+            && !cursor_in_box(surface.frame, span.as_ref())
+        {
+            // The cursor is not inside the editor the rows just read: some
+            // other view owns input now, and its Enter answers that.
+            return Err(Refusal::EditorUnrecognized);
+        }
+        Ok(())
     });
     let steer = insert.and_then(|()| {
         steer_status(program, status)?;
@@ -375,6 +445,7 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
         editor_span: span.map(|span| [*span.start(), *span.end()]),
         insert: Gate::from(insert.and(on_phone)),
         send: Gate::from(send.and(on_phone)),
+        chat_send: Gate::from(send),
         steer: Gate::from(steer.and(on_phone)),
         phone: Gate::from(on_phone),
     }
@@ -382,11 +453,19 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
 
 /// OMP's box in frame rows: from its top border to its `╰─` row.
 fn editor_span(
+    program: Program,
     frame: &RenderFrame,
     pane: &str,
     rows: &[String],
 ) -> Option<std::ops::RangeInclusive<u16>> {
-    let (top, last, _) = omp_box(rows).ok()?;
+    let (top, last) = match program {
+        Program::Omp => {
+            let (top, last, _) = omp_box(rows).ok()?;
+            (top, last)
+        }
+        Program::Pi | Program::Claude => program.rule_box(rows)?,
+        Program::Terminal | Program::OtherAgent => return None,
+    };
     let y = frame.panes.iter().find(|area| area.id == pane)?.rect.y;
     let row = |index: usize| {
         u16::try_from(index)
@@ -500,13 +579,15 @@ fn insert_gate(
     if surface.popup_open {
         return Err(Refusal::PopupOpen);
     }
-    // Text goes into OMP only through its own box, read live now: never
-    // past a dialog, never on the strength of a reported status, which may
-    // lag the screen, and never from scrollback, which is not the screen.
-    if Program::of(facts.agent.as_deref()) == Program::Omp {
+    // Text goes into a boxed program only through its own editor, read live
+    // now: never past a dialog, never on the strength of a reported status,
+    // which may lag the screen, and never from scrollback, which is not the
+    // screen.
+    let program = Program::of(facts.agent.as_deref());
+    if program.holds_box() {
         let rows = surface.frame.and_then(|frame| pane_rows(frame, pane));
         let scroll = surface.scroll.and_then(|scroll| scroll.get(pane)).copied();
-        live_box(rows.as_deref(), scroll, sized_here(surface))?;
+        live_box(program, rows.as_deref(), scroll, sized_here(surface))?;
     }
     // A paste into an approval or question would answer it.
     if facts.status == Some(AgentStatus::Blocked) {
@@ -515,10 +596,12 @@ fn insert_gate(
     Ok(())
 }
 
-/// OMP's box, whole at the live bottom of the pane: the only place text,
-/// even without Enter, may go. A dialog names itself, and a frame that may
-/// be one refuses without claiming it. Scrolled-back rows are never read.
+/// A boxed program's editor, whole at the live bottom of the pane: the
+/// only place text, even without Enter, may go. A dialog names itself, and
+/// a frame that may be one refuses without claiming it. Scrolled-back rows
+/// are never read.
 fn live_box(
+    program: Program,
     rows: Option<&[String]>,
     scroll: Option<PaneScroll>,
     sized_here: bool,
@@ -529,7 +612,8 @@ fn live_box(
     if scroll.scrolled {
         return Err(Refusal::Scrolled);
     }
-    omp_editor(rows)
+    program
+        .read_editor(rows)
         .map(|_| ())
         .map_err(|unseen| measured(unseen, rows, Some(scroll), sized_here).refusal())
 }
@@ -550,7 +634,19 @@ pub fn admit(registry: &Registry, surface: &Surface<'_>, request: &Request) -> R
     )?;
     same_boot(registry, &request.boot)?;
     let check = check(registry, surface, &request.pane, &request.phone());
-    let gate = if request.submit {
+    let gate = if request.chat && request.submit {
+        // A Chat send names no phone draw: the app answers from its own
+        // editor while the terminal view does not show the pane. Only a
+        // screen-verified program, holding the instance the draft was
+        // written for, may take one — on the host checks alone.
+        if request.instance.is_none() {
+            return Err(Refusal::InstanceUnknown);
+        }
+        if !check.program.submits() {
+            return Err(Refusal::UnsupportedProgram);
+        }
+        &check.chat_send
+    } else if request.submit {
         &check.send
     } else {
         &check.insert
@@ -694,7 +790,7 @@ pub fn admit_steer_enter(
     }
     let span = surface
         .frame
-        .and_then(|frame| editor_span(frame, pane, &rows));
+        .and_then(|frame| editor_span(Program::Omp, frame, pane, &rows));
     phone_gate(surface, pane, Program::Omp, span, phone)
 }
 
@@ -939,6 +1035,135 @@ fn box_tail<'a>(top: &str, bottom: &'a str) -> &'a str {
     if hint { "" } else { content }
 }
 
+/// A plain stroke rule: a row of `─` and nothing else. Pi's editor rules
+/// and dynamic dividers draw exactly this. Pi's scroll borders (`─ ↑ 3 more
+/// ───`), any corner frame and any text fail here.
+fn plain_rule(row: &str) -> bool {
+    let row = row.trim();
+    row.chars().count() >= 3 && row.chars().all(|ch| ch == '─')
+}
+
+/// Pi's editor scroll marker: a rule replaced by `↑ N more` / `↓ N more`
+/// because the editor holds rows the pane cannot show. That box is
+/// scrolled inside itself; nothing about it is readable.
+fn scroll_marker(row: &str) -> bool {
+    row.contains(" more ") && (row.contains('↑') || row.contains('↓'))
+}
+
+/// Pi's status footer below the editor's lower rule (Pi v1.5.2, captured
+/// live in an isolated terminal with no model and no prompt): a cwd row
+/// that starts with a path, then a stats row carrying a `%/`- or `?/`
+/// context figure, then at most more stats rows. Only that shape reads as
+/// the footer; anything else below the lower rule is unknown — fail closed
+/// rather than guess between the footer and a list the user owns.
+fn pi_footer(rows: &[String], bottom: usize) -> bool {
+    let mut below = rows[bottom + 1..]
+        .iter()
+        .map(|row| row.trim())
+        .filter(|row| !row.is_empty());
+    let stats = |row: &str| row.contains("%/") || row.contains("?/");
+    // The cwd row names a path: `/home/lab/probe`, `~/probe` or root.
+    let pwd = |row: &str| {
+        row == "/"
+            || row == "~"
+            || ((row.starts_with('/') || row.starts_with('~'))
+                && row.chars().skip(1).any(|ch| ch == '/'))
+    };
+    below.next().is_some_and(pwd) && below.next().is_some_and(stats) && below.all(stats)
+}
+
+/// Chat Pi's editor between its two plain rules. The empty shape is taken
+/// exactly: a blank cursor row and the verified footer under it. A draft,
+/// a scroll marker, Pi's own autocomplete list, any dialog drawn over the
+/// box and any unknown row under the lower rule are never read as empty.
+pub fn pi_editor(rows: &[String]) -> Result<Editor, Unseen> {
+    if rows.iter().any(|row| scroll_marker(row)) {
+        // Pi drew `↑ N more`/`↓ N more` in place of a rule: rows of this
+        // editor stand outside the pane, and no shape is readable.
+        return Err(Unseen::TopMissing);
+    }
+    let (top, bottom) = Program::Pi.rule_box(rows).ok_or(Unseen::None)?;
+    if !pi_footer(rows, bottom) {
+        // Not Pi's own footer below the rule: its autocomplete list, a
+        // picker or anything unknown — Enter would answer it.
+        return Err(Unseen::ListBelow);
+    }
+
+    if rows[top + 1..bottom]
+        .iter()
+        .any(|row| !row.trim().is_empty())
+    {
+        return Ok(Editor::Draft);
+    }
+    Ok(Editor::Empty)
+}
+
+/// Claude's on-screen blocker of its own input: its dialogue, approval or
+/// interrupt line, where Enter answers the question instead of sending a
+/// draft. Claude's exact words, matched lowercase anywhere on screen.
+fn claude_blocker(row: &str) -> bool {
+    let row = row.to_lowercase();
+    [
+        "esc to cancel",
+        "enter to confirm",
+        "enter to select",
+        "do you want to proceed?",
+        "requests your input",
+        "run a dynamic workflow?",
+        "review your answers",
+        "skip interview and plan immediately",
+        "waiting for permission",
+        "enter to set as default",
+        "showing detailed transcript",
+        "esc to close",
+        "esc to interrupt",
+    ]
+    .iter()
+    .any(|marker| row.contains(marker))
+}
+
+/// Claude (Claude Code) editor between its two plain rules. The empty shape
+/// is exactly one bare `❯` prompt row with nothing after it: Claude's dim
+/// ghost suggestions show as unknown text behind the prompt and read as a
+/// draft, never as empty. A blocker anywhere owns input; a row below the
+/// lower rule that Claude does not leave blank is not known to be safe.
+pub fn claude_editor(rows: &[String]) -> Result<Editor, Unseen> {
+    if rows.iter().any(|row| claude_blocker(row)) {
+        return Err(Unseen::DialogOpen);
+    }
+    if rows.iter().any(|row| scroll_marker(row)) {
+        // Claude replaced a rule with `↑/↓ N more`: its editor holds rows
+        // the pane cannot show, and nothing about the box is readable.
+        return Err(Unseen::TopMissing);
+    }
+    let (top, bottom) = Program::Claude.rule_box(rows).ok_or(Unseen::None)?;
+    if rows[bottom + 1..].iter().any(|row| !row.trim().is_empty()) {
+        return Err(Unseen::ListBelow);
+    }
+    let mut inside = rows[top + 1..bottom]
+        .iter()
+        .filter(|row| !row.trim().is_empty());
+    let Some(first) = inside.next() else {
+        return Err(Unseen::None);
+    };
+    if first.trim() != "❯" || inside.any(|row| row.trim() != "❯") {
+        // Unknown text behind the prompt, or a second row: a draft is there.
+        return Ok(Editor::Draft);
+    }
+    Ok(Editor::Empty)
+}
+
+/// The frame's cursor is where a paste and Enter land: for a rule-bounded
+/// editor it must be visible and drawn inside the box its rows just read.
+fn cursor_in_box(
+    frame: Option<&RenderFrame>,
+    span: Option<&std::ops::RangeInclusive<u16>>,
+) -> bool {
+    let (Some(frame), Some(span)) = (frame, span) else {
+        return false;
+    };
+    frame.cursor.visible && span.contains(&frame.cursor.y)
+}
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod tests;

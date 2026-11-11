@@ -195,7 +195,7 @@ pub fn gate(
     bind: &Bind<'_>,
 ) -> Result<(), Refusal> {
     let hidden = match program {
-        Program::Omp => Refusal::EditorHidden,
+        Program::Omp | Program::Pi | Program::Claude => Refusal::EditorHidden,
         Program::Terminal | Program::OtherAgent => Refusal::TargetNotVisible,
     };
     let (Some(frame), Some(viewport)) = (frame, viewport) else {
@@ -224,7 +224,7 @@ pub fn gate(
     if !cursor.visible || !inside(area.rect, cursor.x, cursor.y) || !drawn.contains(&cursor.y) {
         return Err(hidden);
     }
-    if program == Program::Omp {
+    if program.holds_box() {
         let editor = editor.ok_or(hidden)?;
         if !editor.contains(&cursor.y)
             || !drawn.contains(editor.start())

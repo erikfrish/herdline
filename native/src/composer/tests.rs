@@ -541,6 +541,7 @@ fn request(submit: bool) -> Request {
         instance: None,
         text: "first line\nsecond line".into(),
         submit,
+        chat: false,
         viewport: None,
         attachments: Vec::new(),
     }
@@ -902,6 +903,9 @@ fn a_draft_goes_only_to_the_agent_instance_it_was_written_for() {
         terminal_id: "term_1".into(),
         pid: Some(42),
         path: "/home/u/.omp/agent/sessions/x/a.jsonl".into(),
+        agent: "omp".into(),
+        source: "herdr:omp".into(),
+        kind: "path".into(),
     };
     assert_eq!(same_instance(&written, Some(&written.clone())), Ok(()));
     let fresh = Identity {
@@ -923,4 +927,304 @@ fn a_draft_goes_only_to_the_agent_instance_it_was_written_for() {
         Err(Refusal::AgentRestarted)
     );
     assert_eq!(same_instance(&written, None), Err(Refusal::InstanceUnknown));
+}
+
+/// How many rows Herdr reports for `screen`: a pane drawn from it.
+fn height(screen: &str) -> u64 {
+    u64::try_from(rows(screen).len()).unwrap()
+}
+
+// Reader fixtures from a real Pi 1.5.2 TUI, captured in an isolated
+// tmux session (scratch home `/tmp/pi-obs/home`, scratch cwd
+// `/tmp/pi-obs/work`, no model, no prompt): two plain rules frame one blank
+// cursor row, and Pi's status footer — the cwd row, then the stats row
+// carrying `0.0%/0 (auto)` and the model name — sits under the lower rule.
+
+const PI_EMPTY: &str = "\
+─────────────────────────────────────────────
+
+─────────────────────────────────────────────
+/tmp/pi-obs/work
+0.0%/0 (auto)                                                                            unknown
+";
+
+// A draft the user did not write here: text on the cursor row.
+const PI_DRAFT: &str = "\
+─────────────────────────────────────────────
+  leftover draft
+─────────────────────────────────────────────
+/tmp/pi-obs/work
+0.0%/0 (auto)                                                                            unknown
+";
+
+// Pi's own autocomplete list under the lower rule: Enter would pick from it.
+const PI_LIST_BELOW: &str = "\
+─────────────────────────────────────────────
+
+─────────────────────────────────────────────
+/model   Select a model
+/tmp/pi-obs/work
+0.0%/0 (auto)                                                                            unknown
+";
+
+// The editor scrolls within itself: Pi replaces its rules with markers,
+// and rows of the editor stand outside the pane.
+const PI_OVERFLOW: &str = "\
+─────────────────────────────── ↑ 2 more ───
+  draft above the cursor
+─────────────────────────────── ↓ 3 more ───
+/tmp/pi-obs/work
+0.0%/0 (auto)                                                                            unknown
+";
+
+// Only Pi's cwd row where its two-row footer stands: unknown, refused.
+const PI_SHORT_FOOTER: &str = "\
+─────────────────────────────────────────────
+
+─────────────────────────────────────────────
+/tmp/pi-obs/work
+";
+
+// Claude Code's editor between two plain rules, prompt row inside.
+const CLAUDE_EMPTY: &str = "\
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+";
+
+// Claude's dim ghost suggestion behind the prompt: unknown text, so a
+// draft by this module's lights — never read as empty, never suppressed.
+const CLAUDE_GHOST: &str = "\
+────────────────────────────────────────
+❯ explain the plan
+────────────────────────────────────────
+";
+
+const CLAUDE_DRAFT: &str = "\
+────────────────────────────────────────
+❯ hello
+  world
+────────────────────────────────────────
+";
+
+// A Claude prompt of its own owns input: Enter would answer it.
+const CLAUDE_BLOCKER: &str = "\
+────────────────────────────────────────
+❯  Do you want to proceed? › Yes
+────────────────────────────────────────
+";
+
+const CLAUDE_LIST_BELOW: &str = "\
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+   Tab to replace…
+";
+
+// Rules with no prompt row at all: not Claude's empty box.
+const CLAUDE_NO_PROMPT: &str = "\
+────────────────────────────────────────
+
+────────────────────────────────────────
+";
+
+#[test]
+fn pi_editor_reads_only_the_captured_shape_as_empty() {
+    assert_eq!(pi_editor(&rows(PI_EMPTY)), Ok(Editor::Empty));
+    assert_eq!(pi_editor(&rows(PI_DRAFT)), Ok(Editor::Draft));
+    // Below the lower rule only Pi's own footer fits: its list, a marker
+    // or anything unrecognised refuses with its own cause.
+    assert_eq!(pi_editor(&rows(PI_LIST_BELOW)), Err(Unseen::ListBelow));
+    assert_eq!(pi_editor(&rows(PI_OVERFLOW)), Err(Unseen::TopMissing));
+    assert_eq!(pi_editor(&rows(PI_SHORT_FOOTER)), Err(Unseen::ListBelow));
+    assert_eq!(pi_editor(&rows("$ ls\npi")), Err(Unseen::None));
+}
+
+#[test]
+fn claude_editor_takes_the_bare_prompt_and_fails_closed_on_the_rest() {
+    assert_eq!(claude_editor(&rows(CLAUDE_EMPTY)), Ok(Editor::Empty));
+    assert_eq!(claude_editor(&rows(CLAUDE_GHOST)), Ok(Editor::Draft));
+    assert_eq!(claude_editor(&rows(CLAUDE_DRAFT)), Ok(Editor::Draft));
+    assert_eq!(
+        claude_editor(&rows(CLAUDE_BLOCKER)),
+        Err(Unseen::DialogOpen)
+    );
+    assert_eq!(
+        claude_editor(&rows(CLAUDE_LIST_BELOW)),
+        Err(Unseen::ListBelow)
+    );
+    assert_eq!(claude_editor(&rows(CLAUDE_NO_PROMPT)), Err(Unseen::None));
+}
+
+fn instance() -> Identity {
+    Identity {
+        pane_id: "w1:p1".into(),
+        terminal_id: "term_1".into(),
+        pid: Some(42),
+        path: "/home/u/.omp/agent/sessions/x/a.jsonl".into(),
+        agent: "omp".into(),
+        source: "herdr:omp".into(),
+        kind: "path".into(),
+    }
+}
+
+/// The staged image the photo chip left: bound to the composer's own
+/// target (w1:p1 of n1/lab on boot-1) and to the instance here.
+fn attachment() -> attach::Attachment {
+    attach::Attachment {
+        kind: attach::Kind::Image,
+        name: "photo.png".into(),
+        path: "/home/u/.cache/herdline/attachments/photo.png".into(),
+        size: 4096,
+        sha256: "a".repeat(64),
+        node: "n1".into(),
+        session: "lab".into(),
+        boot: "boot-1".into(),
+        pane: "w1:p1".into(),
+        instance: Some(instance()),
+    }
+}
+
+/// A Chat send carrying only the staged image, as the photo chip made it.
+fn chat_with_image() -> Request {
+    let mut request = request(true);
+    request.chat = true;
+    request.text = String::new();
+    request.attachments = vec![attachment()];
+    request.instance = Some(instance());
+    request
+}
+
+/// RZ-photo: the photo chip shrinks the Chat window over a hidden
+/// terminal until the tap draws nothing of the pane. A chat send still
+/// goes on the host's empty editor; the same frame never lets a terminal
+/// send through, a draft waiting on the pane stops the chat send, and
+/// only the instance the draft was written for signs it.
+#[test]
+fn a_chat_send_with_an_image_runs_on_the_host_alone() {
+    // OMP's empty box at the live bottom, padded to the height Herdr
+    // reports. No viewport exists: the phone drew nothing here.
+    let screen = format!("{}{EMPTY}", "\n".repeat(20));
+    let shown = frame("w1:p1", &screen);
+    let metrics = scroll(false, height(&screen));
+    let surface = Surface {
+        frame: Some(&shown),
+        scroll: Some(&metrics),
+        ..Surface::default()
+    };
+    let idle = registry(Some("omp"), Some(AgentStatus::Idle));
+    assert_eq!(admit(&idle, &surface, &chat_with_image()), Ok(()));
+    // The very same frame, from the terminal editor: the phone gate stays
+    // on that path, and it says the target is not drawn on the phone.
+    let mut terminal = chat_with_image();
+    terminal.chat = false;
+    assert_eq!(
+        admit(&idle, &surface, &terminal),
+        Err(Refusal::EditorHidden)
+    );
+    // A draft of the user's waiting on the pane still blocks the chat.
+    let screen = format!("{}{ONE_LINE}", "\n".repeat(20));
+    let shown = frame("w1:p1", &screen);
+    let metrics = scroll(false, height(&screen));
+    let surface = Surface {
+        frame: Some(&shown),
+        scroll: Some(&metrics),
+        ..Surface::default()
+    };
+    assert_eq!(
+        admit(&idle, &surface, &chat_with_image()),
+        Err(Refusal::RemoteDraft)
+    );
+    // No instance read: no chat send either.
+    let mut alone = request(true);
+    alone.chat = true;
+    alone.text = "hello".into();
+    assert_eq!(
+        admit(&idle, &surface, &alone),
+        Err(Refusal::InstanceUnknown)
+    );
+    // A terminal pane has no verified submit, chat or not.
+    let shell = registry(None, None);
+    let mut to_shell = chat_with_image();
+    to_shell.agent = None;
+    assert_eq!(
+        admit(&shell, &surface, &to_shell),
+        Err(Refusal::UnsupportedProgram)
+    );
+}
+
+/// Consumer mistakes this gate can trip on: the agent name disagreeing
+/// with the pane, a missing instance, a popup owning input, and a pane
+/// that works or asks instead of resting — each fails closed.
+#[test]
+fn a_chat_send_refuses_the_boundaries_a_consumer_can_trip() {
+    let screen = format!("{}{PI_EMPTY}", "\n".repeat(12));
+    let mut shown = frame("w1:p1", &screen);
+    // Pi's hardware cursor stands on the blank editor row it drew.
+    shown.cursor.y = 13;
+    let metrics = scroll(false, height(&screen));
+    let surface = Surface {
+        frame: Some(&shown),
+        scroll: Some(&metrics),
+        ..Surface::default()
+    };
+    let mut send = request(true);
+    send.chat = true;
+    send.agent = Some("pi".into());
+    send.instance = Some(instance());
+    send.text = "hello".into();
+    let idle = registry(Some("pi"), Some(AgentStatus::Idle));
+    assert_eq!(admit(&idle, &surface, &send), Ok(()));
+    // The draft was written for another program than the pane runs now.
+    let mut wrong = send.clone();
+    wrong.agent = Some("omp".into());
+    assert_eq!(admit(&idle, &surface, &wrong), Err(Refusal::AgentChanged));
+    let mut alone = send.clone();
+    alone.instance = None;
+    assert_eq!(
+        admit(&idle, &surface, &alone),
+        Err(Refusal::InstanceUnknown)
+    );
+    assert_eq!(
+        admit(
+            &registry(Some("pi"), Some(AgentStatus::Working)),
+            &surface,
+            &send
+        ),
+        Err(Refusal::AgentWorking)
+    );
+    assert_eq!(
+        admit(
+            &registry(Some("pi"), Some(AgentStatus::Blocked)),
+            &surface,
+            &send
+        ),
+        Err(Refusal::AgentBlocked)
+    );
+    let popup = Surface {
+        popup_open: true,
+        ..Surface::default()
+    };
+    assert_eq!(admit(&idle, &popup, &send), Err(Refusal::PopupOpen));
+    // Claude's ghost suggestion behind the prompt reads as a draft: the
+    // chat send stops there too, whatever the status reports.
+    let screen = format!("{}{CLAUDE_GHOST}", "\n".repeat(12));
+    let mut shown = frame("w1:p1", &screen);
+    shown.cursor.y = 13;
+    let metrics = scroll(false, height(&screen));
+    let surface = Surface {
+        frame: Some(&shown),
+        scroll: Some(&metrics),
+        ..Surface::default()
+    };
+    let mut to_claude = send.clone();
+    to_claude.agent = Some("claude".into());
+    assert_eq!(
+        admit(
+            &registry(Some("claude"), Some(AgentStatus::Idle)),
+            &surface,
+            &to_claude
+        ),
+        Err(Refusal::RemoteDraft)
+    );
 }

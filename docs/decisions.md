@@ -169,15 +169,9 @@ layout; it settles when the keyboard closes. The Session layout setting
 |Sidebar|none; the switcher is the Tabs sheet|Herdr's switcher as a 320 dp list pane, folded by its ‹ button to a 56 dp rail. The rail has one 48 dp item per workspace, its number with a status dot, spoken as "name, status", with Herdr's focused workspace marked current. A rail tap focuses that workspace in Herdr. Open or folded is kept across restarts|
 |Panes|a pane bar when the tab has more than one pane: a chip per pane|a pane toolbar on every tab: chips plus Split right / Split down / Zoom / Close pane (shared)|
 |⋮ menu|New tab, Rename tab, Close tab…; then Split right / Split down / Zoom / Close pane… (shared; phones only); then Settings, Reconnect (only while a live link is lost) and Disconnect…, which asks first. Close pane… is offered only on a split tab, as in the pane toolbar: the only pane closes with its tab, through Close tab…|the same without the pane group|
-|Composer|one band: +, a 1–5 line field "Message ‹title›", Send; a larger editor on request|the same, centred|
-|Raw terminal|the composer's keyboard button: terminal keyboard plus extra keys, and Back to composer|the same|
-|Terminal without composer|Settings › Composer › Show message composer in Terminal, on by default. Off, Terminal shows the terminal and its extra keys under it, without Back to composer; a tap on the terminal brings its keyboard. Chat always has the composer. A delivery waiting on its receipt or steer, or left unconfirmed, keeps the composer, with a notice, until it settles or Unlock. Hidden, it takes no bottom or side slot, and its measured height, open space and held grid go, so the terminal gets the whole column. Drafts and files stay in the draft store; an upload under way is cancelled, as on leaving its pane, and its file reads back as not uploaded|the same|
+|Chat composer|one band: +, a 1–5 line field "Message ‹title›", Send; a larger editor on request|the same, centred|
+|Terminal input|no Chat composer; a tap in the terminal opens direct IME input, with arrows, Tab, Esc and modifiers in two compact rows above the keyboard|the same|
 
-The hidden Terminal composer keeps an unconfirmed delivery and its safety
-notice visible. After Unlock, its warning remains visible until Dismiss or
-an edit; then the OFF preference takes effect without a tab or host update.
-The stored text and Unlocked record remain intact. Held badges observe the
-draft store's unconfirmed keys, not a cached host snapshot.
 
 A window shorter than 480 dp (a phone held sideways) merges the header and
 the tab row into one 48 dp row. It holds ←, the connection dot, the
@@ -402,6 +396,27 @@ Switcher:
     for chat (the core keeps a result's head).
   - Open, the card shows the output's last 10 lines on a container surface,
     with Show all N.
+- **Delegated children.** A `task` call's result lists its children in
+  `subagents[]` — `{id, agent, type, status, task, stage, output, error,
+  durationMs, requests, exitCode}`, at most 64 entries with `output` cut to
+  4096 chars. Each child is one row under the tool card, matched by its
+  exact id: a later snapshot merges into the same rows and never discards
+  children an earlier one listed. A settled end (`subagent_ends`,
+  `{id,status,durationMs}`, terminal statuses only) closes exactly the rows
+  its ids name and is sticky: no snapshot reopens them. Live per-child
+  progress is a host event, not something the transcript records: the host
+  extension's live state (`IngressState.subagents`, `parentCallId` naming the
+  spawning call) folds into the rows between file reads, and a closed
+  session loses it — nothing fabricates it. The live state needs OMP's
+  public `pi.events` API; without it the persisted fallback above still
+  draws children from `subagents[]` snapshots and `subagent_ends`. The
+  extension is a repository asset of two files that must both be copied
+  into the same folder, `host/omp/herdline-ingress.ts` and
+  `host/omp/live-subagents.ts`, followed by the user restarting or
+  reloading their own OMP by hand: installing it is the user's own choice,
+  never an app-side auto-setup.
+  A task tool never claims Done while one of its children runs, and such a
+  run keeps its steps visible instead of folding away.
 - **Reading width.** Prose (paragraphs, headings, lists, quotes, rules and
   Thinking) is at most 560 dp, about 80 characters of body text a line. It
   starts at the same left edge as code and tools.
@@ -415,10 +430,10 @@ Switcher:
   first labelled line in the list adds " · ‹tab›", and after older history
   loads, the title moves to the new first turn. Only the label text changes:
   list keys, the Load older anchor and every row stay as they were.
-- **Send in chat mode** still reads the terminal under the chat. The pane's
-  size is Herdr's layout: in a split tab with the composer open, an OMP pane
-  can be shorter than 12 rows, and Send is then refused as in the terminal.
-  Zoom (shared) or a single-pane tab gives it room. The rule is unchanged.
+- **Send in Chat** uses a live same-instance endpoint where available. The
+  validated PTY fallback reads the whole host editor, not the hidden phone
+  crop, and still refuses a remote draft, popup, blocked agent or short OMP
+  editor. Terminal delivery retains its own viewport gate unchanged.
 - **Chat or Terminal is remembered per pane** (`data/PaneModes.kt`).
   - It is keyed by node, Herdr session and pane, and stored with the daemon
     run (`boot`) and the program it was chosen for.

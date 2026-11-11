@@ -86,6 +86,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.IngressProbe
@@ -789,7 +790,7 @@ private fun Editor(
     val stateSeq = view?.agentIn(key.pane)?.stateSeq
     LaunchedEffect(key, connection, boot, agentNow, stateSeq) {
         if (boot == null) return@LaunchedEffect
-        if (!agentNow.equals("omp", ignoreCase = true)) {
+        if (!isChatAgent(agentNow)) {
             instanceNow = InstanceRead.Read(null)
             return@LaunchedEffect
         }
@@ -936,7 +937,7 @@ private fun Editor(
     // In Chat the endpoint and its queue are read at the instance poll's
     // pace, also while nothing is queued: a steer queued at the desktop must
     // show here too. A failed read shows nothing rather than an old queue.
-    val probeTarget = composerTarget()?.takeIf { reading && it.instance != null }
+    val probeTarget = composerTarget()?.takeIf { reading && it.instance != null && agentNamed(it.agent, ENDPOINT_AGENTS) }
     LaunchedEffect(probeTarget, connection) {
         val target = probeTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
@@ -1198,7 +1199,7 @@ private fun Editor(
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.Delivery.Refused(WRITE_AHEAD_FAILED)) {
-                    via.deliver(target, text, submit, seen, staged)
+                    via.deliver(target, text, submit, seen, staged, chat = reading)
                 }
             }
             // Stored before anything re-enables: an uncertain record holds the
@@ -1362,8 +1363,11 @@ private fun Editor(
     // same notice a refusal would, held steady by PrecheckHold.
     // A live endpoint takes Chat's Send without the pane: the box checks,
     // which read what the pane shows, neither gate nor explain it then.
-    val endpointReady = reading && probe is IngressProbe.Live
-    val precheck = check?.send?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
+    val apiAgent = reading && draft.instance != null && agentNamed(draft.agent, API_AGENTS)
+    val apiReady = apiAgent && state is Connection.State.Connected && check?.paneExists == true && (check.status == AgentStatus.Idle || check.status == AgentStatus.Done)
+    val endpointReady = reading && probe is IngressProbe.Live || apiReady
+    val sendGate = if (reading) check?.chatSend else check?.send
+    val precheck = sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }
@@ -1388,7 +1392,7 @@ private fun Editor(
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
-    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || check?.send?.ok == true)
+    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
     // Its own gate: never derived from Send's, and never offered for a
     // draft without the agent instance the native side compares, or with files.
     val steerEnabled = !busy && draft.mayDeliver(binding) && draft.attachments.isEmpty() && !mismatched &&

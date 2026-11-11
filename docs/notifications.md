@@ -187,6 +187,21 @@ mode permits as the notification itself. The full content is re-posted
 silently on unlock, and redacted on the lock edge for notifications already
 showing. A new notification while locked still alerts.
 
+## App icon on notifications
+
+Every Herdline notification draws two icons. The large icon and the coloured
+artwork of the live card follow the icon chosen in Settings › Appearance
+(`IconVariants.icon`). The small icon is a state mask (`ic_notification`,
+`ic_needs_input`, `ic_working`, and the other live glyphs), never the variant
+tile. The round tile in the channel header (the left icon on One UI) is not
+the app's: the system draws the installed manifest's static package icon
+there, and no app can change it at runtime. Since 0.6.0 the manifest ships
+the Dusk tile so that header matches the Dusk identity this build uses
+everywhere else; picking another variant leaves just that one system tile
+showing Dusk. The enableable Default launcher alias stays explicitly Wood. A
+real Samsung shade screenshot (SM-S928U1, 0.5.3) showed the mismatch this
+fixes: Wood header tile, Dusk large icon.
+
 ## Known gaps
 
 - The native layer maps every Herdr notification kind other than

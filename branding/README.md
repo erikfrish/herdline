@@ -69,7 +69,12 @@ One surface cannot follow the pick and never will: the icon in Android
 Settings › App info and other system package views is fixed at install time
 from the manifest (`android:icon`) and activity-alias resources. The platform
 has no API to change it at runtime; only the launcher, Recents and
-notifications can carry the selected variant. The Android 12+ splash is
+notifications' own artwork can carry the selected variant. Samsung's
+notification system header tile draws that same static package icon, so the
+manifest ships the Dusk tile as this build's fixed identity (the pick chosen
+for this release), while the enableable Default launcher alias stays
+explicitly Wood (`@mipmap/ic_launcher`). A pick other than Dusk is then
+consistent everywhere except that one system tile. The Android 12+ splash is
 theme-defined per day/night (`values{,-night}-v31`) and is equally static
 within a theme.
 

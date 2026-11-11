@@ -93,6 +93,7 @@ fn instance() -> Identity {
         terminal_id: "term_1".into(),
         pid: Some(42),
         path: "/home/u/.omp/agent/sessions/x/a.jsonl".into(),
+        ..Identity::default()
     }
 }
 

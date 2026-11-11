@@ -87,6 +87,7 @@ fn host_reports_identity_and_the_file_herdr_names() {
             terminal_id: "term_1".into(),
             pid: Some(42),
             path,
+            ..Identity::default()
         }
     );
     assert_eq!(status, "blocked");
@@ -178,7 +179,7 @@ fn pages_cover_every_line_once_and_never_a_partial_one() {
     else {
         panic!("tail found no line");
     };
-    seen.extend(entries(newest, start));
+    seen.extend(entries("omp", newest, start));
     while start > 0 {
         match read(&content, Read::Before { offset: start }, window) {
             Plan::Lines {
@@ -186,7 +187,7 @@ fn pages_cover_every_line_once_and_never_a_partial_one() {
                 lines,
                 ..
             } => {
-                seen.extend(entries(lines, older));
+                seen.extend(entries("omp", lines, older));
                 start = older;
             }
             other => panic!("before {start}: {other:?}"),
@@ -202,7 +203,7 @@ fn pages_cover_every_line_once_and_never_a_partial_one() {
     let Plan::Lines { lines, .. } = read(&content, Read::After { offset: end }, window) else {
         panic!("after found nothing");
     };
-    assert_eq!(entries(lines, end)[0].id.as_deref(), Some("half"));
+    assert_eq!(entries("omp", lines, end)[0].id.as_deref(), Some("half"));
 }
 
 #[test]
@@ -252,7 +253,7 @@ fn entries_keep_the_branch_links_and_cap_untrusted_text() {
         .iter()
         .map(|line| format!("{line}\n"))
         .collect::<String>();
-    let entries = entries(text.as_bytes(), 100);
+    let entries = entries("omp", text.as_bytes(), 100);
 
     assert_eq!(entries.len(), 5);
     assert_eq!(entries[0].kind, Kind::Other);
@@ -313,7 +314,7 @@ fn messages_keep_their_time_usage_stop_reason_and_exit_code() {
         r#"{"type":"message","id":"h","message":{"role":"custom","display":false,"timestamp":5,"content":"x"}}"#,
     ];
     let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
-    let entries = entries(text.as_bytes(), 0);
+    let entries = entries("omp", text.as_bytes(), 0);
 
     assert_eq!(entries[0].timestamp, Some(1_794_230_633_466));
     assert_eq!(
@@ -389,6 +390,7 @@ impl Host {
             terminal_id: "term_1".into(),
             pid: Some(pid),
             path,
+            ..Identity::default()
         };
         (host, identity, Omp(omp))
     }
@@ -465,7 +467,7 @@ fn a_blob_is_served_only_as_its_entry_names_it_and_only_whole() {
         .map(|(index, hash)| image_line(&format!("e{index}"), &format!("blob:sha256:{hash}")))
         .collect();
     let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
-    let parsed = entries(text.as_bytes(), 0);
+    let parsed = entries("omp", text.as_bytes(), 0);
     assert_eq!(
         parsed[0].blocks[1],
         Block::Image(Image {
@@ -518,7 +520,7 @@ fn a_blob_is_served_only_as_its_entry_names_it_and_only_whole() {
 fn the_blob_store_is_the_one_the_omp_process_uses() {
     let hash = sha(PNG);
     let text = image_line("u", &format!("blob:sha256:{hash}"));
-    let parsed = entries(text.as_bytes(), 0);
+    let parsed = entries("omp", text.as_bytes(), 0);
     let media = at(&parsed, 0, 1, Some(&hash));
 
     // A profile in its arguments: that profile's store, not the default one.
@@ -546,7 +548,7 @@ fn the_blob_store_is_the_one_the_omp_process_uses() {
 fn an_image_of_another_instance_is_refused() {
     let hash = sha(PNG);
     let text = image_line("u", &format!("blob:sha256:{hash}"));
-    let parsed = entries(text.as_bytes(), 0);
+    let parsed = entries("omp", text.as_bytes(), 0);
     let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     let replaced = Identity {
@@ -579,7 +581,7 @@ fn only_canonical_blob_names_are_kept() {
         let line = format!(
             r#"{{"type":"message","id":"u","message":{{"role":"user","content":[{{"type":"image","data":"blob:sha256:{bad}"}}]}}}}"#
         );
-        let entries = entries(format!("{line}\n").as_bytes(), 0);
+        let entries = entries("omp", format!("{line}\n").as_bytes(), 0);
         assert_eq!(
             entries[0].blocks,
             vec![Block::Image(Image {
@@ -598,7 +600,7 @@ fn inline_images_are_read_from_their_own_line_only() {
         + &image_line("bad", "!!!!")
         + &image_line("txt", &STANDARD.encode("plain text"));
     let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
-    let parsed = entries(text.as_bytes(), 0);
+    let parsed = entries("omp", text.as_bytes(), 0);
     let at = |index: usize, part: usize| at(&parsed, index, part, None);
 
     assert_eq!(
@@ -648,7 +650,7 @@ fn entries_record_their_end_and_how_a_user_message_was_steered() {
         r#"{"type":"message","id":"a","message":{"role":"assistant","content":[],"liveSteered":true}}"#,
     ];
     let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
-    let entries = entries(text.as_bytes(), 10);
+    let entries = entries("omp", text.as_bytes(), 10);
     assert_eq!(
         (entries[0].offset, entries[0].end),
         (10, 10 + lines[0].len() as u64 + 1)
@@ -664,7 +666,7 @@ fn entries_record_their_end_and_how_a_user_message_was_steered() {
 #[test]
 fn recorded_form_answers_keep_variants_and_timeout_without_guessing() {
     let line = r#"{"type":"message","id":"r","message":{"role":"toolResult","toolCallId":"ask-1","toolName":"ask","content":[],"details":{"timedOut":true,"answers":[{"name":"db","question":"Database?","answer":"Redis","options":[{"label":"SQLite","selected":false},{"label":"Redis","selected":true}]},{"name":"bad","answer":"missing question"}]}}}"#;
-    let parsed = entries(format!("{line}\n").as_bytes(), 0);
+    let parsed = entries("omp", format!("{line}\n").as_bytes(), 0);
     let Block::ToolResult {
         answers, timed_out, ..
     } = &parsed[0].blocks[0]
@@ -688,6 +690,7 @@ fn recorded_form_answers_keep_variants_and_timeout_without_guessing() {
         ]
     );
     let other = entries(
+        "omp",
         format!(
             "{}\n",
             line.replace("\"toolName\":\"ask\"", "\"toolName\":\"bash\"")
@@ -703,4 +706,86 @@ fn recorded_form_answers_keep_variants_and_timeout_without_guessing() {
     };
     assert!(answers.is_empty());
     assert!(!timed_out);
+}
+
+#[test]
+fn each_engine_reads_only_its_reported_session_and_reopens_its_inline_image() {
+    let id = "11111111-2222-4333-8444-555555555555";
+    for agent in ["pi", "claude", "codex"] {
+        let host = Host::new("unused");
+        let (relative, body) = match agent {
+            "pi" => (
+                ".pi/agent/sessions/work/s.jsonl".to_owned(),
+                serde_json::json!({"type":"message","id":"m","message":{"role":"user","content":[{"type":"image","data":STANDARD.encode(PNG)}]}}),
+            ),
+            "claude" => (
+                format!(".claude/projects/work/{id}.jsonl"),
+                serde_json::json!({"type":"user","uuid":"m","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","data":STANDARD.encode(PNG)}}]}}),
+            ),
+            _ => (
+                format!(".codex/sessions/2026/11/12/rollout-test-{id}.jsonl"),
+                serde_json::json!({"type":"response_item","payload":{"type":"message","id":"m","role":"user","content":[{"type":"input_image","image_url":format!("data:image/png;base64,{}",STANDARD.encode(PNG))}]}}),
+            ),
+        };
+        let path = host.home.path().join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let line = format!("{body}\n");
+        fs::write(&path, &line).unwrap();
+        let reference = if agent == "pi" {
+            path.to_str().unwrap()
+        } else {
+            id
+        };
+        let mut pane: Value = serde_json::from_str(&pane_json(reference)).unwrap();
+        pane["result"]["pane"]["agent"] = agent.into();
+        pane["result"]["pane"]["agent_session"] = serde_json::json!({"agent":agent,"source":format!("herdr:{agent}"),"kind":if agent=="pi" {"path"} else {"id"},"value":reference});
+        fs::write(host.home.path().join("pane.json"), pane.to_string()).unwrap();
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS.replace("omp", agent),
+        )
+        .unwrap();
+        let (exit, bytes) = host.run(tail(reference));
+        let reply = parse_reply(exit, &bytes).unwrap();
+        let identity = identity(&reply.pane, &reply.process).unwrap().0;
+        let file = reply.file.unwrap();
+        assert_eq!(file.data, line.as_bytes(), "{agent}");
+        let parsed = entries(agent, file.data, 0);
+        let media = Media {
+            v: MEDIA_VERSION,
+            entry: parsed[0].id.clone(),
+            offset: 0,
+            end: line.len() as u64,
+            part: 0,
+            blob: None,
+        };
+        let (exit, bytes) = host.run(Some(Fetch::Image {
+            path: reference,
+            offset: 0,
+            len: line.len() as u64,
+            blob: None,
+        }));
+        assert!(
+            matches!(
+                media_outcome(exit, &bytes, &identity, &media).unwrap(),
+                MediaOutcome::Image {
+                    mime: "image/png",
+                    ..
+                }
+            ),
+            "{agent}"
+        );
+    }
+}
+
+#[test]
+fn rfc3339_dates_use_real_calendar_zones_and_fractional_seconds() {
+    assert_eq!(iso_timestamp("1970-01-01T00:00:00Z"), Some(0));
+    assert_eq!(
+        iso_timestamp("2026-11-12T03:00:00.1+03:00"),
+        Some(1_794_441_600_100)
+    );
+    for invalid in ["", "short", "2026-02-30T00:00:00Z", "2026-11-12T25:00:00Z"] {
+        assert_eq!(iso_timestamp(invalid), None);
+    }
 }

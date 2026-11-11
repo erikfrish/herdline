@@ -1,21 +1,34 @@
-//! A chat view of an OMP agent's transcript, for exactly the pane Herdr
-//! reports. Herdr knows which session file the agent in a pane writes
-//! (`agent_session`, kind `path`); the client endpoint does not carry it, so
-//! each read runs Herdr's own CLI on the host over the bridge's SSH session,
-//! asks it for that pane and its foreground process, and reads a byte range
-//! of the file it names. Nothing is started, imported or resumed: the agent
-//! keeps running in its terminal, and chat only reads what it wrote.
+//! A chat view of a pane's agent transcript, for exactly the pane Herdr
+//! reports. Herdr knows which session each agent in a pane writes
+//! (`agent_session`, kind `path` or `id`); the client endpoint does not
+//! carry it, so each read runs Herdr's own CLI on the host over the bridge's
+//! SSH session, asks it for that pane and its foreground process, and reads
+//! a byte range of the file it names (or, for OpenCode, a bounded one-based
+//! `seq` window of its own SQLite store). Nothing is started, imported or
+//! resumed: the agent keeps running in its terminal, and chat only reads
+//! what it wrote.
 //!
-//! Everything from the host is untrusted. The path must be an OMP session
-//! file, which the host checks again after resolving links; only complete
-//! lines are parsed, text is capped, and an identity that changed between
-//! reads (another session, a fork, a replaced pane or process) starts over
-//! from the end of the new file instead of mixing two transcripts.
+//! Everything from the host is untrusted. The reference must be the
+//! agent_session Herdr reports, resolved inside that agent's own session
+//! root (for `path`) or its recorded file (for `id`), which the host checks
+//! again after resolving links; only complete lines are parsed, text is
+//! capped, and an identity that changed between reads (another session, a
+//! fork, a replaced pane or process) starts over from the end of the new
+//! transcript instead of mixing two.
 //!
 //! Images stay on the host until chat shows one: an entry names each image
 //! (its part and where its bytes are) and a media read fetches that one,
 //! inline base64 from its line or a `blob:sha256:` file from OMP's blob
 //! store beside the session folder, for the same agent instance only.
+
+/// Per-engine transcript row parsers: one module per agent core speaks.
+/// `pi`/`claude`/`codex`/`opencode` own their line/row formats; the shared
+/// OMP record parser below handles `omp` and serves as the base for `pi`.
+mod claude;
+mod codex;
+mod opencode;
+mod pi;
+mod subagents;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -45,12 +58,14 @@ const FIRST_WINDOW: u64 = 256 * 1024;
 const MAX_WINDOW: u64 = 32 * 1024 * 1024;
 /// Room for Herdr's pane and process reports around the data.
 const HEADER_ROOM: usize = 64 * 1024;
-const TEXT_LIMIT: usize = 64 * 1024;
-const RESULT_LIMIT: usize = 16 * 1024;
-const ARGS_LIMIT: usize = 8 * 1024;
+pub(super) const TEXT_LIMIT: usize = 64 * 1024;
+pub(super) const RESULT_LIMIT: usize = 16 * 1024;
+pub(super) const ARGS_LIMIT: usize = 8 * 1024;
 const PATH_LIMIT: usize = 4096;
 const SESSIONS_DIR: &str = "/.omp/agent/sessions/";
-const BLOB_PREFIX: &str = "blob:sha256:";
+/// Pi (pi-mono) writes the same layout under its own agent directory.
+const PI_SESSIONS_DIR: &str = "/.pi/agent/sessions/";
+pub(super) const BLOB_PREFIX: &str = "blob:sha256:";
 /// The most image bytes one media read decodes and hands to the app.
 pub const MAX_IMAGE: u64 = 20 * 1024 * 1024;
 /// The media request and answer shape this core speaks.
@@ -107,9 +122,46 @@ pub enum Read {
 pub struct Identity {
     pub pane_id: String,
     pub terminal_id: String,
-    /// The OMP process in the pane's foreground, when Herdr reports one.
+    /// The agent process in the pane's foreground, when Herdr reports one.
     pub pid: Option<u32>,
+    /// The exact `agent_session.value` Herdr reports: the session file for
+    /// `path` refs (OMP, Pi), the session ID for `id` refs (the rest). Never
+    /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
+    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`.
+    #[serde(default = "omp")]
+    pub agent: String,
+    /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
+    #[serde(default = "herdr_omp")]
+    pub source: String,
+    /// The ref Herdr stores: `path` or `id`.
+    #[serde(default = "path_kind")]
+    pub kind: String,
+}
+
+fn omp() -> String {
+    "omp".to_owned()
+}
+fn herdr_omp() -> String {
+    "herdr:omp".to_owned()
+}
+fn path_kind() -> String {
+    "path".to_owned()
+}
+
+/// The migration default for old serialized OMP drafts, not a public shim.
+impl Default for Identity {
+    fn default() -> Self {
+        Self {
+            pane_id: String::new(),
+            terminal_id: String::new(),
+            pid: None,
+            path: String::new(),
+            agent: omp(),
+            source: herdr_omp(),
+            kind: path_kind(),
+        }
+    }
 }
 
 /// What [`fetch`] answers: transcript lines, or the one image asked for.
@@ -128,9 +180,12 @@ pub struct Response {
     /// Discard everything shown before: these entries replace it.
     pub reset: bool,
     pub size: u64,
-    /// The byte range these entries came from.
+    /// The byte range these entries came from; `[start, end)`.
     pub start: u64,
     pub end: u64,
+    /// Older entries than `start` exist, stated explicitly: byte engines
+    /// infer it from `start > 0`, sequence engines (OpenCode) name it.
+    pub has_older: bool,
     pub entries: Vec<Entry>,
 }
 
@@ -203,6 +258,9 @@ pub struct Entry {
     /// How a user message reached a running agent, as OMP recorded it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steer: Option<Steer>,
+    /// Async subagent runs this entry settles, as the runtime recorded them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subagent_ends: Vec<subagents::Completion>,
 }
 
 /// How OMP recorded a user message that reached a running agent:
@@ -267,6 +325,9 @@ pub enum Block {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         answers: Vec<FormAnswer>,
         timed_out: bool,
+        /// Subagent children this tool call reported in its details.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        subagents: Vec<subagents::Subagent>,
     },
     Image(Image),
 }
@@ -330,13 +391,26 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     let mut window = FIRST_WINDOW;
     let mut reset = false;
     for _ in 0..MAX_READS {
-        let target = expect.as_ref().map(|identity| Target {
-            path: &identity.path,
-            read,
-            window,
-        });
-        let script = script(session, &request.pane, target.map(Fetch::Lines));
-        let limit = usize::try_from(window).unwrap_or(usize::MAX) + 1 + HEADER_ROOM;
+        let (script, limit) = match &expect {
+            // OpenCode pages its own `seq` sequence via its module.
+            Some(identity) if identity.agent == "opencode" => {
+                return opencode::page(exec, session, &request.pane, identity, read, reset);
+            }
+            Some(identity) => (
+                script(
+                    session,
+                    &request.pane,
+                    Some(Fetch::Lines(Target {
+                        path: &identity.path,
+                        read,
+                        window,
+                    })),
+                ),
+                usize::try_from(window).unwrap_or(usize::MAX) + 1 + HEADER_ROOM,
+            ),
+            // Nothing is known yet: only the pane report runs.
+            None => (script(session, &request.pane, None), HEADER_ROOM),
+        };
         let output = exec.run(
             format!("/bin/sh -c {}", shell_quote(&script)),
             read_timeout(window),
@@ -354,6 +428,8 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
         let file = reply.file.ok_or(Error::BadReply)?;
         match plan(read, &file, window) {
             Plan::Lines { start, end, lines } => {
+                // Computed before `identity` is moved into the response.
+                let entries = entries(&identity.agent, lines, start);
                 return Ok(Response {
                     identity,
                     status,
@@ -361,7 +437,9 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                     size: file.size,
                     start,
                     end,
-                    entries: entries(lines, start),
+                    // A byte window at a nonzero start still has older lines.
+                    has_older: start > 0,
+                    entries,
                 });
             }
             Plan::Rewritten => {
@@ -390,6 +468,11 @@ fn image(
     if media.v != MEDIA_VERSION {
         return refused(Refusal::Version);
     }
+    // OpenCode's rows are a keyed sequence, not byte ranges: its own module
+    // fetches by `seq` and rechecks the instance before and after.
+    if expect.agent == "opencode" {
+        return opencode::image(exec, session, pane, expect, media);
+    }
     let len = match media.end.checked_sub(media.offset) {
         Some(len) if len > 0 && len <= MAX_WINDOW => len,
         // A line that long holds more than chat reads at once.
@@ -399,6 +482,7 @@ fn image(
     let blob = match media.blob.as_deref() {
         None => None,
         Some(hash) if !blob_hash(hash) => return refused(Refusal::Missing),
+        Some(_) if expect.agent != "omp" => return refused(Refusal::Unsupported),
         Some(hash) => match expect.pid {
             Some(pid) => Some((hash, pid)),
             // Without the process its store cannot be told.
@@ -489,7 +573,7 @@ fn media_outcome(
     if !same_instance(&pane, &process, expect)? {
         return refused(Refusal::InstanceChanged);
     }
-    let decoded = match image_part_bytes(&file, line, blob, media) {
+    let decoded = match image_part_bytes(&expect.agent, &file, line, blob, media) {
         Ok(decoded) => decoded,
         Err(error) => return refused(error),
     };
@@ -515,6 +599,7 @@ fn same_instance(pane: &Value, process: &Value, expect: &Identity) -> Result<boo
 /// still that whole entry and its part is still that image: inline base64,
 /// or a reference to exactly the blob read, whose bytes hash to its name.
 fn image_part_bytes(
+    agent: &str,
     file: &File,
     line: &[u8],
     blob: Option<&[u8]>,
@@ -528,8 +613,29 @@ fn image_part_bytes(
         return Err(Refusal::Moved);
     }
     let value: Value = serde_json::from_slice(line).map_err(|_| Refusal::Moved)?;
-    if value["id"].as_str() != media.entry.as_deref() {
+    let id = match agent {
+        "claude" => value["uuid"].as_str().map(str::to_owned),
+        "codex" => codex::message_id(&value),
+        _ => value["id"].as_str().map(str::to_owned),
+    };
+    if id.as_deref() != media.entry.as_deref() {
         return Err(Refusal::Moved);
+    }
+    if agent != "omp" {
+        if media.blob.is_some() || blob.is_some() {
+            return Err(Refusal::Unsupported);
+        }
+        let data = match agent {
+            "pi" => pi::image_data(&value, media.part),
+            "claude" => claude::image_data(&value, media.part),
+            "codex" => codex::image_data(&value, media.part),
+            _ => None,
+        }
+        .ok_or(Refusal::Moved)?;
+        if inline_bytes(data) > MAX_IMAGE {
+            return Err(Refusal::TooLarge);
+        }
+        return LENIENT.decode(data).map_err(|_| Refusal::Unsupported);
     }
     let part = &content_parts(&value)
         .and_then(|parts| parts.get(media.part))
@@ -725,9 +831,35 @@ printf '@@pane\n'
         ),
     };
     script.push_str(&format!(
-        r#"real=$(realpath -- {path}) || exit {EXIT_NO_FILE}
-home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
-case "$real" in "$home"{SESSIONS_DIR}*.jsonl) ;; *) exit {EXIT_UNCONFINED};; esac
+        r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
+real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
+import glob, json, os, subprocess, sys
+herdr, session, pane, wanted, home = sys.argv[1:]
+reply = subprocess.run([herdr, '--session', session, 'pane', 'get', pane], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=20)
+if reply.returncode or len(reply.stdout) > 65536: sys.exit(3)
+ref = json.loads(reply.stdout)['result']['pane']['agent_session']
+agent, kind, value = ref['agent'], ref['kind'], ref['value']
+if value != wanted: sys.exit(3)
+if agent in ('omp', 'pi') and kind == 'path':
+    root = os.path.realpath(os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent', 'sessions'))
+    candidates = [value]
+elif agent == 'claude' and kind == 'id':
+    root = os.path.realpath(os.path.join(home, '.claude', 'projects'))
+    candidates = glob.glob(os.path.join(root, '*', glob.escape(value) + '.jsonl'))
+elif agent == 'codex' and kind == 'id':
+    root = os.path.realpath(os.path.join(home, '.codex', 'sessions'))
+    candidates = glob.glob(os.path.join(root, '**', 'rollout-*-' + glob.escape(value) + '.jsonl'), recursive=True)
+else: sys.exit(3)
+if os.path.commonpath([home, root]) != home: sys.exit(3)
+valid = []
+for candidate in candidates:
+    real = os.path.realpath(candidate)
+    if os.path.commonpath([root, real]) != root: sys.exit(3)
+    if os.path.isfile(real) and real.endswith('.jsonl'): valid.append(real)
+if len(valid) != 1: sys.exit(3)
+print(valid[0])
+HERDLINE_RESOLVE
+) || exit {EXIT_UNCONFINED}
 [ -f "$real" ] || exit {EXIT_NO_FILE}
 size=$(wc -c < "$real") || exit {EXIT_NO_FILE}
 size=$((size))
@@ -866,19 +998,31 @@ fn split<'a>(bytes: &'a [u8], marker: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
 fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let pane = &pane["result"]["pane"];
     let session = &pane["agent_session"];
-    if session["agent"] != "omp" || session["kind"] != "path" {
-        return Err(Error::NoTranscript);
-    }
-    let path = session["value"].as_str().ok_or(Error::NoTranscript)?;
-    if !confined(path) {
+    let agent = session["agent"]
+        .as_str()
+        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode"))
+        .ok_or(Error::NoTranscript)?;
+    // The agent's own reported reference, held exactly as Herdr gives it:
+    // the session file for `path` (OMP, Pi), the session id for `id` (the
+    // rest). Resolution stays in the host script, so identity cannot drift.
+    let (kind, value) = match (session["kind"].as_str(), session["value"].as_str()) {
+        (Some("path"), Some(value)) if agent == "omp" || agent == "pi" => ("path", value),
+        (Some("id"), Some(value)) if session_id(value) => ("id", value),
+        _ => return Err(Error::NoTranscript),
+    };
+    if kind == "path" && !confined(agent, value) {
         return Err(Error::TranscriptUnconfined);
     }
     let text = |value: &Value| value.as_str().map(str::to_owned).ok_or(Error::BadReply);
     let identity = Identity {
         pane_id: text(&pane["pane_id"])?,
         terminal_id: text(&pane["terminal_id"])?,
-        pid: omp_pid(process),
-        path: path.to_owned(),
+        // The pane's foreground process must be that agent's own name.
+        pid: foreground_pid(process, agent),
+        path: value.to_owned(),
+        agent: agent.to_owned(),
+        source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
+        kind: kind.to_owned(),
     };
     let status = pane["agent_status"]
         .as_str()
@@ -893,21 +1037,41 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     Ok((identity, status))
 }
 
-fn omp_pid(process: &Value) -> Option<u32> {
+/// A session id (`[A-Za-z0-9._-]+`, no `/`, `..`, leading `.`) exactly as
+/// Herdr records it; anything else is not an id any engine can resolve.
+fn session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 512
+        && !value.starts_with('.')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// The pane's foreground process that answers to `name`; OMP stays the only
+/// agent whose blob store a media read may ever touch.
+fn foreground_pid(process: &Value, name: &str) -> Option<u32> {
     process["result"]["process_info"]["foreground_processes"]
         .as_array()?
         .iter()
-        .find(|process| process["name"] == "omp")?["pid"]
+        .find(|process| process["name"] == name)?["pid"]
         .as_u64()
         .and_then(|pid| u32::try_from(pid).ok())
 }
 
-/// An absolute OMP session file path, as the host must also resolve it.
-fn confined(path: &str) -> bool {
+/// An absolute session file path inside the agent's own session folder, as
+/// the host must also resolve it: OMP writes `~/.omp/agent/sessions/`, Pi
+/// writes `~/.pi/agent/sessions/`.
+fn confined(agent: &str, path: &str) -> bool {
+    let root = match agent {
+        "omp" => SESSIONS_DIR,
+        "pi" => PI_SESSIONS_DIR,
+        _ => return false,
+    };
     path.len() <= PATH_LIMIT
         && path.starts_with('/')
         && path.ends_with(".jsonl")
-        && path.contains(SESSIONS_DIR)
+        && path.contains(root)
         && !path.chars().any(char::is_control)
         && path
             .split('/')
@@ -1000,21 +1164,52 @@ fn complete(data: &[u8], start: u64, skip_partial: bool) -> Option<(u64, u64, &[
     Some((first, first + last as u64 + 1, &rest[..=last]))
 }
 
-fn entries(lines: &[u8], start: u64) -> Vec<Entry> {
+/// The entries the complete lines `lines` hold, parsed by `agent`'s own
+/// record format. Claude splits one message across lines with a shared
+/// message id: every part shows, its `usage` is counted once per id.
+fn entries(agent: &str, lines: &[u8], start: u64) -> Vec<Entry> {
     let mut offset = start;
     let mut entries = Vec::new();
+    let mut used = std::collections::HashSet::new();
     for line in lines.split_inclusive(|&byte| byte == b'\n') {
         let at = offset;
         offset += line.len() as u64;
-        match serde_json::from_slice::<Value>(line) {
-            Ok(value) => entries.push(entry(&value, at, offset)),
-            Err(error) => tracing::debug!(%error, offset = at, "transcript line skipped"),
+        let value: Value = match serde_json::from_slice(line) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::debug!(%error, offset = at, "transcript line skipped");
+                continue;
+            }
+        };
+        let mut entry = match agent {
+            "pi" => pi::normalize(&value, at, offset),
+            "claude" => claude::normalize(&value, at, offset),
+            "codex" => match codex::entry(&value, at, offset, &mut used) {
+                Some(entry) => entry,
+                None => continue,
+            },
+            _ => entry(&value, at, offset),
+        };
+        // One `usage` per message id, however many content lines share it.
+        if let Some(key) = message_key(agent, &value) {
+            if !used.insert(key) {
+                entry.usage = None;
+            }
         }
+        entries.push(entry);
     }
     entries
 }
 
-fn entry(value: &Value, offset: u64, end: u64) -> Entry {
+fn message_key(agent: &str, value: &Value) -> Option<String> {
+    match agent {
+        "pi" => pi::message_key(value),
+        "claude" => claude::message_key(value),
+        _ => None,
+    }
+}
+
+pub(super) fn entry(value: &Value, offset: u64, end: u64) -> Entry {
     let id = value["id"].as_str().map(str::to_owned);
     let parent_id = value["parentId"].as_str().map(str::to_owned);
     let (kind, role, blocks) = match value["type"].as_str() {
@@ -1066,6 +1261,11 @@ fn entry(value: &Value, offset: u64, end: u64) -> Entry {
             .as_str()
             .map(|reason| cap(reason, 32).0),
         steer,
+        subagent_ends: subagents::completions(if value["type"] == "custom_message" {
+            value
+        } else {
+            message
+        }),
     }
 }
 
@@ -1081,7 +1281,7 @@ fn content_parts(value: &Value) -> Option<&Vec<Value>> {
 
 /// Usage with every count OMP writes; a cost that is not a finite,
 /// non-negative number is absent rather than guessed.
-fn usage(usage: &Value) -> Option<Usage> {
+pub(super) fn usage(usage: &Value) -> Option<Usage> {
     Some(Usage {
         input: usage["input"].as_u64()?,
         output: usage["output"].as_u64()?,
@@ -1169,6 +1369,11 @@ fn tool_result(message: &Value) -> Block {
             Vec::new()
         },
         timed_out: message["toolName"] == "ask" && message["details"]["timedOut"] == true,
+        subagents: if message["toolName"] == "task" {
+            subagents::snapshot(&message["details"])
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -1195,7 +1400,7 @@ fn content(content: &Value) -> Vec<Block> {
 
 /// Where image part `part` keeps its bytes. The data itself never leaves
 /// the host on a poll.
-fn image_part(part: usize, value: &Value) -> Image {
+pub(super) fn image_part(part: usize, value: &Value) -> Image {
     let source = match value["data"].as_str() {
         Some(data) => match data.strip_prefix(BLOB_PREFIX) {
             Some(hash) if blob_hash(hash) => Source::Blob {
@@ -1212,7 +1417,7 @@ fn image_part(part: usize, value: &Value) -> Image {
     Image { part, source }
 }
 
-fn text_block(text: &str, thinking: bool) -> Block {
+pub(super) fn text_block(text: &str, thinking: bool) -> Block {
     let (text, truncated) = cap(text, TEXT_LIMIT);
     if thinking {
         Block::Thinking { text, truncated }
@@ -1221,7 +1426,7 @@ fn text_block(text: &str, thinking: bool) -> Block {
     }
 }
 
-fn tool_call(part: &Value) -> Block {
+pub(super) fn tool_call(part: &Value) -> Block {
     let mut arguments = part["arguments"].clone();
     // OMP repeats the intent as `i` among the arguments.
     if let Some(arguments) = arguments.as_object_mut() {
@@ -1241,12 +1446,12 @@ fn tool_call(part: &Value) -> Block {
     }
 }
 
-fn string(value: &Value) -> String {
+pub(super) fn string(value: &Value) -> String {
     value.as_str().unwrap_or_default().to_owned()
 }
 
 /// At most `limit` bytes of `text`, cut at a character boundary.
-fn cap(text: &str, limit: usize) -> (String, bool) {
+pub(super) fn cap(text: &str, limit: usize) -> (String, bool) {
     if text.len() <= limit {
         return (text.to_owned(), false);
     }
@@ -1255,4 +1460,13 @@ fn cap(text: &str, limit: usize) -> (String, bool) {
         end -= 1;
     }
     (text[..end].to_owned(), true)
+}
+
+/// RFC 3339 (`2026-11-09T13:23:53Z`, `…+00:00`, `…-05:00`) to epoch ms, as
+/// any engine's timestamp field is written. Short or malformed text parses
+/// to nothing rather than panicking; the zone and fractional seconds are
+/// taken exactly as written.
+pub(super) fn iso_timestamp(text: &str) -> Option<u64> {
+    let at = chrono::DateTime::parse_from_rfc3339(text).ok()?;
+    u64::try_from(at.timestamp_millis()).ok()
 }

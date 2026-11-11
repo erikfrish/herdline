@@ -36,14 +36,16 @@
     <string name="start_filter_needs_you">Needs you</string>
     <string name="start_filter_working">Working</string>
     <string name="start_filter_help">The Tabs sheet and sidebar open on this filter each time, and Agents when it opens. Tapping a chip there changes only that open list.</string>
+    <string name="start_filter_ready">Ready</string>
+    <string name="tabs_view">Tabs view</string>
+    <string name="tabs_view_list">List</string>
+    <string name="tabs_view_columns">Two columns</string>
+    <string name="tabs_view_help">The Tabs sheet opens as the list, or as a compact two-column list. Two columns falls back to one when large fonts would make them unreadable.</string>
     <string name="hide_shells">Hide shell tabs</string>
     <string name="hide_idle_done">Hide idle and done agents</string>
     <string name="hide_help">Only the Tabs sheet and sidebar hide rows, and a line under the list shows how many, with Show. Search still finds them. A tab that needs you is never hidden. The phone tab row, Tabs n/N, Agents and notifications always count every tab.</string>
-    <string name="terminal_composer">Show message composer in Terminal</string>
-    <string name="terminal_composer_help">Off, Terminal shows only the terminal: tap it to type, with the extra keys under it. Chat always has the composer, and drafts and files stay with their pane. While a delivery from the composer is unconfirmed, the composer stays until it settles or you unlock it.</string>
-    <string name="terminal_composer_kept">The composer stays while its delivery is unconfirmed</string>
     <string name="terminal_suggestions">Keyboard suggestions in the terminal</string>
-    <string name="terminal_suggestions_help">Off, the terminal asks the keyboard for plain keys. On, it offers words and corrections; a picked correction replaces its word in the pane. The composer always has them.</string>
+    <string name="terminal_suggestions_help">Off, the terminal asks the keyboard for plain keys. On, it offers words and corrections; a picked correction replaces its word in the pane.</string>
 
     <string name="section_extra_keys">Extra keys</string>
     <string name="show_extra_keys">Show the extra keys row</string>

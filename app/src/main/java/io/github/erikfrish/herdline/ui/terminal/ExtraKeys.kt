@@ -14,11 +14,13 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -83,18 +90,59 @@ val AllExtraKeys: Map<String, ExtraKey> = linkedMapOf(
     "pgdn" to ExtraKey.Key("PgDn", KeyEvent.KEYCODE_PAGE_DOWN, repeats = true),
 )
 
+/**
+ * The panel's default: fourteen keys, seven a row. The first row holds the
+ * keys taken from the hardware keyboard (Esc, Tab, Ctrl) with the four arrows
+ * kept together and first; the second holds Alt, Enter and Backspace beside the
+ * shell characters and Home/End. Two Gboard-sized rows, nothing hidden behind
+ * a scroll on a phone (HG-EXK).
+ */
 val DEFAULT_EXTRA_KEY_IDS: List<String> = listOf(
-    "esc", "tab", "ctrl", "alt", "left", "down", "up", "right",
-    "pipe", "dash", "slash", "tilde", "home", "end", "pgup", "pgdn",
+    "esc", "tab", "ctrl", "left", "down", "up", "right",
+    "alt", "enter", "backspace", "pipe", "slash", "home", "end",
 )
+
 
 /** The keys for saved [ids], in their order; unknown IDs from older builds are skipped. */
 fun extraKeysFrom(ids: List<String>): List<ExtraKey> = ids.mapNotNull(AllExtraKeys::get)
 
+
 /**
- * The row of keys a phone keyboard lacks. Ctrl and Alt latch for the next key
- * or character, as on Termux; arrows and paging keys repeat while held. Keys
- * are small glass caps; a latched modifier fills with the session's [accent].
+ * The panel's rows: [rowsOf] rows of as even a length as keys allow, filled in
+ * saved order. The default takes 7 + 7; a custom set of many keys stays visible
+ * in the same two rows and lets the wider one scroll (HG-EXK).
+ */
+internal fun extraKeyRows(keys: List<ExtraKey>, rowsOf: Int = 2): List<List<ExtraKey>> {
+    if (keys.isEmpty()) return emptyList()
+    val rows = rowsOf.coerceIn(1, keys.size)
+    val short = keys.size % rows
+    val per = keys.size / rows
+    var at = 0
+    return (0 until rows).map { row ->
+        keys.subList(at, at + per + if (row < short) 1 else 0).also { at += per + if (row < short) 1 else 0 }
+    }
+}
+
+private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
+
+/** Every row a hand can thumb without peeking, whatever the cap shrinks to. */
+private val KeyRowHeight = 48.dp
+/** The gaps and outer padding of the panel, in dp. */
+private val KeyGap = 5.dp
+private val KeyRowPad = 6.dp
+
+/** How TalkBack reads the caps whose glyphs name nothing. */
+private val Spoken: Map<String, String> = mapOf(
+    "←" to "Arrow left", "↓" to "Arrow down", "↑" to "Arrow up", "→" to "Arrow right",
+    "⏎" to "Enter", "⌫" to "Backspace",
+)
+
+/**
+ * The panel of keys a phone keyboard lacks, drawn as two compact rows —
+ * Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
+ * Alt latch for the next key or character, as on Termux; arrows and paging
+ * keys repeat while held and stop at the moment the cap is released. A latched
+ * modifier fills with the session's [accent].
  */
 @Composable
 fun ExtraKeysRow(
@@ -111,95 +159,130 @@ fun ExtraKeysRow(
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val onSurface = MaterialTheme.colorScheme.onSurface
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .background(background)
             .drawBehind { drawRect(onSurface.copy(alpha = 0.08f), size = size.copy(height = 1.dp.toPx())) }
             .then(modifier)
             .testTag("extra_keys"),
-        // Centred when the keys fit; a narrower screen scrolls them instead.
-        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = if (compact) 4.dp else 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            for (key in keys) {
-                val active = key is ExtraKey.Modifier && latched and key.meta != 0
-                var down by remember { mutableStateOf(false) }
-                val scale by animateFloatAsState(if (down) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 900f), label = "key")
-                val fill by animateColorAsState(
-                    when {
-                        active -> accent
-                        down -> onSurface.copy(alpha = 0.16f)
-                        else -> onSurface.copy(alpha = 0.07f)
-                    },
-                    label = "keyFill",
-                )
-                val base = Modifier
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    .height(if (compact) 34.dp else 40.dp)
-                    .widthIn(min = if (compact) 40.dp else 46.dp)
-                    .clip(KeyShape)
-                    .background(fill)
-                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape)
-                    .testTag("key:${key.label}")
-                val gesture = when (key) {
-                    is ExtraKey.Key -> if (key.repeats) {
-                        base.pointerInput(key) {
-                            awaitEachGesture {
-                                awaitFirstDown()
-                                down = true
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onKey(key.keyCode, false)
-                                val repeat = scope.launch {
-                                    delay(400)
-                                    while (true) {
-                                        onKey(key.keyCode, true)
-                                        delay(60)
+        val panelWidth = maxWidth
+        val rows = remember(keys) { extraKeyRows(keys) }
+        Column(Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp)) {
+            for (row in rows) {
+                // Caps fill the row when it holds few keys; a row too wide for
+                // the screen (a long custom set) scrolls sideways, never taller.
+                val width = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
+                    .coerceAtLeast(if (compact) 40.dp else 44.dp)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(KeyGap),
+                ) {
+                    for (key in row) {
+                        val active = key is ExtraKey.Modifier && latched and key.meta != 0
+                        var down by remember { mutableStateOf(false) }
+                        val scale by animateFloatAsState(if (down) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 900f), label = "key")
+                        val fill by animateColorAsState(
+                            when {
+                                active -> accent
+                                down -> onSurface.copy(alpha = 0.16f)
+                                else -> onSurface.copy(alpha = 0.07f)
+                            },
+                            label = "keyFill",
+                        )
+                        val hit = Modifier
+                            .width(width)
+                            .height(KeyRowHeight)
+                            .testTag("key:${key.label}")
+                            .semantics {
+                                contentDescription = Spoken[key.label] ?: key.label
+                                role = Role.Button
+                                onClick {
+                                    when (key) {
+                                        is ExtraKey.Key -> onKey(key.keyCode, false)
+                                        is ExtraKey.Text -> onText(key.text)
+                                        is ExtraKey.Modifier -> onLatch(latched xor key.meta)
+                                        is ExtraKey.Action -> key.run()
+                                    }
+                                    true
+                                }
+                            }
+                        val gesture = when (key) {
+                            is ExtraKey.Key -> if (key.repeats) {
+                                hit.pointerInput(key) {
+                                    awaitEachGesture {
+                                        awaitFirstDown()
+                                        down = true
+                                        try {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onKey(key.keyCode, false)
+                                            val repeat = scope.launch {
+                                                delay(400)
+                                                while (true) {
+                                                    onKey(key.keyCode, true)
+                                                    delay(60)
+                                                }
+                                            }
+                                            try {
+                                                waitForUpOrCancellation()
+                                            } finally {
+                                                // Up, a scroll stealing the gesture, or this row
+                                                // leaving composition: the held job never outlives the hold.
+                                                repeat.cancel()
+                                            }
+                                        } finally {
+                                            down = false
+                                        }
                                     }
                                 }
-                                waitForUpOrCancellation()
-                                repeat.cancel()
-                                down = false
+                            } else {
+                                hit.press(key, { down = it }) { onKey(key.keyCode, false) }
+                            }
+                            is ExtraKey.Text -> hit.press(key, { down = it }) { onText(key.text) }
+                            is ExtraKey.Modifier -> hit.press(key to latched, { down = it }) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onLatch(latched xor key.meta)
+                            }
+                            is ExtraKey.Action -> hit.press(key, { down = it }) { key.run() }
+                        }
+                        Box(gesture, contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier
+                                    .height(if (compact) 36.dp else 40.dp)
+                                    .width(width)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .clip(KeyShape)
+                                    .background(fill)
+                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    key.label,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 14.sp,
+                                    color = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface,
+                                )
                             }
                         }
-                    } else {
-                        base.press({ down = it }) { onKey(key.keyCode, false) }
                     }
-                    is ExtraKey.Text -> base.press({ down = it }) { onText(key.text) }
-                    is ExtraKey.Modifier -> base.press({ down = it }) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onLatch(latched xor key.meta)
-                    }
-                    is ExtraKey.Action -> base.press({ down = it }) { key.run() }
-                }
-                Box(gesture.padding(horizontal = if (compact) 9.dp else 12.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        key.label,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface,
-                    )
                 }
             }
         }
     }
 }
 
-private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
-
-/** A tap that reports press state, for the cap's shrink, without a ripple. */
-private fun Modifier.press(onPressed: (Boolean) -> Unit, onTap: () -> Unit): Modifier = pointerInput(onTap) {
+/** A tap that reports press state, for the cap's shrink, without a ripple. Redone on a key change. */
+private fun Modifier.press(key: Any, onPressed: (Boolean) -> Unit, onTap: () -> Unit): Modifier = pointerInput(key) {
     detectTapGestures(
         onPress = {
             onPressed(true)
-            tryAwaitRelease()
+            val released = tryAwaitRelease()
             onPressed(false)
+            // A cap that lost its press to a scroll sends nothing.
+            if (released) onTap()
         },
-        onTap = { onTap() },
     )
 }

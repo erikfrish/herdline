@@ -78,7 +78,7 @@
     <string name="host_session_help">Usually “default”; named sessions are separate daemons</string>
     <string name="auth_key">Key</string>
     <string name="auth_password">Password</string>
-    <string name="auth_key_help">The host must trust this key: add its public key to ~/.ssh/authorized_keys, or attach a certificate signed by a CA the host trusts.</string>
+    <string name="auth_key_help">The host must trust this key: add its public key to ~/.ssh/authorized_keys, or attach a certificate signed by a CA the host trusts. With no key chosen the device key signs in first; if the host rejects it, a password can be entered once.</string>
     <string name="identity">Key</string>
     <string name="jump_host">Jump host</string>
     <string name="jump_none">None (connect directly)</string>

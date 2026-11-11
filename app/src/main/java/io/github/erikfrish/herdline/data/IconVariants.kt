@@ -15,7 +15,10 @@ import java.util.EnumMap
  * notification large icons and in-app logos. The icon Android Settings and the
  * system's package views show stays the manifest's static one: the platform
  * reads it from the installed manifest and no app can change it at runtime.
+ * The manifest ships one tile for all of them (Dusk since 0.6.0, matching the
+ * notification header icon Samsung draws there).
  */
+
 object IconVariants {
     private fun alias(variant: IconVariant) = "io.github.erikfrish.herdline.ui.Launcher" + variant.name
 

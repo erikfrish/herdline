@@ -38,6 +38,9 @@ enum class Promotion {
     /** The card is stale and is not offered for promotion. */
     Stale,
 
+    /** Custom selected-icon content: ordinary notification, not offered for promotion. */
+    Custom,
+
     /** Android before 16 has no promoted notifications: an ordinary ongoing card. */
     Unsupported,
 

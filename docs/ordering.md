@@ -15,8 +15,9 @@ The old *Agent order* setting (`agent_sort`: Needs you first, Herdr's order)
 is gone, and no alias for it remains. Both of its stored values become
 Workspace: the key is not read, and it is removed on the next settings save.
 "Needs you first" was never last activity: it was a status bucket. That
-projection is still available as the Needs you and Working filters
-(`SwitcherFilter`), which work in either order.
+projection is still available as the Needs you, Working and Ready filters
+(`SwitcherFilter`), which work in either order. Ready lists idle and done
+agents: what is finished or quiet, not a claim that anything is safe to send.
 
 ## What "activity" means
 
@@ -67,8 +68,20 @@ Herdr's last state change. Times show only changes Herdline saw itself." (a
 shorter wording on the tablet sidebar). A flat row's second line reads
 `workspace › tab · status`, because no section header says where it lives.
 The Herdr-focused place keeps the same single highlight as in Workspace
-order. Search, the Needs you / Working filters, pins and recents behave
-exactly as in Workspace.
+order. Search, the Needs you / Working / Ready filters, pins and recents
+behave exactly as in Workspace. Status filters reveal rows that the hide
+toggles would take (marked "hidden"), so a narrowed list is never silently
+empty; a plain search finds them the same way.
+
+## The Tabs view
+
+The phone Tabs sheet opens as the list (`TabsView.List`, the default), or as
+the same rows in a compact two-column layout (`TabsView.TwoColumns`) chosen
+in Settings › Layout › Tabs view. At most two columns; large accessibility
+fonts fall back to one, where two would make a title illegible. A stored
+"Grid" (`tabs_view`) is the removed tile overview and is migrated to List
+once; the value is written back so it never reappears. The old default is
+migrated too, never an explicit List choice.
 
 ## No jump: the order is held while the switcher is shown
 

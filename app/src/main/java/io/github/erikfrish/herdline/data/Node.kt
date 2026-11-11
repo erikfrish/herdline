@@ -19,7 +19,7 @@ data class Node(
     val user: String,
     val session: String = "default",
     val auth: AuthMethod = AuthMethod.Key,
-    /** The keychain identity to sign in with; null means the device key. */
+    /** The keychain identity to sign in with; null means the device key, which may fall back to a password. */
     val identityId: String? = null,
     val jumpId: String? = null,
     val group: String = "",

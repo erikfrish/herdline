@@ -1,0 +1,17 @@
+Herdline 0.6.0 — direct terminal input, compact Tabs and multi-agent Chat
+
+Tabs now opens as an ordinary list. The alternate view uses compact two-column rows instead of oversized preview cards, with the same workspace scope, search, selection and split-pane picker. Ready filters Idle and Done agents in Tabs and Agents.
+
+Terminal mode uses the terminal's own input, without the Chat composer. Arrows, Tab, Esc, Enter and modifiers are available in two compact rows above the keyboard for autocomplete and terminal shortcuts. Chat keeps its pane-bound drafts and Send safeguards.
+
+Without an explicitly selected SSH identity, a rejected device key can fall back to a password prompt. Explicit key choices stay strict, host-key verification stays intact, and an unanswered or failed connection is not guessed successful.
+
+Chat adds Pi, OpenCode, Codex and Claude Code alongside OMP, reading the existing agent session rather than starting a second agent. Supported live input paths are bound to that pane and session; uncertain delivery is never automatically repeated. The host needs Herdr's corresponding session integration and the required local agent tools.
+
+OMP task calls show their subagents by exact child identity, with running stages from the host extension's real event bus and expandable recorded results. Async completion settles only the child it names; an ordinary task-tool return does not mark background children done. Live stages require the updated Herdline ingress extension on the host.
+
+Chat can send a staged image without a caption. Attachment chips no longer make Send depend on the hidden Terminal viewport; host editor, instance, upload and uncertain-delivery safeguards remain.
+
+The installed package icon is now Dusk, matching the selected Dusk notification artwork on Samsung. Launcher variants remain selectable; Android's system-owned notification header and app-info icon are static and do not change with other launcher variants.
+
+The Obtainium import link enables prereleases. Stock Samsung Now Bar remains separate from Android promotion and is not claimed fixed.

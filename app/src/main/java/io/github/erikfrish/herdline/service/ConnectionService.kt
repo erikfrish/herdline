@@ -273,7 +273,7 @@ class ConnectionService : Service() {
                 AgentNotifications.card = when (live?.let(::liveState)) {
                     null -> Promotion.NoCard
                     LiveState.Disconnected -> Promotion.Stale
-                    else -> Promotion.Requested
+                    else -> Promotion.Custom
                 }
                 if (next != shown && next.count > 0) {
                     shown = next
@@ -409,7 +409,7 @@ class ConnectionService : Service() {
         } else {
             main.big?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
         }
-        builder.setRequestPromotedOngoing(fields.promote && shown.promote)
+        builder.liveArtwork(this, shown.variant, main.title, main.text)
         if (fields.unpin) {
             val unpin = PendingIntent.getService(
                 this, 3, Intent(this, ConnectionService::class.java).setAction(ACTION_UNPIN), PendingIntent.FLAG_IMMUTABLE,
@@ -419,6 +419,7 @@ class ConnectionService : Service() {
         val public = fields.public
         val publicBuilder = AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_LIVE, NoteContent(public.title, public.text), glyphIcon(public.glyph))
             .setOngoing(true)
+            .liveArtwork(this, shown.variant, public.title, public.text)
         // The lock screen's own time and chip, as its level permits (NB-C4).
         public.liveTime(publicBuilder)
         builder.setPublicVersion(publicBuilder.build())

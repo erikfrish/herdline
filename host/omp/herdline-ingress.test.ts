@@ -21,6 +21,16 @@ type Sent = { content: unknown; options: { deliverAs?: string; requestId?: strin
 /** An OMP session as the extension sees it through the public API, recording what it is asked. */
 function fakeOmp(options: { hooks?: boolean; entries?: Entry[] } = {}) {
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
+	const bus = new Map<string, Set<(data: unknown) => void>>();
+	const events = {
+		on(channel: string, listener: (data: unknown) => void) {
+			const listeners = bus.get(channel) ?? new Set<(data: unknown) => void>();
+			bus.set(channel, listeners);
+			listeners.add(listener);
+			return () => { listeners.delete(listener); };
+		},
+		emit(channel: string, data: unknown) { for (const listener of bus.get(channel) ?? []) listener(data); },
+	};
 	const log: string[] = [];
 	const entries: Entry[] = [...(options.entries ?? [])];
 	const sent: Sent[] = [];
@@ -46,6 +56,7 @@ function fakeOmp(options: { hooks?: boolean; entries?: Entry[] } = {}) {
 		for (const handler of handlers.get(name) ?? []) void handler(event, ctx);
 	};
 	const pi = {
+		events,
 		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
 			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
 		},
@@ -207,7 +218,7 @@ describe("a send", () => {
 		expect(s.log).toEqual(["append:pending", "disk", "flush", "send", "append:accepted", "disk", "flush"]);
 		// A working agent takes auto as a steer, under the request's id.
 		expect(s.sent[0].options).toEqual({ deliverAs: "steer", requestId: ID });
-		expect(reply.state).toEqual({ idle: false, queued: [{ requestId: ID, text: "hello", queue: "steering" }] });
+		expect(reply.state).toMatchObject({ idle: false, queued: [{ requestId: ID, text: "hello", queue: "steering" }] });
 	});
 
 	test("a call that resolves without the queue ever showing it is uncertain", async () => {
@@ -425,4 +436,21 @@ test("over the socket: an answer line per request, and queue and dialog pushes",
 	expect(lines).toContainEqual({ queue: [{ requestId: ID, text: "hi", queue: "steering" }], liveSteered: 0 });
 	expect(lines.find(line => line.id === ID)).toMatchObject({ outcome: "accepted" });
 	expect(lines).toContainEqual({ dialogs: s.omp.dialogs });
+});
+
+test("live children keep exact call identity and close only from lifecycle, then clear on session publication", async () => {
+	const s = await setup();
+	s.pi.events.emit("task:subagent:progress", { parentToolCallId: "call-1", progress: {
+		id: "Parser", agent: "scout", status: "running", stage: "reading parser", requests: 3, recentOutput: ["latest", "earlier"],
+	} });
+	let reply = await s.send({ op: "status" });
+	expect(reply.state).toMatchObject({ subagents: [{ id: "Parser", parentCallId: "call-1", agent: "Parser", type: "scout", status: "running", stage: "reading parser", output: "earlier\nlatest", requests: 3 }] });
+	s.pi.events.emit("task:subagent:lifecycle", { id: "Parser", parentToolCallId: "call-1", agent: "scout", status: "failed" });
+	s.pi.events.emit("task:subagent:progress", { parentToolCallId: "call-1", progress: { id: "Parser", status: "running" } });
+	reply = await s.send({ op: "status" });
+	expect(reply.state).toMatchObject({ subagents: [{ id: "Parser", status: "failed" }] });
+	expect(s.sent).toHaveLength(0);
+	await s.ingress.publish(s.ctx);
+	reply = await s.send({ op: "status" });
+	expect(reply.state).toMatchObject({ subagents: [] });
 });

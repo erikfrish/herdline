@@ -23,10 +23,16 @@ private val DENIED = Regex(
         "|Tool execution was blocked by (?:an extension|a preflight rule|a hook)$)",
 )
 
+/**
+ * What a tool card says about its call: a `task` call's children still
+ * running shows Running whatever its own result said — nothing claims Done
+ * while a child is alive. Denied (the person or a policy said no) is not
+ * Failed (it ran and broke).
+ */
 fun toolState(tool: ChatItem.Tool): ToolState {
     val result = tool.result ?: return ToolState.Running
     return when {
-        !result.isError -> ToolState.Done
+        !result.isError -> if (tool.subagents.any { it.alive }) ToolState.Running else ToolState.Done
         DENIED.containsMatchIn(result.text) -> ToolState.Denied
         else -> ToolState.Failed
     }

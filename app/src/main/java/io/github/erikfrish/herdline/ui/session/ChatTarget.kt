@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.core.ShellView
+import io.github.erikfrish.herdline.core.isChatAgent
 
 /**
  * CT-1: the pane this phone reads ("Reading here"), kept apart from Herdr's
@@ -10,7 +11,7 @@ import io.github.erikfrish.herdline.core.ShellView
  * in Chat never asks Herdr to focus, zoom or resize anything.
  *
  * It holds for one daemon run ([boot]): pane ids are only unique within one,
- * so a new run drops it. A new OMP instance in the same pane keeps it; the
+ * so a new run drops it. A new agent instance in the same pane keeps it; the
  * transcript's own identity resets what Chat shows (ChatHistory.merge).
  */
 data class ReadingTarget(val pane: String, val boot: String)
@@ -35,13 +36,13 @@ fun readingClosed(target: ReadingTarget?, view: ShellView?): Boolean =
 /**
  * The pane a choice of [tab] reads: the one last read there on this phone
  * ([lastRead], by tab), else the one Herdr reports focused in it (read, not
- * set), else its first OMP pane, else its first pane.
+ * set), else its first supported Chat agent, else its first pane.
  */
 fun paneForTab(view: ShellView, tab: String, lastRead: Map<String, String>): String? {
     val panes = view.panesOf(tab)
     return lastRead[tab]?.takeIf { pane -> panes.any { it.id == pane } }
         ?: panes.firstOrNull { it.focused }?.id
-        ?: panes.firstOrNull { view.agentIn(it.id)?.agent == "omp" }?.id
+        ?: panes.firstOrNull { isChatAgent(view.agentIn(it.id)?.agent) }?.id
         ?: panes.firstOrNull()?.id
 }
 

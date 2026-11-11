@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Subagent rows under a task tool; the state words mirror the tool row's. -->
+    <string name="chat_subagents_pending">pending</string>
+    <string name="chat_subagents_aborted">stopped</string>
+    <string name="chat_subagents_cancelled">cancelled</string>
+    <string name="chat_subagents_failed_chip">failed</string>
+    <!-- Open row meta: how many model requests the child made over how long. -->
+    <string name="chat_subagents_calls">%1$d calls · %2$s</string>
+</resources>

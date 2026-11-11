@@ -32,6 +32,7 @@ fn expected() -> Identity {
         terminal_id: "term_1".into(),
         pid: Some(PID),
         path: SESSION_FILE.into(),
+        ..Identity::default()
     }
 }
 

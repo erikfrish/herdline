@@ -3,13 +3,19 @@ package io.github.erikfrish.herdline.core
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** The agent a transcript belongs to: one pane, terminal, OMP process and session file. */
-data class TranscriptIdentity(val paneId: String, val terminalId: String, val pid: Long?, val path: String) {
+/** One running agent and its reported session reference, never shared across programs. */
+data class TranscriptIdentity(
+    val paneId: String, val terminalId: String, val pid: Long?, val path: String,
+    val agent: String = "omp", val source: String = "herdr:omp", val kind: String = "path",
+) {
     fun toJson(): JSONObject = JSONObject()
         .put("pane_id", paneId)
         .put("terminal_id", terminalId)
         .put("pid", pid ?: JSONObject.NULL)
         .put("path", path)
+        .put("agent", agent)
+        .put("source", source)
+        .put("kind", kind)
 
     companion object {
         fun parse(json: JSONObject) = TranscriptIdentity(
@@ -17,9 +23,16 @@ data class TranscriptIdentity(val paneId: String, val terminalId: String, val pi
             terminalId = json.getString("terminal_id"),
             pid = if (json.isNull("pid")) null else json.getLong("pid"),
             path = json.getString("path"),
+            agent = json.optString("agent", "omp"),
+            source = json.optString("source", "herdr:omp"),
+            kind = json.optString("kind", "path"),
         )
     }
 }
+
+/** Chat reads the existing session of these agent kinds; other terminals stay Terminal. */
+fun isChatAgent(agent: String?): Boolean = agent?.lowercase() in CHAT_AGENTS
+private val CHAT_AGENTS = setOf("omp", "pi", "opencode", "codex", "claude")
 
 /** Which bytes of the transcript to read next (see `transcript.rs`). */
 sealed interface TranscriptRead {
@@ -74,6 +87,8 @@ sealed interface TranscriptBlock {
         val exitCode: Long? = null,
         val answers: List<ChatFormAnswer> = emptyList(),
         val timedOut: Boolean = false,
+        /** The children a `task` call spawned and this result lists (wire `subagents`, bounded 64). */
+        val subagents: List<TranscriptSubagent> = emptyList(),
     ) : TranscriptBlock
     /** An image at [part] of its message's content. */
     data class Image(val part: Int, val source: ImageSource) : TranscriptBlock
@@ -99,12 +114,82 @@ sealed interface TranscriptBlock {
                 exitCode = json.optLongOrNull("exit_code"),
                 answers = json.optJSONArray("answers").objects().map(ChatFormAnswer::parse),
                 timedOut = json.optBoolean("timed_out"),
+                subagents = json.optJSONArray("subagents").objects().mapNotNull(TranscriptSubagent.Companion::parse).take(MAX_SUBAGENTS),
             )
             "image" -> image(json)
             else -> null
         }
 
         private fun image(json: JSONObject) = Image(json.optInt("part"), ImageSource.parse(json.optJSONObject("source")))
+    }
+}
+
+/** How many children one call's snapshot and one entry's ends may carry (wire bounds). */
+const val MAX_SUBAGENTS = 64
+
+/** How many chars of one child's output the wire may carry. */
+const val MAX_SUBAGENT_OUTPUT_CHARS = 4096
+
+/** The terminal statuses an end may carry; a running child is never an end. */
+private val END_STATUSES = setOf("completed", "failed", "aborted", "cancelled")
+
+/**
+ * One child of a `task` call as the tool result snapshot lists it (wire
+ * `subagents[]`, see `ChatSubagents.kt`'s canvas contract). [id] is its
+ * exact child id; every other field may be missing.
+ */
+data class TranscriptSubagent(
+    val id: String,
+    val agent: String? = null,
+    val type: String? = null,
+    val status: String,
+    val task: String? = null,
+    val stage: String? = null,
+    val output: String? = null,
+    val error: String? = null,
+    val durationMs: Long? = null,
+    val requests: Int? = null,
+    val exitCode: Int? = null,
+) {
+    companion object {
+        fun parse(json: JSONObject): TranscriptSubagent? {
+            val id = json.optString("id").takeIf { it.isNotBlank() } ?: return null
+            val status = json.optString("status").takeIf { it.isNotBlank() } ?: return null
+            return TranscriptSubagent(
+                id = id,
+                agent = json.optString("agent").takeIf { it.isNotBlank() },
+                type = json.optString("type").takeIf { it.isNotBlank() },
+                status = status,
+                task = json.optString("task").takeIf { it.isNotBlank() },
+                stage = json.optString("stage").takeIf { it.isNotBlank() },
+                output = json.optString("output").takeIf { it.isNotBlank() }?.take(MAX_SUBAGENT_OUTPUT_CHARS),
+                error = json.optString("error").takeIf { it.isNotBlank() },
+                durationMs = json.optLongOrNull("durationMs"),
+                requests = json.optLongOrNull("requests")?.toInt(),
+                exitCode = json.optLongOrNull("exitCode")?.toInt(),
+            )
+        }
+    }
+}
+
+/**
+ * A settled async job's end, as [TranscriptEntry.subagentEnds] records it
+ * (`{id,status,durationMs}`). [id] matches a child's exact id; an unknown
+ * status is not parsed at all ([parse] returns null).
+ */
+data class TranscriptSubagentEnd(
+    val id: String,
+    val status: String,
+    val durationMs: Long? = null,
+) {
+    companion object {
+        fun parse(json: JSONObject): TranscriptSubagentEnd? {
+            val id = json.optString("id").takeIf { it.isNotBlank() } ?: return null
+            // Terminal only: an end never carries a running child, and a
+            // status outside the terminal set is not read at all.
+            val status = json.optString("status").takeIf { it in END_STATUSES } ?: return null
+            return TranscriptSubagentEnd(id, status, json.optLongOrNull("durationMs"))
+        }
     }
 }
 
@@ -153,6 +238,12 @@ data class TranscriptEntry(
     val usage: TranscriptUsage? = null,
     val stopReason: String? = null,
     val steer: TranscriptSteer? = null,
+    /**
+     * The settled ends a persisted custom/async-result entry carries (wire
+     * `subagent_ends`): each `{id,status,durationMs}`, matched to children
+     * by exact id only.
+     */
+    val subagentEnds: List<TranscriptSubagentEnd> = emptyList(),
 ) {
     companion object {
         fun parse(json: JSONObject) = TranscriptEntry(
@@ -175,6 +266,7 @@ data class TranscriptEntry(
                 "live" -> TranscriptSteer.Live
                 else -> null
             },
+            subagentEnds = json.optJSONArray("subagent_ends").objects().mapNotNull(TranscriptSubagentEnd.Companion::parse).take(MAX_SUBAGENTS),
         )
     }
 }
@@ -187,6 +279,7 @@ data class TranscriptPage(
     val start: Long,
     val end: Long,
     val entries: List<TranscriptEntry>,
+    val hasOlder: Boolean = start > 0,
 ) {
     companion object {
         fun parse(text: String): TranscriptPage {
@@ -198,6 +291,7 @@ data class TranscriptPage(
                 start = json.getLong("start"),
                 end = json.getLong("end"),
                 entries = json.optJSONArray("entries").objects().map(TranscriptEntry::parse),
+                hasOlder = json.optBoolean("has_older", json.getLong("start") > 0),
             )
         }
     }

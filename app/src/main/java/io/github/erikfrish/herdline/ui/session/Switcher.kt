@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -147,12 +149,12 @@ fun Switcher(
     here: String? = view?.focusedPane,
     /** Chat: the here row says "Reading here" and Herdr's focused row "On desktop" to TalkBack. */
     reading: Boolean = false,
-    /** The phone sheet's "Show as grid" in the header (TB1); null where the list is the only view. */
+    /** The phone sheet's "Show as two columns" in the header (TB1); null where the list is the only view. */
     onShowGrid: (() -> Unit)? = null,
     /**
      * Whether this list applies the saved start filter when it first shows.
-     * The phone sheet applies it once per open itself, so Grid ⇄ List keeps
-     * the filter the user chose.
+     * The phone sheet applies it once per open itself, so Two columns ⇄ List
+     * keeps the filter the user chose.
      */
     appliesStartFilter: Boolean = true,
     /**
@@ -200,16 +202,18 @@ fun Switcher(
         inScope.hiddenRows(hideShells = prefs?.hideShells == true, hideIdleDone = prefs?.hideIdleDone == true)
     }
     var showHidden by remember { mutableStateOf(false) }
-    val revealed = showHidden || query.isNotBlank()
+    // A query or a status filter reveals hidden rows too, so Ready never lists nothing under Hide idle and done.
+    val revealed = showHidden || query.isNotBlank() || filter != SwitcherFilter.All
     val listed = remember(inScope, hiding, revealed) { if (revealed) inScope else inScope.without(hiding.keys) }
     val marked = if (revealed) hiding.keys else emptySet()
     val shown = remember(listed, query, filter) { listed.narrowed(query, filter) }
     // Counts come from every row, hidden or not, so the chips stay honest.
     val asking = remember(groups) { groups.agentsWith(AgentStatus.Blocked) }
     val working = remember(groups) { groups.agentsWith(AgentStatus.Working) }
+    val ready = remember(groups) { groups.agentsWith(AgentStatus.Idle) + groups.agentsWith(AgentStatus.Done) }
     // The sheet's chips count as its grid's do: in scope, matching the search.
-    val counts = remember(inScope, query, onScope != null, asking, working) {
-        if (onScope != null) inScope.agentCounts(query) else asking.size to working.size
+    val counts = remember(inScope, query, onScope != null, asking, working, ready) {
+        if (onScope != null) inScope.agentCounts(query) else FilterCounts(asking.size, working.size, ready.size)
     }
     val browsing = query.isBlank() && filter == SwitcherFilter.All
     val flat = order == TargetOrder.LastActivity
@@ -269,8 +273,8 @@ fun Switcher(
             item(key = "header") {
                 HostLine(node, view, state) {
                     if (onShowGrid != null) {
-                        IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-grid")) {
-                            Icon(GridIcon, stringResource(R.string.overview_as_grid), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-columns")) {
+                            Icon(GridIcon, stringResource(R.string.overview_as_columns), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -285,20 +289,26 @@ fun Switcher(
                 }
             }
             if (filtersShown) item(key = "filters") {
-                Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, accent, "all") { onFilter(SwitcherFilter.All) }
                     FilterChip(
-                        stringResource(R.string.filter_needs_you, counts.first),
+                        stringResource(R.string.filter_needs_you, counts.needsYou),
                         filter == SwitcherFilter.NeedsYou,
                         AgentStatus.Blocked.color(),
                         "needs_you",
                     ) { onFilter(SwitcherFilter.NeedsYou) }
                     FilterChip(
-                        stringResource(R.string.filter_working, counts.second),
+                        stringResource(R.string.filter_working, counts.working),
                         filter == SwitcherFilter.Working,
                         AgentStatus.Working.color(),
                         "working",
                     ) { onFilter(SwitcherFilter.Working) }
+                    FilterChip(
+                        stringResource(R.string.filter_ready, counts.ready),
+                        filter == SwitcherFilter.Ready,
+                        AgentStatus.Done.color(),
+                        "ready",
+                    ) { onFilter(SwitcherFilter.Ready) }
                 }
             }
             if (browsing && placesShown) {

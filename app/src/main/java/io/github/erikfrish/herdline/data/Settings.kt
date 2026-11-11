@@ -45,11 +45,14 @@ enum class LockDetail {
 /** Launcher icon variants, each an activity alias. */
 enum class IconVariant { Default, Mono, Contrast, Ember, Signal, Pasture, Meadow, Dusk }
 
-/** Which filter the Tabs list and Agents open with: Herdr's order under each. */
-enum class StartFilter { All, NeedsYou, Working }
+/**
+ * Which filter the Tabs list and Agents open with: Herdr's order under each.
+ * Ready is every agent that is idle or done.
+ */
+enum class StartFilter { All, NeedsYou, Working, Ready }
 
-/** How the phone Tabs sheet opens: the card overview, or the Switcher list. */
-enum class TabsView { Grid, List }
+/** How the phone Tabs sheet opens: the Switcher list, or compact two-column list rows. */
+enum class TabsView { List, TwoColumns }
 
 /** A settings page that can go back to its defaults on its own. */
 enum class ResetScope { Appearance, Terminal, Composer, Layout, Notifications }
@@ -80,7 +83,7 @@ data class Settings(
     val targetOrder: TargetOrder = TargetOrder.Workspace,
     val startFilter: StartFilter = StartFilter.All,
     /** The phone Tabs sheet's view; the tablet sidebar ignores it. */
-    val tabsView: TabsView = TabsView.Grid,
+    val tabsView: TabsView = TabsView.List,
     /** Hide tabs without an agent from the Tabs list; never from the phone tab row or Tabs n/N. */
     val hideShells: Boolean = false,
     /** Hide tabs whose agents are all idle or done from the Tabs list; a tab that needs you stays. */
@@ -89,9 +92,7 @@ data class Settings(
     val composerMenu: List<String> = ComposerMenu.DEFAULT,
     /** Shown Tabs sheet and sidebar sections; their order is fixed. */
     val sheetSections: List<String> = SheetSections.DEFAULT,
-    /** The message composer under the terminal in Terminal; Chat always has it. */
-    val terminalComposer: Boolean = true,
-    /** Keyboard suggestions while typing straight into the terminal; the composer always has them. */
+    /** Keyboard suggestions while typing straight into the terminal. */
     val terminalSuggestions: Boolean = false,
     val notifyAttention: Boolean = true,
     val notifyDone: Boolean = true,
@@ -126,7 +127,7 @@ data class Settings(
                 extraKeys = d.extraKeys,
                 showExtraKeys = d.showExtraKeys,
             )
-            ResetScope.Composer -> copy(terminalComposer = d.terminalComposer, terminalSuggestions = d.terminalSuggestions)
+            ResetScope.Composer -> copy(terminalSuggestions = d.terminalSuggestions)
             ResetScope.Layout -> copy(
                 layoutMode = d.layoutMode,
                 sidebarOpen = d.sidebarOpen,
@@ -155,6 +156,11 @@ data class Settings(
         const val MATCH_THEME = ""
     }
 }
+
+/** The sixteen-key default the builds before today's fourteen saved; a saved row equal to it migrates to the default. */
+private val LEGACY_EXTRA_KEYS = listOf(
+    "esc", "tab", "ctrl", "alt", "left", "down", "up", "right", "pipe", "dash", "slash", "tilde", "home", "end", "pgup", "pgdn",
+)
 
 class SettingsStore internal constructor(private val prefs: SharedPreferences) {
     constructor(context: Context) : this(context.getSharedPreferences("settings", Context.MODE_PRIVATE))
@@ -199,20 +205,25 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             uiScale = prefs.getFloat("ui_scale", d.uiScale).coerceIn(Settings.UI_SCALES),
             density = enumOf("density", d.density),
             accent = prefs.getInt("accent", d.accent),
-            extraKeys = prefs.getString("extra_keys", null)?.let { saved ->
-                saved.split(',').filter { it.isNotEmpty() }
+            extraKeys = ids("extra_keys")?.let { saved ->
+                // The row saved by the old sixteen-key default is that default, not a
+                // custom set: it takes today's default once, written back so this runs once.
+                if (saved == LEGACY_EXTRA_KEYS) {
+                    prefs.edit().putString("extra_keys", d.extraKeys.joinToString(",")).apply()
+                    d.extraKeys
+                } else saved
             } ?: d.extraKeys,
             showExtraKeys = prefs.getBoolean("show_extra_keys", d.showExtraKeys),
             layoutMode = enumOf("layout_mode", d.layoutMode),
             sidebarOpen = prefs.getBoolean("sidebar_open", d.sidebarOpen),
             targetOrder = enumOf("target_order", d.targetOrder),
             startFilter = enumOf("start_filter", d.startFilter),
-            tabsView = enumOf("tabs_view", d.tabsView),
+            // A stored "Grid" is the removed tile overview: the compact list takes over.
+            tabsView = if (prefs.getString("tabs_view", null) == "Grid") TabsView.List else enumOf("tabs_view", d.tabsView),
             hideShells = prefs.getBoolean("hide_shells", d.hideShells),
             hideIdleDone = prefs.getBoolean("hide_idle_done", d.hideIdleDone),
             composerMenu = ComposerMenu.repaired(savedControls(ids("composer_menu"), ids("composer_menu_known"), ComposerMenu.DEFAULT)),
             sheetSections = savedControls(ids("sheet_sections"), ids("sheet_sections_known"), SheetSections.DEFAULT),
-            terminalComposer = prefs.getBoolean("terminal_composer", d.terminalComposer),
             terminalSuggestions = prefs.getBoolean("terminal_suggestions", d.terminalSuggestions),
             notifyAttention = prefs.getBoolean("notify_attention", d.notifyAttention),
             notifyDone = prefs.getBoolean("notify_done", d.notifyDone),
@@ -254,7 +265,6 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putString("composer_menu_known", ComposerMenu.DEFAULT.joinToString(","))
             .putString("sheet_sections", next.sheetSections.joinToString(","))
             .putString("sheet_sections_known", SheetSections.DEFAULT.joinToString(","))
-            .putBoolean("terminal_composer", next.terminalComposer)
             .putBoolean("terminal_suggestions", next.terminalSuggestions)
             .putBoolean("notify_attention", next.notifyAttention)
             .putBoolean("notify_done", next.notifyDone)
@@ -274,6 +284,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
 
     /** Back to the defaults for one settings page only; see [Settings.restored]. */
     fun restore(scope: ResetScope) = update { it.restored(scope) }
+
 
     /** The terminal size last laid out, so a new connection starts close to it. */
     var lastGrid: IntArray

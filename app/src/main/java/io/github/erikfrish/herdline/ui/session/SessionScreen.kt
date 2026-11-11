@@ -121,14 +121,15 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.Pane
+import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Native
-import io.github.erikfrish.herdline.core.RenderFrame
+import io.github.erikfrish.herdline.core.Routes
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
-import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TabsView
@@ -325,6 +326,22 @@ fun SessionScreen(
         }
     }
 
+    // Automatic password fallback: a typed rejection of an implicit device
+    // key asks for that hop's password once — a saved one retries at once
+    // with no dialog. Cancel, or a wrong password, never reopens on its own.
+    LaunchedEffect(state) {
+        val rejection = state as? Connection.State.AuthRejected ?: return@LaunchedEffect
+        val route = app.nodes.route(app.nodes.get(node.id) ?: node).getOrNull() ?: return@LaunchedEffect
+        val hop = route.getOrNull(rejection.hop) ?: return@LaunchedEffect
+        if (!Routes.fallbackEligible(hop)) return@LaunchedEffect
+        // The credential actually carried settles what was rejected.
+        if (app.usedPassword(node.id, hop.id)) return@LaunchedEffect
+        // One automatic try per hop per attachment; a cancel or wrong
+        // password surfaces sign-in again but never loops on its own.
+        if (!app.claimPasswordFallback(node.id, hop.id)) return@LaunchedEffect
+        if (!app.fallbackWithSavedPassword(node, hop, dark)) askPasswords = listOf(hop)
+    }
+
     LaunchedEffect(scheme, state) { connection.setTheme(scheme.toJson().toString()) }
     LaunchedEffect(typefaces, terminal) { typefaces?.let { terminal?.setTypefaces(it) } }
     LaunchedEffect(settings.fontSize, terminal) { terminal?.fontSizeSp = settings.fontSize }
@@ -411,14 +428,13 @@ fun SessionScreen(
     // ...and its own loaded transcript, for this connection.
     val chatMemory = remember(connection) { ChatMemory() }
     val closed = readingClosed(reading, view)
-    /** Whether [pane] shows Chat: an OMP pane whose choice, or the default, is Chat. */
+    /** Whether the selected supported agent's saved mode is Chat. */
     fun chatFor(pane: String?): Boolean {
         val shown = view ?: return false
         val agent = pane?.let { shown.agentIn(it)?.agent }
-        return pane != null && showsChat(modeChoices, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = agent == "omp")
+        return pane != null && showsChat(modeChoices, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
     }
-    // Chat reads OMP's session file, so it is offered for OMP agents only.
-    val chatPane = reading?.pane?.takeIf { view?.agentIn(it)?.agent == "omp" }
+    val chatPane = reading?.pane?.takeIf { isChatAgent(view?.agentIn(it)?.agent) }
     // A choice holds for one daemon run and program: a restarted daemon or a new
     // program in a pane forgets it, so a mode never carries over to a replaced process.
     LaunchedEffect(view) {
@@ -445,12 +461,8 @@ fun SessionScreen(
     }
     // Panes whose delivery is unconfirmed: their tabs carry the lock (M5).
     val held = remember(unconfirmed, node.id, node.session) { drafts.held(node.id, node.session) }
-    // Terminal without the composer (Settings › Composer): the terminal and its extra keys take its place. A delivery
-    // waiting on its receipt or steer, or left unconfirmed, keeps the composer: its editor holds that state and Unlock.
-    val composerPinned = receiptNotice || composerPane?.let { it in held || DraftKey(node.id, node.session, it) in flying } == true
-    val composerHidden = !chatMode && !settings.terminalComposer && !composerPinned
-    val composerKept = !chatMode && !settings.terminalComposer && composerPinned
-    LaunchedEffect(composerKept) { if (composerKept) snackbar.showSnackbar(context.getString(R.string.terminal_composer_kept)) }
+    // Terminal always uses its own editor; Chat drafts and delivery holds remain pane-bound.
+    val composerHidden = !chatMode
     // Hidden, the composer measures nothing: no stale height, open space or held grid for the terminal to keep.
     LaunchedEffect(composerHidden, terminal) {
         if (composerHidden) {
@@ -579,15 +591,14 @@ fun SessionScreen(
         terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
-    /** The Chat | Terminal control: choosing the shown mode does nothing; Chat needs an OMP pane. */
+    /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
-        // In Terminal on a pane read here without Chat, the desktop's OMP pane on screen is the one asked for.
-        val desktopOmp = desktopPane?.takeIf { chat && !chatMode && chatPane == null && view?.agentIn(it)?.agent == "omp" }
+        val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
             chat && chatUnreadable -> scope.launch { snackbar.showSnackbar(context.getString(R.string.session_chat_unreadable)) }
-            desktopOmp != null -> {
-                readHere(desktopOmp)
-                showChat(true, desktopOmp)
+            desktopAgent != null -> {
+                readHere(desktopAgent)
+                showChat(true, desktopAgent)
             }
             chat == chatWanted -> Unit
             chat && chatPane == null -> {
@@ -1044,7 +1055,7 @@ fun SessionScreen(
                             StateCard(
                                 state = state,
                                 accent = accent,
-                                rejectedPassword = rejected?.auth == AuthMethod.Password,
+                                rejectedPassword = rejected != null && (Routes.fallbackEligible(rejected) || app.usedPassword(node.id, rejected.id)),
                                 onRetry = ::retry,
                                 onSignIn = { rejected?.let { askPasswords = listOf(it) } },
                                 onTrust = { trusted ->
@@ -1072,8 +1083,8 @@ fun SessionScreen(
                         )
                         GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
                     }
-                    if ((rawKeys || composerHidden) && !chatMode) {
-                        // Raw input: the terminal's own keys, and one way back to the composer when it is shown.
+                    if (!chatMode) {
+                        // Direct terminal input and autocomplete keys, never a Chat field.
                         Column(Modifier.navigationBarsPadding()) {
                             if (settings.showExtraKeys) {
                                 ExtraKeysRow(
@@ -1085,17 +1096,6 @@ fun SessionScreen(
                                     onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
                                     onText = { connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
-                                )
-                            }
-                            if (!composerHidden) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                                GlassButton(
-                                    stringResource(R.string.session_back_to_composer),
-                                    onClick = {
-                                        terminal?.hideKeyboard()
-                                        rawKeys = false
-                                    },
-                                    icon = Icons.Default.Edit,
-                                    modifier = Modifier.align(Alignment.Center).heightIn(min = 48.dp).testTag("session:back_to_composer"),
                                 )
                             }
                         }
@@ -1194,7 +1194,7 @@ fun SessionScreen(
                 // TB1: the overview, or today's list; either one's header switches to the other.
                 val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
                 when (settings.tabsView) {
-                    TabsView.Grid -> TabsOverview(
+                    TabsView.TwoColumns -> TabsOverview(
                         node = node,
                         host = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title,
                         view = view,
@@ -1231,7 +1231,7 @@ fun SessionScreen(
                         modifier = Modifier.fillMaxWidth(),
                         here = focusedPane,
                         reading = chatMode,
-                        onShowGrid = { showAs(TabsView.Grid) },
+                        onShowGrid = { showAs(TabsView.TwoColumns) },
                         appliesStartFilter = false,
                         scope = tabsScope,
                         onScope = { tabsScope = it },

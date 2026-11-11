@@ -21,6 +21,8 @@ data class ComposerCheck(
     val send: Gate,
     /** Steer's paste gate; only while it is ok does the Steer action show. */
     val steer: Gate,
+    /** Host editor admission for Chat, not the hidden Terminal viewport. */
+    val chatSend: Gate = send,
 ) {
     data class Gate(val ok: Boolean, val reason: String?)
 
@@ -42,6 +44,7 @@ data class ComposerCheck(
                 insert = gate("insert"),
                 send = gate("send"),
                 steer = gate("steer"),
+                chatSend = gate("chat_send"),
             )
         }
     }

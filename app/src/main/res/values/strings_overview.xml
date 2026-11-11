@@ -13,7 +13,7 @@
     </plurals>
     <string name="overview_search">Search tabs, panes, agents</string>
     <string name="overview_as_list">Show as list</string>
-    <string name="overview_as_grid">Show as grid</string>
+    <string name="overview_as_columns">Show as two columns</string>
     <string name="overview_current">Current</string>
     <string name="overview_current_spoken">current tab</string>
     <string name="overview_tab_n">Tab %1$d</string>

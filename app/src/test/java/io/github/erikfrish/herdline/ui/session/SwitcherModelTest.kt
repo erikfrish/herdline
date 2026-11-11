@@ -7,6 +7,7 @@ import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -82,6 +83,28 @@ class SwitcherModelTest {
             listOf("t:t1", "p:p2"),
             groups.narrowed("", SwitcherFilter.Working).rows().map { it.key },
         )
+    }
+
+    @Test
+    fun readyIsIdleOrDoneAndKeepsATabWhenAnyOfItsAgentsIsReady() {
+        // First fixture: every agent asks or works, so nothing is ready.
+        assertEquals(emptyList<String>(), groups.narrowed("", SwitcherFilter.Ready).rows().map { it.key })
+        // calm: the idle split pane and its tab, the done tab, and the split
+        // tab whose second pane is done (the asking pane under it is not).
+        assertEquals(
+            listOf("t:t1", "p:p1", "t:t3", "t:t4", "p:p6"),
+            calm.narrowed("", SwitcherFilter.Ready).rows().map { it.key },
+        )
+    }
+
+    @Test
+    fun aStatusFilterStillFindsTheRowsThatHidingWouldTake() {
+        // Hide idle and done is exactly Ready's rows: the status filters reveal
+        // them (marked hidden) instead of listing nothing. Search walks them too.
+        val hidden = calm.hiddenRows(hideShells = false, hideIdleDone = true)
+        val ready = calm.narrowed("", SwitcherFilter.Ready).rows().map { it.key }.toSet()
+        assertTrue(ready.any { it in hidden.keys })
+        assertTrue(calm.narrowed("build", SwitcherFilter.Ready).rows().any { it.key in hidden.keys })
     }
 
     @Test

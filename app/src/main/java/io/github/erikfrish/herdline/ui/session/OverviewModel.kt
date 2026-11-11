@@ -9,55 +9,30 @@ import kotlin.math.floor
 import kotlin.math.max
 
 /*
- * The phone Tabs overview's pure parts (TB1): the column rule, the card
- * height, the workspace scope, and the
- * cards, read only from the ShellView the connection already holds.
+ * The phone Tabs sheet's pure parts (TB1): the column rule, the workspace
+ * scope, and the cards, read only from the ShellView the connection already
+ * holds.
  */
 
-/** The overview's outer padding, gap between cards, and narrowest card at font scale 1, in dp. */
+/** The overview's outer padding and gap between rows, in dp. */
 internal const val OVERVIEW_PADDING_DP = 16f
 internal const val OVERVIEW_GAP_DP = 12f
-private const val MIN_CARD_DP = 148f
-private const val MAX_COLUMNS = 4
 
-/** The narrowest card at [fontScale]: it grows with the font, never below 148 dp. */
-internal fun minCardDp(fontScale: Float): Float = max(MIN_CARD_DP, MIN_CARD_DP * fontScale)
-
-/** How many cards a row of a sheet [widthDp] wide holds at [fontScale]: 1 to 4. */
-internal fun overviewColumns(widthDp: Float, fontScale: Float): Int {
-    val fits = floor((widthDp - 2 * OVERVIEW_PADDING_DP + OVERVIEW_GAP_DP) / (minCardDp(fontScale) + OVERVIEW_GAP_DP)).toInt()
-    return fits.coerceIn(1, MAX_COLUMNS)
-}
-
-/** Each card's width in a sheet [widthDp] wide with [columns] columns. */
-internal fun overviewCardWidthDp(widthDp: Float, columns: Int): Float =
-    (widthDp - 2 * OVERVIEW_PADDING_DP - OVERVIEW_GAP_DP * (columns - 1)) / columns
-
-/** The preview's pill row and its tile row, in dp at [fontScale]. */
-internal fun previewPillDp(fontScale: Float): Float = max(24f, 12f * fontScale + 12f)
-internal fun previewTileDp(fontScale: Float): Float = max(36f, 16.8f * fontScale + 12f)
-
-/** The preview's height: its pill row and one row of pane tiles. */
-internal fun overviewPreviewDp(fontScale: Float): Float =
-    8f + previewPillDp(fontScale) + 6f + previewTileDp(fontScale) + 8f
+/** The narrowest readable compact list row at font scale 1, in content dp per column. */
+private const val MIN_ROW_DP = 152f
 
 /**
- * Every card's height at [fontScale], the same for all, so grid rows never
- * jitter: two title lines are always reserved.
+ * How many columns the compact list lays out in a sheet [widthDp] wide at
+ * [fontScale]: at most two, and one when two columns would each fall under
+ * [MIN_ROW_DP], which is where large accessibility fonts make two illegible.
  */
-internal fun overviewCardDp(fontScale: Float): Float =
-    8f + overviewPreviewDp(fontScale) + 8f + 44f * fontScale + 4f + 36f * fontScale + 12f
-
-/** At most this many pane tiles on a card narrower than [WIDE_CARD_DP], else [WIDE_TILES]. */
-private const val NARROW_TILES = 2
-private const val WIDE_TILES = 3
-internal const val WIDE_CARD_DP = 220f
+internal fun compactColumns(widthDp: Float, fontScale: Float): Int {
+    val content = widthDp - 2 * OVERVIEW_PADDING_DP - OVERVIEW_GAP_DP
+    return if (content >= 2 * MIN_ROW_DP * fontScale) 2 else 1
+}
 
 /** One pane of a tab: its agent, if any, and its readable title (Titles.kt). */
-data class PaneTile(val pane: Pane, val agent: Agent?, val title: String) {
-    /** What a preview tile names: the agent kind, else the last segment of the pane's directory. */
-    val place: String? get() = agent?.agent ?: pane.cwd?.trimEnd('/')?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
-}
+data class PaneTile(val pane: Pane, val agent: Agent?, val title: String)
 
 /**
  * One tab's card. [panes] are all of its panes in Herdr's order; [matched]
@@ -76,13 +51,6 @@ data class OverviewCard(
     val tab: Tab get() = row.tab
     val workspace: Workspace get() = row.workspace
     val split: Boolean get() = panes.size > 1
-
-    /** The tiles a card [widthDp] wide shows, and how many panes a last "+k" tile stands for (0: none). */
-    fun tiles(widthDp: Float): Pair<List<PaneTile>, Int> {
-        val room = if (widthDp < WIDE_CARD_DP) NARROW_TILES else WIDE_TILES
-        if (panes.size <= room) return panes to 0
-        return panes.take(room - 1) to panes.size - (room - 1)
-    }
 }
 
 /** A workspace's run of cards; [suffix] as on [OverviewCard]. */
@@ -186,15 +154,19 @@ internal fun overviewIndexOf(sections: List<OverviewSection>, tab: String?, head
     return null
 }
 
+/** The Needs you, Working and Ready counts of the status chips. */
+internal data class FilterCounts(val needsYou: Int, val working: Int, val ready: Int)
+
 /**
- * The Needs you and Working counts of the status chips: agents in [groups]
- * (the scoped topology) with that status that [query] matches, also in
- * single-pane tabs.
+ * The counts of the status chips: agents in [groups] (the scoped topology)
+ * with each filter's status that [query] matches, also in single-pane tabs.
+ * Every filter counts what it lists, hidden rows included, so the chips stay
+ * honest.
  */
-internal fun List<WorkspaceGroup>.agentCounts(query: String): Pair<Int, Int> {
+internal fun List<WorkspaceGroup>.agentCounts(query: String): FilterCounts {
     val agents = map { WorkspaceGroup(it.workspace, it.agentRows, it.agentRows) }
     fun count(filter: SwitcherFilter) = agents.narrowed(query, filter).sumOf { it.rows.size }
-    return count(SwitcherFilter.NeedsYou) to count(SwitcherFilter.Working)
+    return FilterCounts(count(SwitcherFilter.NeedsYou), count(SwitcherFilter.Working), count(SwitcherFilter.Ready))
 }
 
 /**

@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertNotNull
 
 class ChatLayoutTest {
     private fun tool(key: String, done: Boolean = true, error: Boolean = false) = ChatItem.Tool(
@@ -142,6 +143,21 @@ class ChatLayoutTest {
     }
 
     private fun group(lines: List<ChatLine>) = lines.filterIsInstance<ChatLine.ToolGroup>().single()
+
+    @Test
+    fun a_task_whose_exact_children_run_stays_visible_and_never_folds_away() {
+        val task = tool("a:2").copy(subagents = listOf(Subagent("c", status = SubagentStatus.Running)))
+        // The task's own result has arrived, but one exact child still runs:
+        // the run keeps drawing its steps and is never replaced by the fold.
+        val lines = chatLines(listOf(user("u"), tool("a:0"), tool("a:1"), task, reply("r")))
+        val group = group(lines)
+        assertTrue(group.live)
+        assertNotNull(runStart(group, open = false, held = false))
+        assertTrue(lines.completedRuns().isEmpty())
+        // Once the children settle, the run folds like any other.
+        val done = task.copy(subagents = listOf(Subagent("c", status = SubagentStatus.Completed)))
+        assertTrue(chatLines(listOf(user("u"), tool("a:0"), tool("a:1"), done, reply("r"))).completedRuns().isNotEmpty())
+    }
 
     @Test
     fun a_run_becomes_a_completed_fold_only_when_its_reply_arrives_and_keeps_its_key_as_history_loads() {

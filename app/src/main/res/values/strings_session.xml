@@ -25,7 +25,7 @@
     <string name="session_panes">Panes</string>
     <!-- Chat | Terminal on a pane Chat cannot read. %1$s is the tab, %2$s the program in it. -->
     <string name="session_chat_shell">Chat needs an agent. %1$s runs a shell, so it stays in Terminal. Chat stays your choice for agent tabs.</string>
-    <string name="session_chat_other_agent">Chat reads OMP agents only. %1$s runs %2$s, so it stays in Terminal. Chat stays your choice for OMP tabs.</string>
+    <string name="session_chat_other_agent">Chat supports OMP, Pi, OpenCode, Codex and Claude Code. %1$s runs %2$s, so it stays in Terminal.</string>
     <string name="session_chat_unreadable">Chat can\'t read this agent right now, so this tab shows Terminal. It switches back when Chat can read it.</string>
     <!-- The strip under the header while the screen is what was saved (Collie row 4). %1$s is a clock time. -->
     <string name="outage_saved_at">Showing what was saved at %1$s</string>

@@ -45,11 +45,11 @@ the Apache License 2.0. See [Origin and licence](#origin-and-licence).
   daemon over SSH; terminals, workspaces and agents keep running when the
   phone disconnects or sleeps.
 - **Terminal you can actually type on** — Ghostty's VT renderer (via
-  libghostty-vt), an extra-keys row, CJK input in place, fling scrolling,
+  libghostty-vt), two compact extra-key rows, CJK input in place, fling scrolling,
   pinch-to-zoom, and hardware keyboard chords.
 - **Composer and Chat** — per-pane drafts that survive reconnects, bracketed
-  paste without Enter, and an OMP agent's transcript as a readable conversation
-  with quiet tool heads and foldable summaries.
+  paste without Enter, and OMP, Pi, OpenCode, Codex and Claude Code transcripts
+  as readable conversations with quiet tool heads and foldable summaries.
 - **Reaching hosts** — jump hosts, device-generated and imported keys kept in
   the Android Keystore, SSH config import, strict host-key checking.
 - **Two languages** — English and Simplified Chinese, Material 3 themes,
@@ -113,8 +113,8 @@ your own key or the debug key and will not install over the published app.
 | Herdr concept | In Herdline |
 | --- | --- |
 | Host and session | **Hosts** on the start screen, grouped and searchable, each with a colour label. Each one names a Herdr session (`default` unless you use named sessions). Several hosts can stay attached at once. |
-| Workspaces | The switcher: a bottom sheet on a phone, a sidebar on a tablet. It searches workspaces, branches, tabs, panes and agents, filters to **Needs you** or **Working**, and lists every workspace with its tabs and panes in Herdr's order. |
-| Tabs | The tab row under the top bar, with each tab's status. On a phone, the Tabs button opens workspace-grouped cards or a list, with shared workspace scope, search and attention filters. Split tabs open an explicit pane picker; card previews use existing metadata, not captured terminal screenshots. |
+| Workspaces | The switcher searches workspaces, branches, tabs, panes and agents, filters to **Needs you**, **Working** or **Ready** (Idle/Done), and preserves Herdr's order. |
+| Tabs | The phone Tabs sheet opens as a list. An alternate compact two-column list shares its workspace scope, search and filters. Split tabs open an explicit pane picker; no fake terminal previews. |
 | Panes | Drawn as Herdr lays them out, with a chip per pane when a tab has several. Split, zoom and close act on Herdr's shared layout, so the desktop sees them too, and the controls say so. |
 | Agents | The **Agents** screen lists agents on every attached host by attention (**Needs you**, **Working**, **Done**, **Idle**) and can be narrowed to one workspace with the workspace filter. |
 
@@ -125,9 +125,9 @@ Herdr sends rendered cell grids, which Herdline draws through
 wide characters, colours and the cursor come from Ghostty.
 
 - The soft keyboard types straight into the pane; CJK input methods compose in
-  place. An extra-keys row adds Esc, Tab, latching Ctrl and Alt, arrows,
-  paging keys and symbols phone keyboards hide. Hardware keyboards work,
-  including Ctrl and Alt chords.
+  place. Two compact key rows add Esc, Tab, latching Ctrl and Alt, arrows,
+  Enter, Backspace and shell symbols. Terminal has no Chat field; the keyboard
+  types directly into the agent, including its autocomplete navigation.
 - Drag or fling to scroll, pinch to change the font size, long-press to select
   and copy.
 - Closing a pane, tab or workspace asks first, because Herdr ends the programs
@@ -135,18 +135,18 @@ wide characters, colours and the cursor come from Ghostty.
 
 ### Composer
 
-A text field at the bottom of the session screen, so dictation, autocorrect
-and multiline editing work as in any app. Nothing leaves the phone while you
-write.
+A text field in **Chat mode** for dictation, autocorrect and multiline editing.
+Terminal uses the agent's own editor instead. Nothing leaves the phone while
+you write a Chat draft.
 
 - Each draft belongs to one pane and is kept per host, session and pane,
   across navigation, reconnects and restarts. The composer names its
   destination; a draft for another pane says so and offers **Move here**.
 - **Insert without Enter** pastes the text into the pane as one bracketed
   paste; you press Enter yourself.
-- In Terminal, **Send** pastes and presses Enter once, only for an idle OMP
-  agent whose complete input box can be checked. A pane sized for the desktop
-  may require explicit **Fit to this phone**, which changes Herdr's shared size.
+- **Send** uses the supported live agent interface, or a validated empty editor
+  in the same running pane. It never launches or resumes another agent, and
+  refuses approvals, a remote draft or an unverifiable destination.
 - In Chat, a compatible optional `herdline-ingress` endpoint sends directly
   into the same OMP, including steering while Working, without Fit or Enter.
   Only an absent endpoint allows terminal fallback; unsupported or uncertain
@@ -165,10 +165,10 @@ file uploaded for another pane must be uploaded again before it can be sent.
 
 ### Chat
 
-For an OMP pane, **Chat** in the session header shows the same agent as a
-conversation: Markdown and code, tool calls that open to their arguments and
-output, and the agent's live status. **Terminal** switches back; both views
-share the composer and its draft.
+For OMP, Pi, Claude Code, Codex and OpenCode panes, **Chat** shows the
+existing agent conversation: Markdown, tool calls, recorded images and status.
+**Terminal** switches to direct terminal input and the extra-key panel; the
+pane-bound Chat draft stays saved and is not pasted or sent by switching modes.
 
 - Chat follows the pane **read here**, chosen on the phone (a tab, pane,
   switcher row, Agents row, banner or notification). It is kept apart from
@@ -179,9 +179,14 @@ share the composer and its draft.
 - Terminal shows the desktop's pane as it is. Moving the desktop takes an
   explicit action labelled as such, for example **Show ‹pane› (moves the
   desktop)**.
-- Transcript reading asks Herdr which session file the pane's agent writes
-  and reads that file by byte range, only under `~/.omp/agent/sessions/`.
-  Chat starts no second OMP. The optional endpoint runs inside that same OMP.
+- Transcript reading uses only the session reference Herdr reports for that
+  exact pane and foreground process. OMP/Pi, Claude and Codex records are read
+  within their own session roots; OpenCode uses a bounded read-only session
+  query. Chat never starts or resumes a second agent.
+- OMP sends through its compatible ingress endpoint; Pi/Claude use a validated
+  host editor, and Codex/OpenCode use their existing local control APIs. Only
+  OMP exposes the live question/queue/withdrawal interface. Uncertain delivery
+  is kept and never automatically repeated.
 - Newest messages load first; **Load older messages** brings back earlier
   ones, keeping your place.
 - With the compatible endpoint, Chat renders open HTML forms and submits only
@@ -190,6 +195,11 @@ share the composer and its draft.
   Without the endpoint, questions remain read-only and are answered in Terminal.
 - Pending steering entries come from OMP's live queue, not transcript labels.
   Withdraw removes an entry only while OMP still reports it queued.
+- OMP task calls show their actual subagents and exact-id completion records.
+  Live stages require the updated host extension: copy both
+  `host/omp/herdline-ingress.ts` and `host/omp/live-subagents.ts` into the same
+  extension folder, then reload your OMP explicitly. Without live events,
+  persisted child snapshots still show; progress is never invented.
 - Completed work can be folded into a summary with tool and thought counts;
   a duration appears only when transcript timestamps support it. Tool heads
   are quiet rows with one frame around their output. Prose, code and user
@@ -242,6 +252,12 @@ host's `~/.ssh/authorized_keys`, or sign it with your SSH CA and attach the
 certificate. The first connection to each hop shows the host key's SHA-256
 fingerprint. Compare it with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
 on that host before trusting it.
+
+Without a specifically selected identity, Herdline first tries the device key
+and can ask for a password after that key is rejected. A saved password can be
+reused for that implicit-identity host. Explicit key choices never downgrade
+automatically; host-key verification is unchanged.
+
 
 The host that runs Herdr needs `/bin/sh` and Herdr 0.9.0 or later. When Herdr
 is missing or too old, the session offers to install or update it, only on

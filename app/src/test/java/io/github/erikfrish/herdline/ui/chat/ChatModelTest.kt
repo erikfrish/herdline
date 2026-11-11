@@ -56,6 +56,14 @@ class ChatModelTest {
     }
 
     @Test
+    fun a_linear_agent_history_keeps_every_message_and_stops_at_its_oldest_page() {
+        val rows = listOf(text("u", null, 1, "user", "hello"), text("a", null, 2, "assistant", "reply"))
+        assertEquals(listOf("u:hello", "a:reply"), texts(rows))
+        val first = TranscriptPage(agent.copy(agent = "opencode", kind = "id", path = "ses_a"), true, 2, 1, 2, rows, hasOlder = false)
+        assertFalse(ChatHistory.of(first).hasOlder)
+    }
+
+    @Test
     fun tool_results_pair_with_their_call_and_a_blocked_call_is_pending() {
         val call = TranscriptBlock.ToolCall("t1", "ask", "{}", "Asking", false)
         val entries = listOf(
@@ -94,6 +102,24 @@ class ChatModelTest {
         assertEquals(true, history.hasOlder)
     }
 
+    @Test
+    fun a_task_calls_children_keep_one_row_each_and_settled_ends_stay_stuck() {
+        val call = """{"id":"a","offset":0,"end":10,"kind":"message","role":"assistant","blocks":[{"type":"tool_call","call_id":"t1","name":"task","args":"{}","truncated":false}]}"""
+        // The first result lists both children; a later one restates only c2.
+        val first = """{"id":"r1","parent_id":"a","offset":10,"end":20,"kind":"message","role":"toolResult","blocks":[{"type":"tool_result","call_id":"t1","name":"task","text":"children","is_error":false,"truncated":false,"subagents":[{"id":"c1","agent":"Explorer","status":"running"},{"id":"c2","status":"completed"}]}]}"""
+        val restate = """{"id":"r2","parent_id":"r1","offset":20,"end":30,"kind":"message","role":"toolResult","blocks":[{"type":"tool_result","call_id":"t1","name":"task","text":"update","is_error":false,"truncated":false,"subagents":[{"id":"c2","status":"completed","output":"checked"}]}]}"""
+        val end = """{"id":"e","parent_id":"r2","offset":30,"end":40,"kind":"other","subagent_ends":[{"id":"c1","status":"completed","durationMs":5000}]}"""
+        val tool = chatItems(listOf(wire(call), wire(first), wire(restate), wire(end))).single() as ChatItem.Tool
+        // One row per exact id: a result restating a sibling never duplicates
+        // it, and c1's earlier snapshot survives the later result.
+        assertEquals(listOf("c1", "c2"), tool.subagents.map { it.id })
+        assertEquals("checked", tool.subagents[1].output)
+        // The end settles c1 whichever order the file lists it in: sticky.
+        assertEquals(SubagentStatus.Completed, tool.subagents[0].status)
+        assertEquals(5000L, tool.subagents[0].durationMs)
+        val endFirst = chatItems(listOf(wire(end), wire(call), wire(first), wire(restate))).single() as ChatItem.Tool
+        assertEquals(listOf(SubagentStatus.Completed, SubagentStatus.Completed), endFirst.subagents.map { it.status })
+    }
     @Test
     fun images_are_located_on_their_own_line_and_a_users_image_stays_in_their_turn() {
         val hash = "ab".repeat(32)
@@ -136,13 +162,16 @@ class ChatModelTest {
     }
 
     @Test
-    fun the_status_is_the_live_omp_in_this_pane_and_unknown_otherwise() {
+    fun the_status_is_the_live_supported_agent_in_this_pane_and_unknown_otherwise() {
         val omp = Agent("w1:p1", "w1", "t1", null, "omp", null, AgentStatus.Working, false)
         assertEquals(AgentStatus.Working, chatStatus(connected = true, pane = "w1:p1", agent = omp))
         assertEquals("link lost", AgentStatus.Unknown, chatStatus(connected = false, pane = "w1:p1", agent = omp))
         assertEquals("no agent", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = null))
         assertEquals("another pane", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p2", agent = omp))
-        assertEquals("replaced by another program", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = "claude")))
+        for (name in listOf("pi", "claude", "codex", "opencode")) {
+            assertEquals(name, AgentStatus.Working, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = name)))
+        }
+        assertEquals("unknown agent", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = "other")))
         assertEquals("unknown program", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = null)))
         assertEquals(AgentStatus.Idle, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(status = AgentStatus.Idle)))
     }

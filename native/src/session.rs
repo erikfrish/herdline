@@ -403,6 +403,9 @@ impl Session {
     /// it from a background thread.
     pub fn ingress(&self, request: &str) -> Result<String> {
         let request: ingress::Request = serde_json::from_str(request)?;
+        if request.session != self.shared.session || lock(&self.shared.boot).as_deref() != Some(request.boot.as_str()) {
+            return Ok(delivery::refused(Refusal::BootChanged));
+        }
         if request.op == ingress::Op::Send && hold::holds().is_held(&request.target()) {
             return Ok(delivery::refused(Refusal::Unsettled));
         }
@@ -415,7 +418,11 @@ impl Session {
                 _ => Err(Error::NotReady),
             };
         };
-        ingress::run(&exec, &self.shared.session, request)
+        if request.instance.agent == "omp" {
+            ingress::run(&exec, &self.shared.session, request)
+        } else {
+            crate::agent_chat::run(&exec, &self.shared.session, request)
+        }
     }
 
     /// The agent instance in `pane` now, as JSON `{"instance": …}`, `null`

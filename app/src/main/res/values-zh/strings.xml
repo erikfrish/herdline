@@ -83,7 +83,7 @@
     <string name="host_session_help">通常为 default；每个命名会话是一个独立的守护进程。</string>
     <string name="auth_key">密钥</string>
     <string name="auth_password">密码</string>
-    <string name="auth_key_help">主机需要信任这把密钥：把公钥加入 ~/.ssh/authorized_keys，或附加一张由主机信任的 CA 签发的证书。</string>
+    <string name="auth_key_help">主机需要信任这把密钥：把公钥加入 ~/.ssh/authorized_keys，或附加一张由主机信任的 CA 签发的证书。未选择密钥时先用本机密钥登录；若主机拒绝，可输入一次密码登录。</string>
     <string name="identity">密钥</string>
     <string name="jump_host">跳板机</string>
     <string name="jump_none">无（直接连接）</string>
@@ -465,9 +465,6 @@
     </plurals>
     <string name="chat_state_collapsed">已折叠</string>
     <string name="chat_state_expanded">已展开</string>
-    <string name="terminal_composer">在终端中显示消息编辑框</string>
-    <string name="terminal_composer_help">关闭后，终端模式只显示终端：轻点终端即可输入，下方显示额外按键。聊天模式始终显示编辑框，草稿和文件仍保留在各自的窗格。编辑框的投递尚未确认时，编辑框会一直显示，直到投递完成或你解锁。</string>
-    <string name="terminal_composer_kept">投递尚未确认，编辑框暂时保留</string>
     <string name="chat_image">图片</string>
     <string name="chat_image_open">图片。轻点打开。</string>
     <string name="chat_image_loading">正在加载图片…</string>

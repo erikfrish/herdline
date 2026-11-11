@@ -138,6 +138,9 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
                         StatusChip(stringResource(R.string.filter_working, scoped.working()), filter == SwitcherFilter.Working, AgentStatus.Working) {
                             filter = SwitcherFilter.Working
                         }
+                        StatusChip(stringResource(R.string.filter_ready, scoped.ready()), filter == SwitcherFilter.Ready, null) {
+                            filter = SwitcherFilter.Ready
+                        }
                     }
                 }
             }

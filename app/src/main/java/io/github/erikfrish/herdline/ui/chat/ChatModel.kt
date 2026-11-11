@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.chat
 
 import io.github.erikfrish.herdline.core.Agent
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.IngressSubagent
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptEntry
 import io.github.erikfrish.herdline.core.TranscriptIdentity
@@ -9,6 +10,7 @@ import io.github.erikfrish.herdline.core.TranscriptImage
 import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.core.TranscriptSteer
+import io.github.erikfrish.herdline.core.isChatAgent
 
 /** Appends beyond this many loaded entries drop the oldest; "Load older" brings them back. */
 const val MAX_LOADED_ENTRIES = 2000
@@ -22,8 +24,8 @@ data class ChatHistory(
     val start: Long,
     val end: Long,
     val entries: List<TranscriptEntry>,
+    val hasOlder: Boolean = start > 0,
 ) {
-    val hasOlder: Boolean get() = start > 0
 
     /**
      * This history with [page] read into it. A reset page replaces it; a page
@@ -37,31 +39,30 @@ data class ChatHistory(
         (entries + page.entries).sortedBy { it.offset }.forEach { byOffset[it.offset] = it }
         var merged = byOffset.values.toList()
         var start = minOf(start, page.start)
+        var older = if (page.start <= this.start) page.hasOlder else hasOlder
         if (appended && merged.size > MAX_LOADED_ENTRIES) {
             merged = merged.takeLast(MAX_LOADED_ENTRIES)
             start = merged.first().offset
+            older = true
         }
-        return copy(start = start, end = maxOf(end, page.end), entries = merged)
+        return copy(start = start, end = maxOf(end, page.end), entries = merged, hasOlder = older)
     }
 
     companion object {
-        fun of(page: TranscriptPage) = ChatHistory(page.identity, page.start, page.end, page.entries.sortedBy { it.offset })
+        fun of(page: TranscriptPage) = ChatHistory(page.identity, page.start, page.end, page.entries.sortedBy { it.offset }, page.hasOlder)
     }
 }
 
 /**
- * What chat says the agent in [pane] is doing: the status of the agent the
- * live view has in that pane, and only while the link is up and that agent
- * is OMP. A lost link, no agent, another program, or a view of another pane
- * is [AgentStatus.Unknown]: chat never keeps a Working it can no longer see.
+ * What chat says the supported agent in [pane] is doing, only while the
+ * same pane is live on this connection. A lost link or unknown program is
+ * [AgentStatus.Unknown]; stale history never claims a Working status.
  */
 fun chatStatus(connected: Boolean, pane: String, agent: Agent?): AgentStatus = when {
-    !connected || agent == null || agent.pane != pane || !agent.agent.equals(OMP_AGENT, ignoreCase = true) -> AgentStatus.Unknown
+    !connected || agent == null || agent.pane != pane || !isChatAgent(agent.agent) -> AgentStatus.Unknown
     else -> agent.status
 }
 
-/** The Herdr agent kind chat reads transcripts of. */
-internal const val OMP_AGENT = "omp"
 
 /**
  * One row of the chat list; [key] stays the same across reads. [timestamp]
@@ -85,6 +86,11 @@ sealed interface ChatItem {
         val result: TranscriptBlock.ToolResult?,
         override val timestamp: Long? = null,
         val images: List<TranscriptImage> = emptyList(),
+        /**
+         * The children a `task` call spawned: one row per exact child id,
+         * merged from every snapshot and settled end that names it.
+         */
+        val subagents: List<Subagent> = emptyList(),
     ) : ChatItem
     /** Text the agent's harness added, such as a developer or extension message. */
     data class Note(override val key: String, val role: String, val text: String, override val timestamp: Long? = null) : ChatItem
@@ -104,6 +110,7 @@ val ChatItem.inUserTurn: Boolean get() = this is ChatItem.User || this is ChatIt
  * which branch they are on is not known yet.
  */
 fun currentBranch(entries: List<TranscriptEntry>): List<TranscriptEntry> {
+    if (entries.none { it.parentId != null }) return entries
     val byId = entries.filter { it.id != null }.associateBy { it.id }
     var entry = entries.lastOrNull { it.id != null } ?: return entries
     val branch = mutableSetOf<String>()
@@ -119,10 +126,21 @@ fun currentBranch(entries: List<TranscriptEntry>): List<TranscriptEntry> {
     return entries.filter { it.id == null || it.id in branch || (!reachedRoot && it.offset < oldest) }
 }
 
-/** The chat rows for [entries], with each tool result paired to its call. */
+/**
+ * The chat rows for [entries], with each tool result paired to its call. A
+ * `task` call's children are folded in per exact child id: a result's
+ * `subagents` snapshot merges into the rows already there (an earlier
+ * snapshot's children are kept, never discarded), and each entry's settled
+ * `subagent_ends` closes exactly the rows whose id it names. There is one
+ * row per id and a settled end is terminal sticky — no later snapshot
+ * reopens it — and an end matching no row settles nothing at all.
+ */
 fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
     val items = mutableListOf<ChatItem>()
     val calls = HashMap<String, Int>()
+    // Every loaded entry's settled ends feed the pass below, not only the
+    // ones the branch walk visits.
+    val ends = entries.flatMapTo(mutableListOf()) { completionsOf(it.subagentEnds) }
     for (entry in currentBranch(entries)) {
         val base = entry.id ?: "@${entry.offset}"
         val at = entry.timestamp
@@ -144,16 +162,54 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
                     }
                     is TranscriptBlock.ToolResult -> {
                         val images = block.images.map { it.at(entry) }
+                        val children = subagentsOf(block.subagents)
                         val call = calls[block.callId]
                         val tool = call?.let { items[it] as? ChatItem.Tool }
-                        if (call != null && tool != null) items[call] = tool.copy(result = block, images = images) else items += ChatItem.Tool(key, null, block, at, images)
+                        if (call != null && tool != null) {
+                            items[call] = tool.copy(result = block, images = images, subagents = mergeSubagents(tool.subagents, children))
+                        } else {
+                            items += ChatItem.Tool(key, null, block, at, images, children)
+                        }
                     }
                     is TranscriptBlock.Image -> items += ChatItem.Image(key, block.at(entry), entry.role == "user", at)
                 }
             }
         }
     }
+    // The settled ends close the exact child ids they name, wherever the rows live.
+    if (ends.isNotEmpty()) {
+        for (at in items.indices) {
+            val tool = items[at] as? ChatItem.Tool ?: continue
+            if (tool.subagents.isNotEmpty()) items[at] = tool.copy(subagents = mergeSubagents(tool.subagents, emptyList(), ends))
+        }
+    }
     return items.filterNot { it is ChatItem.User && it.text.isBlank() || it is ChatItem.Assistant && it.text.isBlank() }
+}
+
+/**
+ * [items] with the ingress endpoint's live children [live] folded in: a
+ * live child joins the exact tool call its `parentCallId` names, else the
+ * row already holding its exact id. Live state never closes children and
+ * never reopens a settled row; a live child outside every call is dropped,
+ * never drawn from nothing.
+ */
+internal fun withLiveSubagents(items: List<ChatItem>, live: List<IngressSubagent>): List<ChatItem> {
+    if (live.isEmpty()) return items
+    return items.map { item ->
+        if (item !is ChatItem.Tool || (item.call?.callId == null && item.subagents.isEmpty())) {
+            item
+        } else {
+            val mine = live.filter {
+                (it.parentCallId != null && it.parentCallId == item.call?.callId) ||
+                    (it.parentCallId == null && item.subagents.any { held -> held.id == it.child.id })
+            }
+            if (mine.isEmpty()) {
+                item
+            } else {
+                item.copy(subagents = mergeSubagents(item.subagents, subagentsOf(mine.map { it.child })))
+            }
+        }
+    }
 }
 
 private fun TranscriptBlock.Image.at(entry: TranscriptEntry) = TranscriptImage(entry.id, entry.offset, entry.end, part, source)

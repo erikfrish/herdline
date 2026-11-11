@@ -52,4 +52,29 @@ class SettingsStoreTest {
         assertEquals("everforest-dark", settings.terminalScheme(true).id)
         assertEquals("everforest-light", settings.terminalScheme(false).id)
     }
+
+    @Test
+    fun anObsoleteGridTabsViewBecomesListAndIsWrittenBackOnce() {
+        val prefs = MemoryPrefs().apply { values["tabs_view"] = "Grid" }
+        assertEquals(TabsView.List, SettingsStore(prefs).settings.value.tabsView)
+        // The write-once migration leaves one remembered choice: a later TwoColumns is never touched.
+        assertEquals("List", prefs.values["tabs_view"])
+        SettingsStore(prefs).update { it.copy(tabsView = TabsView.TwoColumns) }
+        assertEquals(TabsView.TwoColumns, SettingsStore(prefs).settings.value.tabsView)
+    }
+
+    @Test
+    fun anOldDefaultExtraKeyRowTakesTheNewDefaultAndACustomOneStays() {
+        val legacy = "esc,tab,ctrl,alt,left,down,up,right,pipe,dash,slash,tilde,home,end,pgup,pgdn"
+        val prefs = MemoryPrefs().apply { values["extra_keys"] = legacy }
+        val store = SettingsStore(prefs)
+        // The old default is the default again, with its new fourteen-key row, written back once.
+        assertEquals(Settings().extraKeys, store.settings.value.extraKeys)
+        assertEquals(Settings().extraKeys.joinToString(","), prefs.values["extra_keys"])
+        // A row the user changed keeps its order and contents.
+        val custom = "pgup,pgdn,esc"
+        val customPrefs = MemoryPrefs().apply { values["extra_keys"] = custom }
+        assertEquals(listOf("pgup", "pgdn", "esc"), SettingsStore(customPrefs).settings.value.extraKeys)
+        assertEquals(custom, customPrefs.values["extra_keys"])
+    }
 }

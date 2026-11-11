@@ -14,12 +14,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -84,13 +81,11 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
@@ -103,16 +98,17 @@ import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.glass.GlassMenuItem
 
 /**
- * The phone Tabs sheet's overview (TB1):
- * a header, search, a workspace selector and status chips over a grid of tab
- * cards, by workspace in Herdr's order. It reads only [view]: no capture, no
- * frame request, no polling. A one-pane tab's card goes to that tab; a split
- * tab's opens the pane picker in the same sheet, and Back returns to the grid
- * where it was. [query] and [filter] are the list's own, so Show as list
- * keeps them; [scope] is the chosen workspace id, or null for all of them,
- * shared with the list ([tabsScope]): a closed one shows no tabs and says so.
- * [here] and [reading] are the list's own (CT-1): in Chat the pane read on
- * this phone marks the current card and pane, never Herdr's focus.
+ * The phone Tabs sheet's compact overview (TB1): a header, search, a
+ * workspace selector and status chips over two-column list rows (one column
+ * when two would be illegible), by workspace in Herdr's order. It reads only
+ * [view]: no capture, no frame request, no polling. A one-pane tab's row goes
+ * to that tab; a split tab's opens the pane picker in the same sheet, and
+ * Back returns to the rows where they were. [query] and [filter] are the
+ * list's own, so Show as list keeps them; [scope] is the chosen workspace id,
+ * or null for all of them, shared with the list ([tabsScope]): a closed one
+ * shows no tabs and says so. [here] and [reading] are the list's own (CT-1):
+ * in Chat the pane read on this phone marks the current tab and pane, never
+ * Herdr's focus.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -147,21 +143,21 @@ fun TabsOverview(
     }
     val counts = remember(inScope, query) { inScope.agentCounts(query) }
     val headers = chosen == null
-    // Hoisted over the picker, so Back finds the grid where it was.
-    val grid = rememberLazyGridState()
+    // Hoisted over the picker, so Back finds the rows where they were.
+    val rows = rememberLazyGridState()
     var picking by rememberSaveable { mutableStateOf<String?>(null) }
     val card = picking?.let { id -> sections.firstNotNullOfOrNull { s -> s.cards.firstOrNull { it.tab.id == id } } }
     LaunchedEffect(picking, card == null) { if (picking != null && card == null) picking = null }
     BackHandler(enabled = picking != null) { picking = null }
-    // Once per open, without animation: the current card is on screen even with 20+ tabs.
+    // Once per open, without animation: the current tab is on screen even with 20+ tabs.
     var placed by remember { mutableStateOf(false) }
     LaunchedEffect(sections.isNotEmpty()) {
         if (placed || sections.isEmpty()) return@LaunchedEffect
         placed = true
-        overviewIndexOf(sections, currentTab, headers)?.let { grid.scrollToItem(it) }
+        overviewIndexOf(sections, currentTab, headers)?.let { rows.scrollToItem(it) }
     }
 
-    // Keyed by the picked tab's id, not its card: a live status update redraws the picker in place,
+    // Keyed by the picked tab's id, not its row: a live status update redraws the picker in place,
     // with no transition and nothing reset.
     AnimatedContent(targetState = picking, label = "overview", modifier = modifier) { id ->
         val shown = id?.let { picked -> sections.firstNotNullOfOrNull { s -> s.cards.firstOrNull { it.tab.id == picked } } }
@@ -184,11 +180,14 @@ fun TabsOverview(
                 if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope)
                 if (filtersShown) {
                     OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { onFilter(SwitcherFilter.All) }
-                    OverviewChip(stringResource(R.string.filter_needs_you, counts.first), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
+                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
                         onFilter(SwitcherFilter.NeedsYou)
                     }
-                    OverviewChip(stringResource(R.string.filter_working, counts.second), filter == SwitcherFilter.Working, AgentStatus.Working) {
+                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working) {
                         onFilter(SwitcherFilter.Working)
+                    }
+                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null) {
+                        onFilter(SwitcherFilter.Ready)
                     }
                 }
             }
@@ -200,7 +199,7 @@ fun TabsOverview(
                     onFilter(SwitcherFilter.All)
                     onScope(null)
                 }
-                else -> OverviewGrid(sections, headers, grid, pins, monitored, actions) { picking = it.tab.id }
+                else -> OverviewRows(sections, headers, rows, pins, monitored, actions) { picking = it.tab.id }
             }
         }
     }
@@ -242,12 +241,12 @@ private fun OverviewHeader(host: String, view: ShellView?, newTabIn: Workspace?,
     }
 }
 
-/** The grid: a full-span header per workspace with All chosen, then its cards in Herdr's tab order. */
+/** The rows: a full-span header per workspace with All chosen, then its tabs in Herdr's tab order, up to two columns. */
 @Composable
-private fun OverviewGrid(
+private fun OverviewRows(
     sections: List<OverviewSection>,
     headers: Boolean,
-    grid: LazyGridState,
+    rows: LazyGridState,
     pins: List<String>,
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
@@ -256,15 +255,14 @@ private fun OverviewGrid(
     val fontScale = LocalDensity.current.fontScale
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = overviewColumns(maxWidth.value, fontScale)
-        val cardWidth = overviewCardWidthDp(maxWidth.value, columns)
+        val columns = compactColumns(maxWidth.value, fontScale)
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
-            state = grid,
+            state = rows,
             contentPadding = PaddingValues(start = OVERVIEW_PADDING_DP.dp, end = OVERVIEW_PADDING_DP.dp, top = 4.dp, bottom = 16.dp + bottom),
             horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
             verticalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
-            modifier = Modifier.fillMaxWidth().testTag("overview:grid"),
+            modifier = Modifier.fillMaxWidth().testTag("overview:rows"),
         ) {
             for (section in sections) {
                 if (headers) {
@@ -273,14 +271,14 @@ private fun OverviewGrid(
                     }
                 }
                 items(section.cards, key = { it.key }) { card ->
-                    OverviewCardView(card, cardWidth, fontScale, card.key in pins, monitored, actions, onPick)
+                    OverviewRow(card, card.key in pins, monitored, actions, onPick)
                 }
             }
         }
     }
 }
 
-/** A workspace's name for a header or a card line: its label, with `#n` when another workspace shares it. */
+/** A workspace's name for a header or a row line: its label, with `#n` when another workspace shares it. */
 @Composable
 internal fun workspaceName(workspace: Workspace, suffix: Int?): String =
     suffix?.let { stringResource(R.string.overview_ws_suffix, workspace.label, it) } ?: workspace.label
@@ -328,16 +326,16 @@ private fun OverviewWorkspaceHeader(section: OverviewSection, actions: SwitcherA
 }
 
 /**
- * One tab's card at its fixed height: a metadata preview, two title lines,
- * the status and the workspace line. The Herdr-focused tab is marked by a
- * 2 dp primary border, the Current pill and its spoken label, never colour
- * alone. Long-press opens the ⋮ menu; closing goes through its confirmation.
+ * One compact tab row: the title (always two lines of room), the agent and
+ * status line, and the workspace line. The tab the reader is on is marked by
+ * a 2 dp primary border, the Current pill and its spoken label, never colour
+ * alone. Tapping opens the tab, or the pane picker for a split tab;
+ * long-press or the ⋮ opens its menu. Pin, monitor, rename and close go
+ * through that menu; closing goes through its confirmation.
  */
 @Composable
-private fun OverviewCardView(
+private fun OverviewRow(
     card: OverviewCard,
-    widthDp: Float,
-    fontScale: Float,
     pinned: Boolean,
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
@@ -355,6 +353,7 @@ private fun OverviewCardView(
         ?: if (card.split) pluralStringResource(R.plurals.pane_count, card.panes.size, card.panes.size) else null
     val place = stringResource(R.string.overview_tab_n, card.tab.number)
     val where = workspaceName(card.workspace, card.suffix) + " · " + place
+    val zoomed = if (card.tab.zoomed) stringResource(R.string.zoomed_badge) else null
     val spoken = listOfNotNull(
         title,
         statusSpoken(card.tab.status),
@@ -367,12 +366,11 @@ private fun OverviewCardView(
     val pinLabel = stringResource(if (pinned) R.string.unpin else R.string.pin)
     val renameLabel = stringResource(R.string.rename_tab)
     val closeLabel = stringResource(R.string.session_close_tab)
-    val previewDp = overviewPreviewDp(fontScale)
 
     Box(
         Modifier
             .fillMaxWidth()
-            .height(overviewCardDp(fontScale).dp)
+            .heightIn(min = 56.dp)
             .clip(shape)
             .background(scheme.surfaceContainerHigh)
             .border(border, shape)
@@ -380,7 +378,7 @@ private fun OverviewCardView(
     ) {
         Column(
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .clearAndSetSemantics {
                     contentDescription = spoken
                     role = Role.Button
@@ -400,120 +398,63 @@ private fun OverviewCardView(
                         menu = true
                     },
                 )
-                .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 12.dp),
+                .padding(start = 12.dp, end = 48.dp, top = 10.dp, bottom = 10.dp),
         ) {
-            CardPreview(card, widthDp, fontScale, place)
-            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (card.current) {
+                    Row(
+                        Modifier.clip(CircleShape).background(scheme.primary).padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(Icons.Default.Check, null, tint = scheme.onPrimary, modifier = Modifier.size(14.dp))
+                        Text(stringResource(R.string.overview_current), style = MaterialTheme.typography.labelMedium, color = scheme.onPrimary, maxLines = 1)
+                    }
+                }
+                if (zoomed != null) {
+                    Text(zoomed, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                // Room for the ⋮ at the block's top right.
-                modifier = Modifier.fillMaxWidth().height((44f * fontScale).dp).padding(start = 4.dp, end = 40.dp),
+                modifier = Modifier.padding(top = 2.dp),
             )
-            Spacer(Modifier.height(4.dp))
-            Column(Modifier.fillMaxWidth().height((36f * fontScale).dp).padding(horizontal = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (status != null) StatusGlyph(card.tab.status, 8.dp)
-                    Text(
-                        listOfNotNull(status, panes).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = if (card.tab.status == AgentStatus.Blocked) FontWeight.SemiBold else FontWeight.Normal,
-                        color = scheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(where, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (status != null) StatusGlyph(card.tab.status, 8.dp)
+                Text(
+                    listOfNotNull(status, panes).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (card.tab.status == AgentStatus.Blocked) FontWeight.SemiBold else FontWeight.Normal,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            Text(where, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box(Modifier.align(Alignment.TopEnd).padding(top = (8f + previewDp + 4f).dp)) {
-            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("overview:card:${card.tab.id}:menu")) {
-                Icon(Icons.Default.MoreVert, moreLabel, tint = scheme.onSurfaceVariant)
+        IconButton(onClick = { menu = true }, modifier = Modifier.align(Alignment.TopEnd).testTag("overview:card:${card.tab.id}:menu")) {
+            Icon(Icons.Default.MoreVert, moreLabel, tint = scheme.onSurfaceVariant)
+        }
+        GlassMenu(expanded = menu, onDismissRequest = { menu = false }, offset = DpOffset(0.dp, 0.dp)) {
+            GlassMenuItem(stringResource(R.string.overview_open), Icons.Default.PlayArrow, onClick = { menu = false; actions.go(card.row) })
+            if (card.split) {
+                GlassMenuItem(openLabel, GridIcon, onClick = { menu = false; onPick(card) })
             }
-            GlassMenu(expanded = menu, onDismissRequest = { menu = false }, offset = DpOffset(0.dp, 0.dp)) {
-                GlassMenuItem(stringResource(R.string.overview_open), Icons.Default.PlayArrow, onClick = { menu = false; actions.go(card.row) })
-                if (card.split) {
-                    GlassMenuItem(openLabel, GridIcon, onClick = { menu = false; onPick(card) })
-                }
-                GlassMenuItem(pinLabel, Icons.Default.Star, onClick = { menu = false; actions.pin(card.key) })
-                for (agent in card.row.agents) {
-                    GlassMenuItem(
-                        stringResource(if (monitored(agent.pane)) R.string.monitor_stop else R.string.monitor_agent),
-                        Icons.Default.Notifications,
-                        onClick = { menu = false; actions.monitor(agent.pane) },
-                    )
-                }
-                GlassMenuItem(renameLabel, Icons.Default.Edit, onClick = { menu = false; actions.renameTab(card.tab) })
-                GlassMenuItem(closeLabel, Icons.Default.Close, onClick = { menu = false; actions.closeTab(card.tab) }, destructive = true)
+            GlassMenuItem(pinLabel, Icons.Default.Star, onClick = { menu = false; actions.pin(card.key) })
+            for (agent in card.row.agents) {
+                GlassMenuItem(
+                    stringResource(if (monitored(agent.pane)) R.string.monitor_stop else R.string.monitor_agent),
+                    Icons.Default.Notifications,
+                    onClick = { menu = false; actions.monitor(agent.pane) },
+                )
             }
+            GlassMenuItem(renameLabel, Icons.Default.Edit, onClick = { menu = false; actions.renameTab(card.tab) })
+            GlassMenuItem(closeLabel, Icons.Default.Close, onClick = { menu = false; actions.closeTab(card.tab) }, destructive = true)
         }
     }
-}
-
-/** The card's preview, from the view's metadata only: a pill row and one tile per pane. */
-@Composable
-private fun CardPreview(card: OverviewCard, widthDp: Float, fontScale: Float, place: String) {
-    val scheme = MaterialTheme.colorScheme
-    val (tiles, more) = card.tiles(widthDp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .height(overviewPreviewDp(fontScale).dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(scheme.surfaceContainerHighest)
-            .padding(8.dp),
-    ) {
-        Row(Modifier.fillMaxWidth().height(previewPillDp(fontScale).dp), verticalAlignment = Alignment.CenterVertically) {
-            if (card.current) {
-                Row(
-                    Modifier.clip(CircleShape).background(scheme.primary).padding(horizontal = 8.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(Icons.Default.Check, null, tint = scheme.onPrimary, modifier = Modifier.size(14.dp))
-                    Text(stringResource(R.string.overview_current), style = MaterialTheme.typography.labelMedium, color = scheme.onPrimary, maxLines = 1)
-                }
-            } else {
-                Text(place, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1)
-            }
-            Spacer(Modifier.weight(1f))
-            if (card.tab.zoomed) {
-                Text(stringResource(R.string.zoomed_badge), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth().height(previewTileDp(fontScale).dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (tile in tiles) {
-                PreviewTile(Modifier.weight(1f)) {
-                    if (tile.agent != null) StatusGlyph(tile.agent.status, 8.dp) else Text("›", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                    Text(
-                        tile.place.orEmpty(),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = scheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (more > 0) {
-                PreviewTile(Modifier.weight(1f)) {
-                    Text("+$more", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = scheme.onSurfaceVariant, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewTile(modifier: Modifier, content: @Composable () -> Unit) {
-    Row(
-        modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow).padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) { content() }
 }
 
 /**
@@ -621,7 +562,7 @@ private fun NoneMatch(onClear: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        TextButton(onClick = onClear, modifier = Modifier.testTag("overview:clear")) { Text(stringResource(R.string.overview_clear)) }
+        TextButton(onClick = onClear, modifier = Modifier.testTag("overview:clear").heightIn(min = 48.dp)) { Text(stringResource(R.string.overview_clear)) }
     }
 }
 
@@ -640,14 +581,15 @@ internal fun ScopeGone(onShowAll: () -> Unit) {
 }
 
 /*
- * Material Symbols `grid_view` for Show as grid and Choose pane. The path is
- * copied from material-icons-extended (Icons.Filled.GridView, Copyright The
- * Android Open Source Project, Apache-2.0); the app keeps only the core icons.
+ * Material Symbols `grid_view` for Show as two columns and Choose pane. The
+ * path is copied from material-icons-extended (Icons.Filled.GridView,
+ * Copyright The Android Open Source Project, Apache-2.0); the app keeps only
+ * the core icons.
  */
 internal val GridIcon: ImageVector by lazy {
     ImageVector.Builder(name = "GridView", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .addPath(
-            pathData = addPathNodes("M3,3v8h8V3H3zM13,3v8h8V3H13zM3,13v8h8v-8H3zM13,13v8h8v-8H13z"),
+            pathData = addPathNodes("M3,3v8h8V3H3zM13,3v8h8V3H13zM3,13v8h8v-8H3zM13,13v8h8v-8H3z"),
             pathFillType = PathFillType.NonZero,
             fill = SolidColor(Color.Black),
         )

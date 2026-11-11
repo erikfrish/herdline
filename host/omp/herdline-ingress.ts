@@ -21,6 +21,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { LiveSubagents, type ChildSnapshot } from "./live-subagents";
 
 export const CUSTOM_TYPE = "herdline-ingress";
 export const DIR_NAME = "herdline-ingress";
@@ -62,6 +63,7 @@ interface Queued {
 interface State {
 	idle: boolean;
 	queued: Queued[];
+	subagents: ChildSnapshot[];
 }
 
 type Content = Parameters<ExtensionAPI["sendUserMessage"]>[0];
@@ -146,6 +148,8 @@ export class Ingress {
 	readonly #queuedSeen = new Set<string>();
 	readonly #endedSeen = new Set<string>();
 	readonly #waiters = new Set<() => void>();
+	readonly #subagents = new LiveSubagents();
+	#stopSubagents: (() => void)[] = [];
 
 	constructor(pi: ExtensionAPI, options: IngressOptions) {
 		this.#pi = pi;
@@ -207,12 +211,27 @@ export class Ingress {
 		fs.writeFileSync(tmp, sidecar, { mode: 0o600, flag: "wx" });
 		fs.renameSync(tmp, published.sidecar);
 		this.#published = published;
+		// The public bus belongs to this session; switching publishes a fresh
+		// subscription after the old one has been removed.
+		if (this.#pi.events) {
+			this.#stopSubagents = [
+				this.#pi.events.on("task:subagent:progress", data => {
+					if (this.#published === published) this.#subagents.progress(data);
+				}),
+				this.#pi.events.on("task:subagent:lifecycle", data => {
+					if (this.#published === published) this.#subagents.lifecycle(data);
+				}),
+			];
+		}
 	}
 
 	/** Takes the sidecar down first, so nothing finds a socket about to close. */
 	async unpublish(): Promise<void> {
 		const published = this.#published;
 		this.#published = undefined;
+		for (const stop of this.#stopSubagents) stop();
+		this.#stopSubagents = [];
+		this.#subagents.clear();
 		if (!published) return;
 		fs.rmSync(published.sidecar, { force: true });
 		for (const client of this.#clients) client.destroy();
@@ -502,6 +521,7 @@ export class Ingress {
 				...snapshot.steering.slice(snapshot.liveSteered).map(entry => queued(entry, "steering")),
 				...snapshot.followUp.map(entry => queued(entry, "followUp")),
 			],
+			subagents: this.#subagents.snapshot(),
 		};
 	}
 

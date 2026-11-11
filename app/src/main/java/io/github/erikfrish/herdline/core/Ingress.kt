@@ -21,8 +21,16 @@ data class IngressQueued(val requestId: String?, val text: String, val queue: St
     val steering: Boolean get() = queue == QUEUE_STEERING
 }
 
+/**
+ * One live child of a `task` call the endpoint's state carries: the
+ * `tool_result` `subagents[]` wire shape (bounded 64) plus [parentCallId],
+ * the id of the `task` tool call that spawned it. An older extension that
+ * sends no `subagents` simply has none; nothing is invented.
+ */
+data class IngressSubagent(val parentCallId: String?, val child: TranscriptSubagent)
+
 /** OMP's queue as the extension reports it, and whether the agent is idle. */
-data class IngressState(val idle: Boolean, val queued: List<IngressQueued>)
+data class IngressState(val idle: Boolean, val queued: List<IngressQueued>, val subagents: List<IngressSubagent> = emptyList())
 
 /** What one send through the endpoint amounts to. */
 sealed interface IngressSend {
@@ -159,6 +167,7 @@ internal fun parseIngressState(json: JSONObject?): IngressState? {
     json ?: return null
     if (!json.has("idle")) return null
     val queued = json.optJSONArray("queued") ?: JSONArray()
+    val subagents = json.optJSONArray("subagents")
     return IngressState(
         idle = json.optBoolean("idle"),
         queued = (0 until queued.length()).mapNotNull { at ->
@@ -170,6 +179,11 @@ internal fun parseIngressState(json: JSONObject?): IngressState? {
                 text = entry.optString("text"),
                 queue = queue,
             )
+        },
+        subagents = (0 until (subagents?.length() ?: 0).coerceAtMost(MAX_SUBAGENTS)).mapNotNull { at ->
+            val entry = subagents?.optJSONObject(at) ?: return@mapNotNull null
+            val child = TranscriptSubagent.parse(entry) ?: return@mapNotNull null
+            IngressSubagent(entry.optString("parentCallId").takeIf { it.isNotBlank() }, child)
         },
     )
 }

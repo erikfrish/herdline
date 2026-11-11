@@ -4,6 +4,7 @@
 //! remote bridge and protocol (through herdr-client), and the libghostty-vt
 //! terminal that turns daemon surfaces into frames the app draws.
 
+mod agent_chat;
 pub mod attach;
 mod clipboard;
 pub mod composer;

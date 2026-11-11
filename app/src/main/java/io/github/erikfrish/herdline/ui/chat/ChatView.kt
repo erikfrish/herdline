@@ -104,6 +104,8 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ChatDialog
+import io.github.erikfrish.herdline.core.IngressProbe
+import io.github.erikfrish.herdline.core.IngressSubagent
 import io.github.erikfrish.herdline.core.visibleDialogs
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
@@ -250,15 +252,18 @@ private fun ChatContent(
     val shown = history
     // A refresh that fails after a transcript loaded. A lost link is the session's strip, not this one.
     var outage by rememberOutage(if (shown == null) null else problem == null)
-    val items = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
+    val persistedItems = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
     val identity = shown?.identity
     val images = remember(identity) {
         identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
     }
     val dialogTarget = remember(connection, view?.boot, identity, pane) {
         val boot = view?.boot
-        if (boot == null || identity == null) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, "omp", identity)
+        if (boot == null || identity == null || identity.agent != "omp") null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
+    // The endpoint's live children, folded into the task calls that spawned them.
+    var liveSubagents by remember(dialogTarget) { mutableStateOf<List<IngressSubagent>>(emptyList()) }
+    val items = remember(persistedItems, liveSubagents) { withLiveSubagents(persistedItems, liveSubagents) }
     var dialogs by remember(dialogTarget) { mutableStateOf<List<ChatDialog>>(emptyList()) }
     var dialogProblem by remember(dialogTarget) { mutableStateOf<String?>(null) }
     var submittingDialog by remember(dialogTarget) { mutableStateOf<String?>(null) }
@@ -285,6 +290,11 @@ private fun ChatContent(
                 }.onFailure { error ->
                     // Keep the user's answers while a read fails; actions remain disabled below.
                     dialogProblem = error.message
+                }
+                // The live state names each child under the tool call that spawned it; a read
+                // that fails keeps the last one.
+                withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
+                    liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
                 }
                 delay(BUSY_POLL_MS)
             }
@@ -481,11 +491,11 @@ private fun ChatContent(
                             Column(Modifier.padding(top = line.gap.dp())) {
                                 when (line) {
                                     is ChatLine.Single -> {
-                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
+                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled }, identity?.agent ?: view?.agentIn(pane)?.agent.orEmpty())
                                         ChatRow(line.item, colors, expanded, dense)
                                     }
                                     is ChatLine.ToolGroup -> {
-                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
+                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled }, identity?.agent ?: view?.agentIn(pane)?.agent.orEmpty())
                                         ToolGroupRow(line, colors, expanded, runs[line.key], dense)
                                     }
                                 }
@@ -544,12 +554,11 @@ private fun LiveGap(content: @Composable () -> Unit) {
 }
 
 /**
- * "omp", then " · ‹tab›" in the quieter meta style when given the tab's title,
- * which only the first labelled line is; one line, ellipsised.
+ * The recorded agent kind, then the tab title in a quieter style on the
+ * first labelled line; no engine is inferred from message text.
  */
 @Composable
-private fun AgentLabel(colors: ChatColors, tabTitle: String?) {
-    val agent = stringResource(R.string.chat_agent_label)
+private fun AgentLabel(colors: ChatColors, tabTitle: String?, agent: String) {
     Text(
         buildAnnotatedString {
             append(agent)
@@ -808,6 +817,11 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
                 else -> Unit
             }
             Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.dim)
+        }
+        // Under the tail: every child when the row is open; else the ones still
+        // running, so spawned children show even while the tool row is collapsed.
+        if (item.subagents.isNotEmpty()) {
+            SubagentSection(if (open) item.subagents else item.subagents.filter { it.alive }, colors, expanded, item.key)
         }
         if (open) {
             Column(Modifier.padding(start = ToolBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

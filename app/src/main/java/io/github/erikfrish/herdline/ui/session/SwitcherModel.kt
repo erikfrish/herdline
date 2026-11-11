@@ -56,8 +56,8 @@ data class WorkspaceGroup(
     val agentRows: List<SwitchTarget.PaneRow> = emptyList(),
 )
 
-/** Which rows the switcher shows; every filter keeps Herdr's order. */
-enum class SwitcherFilter { All, NeedsYou, Working }
+/** Which rows the switcher shows; every filter keeps Herdr's order. Ready is every idle or done agent. */
+enum class SwitcherFilter { All, NeedsYou, Working, Ready }
 
 /** The filter a saved [StartFilter] opens the Tabs list and Inbox with. */
 val StartFilter.switcherFilter: SwitcherFilter
@@ -65,6 +65,7 @@ val StartFilter.switcherFilter: SwitcherFilter
         StartFilter.All -> SwitcherFilter.All
         StartFilter.NeedsYou -> SwitcherFilter.NeedsYou
         StartFilter.Working -> SwitcherFilter.Working
+        StartFilter.Ready -> SwitcherFilter.Ready
     }
 
 /**
@@ -178,6 +179,10 @@ fun List<WorkspaceGroup>.narrowed(query: String, filter: SwitcherFilter): List<W
                 SwitcherFilter.Working -> when (row) {
                     is SwitchTarget.PaneRow -> row.agent?.status == AgentStatus.Working
                     is SwitchTarget.TabRow -> row.agents.any { it.status == AgentStatus.Working }
+                }
+                SwitcherFilter.Ready -> when (row) {
+                    is SwitchTarget.PaneRow -> row.agent?.status.let { it == AgentStatus.Idle || it == AgentStatus.Done }
+                    is SwitchTarget.TabRow -> row.agents.any { it.status == AgentStatus.Idle || it.status == AgentStatus.Done }
                 }
             }
             matched && (words.isEmpty() || haystack(row).let { text -> words.all { it in text } })

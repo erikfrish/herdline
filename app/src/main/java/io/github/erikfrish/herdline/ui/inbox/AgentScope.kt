@@ -160,11 +160,12 @@ fun List<InboxRow>.inScope(state: ScopeState): List<InboxRow> = when (state) {
     ScopeState.All, ScopeState.Pending -> this
 }
 
-/** The rows a status chip keeps. */
+/** The rows a status chip keeps. Ready is every idle or done agent. */
 fun List<InboxRow>.withStatus(status: SwitcherFilter): List<InboxRow> = when (status) {
     SwitcherFilter.All -> this
     SwitcherFilter.NeedsYou -> filter { it.status == AgentStatus.Blocked }
     SwitcherFilter.Working -> filter { it.status == AgentStatus.Working }
+    SwitcherFilter.Ready -> filter { it.status == AgentStatus.Idle || it.status == AgentStatus.Done }
 }
 
 /** Agents that need the user: over every row, this is the destination's badge. */
@@ -172,3 +173,6 @@ fun List<InboxRow>.needsYou(): Int = count { it.status == AgentStatus.Blocked }
 
 /** Agents at work. */
 fun List<InboxRow>.working(): Int = count { it.status == AgentStatus.Working }
+
+/** Agents that are idle or done. */
+fun List<InboxRow>.ready(): Int = count { it.status == AgentStatus.Idle || it.status == AgentStatus.Done }

@@ -456,6 +456,7 @@ class Connection(val node: Node) {
         submit: Boolean,
         viewport: Viewport?,
         attachments: List<Attachment> = emptyList(),
+        chat: Boolean = false,
     ): Delivery {
         val session = live()
         if (session == 0L || target.nodeId != node.id || target.session != node.session) {
@@ -463,6 +464,7 @@ class Connection(val node: Node) {
         }
         val request = requestJson(target, text, viewport)
             .put("submit", submit)
+            .put("chat", chat)
             .put("attachments", org.json.JSONArray(attachments.map { it.toJson() }))
         val outcome = deliveryOutcome { Native.composerDeliver(session, request.toString()) }
         if (outcome is Delivery.Queued) track(outcome.receipt, session)

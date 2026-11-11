@@ -4,6 +4,8 @@ package io.github.erikfrish.herdline.core
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.Node
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoutesTest {
@@ -26,5 +28,25 @@ class RoutesTest {
     @Test
     fun keyHopsAreNeverAskedFor() {
         assertEquals(emptyList<Node>(), Routes.unsavedPasswordHops(listOf(keyed)) { false })
+    }
+
+    @Test
+    fun onlyTheImplicitDeviceKeyFallsBackToAPassword() {
+        val deviceKeyed = Node(id = "dk", name = "", address = "d", user = "u", auth = AuthMethod.Key, identityId = null)
+        val explicitKeyed = Node(id = "ek", name = "", address = "e", user = "u", auth = AuthMethod.Key, identityId = "identity")
+        assertTrue(Routes.usesDeviceKey(deviceKeyed))
+        assertTrue(Routes.fallbackEligible(deviceKeyed))
+        assertFalse(Routes.usesDeviceKey(explicitKeyed))
+        assertFalse(Routes.fallbackEligible(explicitKeyed))
+        assertFalse(Routes.usesDeviceKey(jump))
+        assertFalse(Routes.fallbackEligible(jump))
+    }
+
+    @Test
+    fun typedPasswordsWinOverSavedOnes() {
+        val saved: (String) -> String? = { mapOf("jump" to "saved")[it] }
+        assertEquals("typed", Routes.usePassword("jump", mapOf("jump" to "typed"), saved))
+        assertEquals("saved", Routes.usePassword("jump", emptyMap(), saved))
+        assertEquals("", Routes.usePassword("target", emptyMap(), saved))
     }
 }

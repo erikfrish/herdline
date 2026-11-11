@@ -105,9 +105,11 @@ class HerdlineApp : Application() {
     /**
      * Attach to [node] along its jump hosts, reusing a live connection.
      * [passwords] maps node IDs on the route to passwords typed for this
-     * connection; [remember] saves them to the keychain, else any saved
-     * password for those hops is forgotten. Hops without one use their saved
-     * password.
+     * connection (and for a password fallback on an implicit device-key
+     * hop); [remember] saves them to the keychain, else any saved password
+     * for those hops is forgotten. Hops without one use their saved
+     * password. Typed secrets ride along on retries of this attach until
+     * it resolves or a later [reconnect] takes over.
      */
     fun connect(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean = false): Connection {
         _connections.value[node.id]?.takeIf { it.isOpen }?.let { return it }
@@ -115,27 +117,82 @@ class HerdlineApp : Application() {
         val connection = Connection(node)
         _connections.value = _connections.value + (node.id to connection)
         nodes.touch(node)
+        // Retry attempts during one attach keep the secrets typed for it,
+        // so a jump chain never loses a hop's password on the way through.
+        // Merged here on the main thread only; the map is never touched off it.
+        if (passwords.isNotEmpty()) attemptSecrets[node.id] = attemptSecrets[node.id].orEmpty() + passwords
+        val attempt = attemptSecrets[node.id].orEmpty()
         scope.launch(Dispatchers.IO) {
-            routeDocument(node, passwords, dark, remember).fold(connection::start) { connection.fail(it.message.orEmpty()) }
+            routeDocument(node, attempt, dark, remember, typed = passwords)
+                .fold(connection::start) { connection.fail(it.message.orEmpty()) }
         }
         ConnectionService.update(this)
         return connection
     }
 
+    /** Passwords typed for the attach under way per node ID; cleared when that node is dropped. */
+    private val attemptSecrets = mutableMapOf<String, Map<String, String>>()
+
+    /**
+     * Hops whose implicit device key already had its one automatic
+     * password-fallback try per attachment; cleared with the node.
+     */
+    private val fallbackTried = mutableMapOf<String, MutableSet<String>>()
+
+    /**
+     * Claims [hopId]'s one automatic password-fallback try on [nodeId]'s
+     * attachment; false when one was already made, so a cancel or wrong
+     * password never reopens the dialog on its own.
+     */
+    fun claimPasswordFallback(nodeId: String, hopId: String): Boolean =
+        fallbackTried.getOrPut(nodeId) { mutableSetOf() }.add(hopId)
+
+    /** Saves or drops the passwords typed for one call, as the user chose. */
+    private fun saveSecrets(passwords: Map<String, String>, remember: Boolean) {
+        if (passwords.isEmpty()) return
+        // A password typed but not remembered also clears any saved one,
+        // which is how a rejected saved password is replaced or dropped.
+        if (remember) passwords.forEach(keychain::savePassword) else passwords.keys.forEach(keychain::forgetPassword)
+    }
+
     /** The route document for [node], or a failure whose message says why not. Call off the main thread. */
-    private fun routeDocument(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean): Result<String> {
+    private fun routeDocument(
+        node: Node,
+        passwords: Map<String, String>,
+        dark: Boolean,
+        remember: Boolean,
+        typed: Map<String, String> = passwords,
+    ): Result<String> {
         val route = nodes.route(node).getOrElse {
             return Result.failure(IllegalStateException(routeMessage((it as? RouteException)?.problem)))
         }
         keychain.device(getString(R.string.device_key_name))
-        // A password typed but not remembered also clears any saved one,
-        // which is how a rejected saved password is replaced or dropped.
-        if (remember) passwords.forEach(keychain::savePassword) else passwords.keys.forEach(keychain::forgetPassword)
+        // Only ones typed this call touch the keychain; carried secrets
+        // were merged on the main thread in connect.
+        saveSecrets(typed, remember)
         val settings = settings.settings.value
         val scheme = settings.terminalScheme(dark)
             .withCursor(sessionAccent(settings.accent, node.color))
         return runCatching { Routes.document(route, nodes, keychain, passwords, this.settings.lastGrid, scheme) }
             .recoverCatching { throw IllegalStateException(getString(R.string.key_unreadable)) }
+    }
+
+    /**
+     * Whether a password is the carried credential for [hopNodeId]'s
+     * sign-in on [rootNodeId]'s route right now.
+     */
+    fun usedPassword(rootNodeId: String, hopNodeId: String): Boolean =
+        attemptSecrets[rootNodeId]?.containsKey(hopNodeId) == true
+
+    /**
+     * Automatic password fallback for [hop], whose implicit device key the
+     * host rejected: retry [node] at once with [hop]'s saved password, none
+     * of it shown. False when none is saved, so the caller asks for one.
+     */
+    fun fallbackWithSavedPassword(node: Node, hop: Node, dark: Boolean): Boolean {
+        val secret = keychain.password(hop.id) ?: return false
+        reconnect(node, mapOf(hop.id to secret), dark, remember = true)
+        return true
     }
 
     /**
@@ -173,9 +230,13 @@ class HerdlineApp : Application() {
         RouteProblem.TooLong, null -> getString(R.string.route_too_long, Node.MAX_HOPS)
     }
 
-    /** Retry after the user trusted a host key or changed credentials. */
+    /**
+     * Retry after the user trusted a host key or changed credentials.
+     * Empty [passwords] keep the secrets typed for [node]'s attach; new
+     * ones replace them for the retries that follow.
+     */
     fun reconnect(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean = false): Connection {
-        drop(node.id)
+        drop(node.id, keepSecrets = true)
         return connect(nodes.get(node.id) ?: node, passwords, dark, remember)
     }
 
@@ -188,12 +249,18 @@ class HerdlineApp : Application() {
         holdNotes()
         _connections.value.values.forEach { it.close() }
         _connections.value = emptyMap()
+        attemptSecrets.clear()
+        fallbackTried.clear()
         ConnectionService.update(this)
     }
 
-    private fun drop(nodeId: String) {
+    private fun drop(nodeId: String, keepSecrets: Boolean = false) {
         _connections.value[nodeId]?.close()
         _connections.value = _connections.value - nodeId
+        if (!keepSecrets) {
+            attemptSecrets.remove(nodeId)
+            fallbackTried.remove(nodeId)
+        }
         ConnectionService.update(this)
     }
 

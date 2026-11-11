@@ -50,6 +50,23 @@ internal fun endpointRoute(reading: Boolean, instance: TranscriptIdentity?, subm
     reading && submit && instance != null
 
 /**
+ * Whether the pane's program [agent] goes by one of [names]. Herdr names
+ * the program as it likes (the daemon's `display_agent`, never a fixed
+ * string this build dictates), so every gate here compares them loosely,
+ * as `Draft.binding` and `attachOffered` already do.
+ * A case-strict compare instead dropped a live endpoint and left Send off
+ * after images were staged.
+ */
+internal fun agentNamed(agent: String?, names: Set<String>): Boolean =
+    names.any { agent.equals(it, ignoreCase = true) }
+
+/** Programs whose live queue can actually be read and withdrawn through ingress. */
+internal val ENDPOINT_AGENTS = setOf("omp")
+
+/** Programs whose API Chat asks directly instead of typing into the pane at all. */
+internal val API_AGENTS = setOf("codex", "opencode")
+
+/**
  * The draft's sent record once the endpoint answered [outcome]. A refusal,
  * or no endpoint (the pane route then records its own), gives [before]
  * back: nothing left. Accepted is settled, since OMP holds it durably;

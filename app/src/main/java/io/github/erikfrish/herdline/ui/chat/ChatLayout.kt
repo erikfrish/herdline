@@ -42,7 +42,9 @@ const val TOOL_GROUP_MIN = 3
 /** A live run shows its newest this many steps; the earlier ones wait behind one row. */
 const val LIVE_TAIL = 6
 
-val ChatItem.Tool.running: Boolean get() = result == null
+// A `task` call whose exact children still run stays live: the run keeps
+// drawing its steps and never folds, though its own result has arrived.
+val ChatItem.Tool.running: Boolean get() = result == null || subagents.any { it.alive }
 val ChatItem.Tool.failed: Boolean get() = toolState(this) == ToolState.Failed
 
 /** The tools that start a delegated agent; it carries a report the person came for. */

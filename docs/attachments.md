@@ -43,8 +43,10 @@ mentioned as `@"/abs/path"`.
   never re-sends an attachment automatically. The draft keeps it and the
   user decides.
 - **Guards stay.** Every existing Send guard stays: the hold, the receipt,
-  the instance check on the host, the viewport gate and the 12-row guard.
-  The attachment checks are added before them, never instead of them.
+  the instance check on the host and the uncertain-delivery hold; Terminal
+  sends keep the viewport gate and the 12-row rule, and a validated Chat
+  PTY send keeps the host's own whole empty-editor check. The attachment
+  checks are added before them, never instead of them.
 
 ## Flow
 
@@ -113,8 +115,10 @@ instance was read, or the draft already holds its 10 files
   off while the draft has files.
 - **Images without text.** A staged image is a non-empty draft; no caption
   is required. The same refusal, offline and target-mismatch notices shown
-  for text also explain why a photo-only draft cannot be sent. Working,
-  terminal visibility and uncertain-delivery guards are not bypassed.
+  for text also explain why a photo-only draft cannot be sent. A Chat send
+  over the live OMP endpoint needs no terminal crop and takes an explicit
+  Steer while the agent works; the Chat PTY route keeps its hold, the
+  host's whole empty-editor check and the uncertain-delivery care.
 - **Sent once.** A confirmed delivery takes its files out of the draft. A
   refused or uncertain one keeps them, and the hold applies as for text.
 - **Remove** cancels an upload under way and deletes a staged copy from the
@@ -152,8 +156,10 @@ attachments. The native core:
    request's `node`, `session`, `boot`, `pane` and `instance`, and its path
    is `<dir>/<name>` with a safe name. The request must name an OMP instance
    (`attachment_needs_agent`). Text may be empty only beside attachments.
-2. Runs every existing check unchanged: hold, steer, receipt, the instance read
-   on the host, and `admit` with the viewport.
+2. Runs every existing check unchanged: hold, steer, receipt, the instance
+   read on the host, and admission. A Chat request admits on the host's own
+   empty-editor and same-instance verdict (`chat_send`), without a phone
+   crop; Terminal keeps `admit` with the viewport.
 3. Checks on the host that every staged file is still a regular file of its
    size, else refuses `attachment_missing`: OMP drops an image path it cannot
    read and would still take the Enter.

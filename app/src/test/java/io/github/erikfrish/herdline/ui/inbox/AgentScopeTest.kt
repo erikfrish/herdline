@@ -102,6 +102,16 @@ class AgentScopeTest {
     }
 
     @Test
+    fun readyIsIdleOrDoneAndCountsWhatItLists() {
+        val hosts = listOf(
+            HostSnapshot(talos, view(defaultT to listOf(AgentStatus.Idle, AgentStatus.Done, AgentStatus.Working, AgentStatus.Blocked))),
+        )
+        val rows = agentRows(hosts)
+        assertEquals(2, rows.ready())
+        assertEquals(listOf("w9-p0", "w9-p1"), rows.withStatus(SwitcherFilter.Ready).map { it.paneId })
+    }
+
+    @Test
     fun aNewViewOnTheChosenHostUpdatesItsCounts() {
         val chosen = ScopeKey("t", "default", "w9")
         fun counts(statuses: List<AgentStatus>): Pair<Int, Int> {

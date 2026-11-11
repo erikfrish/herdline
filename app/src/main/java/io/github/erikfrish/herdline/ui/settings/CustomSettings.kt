@@ -96,6 +96,7 @@ import io.github.erikfrish.herdline.data.StartFilter
 import io.github.erikfrish.herdline.data.hiddenCount
 import io.github.erikfrish.herdline.data.TargetOrder
 import io.github.erikfrish.herdline.data.ThemeMode
+import io.github.erikfrish.herdline.data.TabsView
 import io.github.erikfrish.herdline.service.AgentNotifications
 import io.github.erikfrish.herdline.service.NoteContent
 import io.github.erikfrish.herdline.service.NoteTexts
@@ -191,10 +192,17 @@ internal fun LazyListScope.layoutSettings(store: SettingsStore, settings: Settin
         Group {
             Choice(
                 stringResource(R.string.start_filter),
-                listOf(stringResource(R.string.filter_all), stringResource(R.string.start_filter_needs_you), stringResource(R.string.start_filter_working)),
+                listOf(stringResource(R.string.filter_all), stringResource(R.string.start_filter_needs_you), stringResource(R.string.start_filter_working), stringResource(R.string.start_filter_ready)),
                 StartFilter.entries.indexOf(settings.startFilter),
                 help = stringResource(R.string.start_filter_help),
             ) { index -> store.update { it.copy(startFilter = StartFilter.entries[index]) } }
+            GlassDivider()
+            Choice(
+                stringResource(R.string.tabs_view),
+                listOf(stringResource(R.string.tabs_view_list), stringResource(R.string.tabs_view_columns)),
+                TabsView.entries.indexOf(settings.tabsView),
+                help = stringResource(R.string.tabs_view_help),
+            ) { index -> store.update { it.copy(tabsView = TabsView.entries[index]) } }
             GlassDivider()
             Toggle(stringResource(R.string.hide_shells), null, settings.hideShells) { on -> store.update { it.copy(hideShells = on) } }
             GlassDivider()
@@ -307,14 +315,10 @@ private fun SheetSection.label(): Int = when (this) {
     SheetSection.Filters -> R.string.controls_filters
 }
 
-/** The composer in Terminal, and keyboard suggestions outside the composer. */
+/** Keyboard suggestions outside the composer. */
 internal fun LazyListScope.composerSettings(store: SettingsStore, settings: Settings) {
     item {
         Group {
-            Toggle(stringResource(R.string.terminal_composer), stringResource(R.string.terminal_composer_help), settings.terminalComposer) { on ->
-                store.update { it.copy(terminalComposer = on) }
-            }
-            GlassDivider()
             Toggle(stringResource(R.string.terminal_suggestions), stringResource(R.string.terminal_suggestions_help), settings.terminalSuggestions) { on ->
                 store.update { it.copy(terminalSuggestions = on) }
             }
@@ -866,6 +870,7 @@ private fun promotionText(state: Promotion): Int = when (state) {
     Promotion.Off -> R.string.promotion_off
     Promotion.NoCard -> R.string.promotion_no_card
     Promotion.Stale -> R.string.promotion_stale
+    Promotion.Custom -> R.string.promotion_custom
     Promotion.Unsupported -> R.string.promotion_unsupported
     Promotion.NotAllowed -> R.string.promotion_not_allowed
     Promotion.NotPromotable -> R.string.promotion_not_promotable

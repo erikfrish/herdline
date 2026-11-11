@@ -34,6 +34,24 @@ class IngressRouteTest {
     }
 
     @Test
+    fun aProgramHerdrNamesInAnyCaseStillTakesItsEndpointRoutes() {
+        // Herdr reports the program's own casing (its display name first):
+        // a case-strict compare dropped the live endpoint and left Send off
+        // after images were staged.
+        for (agent in listOf("omp", "OMP", "Omp")) {
+            assertTrue(agent, agentNamed(agent, ENDPOINT_AGENTS))
+            assertFalse(agent, agentNamed(agent, API_AGENTS))
+        }
+        assertFalse("OpenCode sends prompts but exposes no ingress queue", agentNamed("OpenCode", ENDPOINT_AGENTS))
+        assertTrue(agentNamed("OpenCode", API_AGENTS))
+        assertTrue(agentNamed("CODEX", API_AGENTS))
+        assertFalse(agentNamed("codex", ENDPOINT_AGENTS))
+        assertFalse(agentNamed("claude", ENDPOINT_AGENTS))
+        assertFalse(agentNamed(null, ENDPOINT_AGENTS))
+        assertFalse(agentNamed(null, API_AGENTS))
+    }
+
+    @Test
     fun acceptedSettlesUncertainHoldsAndNothingSentGivesTheEarlierRecordBack() {
         val accepted = sentAfterIngress(IngressSend.Accepted("id-1", "accepted", null), before, "hi", 9)
         assertEquals(SentState.Confirmed, accepted?.state)
