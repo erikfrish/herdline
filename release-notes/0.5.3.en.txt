@@ -2,6 +2,8 @@ Herdline 0.5.3 — app-wide icon selection and durable live-update pins
 
 The selected icon now follows the app into Recents, in-app branding and full-colour notification icons, including redacted lock-screen versions. Existing notifications update silently when the selection changes. Android's package-management screens may still use the static manifest icon; monochrome status glyphs continue to express the agent state.
 
+Samsung may cache the icon of an existing Recents card. Close only Herdline's card and reopen from the launcher to refresh it; connection monitoring remains a foreground service.
+
 A completed task no longer silently removes its agent's live-update pin. The Done card disappears after 10 seconds, while the same pinned agent's next Working task is eligible for a Live Update without pinning again. Explicit Unpin or swipe still removes the pin.
 
-Samsung Now Bar placement remains separate from Android notification promotion. No Samsung test flag, undocumented Samsung notification payload, or fake progress is used. Actual stock-device verification and any remaining Samsung settings prerequisite are recorded separately.
+Samsung Now Bar is not fixed on the checked SM-S928U1 / One UI 8.5: Android marks the pinned Working card as promoted with the Samsung test flag off, but the stock Now Bar has no Herdline capsule and its normal Live notifications list does not include Herdline. No test flag, undocumented Samsung payload, media-session impersonation or fake progress is used.

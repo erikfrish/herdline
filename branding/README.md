@@ -56,9 +56,12 @@ The app resources live in `app/src/main/res`:
 
 The icon a person picks in Settings › Appearance is the app's identity
 everywhere in app code: launcher entry (`IconVariants.apply`), the Recents
-task icon (`MainActivity`), notification large icons and the in-app logo
-(`IconVariants.icon`/`currentIcon` draw the variant's own adaptive art once
-and cache it). Recognition-critical semantic glyphs — terminal status glyphs,
+task icon (`MainActivity` supplies the selected resource on Android 13+, or
+the cached bitmap before that), notification large icons and in-app logos.
+`IconVariants.icon`/`currentIcon` draw the adaptive art once and cache it.
+Some launchers cache an existing Recents task: close that app card and reopen
+it from its selected launcher entry to refresh the cached icon. Recognition-critical
+semantic glyphs — terminal status glyphs,
 badges, navigation icons, the notification small icon the status bar tints —
 stay the mark's one-colour form or their own symbols, never the variant tile.
 
