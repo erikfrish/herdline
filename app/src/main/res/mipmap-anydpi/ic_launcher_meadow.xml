@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "meadow" launcher icon: same crook, palette fills. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/launcher_meadow_background" />
+    <foreground android:drawable="@drawable/ic_launcher_glyph_meadow" />
+    <monochrome android:drawable="@drawable/ic_launcher_glyph_light" />
+</adaptive-icon>

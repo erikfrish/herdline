@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon variant names and pick descriptions, one line each.
+     Long paths and geometry live in launcher_glyph.xml; this file is text only. -->
+<resources>
+    <string name="icon_label_wood">Wood</string>
+    <string name="icon_label_mono">Mono</string>
+    <string name="icon_label_contrast">Contrast</string>
+    <string name="icon_label_ember">Ember</string>
+    <string name="icon_label_signal">Signal</string>
+    <string name="icon_label_pasture">Pasture</string>
+    <string name="icon_label_meadow">Meadow</string>
+    <string name="icon_label_dusk">Dusk</string>
+
+</resources>

@@ -5,6 +5,14 @@
   <img alt="Herdline: herd your coding agents from your phone" src="branding/crook/banner-light.svg">
 </picture>
 
+[Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
+
+> **Release status:** the latest public APK is 0.2.0 and is not recommended
+> after its partial QA found a Terminal navigation defect. Later development
+> candidates are not automatically GitHub releases. Obtainium tracks published
+> releases, not private APKs; adding the source is not a recommendation to install
+> the failed public build.
+
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
 host owns the terminals, workspaces, tabs, panes and agents, and they keep
@@ -59,17 +67,15 @@ write.
   destination; a draft for another pane says so and offers **Move here**.
 - **Insert without Enter** pastes the text into the pane as one bracketed
   paste; you press Enter yourself.
-- **Send** pastes and presses Enter once. It is offered only for an OMP agent
-  at rest whose input box Herdline can see and check is empty. Otherwise it
-  explains why and leaves Insert without Enter. Send types into the pane's
-  terminal; there is no separate message channel to the agent.
-- When Herdr has sized the pane for another screen (a desktop client typed
-  into or focused it last), Send is refused. **Fit to this phone** focuses the
-  pane so Herdr sizes it for the phone; the desktop then shows it cropped. It
-  happens only when you tap it.
-- After input, Herdline waits for Herdr to confirm it read the input before
-  clearing the draft. If the connection ends first, the draft is kept and
-  marked *not confirmed*, and nothing is ever resent on its own.
+- In Terminal, **Send** pastes and presses Enter once, only for an idle OMP
+  agent whose complete input box can be checked. A pane sized for the desktop
+  may require explicit **Fit to this phone**, which changes Herdr's shared size.
+- In Chat, a compatible optional `herdline-ingress` endpoint sends directly
+  into the same OMP, including steering while Working, without Fit or Enter.
+  Only an absent endpoint allows terminal fallback; unsupported or uncertain
+  endpoints never silently resend by another route.
+- A failed or unconfirmed send preserves its draft and is never resent
+  automatically. Check asks for its status; Unlock is an explicit user action.
 
 ### Attachments
 
@@ -111,12 +117,13 @@ share the composer and its draft.
   a duration appears only when transcript timestamps support it. Tool heads
   are quiet rows with one frame around their output. Prose, code and user
   bubbles use the updated spacing; dense Chat keeps its compact line height.
-- **Verification:** 0.2.0 is not recommended. Partial runtime QA checked
-  Grid/List workspace filters and explicit closed-workspace handling, but
-  found that Terminal tab/pane selection can stay on the old target (S2).
-  Chat-dependent checks were blocked by the no-model fixture's missing
-  transcript. Send/no-replay observations carry an isolation-proof qualifier;
-  folding, large-font chips, TalkBack, RTL and device lifecycle remain unverified.
+- **Verification:** the 0.4.0 candidate passed focused app-to-SSH-to-OMP QA
+  with a local mock provider for Send, photos, the live queue, withdrawal,
+  local focus/geometry, recovery and form placement. The verdict was conditional:
+  a duplicated form label was fixed in 0.4.1, but read-only-dialog runtime,
+  Terminal password scrollback, broad accessibility and real LLM consumption
+  were not proven. 0.5.0 changes appearance controls; its proof is recorded
+  separately. A build or phone installation alone is not full QA acceptance.
 
 ### Notifications
 
@@ -143,10 +150,12 @@ share the composer and its draft.
 
 ### Appearance
 
-Material 3, with light and dark colour themes and separate terminal colour
-schemes, checked for contrast. JetBrains Mono Nerd Font Mono ships in the app.
-Other Nerd Fonts download in-app, each checked against a pinned SHA-256, and
-any TTF/OTF can be imported.
+Material 3 and Material You choices lead the app-theme picker and are explicitly
+marked; other light/dark palettes and separate terminal schemes stay available.
+Launcher icons are selectable pictures of the actual adaptive icons: Wood,
+Ember, Signal, Pasture, Meadow, Dusk, Mono and Contrast. JetBrains Mono Nerd Font
+Mono ships in the app; additional fonts download with pinned SHA-256 checks,
+and TTF/OTF imports are supported.
 
 ## Signing in
 

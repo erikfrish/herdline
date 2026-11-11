@@ -259,6 +259,13 @@ Switcher:
   Known hosts live in Security & hosts only, and the Hosts screen keeps
   Import SSH config. Opened from a session, the index says where Back
   returns.
+- **Appearance selection.** Launcher variants are picture choices drawn from
+  their actual adaptive icon resources; outline, check and radio semantics show
+  selection. Wood keeps the Default alias; Ember, Signal, Pasture, Meadow and
+  Dusk reuse the prepared crook geometry and colours. Mono and Contrast keep
+  their stored names. Material You is first on supported devices, followed by
+  the fixed Herdline Material 3 family, with explicit Material badges. Other
+  palettes and saved ids remain unchanged.
 - **Why Send is off.** When Herdr's precheck refuses Send for a written
   draft, its reason shows as the composer notice before any tap, with the
   same actions a refusal offers.

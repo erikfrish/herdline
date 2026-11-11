@@ -27,6 +27,11 @@ device.
 
 One-colour uses: `#2A1A12` on `#F6F1E7` (14.9:1), or white on black.
 
+The launcher picker also includes the prepared Signal (orange/black), Pasture
+(green/cream), Meadow (mint/ink) and Dusk (violet/cream) colourways. Ember is a
+separate dark-tile choice; Wood remains the default. All reuse the same path
+geometry, with no new raster generation or effects.
+
 ## Files
 
 | File | Use |
@@ -41,9 +46,9 @@ One-colour uses: `#2A1A12` on `#F6F1E7` (14.9:1), or white on black.
 The app resources live in `app/src/main/res`:
 
 - `values/launcher_glyph.xml` holds the path data.
-- `values/colors.xml` holds the launcher colours.
+- `values/colors.xml` holds the default launcher colours; `values/colors_launcher_variants.xml` holds the other prepared colourways.
 - `drawable/ic_launcher_glyph*.xml` are the launcher foregrounds.
-- `mipmap-anydpi/ic_launcher{,_mono,_contrast}.xml` are the Default, Mono and Contrast icons.
+- `mipmap-anydpi/ic_launcher*.xml` contains the adaptive Wood, Ember, Signal, Pasture, Meadow, Dusk, Mono and Contrast icons.
 - `drawable/ic_notification.xml` is the notification icon.
 - The splash uses `drawable{,-night}/ic_splash_glyph.xml` and `values{,-night}-v31/themes.xml`.
 

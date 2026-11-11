@@ -1,13 +1,17 @@
 package io.github.erikfrish.herdline.ui.settings
 
 import android.content.ActivityNotFoundException
+import android.view.View
+import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,8 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
@@ -47,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -65,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
@@ -72,6 +81,8 @@ import io.github.erikfrish.herdline.data.ComposerAction
 import io.github.erikfrish.herdline.data.ComposerMenu
 import io.github.erikfrish.herdline.data.Density
 import io.github.erikfrish.herdline.data.IconVariant
+import io.github.erikfrish.herdline.data.drawableRes
+import io.github.erikfrish.herdline.data.labelRes
 import io.github.erikfrish.herdline.data.LayoutMode
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.data.Settings
@@ -400,18 +411,55 @@ private fun LiveLevelRow(store: SettingsStore, settings: Settings) {
     )
 }
 
-/** Launcher icon variant: part of Appearance. */
+/** Actual adaptive launcher artwork, with one selectable picture per persisted alias. */
 internal fun LazyListScope.iconSettings(store: SettingsStore, settings: Settings) {
     item { SectionHeader(stringResource(R.string.section_icon)) }
     item {
         Group {
-            Choice(
-                null,
-                listOf(stringResource(R.string.icon_default), stringResource(R.string.icon_mono), stringResource(R.string.icon_contrast)),
-                IconVariant.entries.indexOf(settings.iconVariant),
-                help = stringResource(R.string.icon_help),
-            ) { index -> store.update { it.copy(iconVariant = IconVariant.entries[index]) } }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(
+                    Modifier.fillMaxWidth().selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IconVariant.entries.forEach { variant ->
+                        LauncherIconChoice(variant, settings.iconVariant == variant) {
+                            store.update { it.copy(iconVariant = variant) }
+                        }
+                    }
+                }
+                Help(stringResource(R.string.icon_help))
+            }
         }
+    }
+}
+
+@Composable
+private fun LauncherIconChoice(variant: IconVariant, selected: Boolean, onClick: () -> Unit) {
+    val label = stringResource(variant.labelRes)
+    val context = LocalContext.current
+    val drawable = remember(context, variant) { context.getDrawable(variant.drawableRes) }
+    Column(
+        Modifier.width(88.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
+            .selectable(selected, role = Role.RadioButton, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = label }
+            .testTag("settings:icon:${variant.name}")
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(Modifier.size(72.dp)) {
+            AndroidView(
+                factory = { ctx -> ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO } },
+                update = { it.setImageDrawable(drawable) },
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (selected) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.align(Alignment.BottomEnd).size(22.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(3.dp))
+        }
+        Text(label, style = MaterialTheme.typography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 

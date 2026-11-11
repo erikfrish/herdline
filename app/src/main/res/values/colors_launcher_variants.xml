@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Herdline crook palettes for the launcher icon variants. The "wood" palette of the
+     default icon lives in colors.xml; these colours change only the fills, the crook
+     geometry is shared via @string/launcher_crook_*. -->
+<resources>
+    <!-- "ember": glowing charcoal. -->
+    <color name="launcher_ember_background">#FF1C1310</color>
+    <color name="launcher_ember_strand">#FFF2C98A</color>
+    <color name="launcher_ember_hook">#FFE8743B</color>
+    <color name="launcher_ember_ink">#FFFFF1DC</color>
+    <!-- "signal": night with a signal-flare hook. -->
+    <color name="launcher_signal_background">#FF0E0F12</color>
+    <color name="launcher_signal_strand">#FFFFB37A</color>
+    <color name="launcher_signal_hook">#FFFF5A1F</color>
+    <color name="launcher_signal_ink">#FFFFF4E0</color>
+    <!-- "pasture": green fields in daylight. -->
+    <color name="launcher_pasture_background">#FFEEF2E4</color>
+    <color name="launcher_pasture_strand">#FFA9C98A</color>
+    <color name="launcher_pasture_hook">#FF2F6B3A</color>
+    <color name="launcher_pasture_ink">#FF1E3324</color>
+    <!-- "meadow": mint meadow at night. -->
+    <color name="launcher_meadow_background">#FF102A3A</color>
+    <color name="launcher_meadow_strand">#FFB4F1D6</color>
+    <color name="launcher_meadow_hook">#FF3DDC97</color>
+    <color name="launcher_meadow_ink">#FFF2FFF8</color>
+    <!-- "dusk": violet twilight on pale stone. -->
+    <color name="launcher_dusk_background">#FFF4F2EE</color>
+    <color name="launcher_dusk_strand">#FFB3A8FF</color>
+    <color name="launcher_dusk_hook">#FF5B3BFF</color>
+    <color name="launcher_dusk_ink">#FF211457</color>
+</resources>

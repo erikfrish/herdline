@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon variant names and pick descriptions (Simplified Chinese). -->
+<resources>
+    <string name="icon_label_wood">木质</string>
+    <string name="icon_label_mono">单色</string>
+    <string name="icon_label_contrast">高对比</string>
+    <string name="icon_label_ember">余烬</string>
+    <string name="icon_label_signal">信号</string>
+    <string name="icon_label_pasture">牧场</string>
+    <string name="icon_label_meadow">草甸</string>
+    <string name="icon_label_dusk">暮色</string>
+
+</resources>

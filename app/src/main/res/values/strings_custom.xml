@@ -84,7 +84,7 @@
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">Mono</string>
     <string name="icon_contrast">Contrast</string>
-    <string name="icon_help">Herdline includes three launcher icon variants. The home screen switches to the one you pick. Some launchers take a moment, and may move or remove a home-screen shortcut. Custom icons and pinned shortcuts are not available yet.</string>
+    <string name="icon_help">Choose a launcher icon by its picture. The home screen uses the selected colourway; themed icons follow the launcher\'s colours. Some launchers take a moment and may move a home-screen shortcut.</string>
 
     <string name="preview_title">Preview</string>
     <string name="preview_description">Preview of the session with the current settings</string>

@@ -77,6 +77,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -534,9 +535,9 @@ fun SettingsScreen(app: HerdlineApp, onBack: (() -> Unit)?, backLabel: String? =
 }
 
 /**
- * Every app theme as a card in its own colours for the mode on screen, and
- * last, on API 31+, Material You in the wallpaper's. A tap saves it at once
- * and the whole screen re-themes, which is the preview.
+ * Material You first on supported devices, followed by the fixed Material 3
+ * family and then the other app palettes. The marked cards keep their stored ids;
+ * a tap saves the choice and re-themes the screen immediately.
  */
 @Composable
 private fun ThemeRow(selected: String, onSelect: (String) -> Unit) {
@@ -551,10 +552,13 @@ private fun ThemeRow(selected: String, onSelect: (String) -> Unit) {
         Modifier.horizontalScroll(rememberScrollState()).selectableGroup().padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AppPalettes.all.forEach { palette -> ThemeCard(palette, palette.tokens(dark), palette.id == currentId) { onSelect(palette.id) } }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val you = AppPalettes.MaterialYou
-            ThemeCard(you, rememberDynamicTokens(dark), you.id == currentId) { onSelect(you.id) }
+            ThemeCard(you, rememberDynamicTokens(dark), you.id == currentId, R.string.theme_material_you_badge) { onSelect(you.id) }
+        }
+        AppPalettes.all.forEach { palette ->
+            val material = palette == AppPalettes.Herdline || palette == AppPalettes.HerdlineOled || palette == AppPalettes.HerdlineHc
+            ThemeCard(palette, palette.tokens(dark), palette.id == currentId, if (material) R.string.theme_material_badge else null) { onSelect(palette.id) }
         }
     }
 }
@@ -567,19 +571,22 @@ private val ThemeSampleShape = RoundedCornerShape(12.dp) // = shapes.medium
  * selection, not colour alone; TalkBack reads one radio button.
  */
 @Composable
-private fun ThemeCard(palette: AppPalette, tokens: ThemeTokens, selected: Boolean, onClick: () -> Unit) {
+private fun ThemeCard(palette: AppPalette, tokens: ThemeTokens, selected: Boolean, badgeRes: Int? = null, onClick: () -> Unit) {
     val scheme = tokens.material
     val described = stringResource(
         if (palette.darkOnly) R.string.app_theme_description_dark_only else R.string.app_theme_description,
         palette.name,
     )
-    val description = if (selected) stringResource(R.string.app_theme_selected, described) else described
+    val badge = badgeRes?.let { stringResource(it) }
+    val withBadge = if (badge == null) described else "$described, $badge"
+    val description = if (selected) stringResource(R.string.app_theme_selected, withBadge) else withBadge
     Column(
         Modifier
             .width(88.dp)
             .clip(ThemeSampleShape)
+            .testTag("settings:theme:${palette.id}")
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .clearAndSetSemantics { contentDescription = description }
+            .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -618,6 +625,10 @@ private fun ThemeCard(palette: AppPalette, tokens: ThemeTokens, selected: Boolea
         }
         // At a large font scale the name wraps and the card grows rather than clipping.
         Text(palette.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+        if (badge != null) {
+            Text(badge, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, textAlign = TextAlign.Center,
+                modifier = Modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 4.dp, vertical = 2.dp))
+        }
         if (palette.darkOnly) {
             Text(
                 stringResource(R.string.app_theme_dark_only),

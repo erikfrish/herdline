@@ -66,6 +66,66 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherEmber"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_ember"
+            android:roundIcon="@mipmap/ic_launcher_ember"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherSignal"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_signal"
+            android:roundIcon="@mipmap/ic_launcher_signal"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherPasture"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_pasture"
+            android:roundIcon="@mipmap/ic_launcher_pasture"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherMeadow"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_meadow"
+            android:roundIcon="@mipmap/ic_launcher_meadow"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherDusk"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_dusk"
+            android:roundIcon="@mipmap/ic_launcher_dusk"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".service.ConnectionService"

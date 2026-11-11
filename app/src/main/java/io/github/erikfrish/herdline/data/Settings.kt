@@ -43,7 +43,7 @@ enum class LockDetail {
 }
 
 /** Launcher icon variants, each an activity alias. */
-enum class IconVariant { Default, Mono, Contrast }
+enum class IconVariant { Default, Mono, Contrast, Ember, Signal, Pasture, Meadow, Dusk }
 
 /** Which filter the Tabs list and Agents open with: Herdr's order under each. */
 enum class StartFilter { All, NeedsYou, Working }

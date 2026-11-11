@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The crook in its "ember" strand colours: Ember icon foreground. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@color/launcher_ember_strand" android:pathData="@string/launcher_crook_strand" />
+    <path android:fillColor="@color/launcher_ember_hook" android:pathData="@string/launcher_crook_hook" />
+    <path android:fillColor="@color/launcher_ember_ink" android:pathData="@string/launcher_crook_ink" />
+</vector>

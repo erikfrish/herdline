@@ -1,0 +1,9 @@
+Herdline 0.5.0 — appearance choices
+
+Launcher icons are selected from actual icon pictures, with a selected outline and check mark. The approved crook artwork now offers Wood (the existing default), Ember, Signal, Pasture, Meadow and Dusk, alongside Mono and Contrast. Existing icon choices and defaults are preserved. The launcher applies the selected activity alias; launcher caching and home-screen shortcut behavior remain device-dependent.
+
+Material You is first in the app-theme picker on Android 12+, marked Material You · Dynamic. The fixed Herdline Material 3 family follows with a Material 3 badge; other palettes remain available afterward. Selecting or resetting themes keeps the existing stored identifiers and behavior.
+
+Samsung Now Bar is unchanged: the system decides promotion and placement. A previous bottom capsule was observed only with a temporary developer flag, which was restored. Stock placement is not confirmed. No media/call/navigation impersonation or Samsung developer-setting change is included.
+
+This release does not replace personal OMP or install the optional ingress extension. Validation and phone delivery are recorded separately from the preceding 0.4.0 conditional mock-provider QA.
