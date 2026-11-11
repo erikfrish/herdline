@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -85,7 +86,7 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
 
     val portValue = port.toIntOrNull()?.takeIf { it in 1..65535 }
     val keepAliveValue = keepAlive.toIntOrNull()?.takeIf { it in 0..3600 }
-    val addressIssue = addressProblem(address)
+    val addressIssue = addressProblem(address, saved = initial?.address)
     val valid = addressIssue == null && Node.validUser(user) && portValue != null &&
         Node.validSession(session) && keepAliveValue != null
     val candidates = app.nodes.jumpCandidates(initial)
@@ -244,6 +245,18 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth().testTag("field:address"),
                 )
+                portInAddress(address)?.let { split ->
+                    // One tap fixes it, for a typed port and for a node saved this way before.
+                    TextButton(
+                        onClick = {
+                            address = split.address
+                            split.port?.let { port = it }
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("field:address:split"),
+                    ) {
+                        Text(stringResource(R.string.editor_move_port, split.port.orEmpty()))
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassField(
                         user, { user = it.trim() },

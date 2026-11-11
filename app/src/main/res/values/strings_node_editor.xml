@@ -8,5 +8,7 @@
     <string name="editor_save_needs">To save, fix: %1$s</string>
     <string name="editor_address_invalid">No spaces, @ or /. Put the user in User.</string>
     <string name="editor_address_port">Put the port in Port.</string>
+    <!-- %1$s: the port found after the colon in the address. -->
+    <string name="editor_move_port">Move :%1$s to Port</string>
     <string name="editor_user_invalid">No spaces, @ or :.</string>
 </resources>

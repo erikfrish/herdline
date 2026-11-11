@@ -53,13 +53,20 @@ internal fun splitPastedAddress(text: String): PastedAddress? {
 /**
  * Why [address] cannot be saved as typed, or null. One colon is a port typed
  * into the address (a bare IPv6 address has at least two), which SSH would
- * read as part of the host name.
+ * read as part of the host name. A node saved that way before the rule keeps
+ * saving while its address is [saved] unchanged: the rule must not lock
+ * anyone out of their own node; the editor offers the split instead
+ * ([portInAddress]).
  */
-internal fun addressProblem(address: String): AddressProblem? = when {
+internal fun addressProblem(address: String, saved: String? = null): AddressProblem? = when {
     address.isBlank() -> AddressProblem.Missing
     !Node.validAddress(address) -> AddressProblem.Invalid
-    address.count { it == ':' } == 1 -> AddressProblem.PortInAddress
+    portInAddress(address) != null && address != saved -> AddressProblem.PortInAddress
     else -> null
 }
 
 internal enum class AddressProblem { Missing, Invalid, PortInAddress }
+
+/** [address] as host and port when it holds exactly one colon (the one-tap split), else null. */
+internal fun portInAddress(address: String): PastedAddress? =
+    if (address.count { it == ':' } == 1) splitPastedAddress(address) else null

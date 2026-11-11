@@ -7,5 +7,6 @@
     <string name="editor_save_needs">保存前请修正：%1$s</string>
     <string name="editor_address_invalid">不能包含空格、@ 或 /。用户名请填在“用户名”中。</string>
     <string name="editor_address_port">端口请填在“端口”中。</string>
+    <string name="editor_move_port">将 :%1$s 移到“端口”</string>
     <string name="editor_user_invalid">不能包含空格、@ 或 :。</string>
 </resources>

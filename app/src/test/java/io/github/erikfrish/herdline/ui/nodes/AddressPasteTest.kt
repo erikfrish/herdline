@@ -38,4 +38,13 @@ class AddressPasteTest {
         assertEquals(AddressProblem.Missing, addressProblem(""))
         assertEquals(AddressProblem.Invalid, addressProblem("bob@example.com"))
     }
+
+    @Test
+    fun aNodeSavedWithAPortInItsAddressStillSavesAndCanSplit() {
+        assertNull(addressProblem("example.com:2222", saved = "example.com:2222"))
+        // Edited into another host:port, the rule applies again.
+        assertEquals(AddressProblem.PortInAddress, addressProblem("example.org:2222", saved = "example.com:2222"))
+        assertEquals(PastedAddress("example.com", null, "2222"), portInAddress("example.com:2222"))
+        assertNull(portInAddress("fe80::1"))
+    }
 }
