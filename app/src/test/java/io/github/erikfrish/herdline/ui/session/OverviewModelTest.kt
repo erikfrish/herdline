@@ -50,7 +50,7 @@ class OverviewModelTest {
     private val groups = topology(view)
 
     private fun sections(query: String = "", filter: SwitcherFilter = SwitcherFilter.All, scope: String? = null): List<OverviewSection> {
-        val inScope = groups.scoped(scopedWorkspace(groups, scope))
+        val inScope = tabsScope(groups, scope, loaded = true).groups
         return overviewSections(inScope, inScope.narrowed(query, filter), query.isNotBlank() || filter != SwitcherFilter.All, view)
     }
 
@@ -104,11 +104,23 @@ class OverviewModelTest {
     }
 
     @Test
-    fun aClosedScopedWorkspaceFallsBackToAll() {
-        assertEquals("w2", scopedWorkspace(groups, "w2"))
-        assertNull(scopedWorkspace(groups, "gone"))
-        assertEquals(listOf("w1", "w2", "w3"), sections(scope = "gone").map { it.workspace.id })
-        assertEquals(listOf("t3"), sections(scope = "w2").cards().map { it.tab.id })
+    fun theScopeComposesWithStatusAndSearchAndAClosedOneNeverWidens() {
+        // In scope, the filter and the search narrow only that workspace's tabs and counts.
+        val w1 = tabsScope(groups, "w1", loaded = true)
+        assertEquals("w1" to false, w1.chosen to w1.gone)
+        assertEquals(listOf("t1"), sections(filter = SwitcherFilter.Working, scope = "w1").cards().map { it.tab.id })
+        assertEquals(emptyList<String>(), sections(query = "hotfix", scope = "w1").cards().map { it.tab.id })
+        assertEquals(listOf("t5"), sections(query = "hotfix").cards().map { it.tab.id })
+        assertEquals(1 to 1, w1.groups.agentCounts(""))
+        assertEquals(0 to 0, w1.groups.agentCounts("hotfix"))
+        // A closed workspace is gone: nothing listed or counted, not All.
+        val gone = tabsScope(groups, "gone", loaded = true)
+        assertEquals(null to true, gone.chosen to gone.gone)
+        assertTrue(gone.groups.isEmpty())
+        assertEquals(0 to 0, gone.groups.agentCounts(""))
+        // Before the first view a saved choice is not gone yet.
+        assertEquals(false, tabsScope(emptyList(), "w1", loaded = false).gone)
+        assertEquals(listOf("w1", "w2", "w3"), tabsScope(groups, null, loaded = true).groups.map { it.workspace.id })
     }
 
     @Test

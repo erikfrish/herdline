@@ -109,7 +109,8 @@ import io.github.erikfrish.herdline.ui.glass.GlassMenuItem
  * frame request, no polling. A one-pane tab's card goes to that tab; a split
  * tab's opens the pane picker in the same sheet, and Back returns to the grid
  * where it was. [query] and [filter] are the list's own, so Show as list
- * keeps them; [scope] is the chosen workspace id, or null for all of them.
+ * keeps them; [scope] is the chosen workspace id, or null for all of them,
+ * shared with the list ([tabsScope]): a closed one shows no tabs and says so.
  * [here] and [reading] are the list's own (CT-1): in Chat the pane read on
  * this phone marks the current card and pane, never Herdr's focus.
  */
@@ -136,12 +137,9 @@ fun TabsOverview(
     reading: Boolean = false,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
-    val chosen = scopedWorkspace(groups, scope)
-    // A closed workspace drops the choice: the overview falls back to All.
-    LaunchedEffect(view != null, chosen, scope) {
-        if (view != null && scope != null && chosen == null) onScope(null)
-    }
-    val inScope = remember(groups, chosen) { groups.scoped(chosen) }
+    val scoped = remember(groups, scope, view != null) { tabsScope(groups, scope, loaded = view != null) }
+    val chosen = scoped.chosen
+    val inScope = scoped.groups
     val narrowing = query.isNotBlank() || filter != SwitcherFilter.All
     val currentTab = view?.let { overviewCurrentTab(it, here, reading) }
     val sections = remember(inScope, query, filter, view, currentTab) {
@@ -163,13 +161,16 @@ fun TabsOverview(
         overviewIndexOf(sections, currentTab, headers)?.let { grid.scrollToItem(it) }
     }
 
-    AnimatedContent(targetState = card, contentKey = { it?.key }, label = "overview", modifier = modifier) { shown ->
+    // Keyed by the picked tab's id, not its card: a live status update redraws the picker in place,
+    // with no transition and nothing reset.
+    AnimatedContent(targetState = picking, label = "overview", modifier = modifier) { id ->
+        val shown = id?.let { picked -> sections.firstNotNullOfOrNull { s -> s.cards.firstOrNull { it.tab.id == picked } } }
         if (shown != null && view != null) {
             PanePicker(shown, here, reading, onBack = { picking = null }, onGo = actions.go)
             return@AnimatedContent
         }
         Column(Modifier.fillMaxWidth().testTag("overview")) {
-            val newTabIn = view?.workspaces?.firstOrNull { it.id == (chosen ?: view.focusedWorkspace) }
+            val newTabIn = view?.workspaces?.firstOrNull { it.id == (chosen ?: view.focusedWorkspace) }?.takeUnless { scoped.gone }
             OverviewHeader(host, view, newTabIn, actions, onShowList)
             Box(Modifier.padding(horizontal = 16.dp)) {
                 val fontScale = LocalDensity.current.fontScale
@@ -180,7 +181,7 @@ fun TabsOverview(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (view != null) ScopeSelector(view, groups, chosen, onScope)
+                if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope)
                 if (filtersShown) {
                     OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { onFilter(SwitcherFilter.All) }
                     OverviewChip(stringResource(R.string.filter_needs_you, counts.first), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
@@ -193,6 +194,7 @@ fun TabsOverview(
             }
             when {
                 view == null || state !is Connection.State.Connected -> Box(Modifier.padding(horizontal = 16.dp)) { HostLine(node, view, state) }
+                scoped.gone -> ScopeGone { onScope(null) }
                 sections.isEmpty() -> NoneMatch {
                     onQuery("")
                     onFilter(SwitcherFilter.All)
@@ -514,21 +516,24 @@ private fun PreviewTile(modifier: Modifier, content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** The workspace selector chip: this host's workspaces, All first; choosing one only filters. */
+/**
+ * The workspace selector chip: this host's workspaces, All first; choosing
+ * one only filters. A [gone] choice reads as a closed workspace, not All.
+ */
 @Composable
-private fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen: String?, onScope: (String?) -> Unit) {
+internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen: String?, gone: Boolean, onScope: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val suffixes = remember(view.workspaces) { workspaceSuffixes(view.workspaces) }
     val picked = groups.firstOrNull { it.workspace.id == chosen }?.workspace
-    val name = picked?.let { workspaceName(it, suffixes[it.id]) } ?: stringResource(R.string.scope_all)
+    val name = picked?.let { workspaceName(it, suffixes[it.id]) } ?: stringResource(if (gone) R.string.scope_gone else R.string.scope_all)
     val spoken = stringResource(R.string.scope_button, name)
     BoxWithConstraints {
         val menuWidth = maxWidth
         FilterChip(
-            selected = picked != null,
+            selected = picked != null || gone,
             onClick = { open = true },
             label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = if (picked != null) {
+            leadingIcon = if (picked != null || gone) {
                 { Icon(Icons.Filled.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
             } else {
                 null
@@ -540,8 +545,8 @@ private fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen:
             ScopeItem(
                 name = stringResource(R.string.scope_all),
                 detail = pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
-                selected = picked == null,
-                leading = { Icon(Icons.Filled.Check, null, Modifier.size(24.dp), tint = if (picked == null) MaterialTheme.colorScheme.primary else Color.Transparent) },
+                selected = picked == null && !gone,
+                leading = { Icon(Icons.Filled.Check, null, Modifier.size(24.dp), tint = if (picked == null && !gone) MaterialTheme.colorScheme.primary else Color.Transparent) },
             ) {
                 open = false
                 onScope(null)
@@ -617,6 +622,20 @@ private fun NoneMatch(onClear: () -> Unit) {
             textAlign = TextAlign.Center,
         )
         TextButton(onClick = onClear, modifier = Modifier.testTag("overview:clear")) { Text(stringResource(R.string.overview_clear)) }
+    }
+}
+
+/** The chosen workspace has closed: nothing of another workspace shows until the reader widens the scope. */
+@Composable
+internal fun ScopeGone(onShowAll: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(32.dp).testTag("tabs:scope-gone"), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            stringResource(R.string.scope_gone_note),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = onShowAll, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.scope_show_all)) }
     }
 }
 

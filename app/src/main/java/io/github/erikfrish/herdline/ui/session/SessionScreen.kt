@@ -1209,6 +1209,8 @@ fun SessionScreen(
                         reading = chatMode,
                         onShowGrid = { showAs(TabsView.Grid) },
                         appliesStartFilter = false,
+                        scope = tabsScope,
+                        onScope = { tabsScope = it },
                     )
                 }
             }

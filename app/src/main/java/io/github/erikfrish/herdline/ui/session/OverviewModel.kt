@@ -102,13 +102,30 @@ internal fun workspaceSuffixes(workspaces: List<Workspace>): Map<String, Int> {
     }
 }
 
-/** The workspace a saved [chosen] id still names in [groups], else none (All workspaces). */
+/** The workspace a saved [chosen] id still names in [groups], else none. */
 internal fun scopedWorkspace(groups: List<WorkspaceGroup>, chosen: String?): String? =
     chosen?.takeIf { id -> groups.any { it.workspace.id == id } }
 
 /** [groups] limited to the workspace [scope], or all of them. */
 internal fun List<WorkspaceGroup>.scoped(scope: String?): List<WorkspaceGroup> =
     if (scope == null) this else filter { it.workspace.id == scope }
+
+/**
+ * The phone Tabs sheet's workspace scope, one for its Grid and its List:
+ * [chosen], the workspace the saved id still names, or null for all of
+ * them, and [groups], the topology in that scope. Cards, rows, pinned and
+ * recent places and the status chips' counts all come from [groups]. A
+ * chosen workspace that has closed is [gone]: the sheet then shows no
+ * workspace and says so, never widening to all of them on its own.
+ */
+internal data class TabsScope(val chosen: String?, val gone: Boolean, val groups: List<WorkspaceGroup>)
+
+/** [all] (this host's topology) in the saved scope [saved]; [loaded] once a view has arrived, so a choice is not "gone" before. */
+internal fun tabsScope(all: List<WorkspaceGroup>, saved: String?, loaded: Boolean): TabsScope {
+    val chosen = scopedWorkspace(all, saved)
+    val gone = loaded && saved != null && chosen == null
+    return TabsScope(chosen, gone, if (gone) emptyList() else all.scoped(chosen))
+}
 
 /**
  * The cards of [all] (the scoped topology) that [shown] (the same, narrowed)
