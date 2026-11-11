@@ -5,13 +5,13 @@
   <img alt="Herdline: herd your coding agents from your phone" src="branding/crook/banner-light.svg">
 </picture>
 
-[Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
+[Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D)
 
 > **Release status:** [0.5.3](https://github.com/erikfrish/herdline/releases/tag/v0.5.3)
 > is the latest public prerelease candidate. App-wide icon identity and durable
 > live-update pins have focused runtime proof. Stock Samsung Now Bar remains
 > broken on the checked One UI 8.5 device. It is not a general stable release. Obtainium tracks published
-> releases; enable prereleases to receive this candidate.
+> releases; the import link below enables prereleases for this candidate.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
@@ -79,20 +79,20 @@ The selected app icon reaches in-app logos, full-colour notifications and Recent
 This remains a **prerelease candidate**, not a general stable release: stock
 Samsung Now Bar is not fixed; Terminal and full live-provider OMP verification
 remain limited. The in-app candidate feed offers it; nothing
-is installed without an explicit tap on the device. Obtainium users must enable
-prereleases. The older 0.2.0 failed Terminal navigation QA and is superseded.
+is installed without an explicit tap on the device. The Obtainium import link
+enables prereleases. The older 0.2.0 failed Terminal navigation QA and is superseded.
 
 ### Obtainium (one-click add)
 
 <p align="center">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D">
     <img src="branding/crook/badge_obtainium.png" alt="Get it on Obtainium" width="240">
   </a>
 </p>
 
-[**Add Herdline to Obtainium →**](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
+[**Add Herdline to Obtainium →**](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D)
 (opens [Obtainium](https://obtainium.imranr.dev/) if installed, and offers it
-if not; no silent install — Obtainium shows the config for confirmation.)
+if not; prereleases are enabled in the imported config. No silent install — Obtainium shows the config for confirmation.)
 
 Manual fallback: in Obtainium use **Add app** with the source URL
 `https://github.com/erikfrish/herdline`, or import this config as-is
@@ -100,7 +100,7 @@ Manual fallback: in Obtainium use **Add app** with the source URL
 [Obtainium deep-link docs](https://wiki.obtainium.imranr.dev/deep_links/)):
 
 ```json
-{"id": "io.github.erikfrish.herdline", "url": "https://github.com/erikfrish/herdline", "author": "erikfrish", "name": "Herdline"}
+{"id":"io.github.erikfrish.herdline","url":"https://github.com/erikfrish/herdline","author":"erikfrish","name":"Herdline","additionalSettings":"{\"includePrereleases\":true}"}
 ```
 
 ### From source
