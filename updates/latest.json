@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10034,
-    "versionName": "0.5.3",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.5.3/herdline-0.5.3.apk",
-    "sha256": "55f4c1c2b54d0e0591044a01eeee569c91883de4d2238c63aea0520958415833",
-    "size": 23388227,
+    "versionCode": 10035,
+    "versionName": "0.6.0",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.0/herdline-0.6.0.apk",
+    "sha256": "af274f482aa1fed236df53f1c6712b3486d1f1130d7f8eff5e1882c153ad5971",
+    "size": 23638879,
     "minSdk": 29,
     "qa": {
-      "state": "passed",
-      "reason": "Focused icon surfaces and 24 live-state tests pass; stock Samsung Now Bar not fixed."
+      "state": "not_tested",
+      "reason": "Focused developer checks and isolated SSH/UI scenarios passed; independent broad provider/all-harness QA and Samsung post-install proof not completed."
     },
-    "accepted": true,
+    "accepted": false,
     "notes": {
-      "en": "Herdline 0.5.3 \u2014 app-wide icon selection and durable live-update pins\n\nThe selected icon now follows the app into Recents, in-app branding and full-colour notification icons, including redacted lock-screen versions. Existing notifications update silently when the selection changes. Android's package-management screens may still use the static manifest icon; monochrome status glyphs continue to express the agent state.\n\nSamsung may cache the icon of an existing Recents card. Close only Herdline's card and reopen from the launcher to refresh it; connection monitoring remains a foreground service.\n\nA completed task no longer silently removes its agent's live-update pin. The Done card disappears after 10 seconds, while the same pinned agent's next Working task is eligible for a Live Update without pinning again. Explicit Unpin or swipe still removes the pin.\n\nSamsung Now Bar is not fixed on the checked SM-S928U1 / One UI 8.5: Android marks the pinned Working card as promoted with the Samsung test flag off, but the stock Now Bar has no Herdline capsule and its normal Live notifications list does not include Herdline. No test flag, undocumented Samsung payload, media-session impersonation or fake progress is used."
+      "en": "Herdline 0.6.0 \u2014 direct terminal input, compact Tabs and multi-agent Chat\n\nTabs now opens as an ordinary list. The alternate view uses compact two-column rows instead of oversized preview cards, with the same workspace scope, search, selection and split-pane picker. Ready filters Idle and Done agents in Tabs and Agents.\n\nTerminal mode uses the terminal's own input, without the Chat composer. Arrows, Tab, Esc, Enter and modifiers are available in two compact rows above the keyboard for autocomplete and terminal shortcuts. Chat keeps its pane-bound drafts and Send safeguards.\n\nWithout an explicitly selected SSH identity, a rejected device key can fall back to a password prompt. Explicit key choices stay strict, host-key verification stays intact, and an unanswered or failed connection is not guessed successful.\n\nChat adds Pi, OpenCode, Codex and Claude Code alongside OMP, reading the existing agent session rather than starting a second agent. Supported live input paths are bound to that pane and session; uncertain delivery is never automatically repeated. The host needs Herdr's corresponding session integration and the required local agent tools.\n\nOMP task calls show their subagents by exact child identity, with running stages from the host extension's real event bus and expandable recorded results. Async completion settles only the child it names; an ordinary task-tool return does not mark background children done. Live stages require the updated Herdline ingress extension on the host.\n\nChat can send a staged image without a caption. Attachment chips no longer make Send depend on the hidden Terminal viewport; host editor, instance, upload and uncertain-delivery safeguards remain.\n\nThe installed package icon is now Dusk, matching the selected Dusk notification artwork on Samsung. Launcher variants remain selectable; Android's system-owned notification header and app-info icon are static and do not change with other launcher variants.\n\nThe Obtainium import link enables prereleases. Stock Samsung Now Bar remains separate from Android promotion and is not claimed fixed."
     }
   }
 }
