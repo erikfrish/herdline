@@ -3,6 +3,16 @@ package io.github.erikfrish.herdline.ui.chat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,19 +29,29 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -41,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.ImageSource
 import io.github.erikfrish.herdline.core.MAX_IMAGE_BYTES
@@ -48,7 +69,9 @@ import io.github.erikfrish.herdline.core.MediaAnswer
 import io.github.erikfrish.herdline.core.MediaRefusal
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.core.TranscriptImage
+import io.github.erikfrish.herdline.ui.components.motionAllowed
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -187,13 +210,19 @@ private val ThumbShape = RoundedCornerShape(12.dp)
 
 /**
  * [image] as a fixed-size thumbnail, read when it is first drawn. A tap on
- * it opens the viewer; a tap on a failed read tries again.
+ * it opens the viewer; a tap on a failed read tries again. Under TalkBack
+ * the thumbnail takes focus again when its viewer closes, so the reader is
+ * back on the image they came from; without TalkBack focus is never moved,
+ * so a tap here never takes the keyboard from the composer.
  */
 @Composable
 internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier: Modifier = Modifier) {
     val images = LocalChatImages.current
     var attempt by remember(image.key) { mutableIntStateOf(0) }
     var viewing by remember(image.key) { mutableStateOf(false) }
+    var returning by remember(image.key) { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    val context = LocalContext.current
     val load by produceState<ImageLoad>(ImageLoad.Loading, images, image.key, attempt) {
         value = images?.cached(image)?.let(ImageLoad::Shown) ?: run {
             value = ImageLoad.Loading
@@ -205,12 +234,23 @@ internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier
         is ImageLoad.Shown -> stringResource(R.string.chat_image_open)
         is ImageLoad.Failed -> failureText(now.refusal)
     }
+    LaunchedEffect(returning) {
+        if (!returning) return@LaunchedEffect
+        returning = false
+        // One frame on, once the viewer's window is gone and this one has focus to give.
+        withFrameNanos { }
+        // Read now, not once at composition, so TalkBack turned on while in Chat counts.
+        val talkBack = context.getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true
+        if (talkBack) focus.requestFocus()
+    }
     Box(
         modifier
             .size(width = 200.dp, height = 150.dp)
             .clip(ThumbShape)
             .background(colors.codeBg)
             .border(1.dp, colors.border, ThumbShape)
+            // clickable is the one focus target; under TalkBack touch mode is off, so it can take focus.
+            .focusRequester(focus)
             .clickable(role = Role.Button, enabled = load != ImageLoad.Loading) {
                 when (val now = load) {
                     is ImageLoad.Shown -> viewing = true
@@ -228,10 +268,25 @@ internal fun ChatImageThumb(image: TranscriptImage, colors: ChatColors, modifier
             is ImageLoad.Failed -> Text(described, style = ChatType.meta.copy(color = colors.muted), textAlign = TextAlign.Center, modifier = Modifier.padding(8.dp))
         }
     }
-    if (viewing && images != null) ImageViewer(image, images, colors) { viewing = false }
+    if (viewing && images != null) {
+        ImageViewer(image, images, colors) {
+            viewing = false
+            returning = true
+        }
+    }
 }
 
-/** [image] read again at viewer size, over the whole screen, with its loading and error states. */
+/** The viewer's own entrance and exit: a fade with a scale up from this, and back. */
+private const val VIEWER_FROM_SCALE = 0.92f
+
+/**
+ * [image] read again at viewer size, over the whole screen, with its loading
+ * and error states. It fades in while growing from [VIEWER_FROM_SCALE] (200 ms)
+ * and leaves the same way in reverse (150 ms), drawn only, so nothing under it
+ * moves; with motion off both are instant. Back and the close button start
+ * the exit (the viewer fills the screen, so there is no outside to tap), and
+ * [onClose] comes once it is over.
+ */
 @Composable
 private fun ImageViewer(image: TranscriptImage, images: ChatImages, colors: ChatColors, onClose: () -> Unit) {
     var attempt by remember { mutableIntStateOf(0) }
@@ -239,8 +294,45 @@ private fun ImageViewer(image: TranscriptImage, images: ChatImages, colors: Chat
         value = ImageLoad.Loading
         value = images.load(image, thumb = false)
     }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black).testTag("chat:image-viewer"), contentAlignment = Alignment.Center) {
+    val motion = motionAllowed()
+    // With motion off it starts shown: the first frame is the final one.
+    val shown = remember { MutableTransitionState(!motion).apply { targetState = true } }
+    val closed by rememberUpdatedState(onClose)
+    val close = { shown.targetState = false }
+    LaunchedEffect(shown) {
+        snapshotFlow { shown.isIdle && !shown.currentState }.first { it }
+        closed()
+    }
+    val transition = rememberTransition(shown, label = "viewer")
+    val spec: @Composable Transition.Segment<Boolean>.() -> FiniteAnimationSpec<Float> = {
+        when {
+            !motion -> snap()
+            false isTransitioningTo true -> tween(200, easing = LinearOutSlowInEasing)
+            else -> tween(150, easing = FastOutLinearInEasing)
+        }
+    }
+    val alpha = transition.animateFloat(spec, label = "alpha") { if (it) 1f else 0f }
+    val scale = transition.animateFloat(spec, label = "scale") { if (it) 1f else VIEWER_FROM_SCALE }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // The window's own animation would run on top of this one, and even with motion off.
+        // Dialog shows its window before this content first composes and offers no
+        // animation setting, so this may only land after the first show (E-1 / E-3 frames decide).
+        (LocalView.current.parent as? DialogWindowProvider)?.window?.let { window ->
+            SideEffect { window.setWindowAnimations(0) }
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                // Read in the layer: the entrance and exit redraw without recomposing or laying out.
+                .graphicsLayer {
+                    this.alpha = alpha.value
+                    scaleX = scale.value
+                    scaleY = scale.value
+                }
+                .background(Color.Black)
+                .testTag("chat:image-viewer"),
+            contentAlignment = Alignment.Center,
+        ) {
             when (val now = load) {
                 ImageLoad.Loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = colors.accent)
                 is ImageLoad.Shown -> Image(
@@ -258,7 +350,7 @@ private fun ImageViewer(image: TranscriptImage, images: ChatImages, colors: Chat
                         .clickable(role = Role.Button, enabled = now.refusal == null) { attempt++ },
                 )
             }
-            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+            IconButton(onClick = close, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
                 Icon(Icons.Default.Close, stringResource(R.string.chat_image_close), tint = Color.White)
             }
         }
