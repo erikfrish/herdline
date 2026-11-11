@@ -430,13 +430,21 @@ internal fun hostReason(state: Connection.State): HostReason? = when (state) {
 
 /**
  * The native or server text [state] carries, spoken after the pill and never
- * drawn: it is unbounded and untranslated. None for a disconnect the user chose.
+ * drawn: it is unbounded and untranslated. None for a disconnect the user chose,
+ * nor the unnamed placeholder, which would only repeat the pill.
  */
 internal fun hostDetail(state: Connection.State): String? = when (state) {
     is Connection.State.Disconnected -> state.reason.takeUnless { state.byUser }
     is Connection.State.Failed -> state.reason
     else -> null
-}?.trim()?.takeIf { it.isNotEmpty() }
+}?.trim()?.takeIf { it.isNotEmpty() && it != Connection.State.Disconnected.UNNAMED }
+
+/**
+ * Whether the avatar carries the link badge. Not for a disconnect the user chose,
+ * nor for a step the user takes next: its failed cross would say fault where the
+ * pill says do this.
+ */
+internal fun hasBadge(reason: HostReason?): Boolean = reason?.tone != HostTone.Neutral && reason?.tone != HostTone.Step
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -487,9 +495,9 @@ private fun NodeCard(
         ) {
             Box {
                 NodeAvatar(node.title, node.color, size = 50.dp)
-                if (state != null && reason != HostReason.Closed) {
+                if (state != null && hasBadge(reason)) {
                     // The link's shape, not a colour-only dot: disc up, arc trying, ring lost, cross failed.
-                    // Silent: the card's pill and state say it. A disconnect the user chose has no badge.
+                    // Silent: the card's pill and state say it.
                     Box(
                         Modifier
                             .align(Alignment.BottomEnd)
