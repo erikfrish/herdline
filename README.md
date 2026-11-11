@@ -7,11 +7,11 @@
 
 [Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
 
-> **Release status:** the latest public APK is 0.2.0 and is not recommended
-> after its partial QA found a Terminal navigation defect. Later development
-> candidates are not automatically GitHub releases. Obtainium tracks published
-> releases, not private APKs; adding the source is not a recommendation to install
-> the failed public build.
+> **Release status:** [0.5.2](https://github.com/erikfrish/herdline/releases/tag/v0.5.2)
+> is the latest public prerelease candidate. Targeted multi-theme visual QA is
+> accepted; Samsung Now Bar placement and full OMP/Terminal verification remain
+> limited. It is not a general stable release. Obtainium tracks published
+> releases; enable prereleases to receive this candidate.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
@@ -72,14 +72,14 @@ Herdline is distributed as a GitHub release APK; Android 10 (API 29) or newer,
 arm64 or x86_64. The release keystore is private, so updates install cleanly
 only over a version signed with the same key.
 
-**Public release status:** there is no recommended public release yet. The
-latest published build, **0.2.0**, is a developer-checked candidate whose
-partial runtime QA **failed** on a Terminal navigation defect (terminal
-tab/pane selection can stay on the old target), so it is **not recommended**
-and newer private QA builds have no published APK. Installing via Obtainium
-today therefore gives you 0.2.0, or nothing while it is withheld. The
-in-app updater marks 0.2.0 as failed QA and does not recommend it; nothing
-is installed without an explicit tap on the device.
+**Public release status:** [**0.5.2**](https://github.com/erikfrish/herdline/releases/tag/v0.5.2)
+is published with the same APK checked and installed on the maintainer's Samsung.
+The visual refinement cycle passed targeted runtime QA and designer acceptance.
+This remains a **prerelease candidate**, not a general stable release: stock
+Samsung Now Bar placement, Terminal scrollback privacy and full live-provider
+OMP integration remain unverified. The in-app candidate feed offers it; nothing
+is installed without an explicit tap on the device. Obtainium users must enable
+prereleases. The older 0.2.0 failed Terminal navigation QA and is superseded.
 
 ### Obtainium (one-click add)
 
