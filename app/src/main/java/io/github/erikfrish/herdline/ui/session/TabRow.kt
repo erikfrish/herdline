@@ -122,7 +122,8 @@ private class SeenTabs {
  * [tabState] adds a spoken state of the caller's, such as Chat's "Reading here" (CT-1).
  * A background tab whose agent turns Blocked or Done gets a dot on its
  * glyph's corner and "changed" until it is selected ([nextUnseen]); the
- * glyph's own bump is the one-off cue.
+ * glyph's own bump is the one-off cue. [backdrop] is the colour the row is
+ * drawn on, so the dot's halo matches it exactly.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -137,6 +138,7 @@ internal fun TabRow(
     onClose: (Tab) -> Unit,
     heldPane: (Tab) -> String? = { null },
     tabState: (Tab) -> String? = { null },
+    backdrop: Color = MaterialTheme.colorScheme.surface,
 ) {
     val list = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
@@ -154,8 +156,8 @@ internal fun TabRow(
     val heldState = stringResource(R.string.held_state)
     val changedState = stringResource(R.string.tab_changed)
     val markColor = MaterialTheme.colorScheme.onSurface
-    // The row sits on surface; the halo cuts the dot out of the glyph beneath it.
-    val haloColor = MaterialTheme.colorScheme.surface
+    // The halo cuts the dot out of the glyph beneath it, in the row's own backdrop.
+    val haloColor = backdrop
     // Plain fields, written after each applied composition, so a discarded one changes nothing.
     val seen = remember { SeenTabs() }
     val unseen = nextUnseen(seen.statuses, tabs, selectedId, seen.unseen)
