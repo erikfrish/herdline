@@ -78,6 +78,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
@@ -89,6 +92,7 @@ import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.ui.components.ConfirmDialog
 import io.github.erikfrish.herdline.ui.components.HelpDialog
+import io.github.erikfrish.herdline.ui.components.ConnectionGlyph
 import io.github.erikfrish.herdline.ui.components.NodeAvatar
 import io.github.erikfrish.herdline.ui.components.Pill
 import io.github.erikfrish.herdline.ui.components.Group
@@ -394,6 +398,46 @@ private fun EmptyNodes(modifier: Modifier, navigation: NodesNavigation) {
     }
 }
 
+/** How loudly a host card's pill speaks: a fault, a first-time step, a loss, or a plain fact. */
+internal enum class HostTone { Error, Step, Warning, Neutral }
+
+/** Why a host card is not connected, named only from the type of [Connection.State]; [text] is the pill. */
+internal enum class HostReason(val text: Int, val tone: HostTone) {
+    Rejected(R.string.sign_in_rejected, HostTone.Error),
+    KeyChanged(R.string.host_key_changed, HostTone.Error),
+    KeyUnknown(R.string.host_state_key_unknown, HostTone.Step),
+    NoHerdr(R.string.host_state_no_herdr, HostTone.Step),
+    SetupFailed(R.string.host_state_setup_failed, HostTone.Error),
+    CannotConnect(R.string.host_state_cannot_connect, HostTone.Error),
+    UpdateHerdr(R.string.incompatible_daemon_title, HostTone.Step),
+    UpdateApp(R.string.incompatible_app_title, HostTone.Step),
+    Lost(R.string.host_state_lost, HostTone.Warning),
+    /** The user disconnected: said plainly, not as a fault, and with no badge. */
+    Closed(R.string.disconnected, HostTone.Neutral),
+}
+
+/** The reason [state] names, or null while it is up or on its way there. */
+internal fun hostReason(state: Connection.State): HostReason? = when (state) {
+    is Connection.State.Connected, Connection.State.Connecting, Connection.State.SettingUp -> null
+    is Connection.State.Disconnected -> if (state.byUser) HostReason.Closed else HostReason.Lost
+    is Connection.State.UntrustedHostKey -> if (state.changed) HostReason.KeyChanged else HostReason.KeyUnknown
+    is Connection.State.AuthRejected -> HostReason.Rejected
+    is Connection.State.Failed -> HostReason.CannotConnect
+    Connection.State.HerdrMissing -> HostReason.NoHerdr
+    is Connection.State.SetupFailed -> HostReason.SetupFailed
+    is Connection.State.Incompatible -> if (state.daemonOutdated) HostReason.UpdateHerdr else HostReason.UpdateApp
+}
+
+/**
+ * The native or server text [state] carries, spoken after the pill and never
+ * drawn: it is unbounded and untranslated. None for a disconnect the user chose.
+ */
+internal fun hostDetail(state: Connection.State): String? = when (state) {
+    is Connection.State.Disconnected -> state.reason.takeUnless { state.byUser }
+    is Connection.State.Failed -> state.reason
+    else -> null
+}?.trim()?.takeIf { it.isNotEmpty() }
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun NodeCard(
@@ -410,6 +454,14 @@ private fun NodeCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     val state = connection?.state?.collectAsState()?.value
+    val reason = state?.let(::hostReason)
+    // The pill names the reason and is read with the card; this adds what the pill leaves out:
+    // "Connected" (its pills are counts), or the state's own words after a failure.
+    val spoken = when (state) {
+        is Connection.State.Connected -> stringResource(R.string.connection_connected)
+        null -> null
+        else -> hostDetail(state)
+    }
     val view = connection?.view?.collectAsState()?.value
     val interaction = remember { MutableInteractionSource() }
     val haptics = LocalHapticFeedback.current
@@ -429,12 +481,15 @@ private fun NodeCard(
                     },
                 )
                 .padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 6.dp)
+                .then(if (spoken != null) Modifier.semantics { stateDescription = spoken } else Modifier)
                 .testTag("node:${node.title}"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
                 NodeAvatar(node.title, node.color, size = 50.dp)
-                if (state is Connection.State.Connected) {
+                if (state != null && reason != HostReason.Closed) {
+                    // The link's shape, not a colour-only dot: disc up, arc trying, ring lost, cross failed.
+                    // Silent: the card's pill and state say it. A disconnect the user chose has no badge.
                     Box(
                         Modifier
                             .align(Alignment.BottomEnd)
@@ -442,10 +497,11 @@ private fun NodeCard(
                             .size(15.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.background)
-                            .padding(3.dp)
-                            .clip(CircleShape)
-                            .background(AgentStatus.Done.color()),
-                    )
+                            .clearAndSetSemantics {},
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ConnectionGlyph(state)
+                    }
                 }
             }
             Spacer(Modifier.size(14.dp))
@@ -479,7 +535,16 @@ private fun NodeCard(
                             is Connection.State.Connecting -> Pill(stringResource(R.string.connecting), MaterialTheme.colorScheme.secondary, dot = true)
                             is Connection.State.SettingUp -> Pill(stringResource(R.string.herdr_setup_pill), MaterialTheme.colorScheme.secondary, dot = true)
                             null -> {}
-                            else -> Pill(stringResource(R.string.disconnected), MaterialTheme.colorScheme.error, dot = true)
+                            else -> reason?.let {
+                                val tone = when (it.tone) {
+                                    HostTone.Error -> MaterialTheme.colorScheme.error
+                                    HostTone.Step -> MaterialTheme.colorScheme.secondary
+                                    HostTone.Warning -> AgentStatus.Blocked.color()
+                                    HostTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                // The text always names it; a plain fact gets no coloured dot.
+                                Pill(stringResource(it.text), tone, dot = it.tone != HostTone.Neutral)
+                            }
                         }
                         view?.agents?.filter { it.status == AgentStatus.Blocked }?.take(2)?.forEach {
                             Pill(stringResource(R.string.needs_input_named, it.displayName), AgentStatus.Blocked.color(), dot = true)
