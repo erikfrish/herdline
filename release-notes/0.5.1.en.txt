@@ -6,4 +6,6 @@ Appearance and Terminal settings separate the pinned preview from scrolling cont
 
 Host workspace/agent counts are separate compact chips. Agents keep readable status words beside the title and place status filters in one scrollable row. Session attention uses a compact count with a full accessible label, leaving more room for the workspace name. Ask tool heads no longer summarize raw JSON; required-field summaries name the controls, and selected dropdown choices have a check mark.
 
+Herdline Light grouped surfaces use white rather than a warm near-background tint. High Contrast dark separators use the stronger outline role; form fields and filter chips likewise use visible outline boundaries across modes.
+
 The refinements come from actual 0.5.0 release screenshots and designer feedback. Multi-theme QA and changed-screen verification are recorded separately; this is not a new full delivery-safety or real-provider test. Samsung stock Now Bar placement remains unconfirmed and no system developer flag is changed. Personal OMP is unchanged.
