@@ -147,7 +147,7 @@
     <string name="reason_attachment_steer">A steer can\'t carry files. Nothing sent.</string>
     <string name="reason_attachment_missing">An uploaded file is gone from the host. Upload it again.</string>
     <!-- Chat's Send through the OMP endpoint (ChatIngress.kt). -->
-    <string name="reason_dialog_open">OMP has a question or dialog open. Answer it in Terminal first. Nothing sent.</string>
+    <string name="reason_dialog_open">OMP has a question or dialog open. Answer it in Chat if available, or in Terminal. Nothing sent.</string>
     <string name="reason_collab">OMP is in a collab session, which Chat can\'t send into. Nothing sent.</string>
     <string name="reason_collab_state_unknown">OMP can\'t tell whether this session is shared in collab, so Chat won\'t send into it. Nothing sent.</string>
     <string name="reason_unsupported_type">OMP won\'t take one of these files: its type, or where it is stored. Nothing sent.</string>

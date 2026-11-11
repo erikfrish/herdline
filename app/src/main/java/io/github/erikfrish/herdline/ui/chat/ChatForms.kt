@@ -368,11 +368,12 @@ private fun FormContent(
     onChange: (FormChange) -> Unit,
 ) {
     val placed = remember(form) { form.sections.flatMap { s -> s.blocks.filterIsInstance<FormBlock.Field>().map { it.field.name } }.toSet() }
-    val field = @Composable { f: FormField ->
-        FieldView(f, answers, colors, editable, errors[f.name]) { onChange(FormChange(f.name, it)) }
+    val field = @Composable { f: FormField, groupTitle: String? ->
+        FieldView(f, answers, colors, editable, errors[f.name], groupTitle) { onChange(FormChange(f.name, it)) }
     }
     form.sections.forEach { section ->
-        if (section.title.isNotEmpty() && formText(section.title).isNotBlank()) {
+        val groupTitle = formText(section.title).takeIf(String::isNotBlank)
+        if (groupTitle != null) {
             Text(
                 spanned(section.title, colors),
                 style = ChatType.heading2.copy(color = colors.text),
@@ -389,13 +390,13 @@ private fun FormContent(
                 is FormBlock.ListItems -> FormList(block, colors)
                 is FormBlock.Pre -> CodeBlock(block.text, colors)
                 is FormBlock.Table -> FormTable(block, colors)
-                is FormBlock.Field -> field(block.field)
+                is FormBlock.Field -> field(block.field, groupTitle)
                 is FormBlock.Picture -> FormPicture(block, colors)
                 is FormBlock.Svg -> FormSvg(block, colors)
             }
         }
     }
-    form.fields.filterNot { it.name in placed }.forEach { field(it) }
+    form.fields.filterNot { it.name in placed }.forEach { field(it, null) }
 }
 
 /** OMP's span styles: `code`, `strong`, `em`, alone or together. */
@@ -575,21 +576,26 @@ private fun Notice(text: String, colors: ChatColors, warn: Boolean, modifier: Mo
 }
 
 @Composable
-private fun FieldLabel(field: FormField, colors: ChatColors) {
-    val label = formText(field.label).ifBlank { field.name }
+private fun FieldLabel(field: FormField, colors: ChatColors, groupTitle: String?) {
+    val ownLabel = formText(field.label)
+    val grouped = field is FormField.Choice && ownLabel.isBlank() && groupTitle != null
+    if (grouped && !field.required) return
+    val label = ownLabel.ifBlank { if (grouped) groupTitle!! else field.name }
     val required = stringResource(R.string.form_required)
     val spoken = if (field.required) stringResource(R.string.form_label_required_spoken, label) else label
     Row(
         Modifier.semantics(mergeDescendants = true) { contentDescription = spoken; heading() },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            if (field.label.isEmpty()) AnnotatedString(label) else spanned(field.label, colors),
-            style = ChatType.body.copy(color = colors.text, fontWeight = FontWeight.Medium),
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        if (!grouped) {
+            Text(
+                if (ownLabel.isBlank()) AnnotatedString(label) else spanned(field.label, colors),
+                style = ChatType.body.copy(color = colors.text, fontWeight = FontWeight.Medium),
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
         if (field.required) {
-            Spacer(Modifier.width(8.dp))
+            if (!grouped) Spacer(Modifier.width(8.dp))
             Text(required, style = ChatType.meta.copy(color = colors.muted))
         }
     }
@@ -602,13 +608,14 @@ private fun FieldView(
     colors: ChatColors,
     editable: Boolean,
     error: String?,
+    groupTitle: String?,
     onChange: (FormAnswers) -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth().padding(top = ChatSpace.block).testTag("chat:form:field:${field.name}"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        FieldLabel(field, colors)
+        FieldLabel(field, colors, groupTitle)
         when (field) {
             is FormField.Choice -> {
                 val draft = answers.choice(field)

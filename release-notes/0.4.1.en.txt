@@ -1,0 +1,9 @@
+Herdline 0.4.1 — private form-display hotfix
+
+A choice group with a fieldset legend no longer repeats its internal HTML field name above the radio buttons, checkboxes or select. Explicit field labels, ungrouped fields and required indicators remain visible.
+
+When a question blocks Chat Send, the notice now says it can be answered in Chat when controls are available, or in Terminal. Sending still refuses while a dialog is open; no approval or retry is automatic.
+
+The 0.4.0 exact-artifact QA was conditional: Send, photo-only admission, the real steering queue, withdrawal, local Chat focus/geometry, uncertain-send restart and form placement passed with a local mock provider. The legend/name duplication failed at S3. Non-submittable-dialog runtime coverage and Terminal password scrollback were not verified; form selections reset after process death. The recovery scenario proved no replay, not loss of an acknowledgement after already-observed admission. This hotfix does not change those contracts or claim LLM consumption.
+
+Verification of this new APK is recorded separately. Personal OMP is not updated automatically by installing the app.

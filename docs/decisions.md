@@ -602,6 +602,12 @@ hidden values. Only an explicit Submit sends `{data}` to the exact dialog
 ID. OMP validates the answer and races it against the local host: first
 answer wins. This is not a prompt, approval by default or terminal Enter.
 
+A fieldset legend is the visible heading for an otherwise unlabelled choice
+group; Android does not repeat the technical HTML field name underneath it.
+Explicit field labels and names of ungrouped controls stay visible, and required
+groups retain their required indicator and accessible group name.
+
+
 An outer ask and its nested host dialog share one question. Android hides a
 child while its `parentId` is open and submits only the visible outer dialog.
 `submittable: false` disables answers and removes Submit; waits and unsupported

@@ -49,6 +49,8 @@ class ChatFormInteractionTest {
             }
         }
         compose.onNodeWithText("Database").assertIsDisplayed()
+        compose.onNodeWithText("Store").assertIsDisplayed()
+        compose.onNodeWithText("store").assertDoesNotExist()
         compose.onNodeWithText("Duplicate question").assertDoesNotExist()
         compose.runOnIdle { assertNull(answer) }
         compose.onNodeWithText("Other").performClick()

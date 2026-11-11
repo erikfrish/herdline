@@ -397,7 +397,7 @@
     <string name="reason_attachment_needs_agent">文件只能发送给 OMP 智能体。未发送任何内容。</string>
     <string name="reason_attachment_steer">引导消息不能携带文件。未发送任何内容。</string>
     <string name="reason_attachment_missing">已上传的文件已不在主机上。请重新上传。</string>
-    <string name="reason_dialog_open">OMP 有问题或对话框未关闭。请先在终端中回答。未发送任何内容。</string>
+    <string name="reason_dialog_open">OMP 有问题或对话框未关闭。如果聊天中提供了回答控件，请在聊天中回答；否则请在终端中回答。未发送任何内容。</string>
     <string name="reason_collab">OMP 正处于协作会话中，聊天无法发送到其中。未发送任何内容。</string>
     <string name="reason_collab_state_unknown">OMP 无法确定此会话是否处于协作共享中，因此聊天不会发送到其中。未发送任何内容。</string>
     <string name="reason_unsupported_type">OMP 不接受其中一个文件：类型或存放位置不符。未发送任何内容。</string>
