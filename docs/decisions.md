@@ -98,6 +98,15 @@ they start with `native/`.
   it cropped. In Chat on a pane the desktop isn't on, the action reads **Fit
   here (moves the desktop)**, because focusing moves the desktop too. It runs
   only on that tap, and nothing is resent.
+- **One grid owner.** Only the terminal view with Terminal on screen tells
+  Herdr its grid (`TerminalView.sharesGrid`). Under Chat the view still
+  measures and draws, but after its first grid nothing it fits reaches
+  Herdr: a pane bar coming or going, a local read of a split tab or the
+  keyboard never resizes the shared panes. The grid it keeps, and that its
+  viewport carries, is the one Herdr was told, so `pane_sized_elsewhere` and
+  the Send checks compare with that. A switch to Terminal fits the layout it
+  brings and reports that grid once, even unchanged. Fit to this phone stays
+  the only shared opt-in.
 - **Receipt.** Herdr has no delivery acknowledgement for input. The core
   queues a read-only request (`integration.list`, else `worktree.list`) right
   behind the input on the same ordered writer. Its response means the daemon

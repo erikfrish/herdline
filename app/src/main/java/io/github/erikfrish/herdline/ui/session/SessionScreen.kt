@@ -956,6 +956,8 @@ fun SessionScreen(
                                 update = { view ->
                                     view.latchedMeta = latched
                                     view.windowKey = windowKey
+                                    // Terminal on screen owns Herdr's grid; hidden under Chat the view sends only its first one.
+                                    view.sharesGrid = !chatMode
                                     view.scheme = scheme
                                     view.frame = frame
                                     view.showWindow(hiddenRows, if (focusApplies) stripPx else 0)

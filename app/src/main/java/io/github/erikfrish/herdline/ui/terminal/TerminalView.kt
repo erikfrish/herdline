@@ -191,6 +191,30 @@ class TerminalView(context: Context) : View(context) {
     private var windowMoved = true
 
     /**
+     * Whether this view's grid is Herdr's: set while Terminal is on screen.
+     * Under Chat the view still measures and draws, but only its first grid
+     * goes to Herdr, so a pane bar, a local read or the keyboard there never
+     * resizes the shared panes, and the grid kept is the one Herdr was told.
+     * Set again, it fits the layout Terminal brings and reports that grid
+     * once, even an unchanged one.
+     */
+    var sharesGrid = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value) return
+            windowMoved = true
+            owed = true
+            post {
+                if (owed) reportGrid(fit = true)
+                windowMoved = false
+            }
+        }
+
+    /** A Terminal return whose grid is still to be reported, changed or not. */
+    private var owed = false
+
+    /**
      * A delivery is about to start: take the grid in force now, on the main
      * thread before anything the delivery changes is laid out, as the cap
      * [freezeRows] will hold. Kept while already frozen.
@@ -346,13 +370,15 @@ class TerminalView(context: Context) : View(context) {
     /** Reports the grid; [fit] fits the view even if only chrome moved it, for a change to the grid's inputs. */
     private fun reportGrid(fit: Boolean = false) {
         if (width == 0 || height == 0 || cellWidth <= 0f) return
+        if (!sharesGrid && lastGrid[0] != 0) return
         val cols = max(1, floor(width / cellWidth).toInt())
         val keep = keepsRows(keepRows, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
         // A new width or cell size is never chrome: keepsRows checks both.
         val chrome = !fit && !windowMoved && keepsRows(true, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
         val rows = gridRows(height, cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
         val grid = intArrayOf(cols, rows, cellWidth.toInt(), cellHeight.toInt())
-        if (grid.contentEquals(lastGrid)) return
+        if (!owed && grid.contentEquals(lastGrid)) return
+        owed = false
         lastGrid = grid
         listener?.onGrid(grid[0], grid[1], grid[2], grid[3])
     }
