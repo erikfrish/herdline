@@ -43,24 +43,53 @@ struct Host {
 
 impl Host {
     fn new() -> Self {
-        let home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         let bin = home.path().join(".local/bin");
-        fs::create_dir_all(&bin).unwrap();
-        fs::write(home.path().join("pane.json"), pane_json()).unwrap();
-        fs::write(home.path().join("proc.json"), PROCESS).unwrap();
+        fs::create_dir_all(&bin).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
+        fs::write(home.path().join("pane.json"), pane_json()).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
+        fs::write(home.path().join("proc.json"), PROCESS).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         let herdr = bin.join("herdr");
         fs::write(
             &herdr,
             "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n",
-        )
-        .unwrap();
-        fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
+        ).unwrap_or_else(|error| panic!("{}: {:?}", "valid test fixture or expected ingress reply", error));
+        fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         let host = Self { home };
         host.environ(&format!(
             "HOME=/home/u\0XDG_RUNTIME_DIR={}\0",
             host.runtime().display()
         ));
-        fs::create_dir_all(host.runtime()).unwrap();
+        fs::create_dir_all(host.runtime()).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         host
     }
 
@@ -74,23 +103,53 @@ impl Host {
 
     fn environ(&self, content: &str) {
         let proc = self.home.path().join(format!("proc/{PID}"));
-        fs::create_dir_all(&proc).unwrap();
-        fs::write(proc.join("environ"), content).unwrap();
+        fs::create_dir_all(&proc).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
+        fs::write(proc.join("environ"), content).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
     }
 
     /// The directory the extension makes, private.
     fn publish_dir(&self) -> PathBuf {
         let dir = self.dir();
-        fs::create_dir_all(&dir).unwrap();
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir_all(&dir).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         dir
     }
 
     /// The sidecar the extension writes for session `sid`.
     fn publish(&self, sid: &str, sidecar: &Value) -> PathBuf {
         let path = self.publish_dir().join(format!("{sid}-{PID}.json"));
-        fs::write(&path, sidecar.to_string()).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::write(&path, sidecar.to_string()).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         path
     }
 
@@ -102,7 +161,12 @@ impl Host {
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{}: {:?}",
+                    "valid test fixture or expected ingress reply", error
+                )
+            });
         let status = output
             .status
             .code()
@@ -116,7 +180,8 @@ impl Host {
             "lab",
             "w1:p1",
             PID,
-            proc.to_str().unwrap(),
+            proc.to_str()
+                .unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply")),
         ));
         parse_discovery(status, &bytes, expected)
     }
@@ -139,7 +204,12 @@ fn no_extension_directory_or_no_sidecar_for_this_pid_is_absent() {
     assert_eq!(host.discover(&expected()), Discovery::Absent);
     // Another OMP's endpoint in the same directory is not this one's.
     let other = host.publish_dir().join("s1-77.json");
-    fs::write(&other, "{}").unwrap();
+    fs::write(&other, "{}").unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(host.discover(&expected()), Discovery::Absent);
 }
 
@@ -147,11 +217,26 @@ fn no_extension_directory_or_no_sidecar_for_this_pid_is_absent() {
 fn an_endpoint_that_is_there_but_not_private_refuses_instead_of_falling_back() {
     let host = Host::new();
     let sidecar = host.publish("s1", &sidecar_json("s1"));
-    fs::set_permissions(host.dir(), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(host.dir(), fs::Permissions::from_mode(0o755)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(host.discover(&expected()), Discovery::Unusable("dir"));
 
-    fs::set_permissions(host.dir(), fs::Permissions::from_mode(0o700)).unwrap();
-    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::set_permissions(host.dir(), fs::Permissions::from_mode(0o700)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o644)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(host.discover(&expected()), Discovery::Unusable("sidecar"));
 }
 
@@ -159,9 +244,25 @@ fn an_endpoint_that_is_there_but_not_private_refuses_instead_of_falling_back() {
 fn a_linked_sidecar_is_not_trusted() {
     let host = Host::new();
     let real = host.home.path().join("elsewhere.json");
-    fs::write(&real, sidecar_json("s1").to_string()).unwrap();
-    fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
-    std::os::unix::fs::symlink(&real, host.publish_dir().join(format!("s1-{PID}.json"))).unwrap();
+    fs::write(&real, sidecar_json("s1").to_string()).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    std::os::unix::fs::symlink(&real, host.publish_dir().join(format!("s1-{PID}.json")))
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
     assert_eq!(host.discover(&expected()), Discovery::Unusable("sidecar"));
 }
 
@@ -180,10 +281,17 @@ fn a_private_sidecar_for_this_instance_names_its_socket() {
     let Discovery::Found(endpoint) = host.discover(&expected()) else {
         panic!("endpoint not found");
     };
-    assert_eq!(endpoint.sidecar, path.to_str().unwrap());
+    assert_eq!(
+        endpoint.sidecar,
+        path.to_str()
+            .unwrap_or_else(|| panic!("test path is UTF-8"))
+    );
     assert_eq!(
         endpoint.socket,
-        host.dir().join(format!("s1-{PID}.sock")).to_str().unwrap()
+        host.dir()
+            .join(format!("s1-{PID}.sock"))
+            .to_str()
+            .unwrap_or_else(|| panic!("test path is UTF-8"))
     );
     assert_eq!(endpoint.nonce, NONCE);
     assert_eq!(endpoint.session_id, "s1");
@@ -252,14 +360,38 @@ fn served(
 ) -> (Endpoint, thread::JoinHandle<()>) {
     let sidecar = host.publish("s1", &sidecar_json("s1"));
     let socket = host.dir().join(format!("s1-{PID}.sock"));
-    let listener = UnixListener::bind(&socket).unwrap();
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    let listener = UnixListener::bind(&socket).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let (mut stream, _) = listener.accept().unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         let mut line = String::new();
-        BufReader::new(stream.try_clone().unwrap())
-            .read_line(&mut line)
-            .unwrap();
+        BufReader::new(
+            stream
+                .try_clone()
+                .unwrap_or_else(|error| panic!("{}: {:?}", "clone the test socket", error)),
+        )
+        .read_line(&mut line)
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         serve(line, &mut stream);
     });
     (endpoint(&sidecar, &socket), server)
@@ -267,9 +399,20 @@ fn served(
 
 fn endpoint(sidecar: &Path, socket: &Path) -> Endpoint {
     Endpoint {
-        sidecar: sidecar.to_str().unwrap().into(),
-        socket: socket.to_str().unwrap().into(),
-        content: fs::read_to_string(sidecar).unwrap(),
+        sidecar: sidecar
+            .to_str()
+            .unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply"))
+            .into(),
+        socket: socket
+            .to_str()
+            .unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply"))
+            .into(),
+        content: fs::read_to_string(sidecar).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        }),
         session_id: "s1".into(),
         session_file: SESSION_FILE.into(),
         pid: PID,
@@ -287,25 +430,54 @@ fn the_answer_is_the_line_naming_the_request_after_any_pushes() {
     let host = Host::new();
     let (tx, rx) = std::sync::mpsc::channel();
     let (endpoint, server) = served(&host, move |line, stream| {
-        tx.send(line).unwrap();
+        tx.send(line).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         // A push and another request's answer come first; the client keeps
         // its side open until its own answer arrives.
-        writeln!(stream, r#"{{"queue":[],"liveSteered":[]}}"#).unwrap();
+        writeln!(stream, r#"{{"queue":[],"liveSteered":[]}}"#).unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         writeln!(
             stream,
             r#"{{"id":"11111111-2222-3333-4444-555555555555","outcome":"accepted"}}"#
         )
-        .unwrap();
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         writeln!(
             stream,
             r#"{{"id":"{ID}","outcome":"accepted","state":{{"idle":false,"queued":[]}}}}"#
         )
-        .unwrap();
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
     });
     let line = json!({"v": 1, "id": ID, "op": "status"}).to_string();
     let answer = exchange(&host, &endpoint, &line);
-    server.join().unwrap();
-    assert_eq!(rx.recv().unwrap(), format!("{line}\n"));
+    server.join().unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    assert_eq!(
+        rx.recv()
+            .unwrap_or_else(|error| panic!("receive test request: {error}")),
+        format!("{line}\n")
+    );
     let Exchange::Answer(answer) = answer else {
         panic!("no answer: {answer:?}");
     };
@@ -317,7 +489,12 @@ fn a_connection_closed_without_an_answer_is_no_answer() {
     let host = Host::new();
     let (endpoint, server) = served(&host, |_, _| {});
     let answer = exchange(&host, &endpoint, &json!({"v": 1, "id": ID}).to_string());
-    server.join().unwrap();
+    server.join().unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(answer, Exchange::NoAnswer);
 }
 
@@ -326,14 +503,29 @@ fn a_sidecar_replaced_since_discovery_sends_nothing() {
     let host = Host::new();
     let sidecar = host.publish("s1", &sidecar_json("s1"));
     let socket = host.dir().join(format!("s1-{PID}.sock"));
-    let listener = UnixListener::bind(&socket).unwrap();
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    let listener = UnixListener::bind(&socket).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     let endpoint = endpoint(&sidecar, &socket);
     let mut restarted = sidecar_json("s1");
     restarted["nonce"] = json!("another-nonce-0123456789");
     host.publish("s1", &restarted);
     assert_eq!(exchange(&host, &endpoint, "{}"), Exchange::Stale);
-    listener.set_nonblocking(true).unwrap();
+    listener.set_nonblocking(true).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert!(listener.accept().is_err(), "nothing may connect");
 }
 
@@ -343,8 +535,18 @@ fn a_socket_nobody_listens_on_sends_nothing() {
     let sidecar = host.publish("s1", &sidecar_json("s1"));
     let socket = host.dir().join(format!("s1-{PID}.sock"));
     // A crashed extension leaves its socket file behind.
-    drop(UnixListener::bind(&socket).unwrap());
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
+    drop(UnixListener::bind(&socket).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    }));
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(
         exchange(&host, &endpoint(&sidecar, &socket), "{}"),
         Exchange::Unreachable
@@ -354,7 +556,17 @@ fn a_socket_nobody_listens_on_sends_nothing() {
 #[test]
 fn only_a_refusal_with_its_reason_says_nothing_was_queued() {
     let reply = |answer: Value| -> Value {
-        serde_json::from_str(&answer_reply(Op::Send, ID, None, &answer).unwrap()).unwrap()
+        serde_json::from_str(
+            &answer_reply(Op::Send, ID, None, &answer).unwrap_or_else(|| {
+                panic!("{}", "ingress reply satisfies the expected protocol shape")
+            }),
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        })
     };
     let refused = reply(json!({"id": ID, "outcome": "refused", "reason": "dialog_open"}));
     assert_eq!(refused["outcome"], "refused");
@@ -384,8 +596,16 @@ fn the_queue_keeps_only_entries_of_the_documented_shape() {
         {"requestId": ID, "text": "b", "queue": "elsewhere"},
         {"text": 3, "queue": "steering"},
     ]}});
-    let reply: Value =
-        serde_json::from_str(&answer_reply(Op::State, ID, None, &answer).unwrap()).unwrap();
+    let reply: Value = serde_json::from_str(
+        &answer_reply(Op::State, ID, None, &answer)
+            .unwrap_or_else(|| panic!("{}", "ingress reply satisfies the expected protocol shape")),
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(
         reply,
         json!({"endpoint": "live", "state": {"idle": false, "queued": [
@@ -405,9 +625,14 @@ fn a_withdraw_answer_must_say_whether_it_withdrew() {
             None,
             &json!({"id": ID, "withdrawn": true}),
         )
-        .unwrap(),
+        .unwrap_or_else(|| panic!("{}", "ingress reply satisfies the expected protocol shape")),
     )
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(reply["withdrawn"], true);
     assert!(answer_reply(Op::Withdraw, ID, None, &json!({"id": ID})).is_none());
 }
@@ -422,9 +647,14 @@ fn the_dialog_snapshot_passes_through_as_omp_gave_it() {
             None,
             &json!({"id": ID, "dialogs": dialogs}),
         )
-        .unwrap(),
+        .unwrap_or_else(|| panic!("{}", "ingress reply satisfies the expected protocol shape")),
     )
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(reply, json!({"endpoint": "live", "dialogs": dialogs}));
     assert!(answer_reply(Op::Dialogs, ID, None, &json!({"id": ID})).is_none());
 }
@@ -435,9 +665,16 @@ fn a_dialog_submit_counts_only_for_the_dialog_it_named() {
         |dialog: &str, result: &str| json!({"id": ID, "dialogId": dialog, "result": result});
     for result in ["submitted", "not_open", "invalid", "kind_mismatch"] {
         let reply: Value = serde_json::from_str(
-            &answer_reply(Op::DialogSubmit, ID, Some("d1"), &answer("d1", result)).unwrap(),
+            &answer_reply(Op::DialogSubmit, ID, Some("d1"), &answer("d1", result)).unwrap_or_else(
+                || panic!("{}", "ingress reply satisfies the expected protocol shape"),
+            ),
         )
-        .unwrap();
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {:?}",
+                "valid test fixture or expected ingress reply", error
+            )
+        });
         assert_eq!(
             reply,
             json!({"endpoint": "live", "dialogId": "d1", "result": result})
@@ -494,7 +731,12 @@ fn images_go_as_images_and_files_as_mentions() {
         ),
         &host_endpoint,
     ))
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(
         line,
         json!({
@@ -514,7 +756,12 @@ fn a_photo_alone_is_sent_with_empty_text() {
         &request("", vec![attachment(Kind::Image, "a.png")], None),
         &endpoint_for_line(),
     ))
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
     assert_eq!(line["text"], "");
     assert_eq!(line["deliverAs"], "auto");
     assert_eq!(line["attachments"][0]["mimeType"], "image/png");
