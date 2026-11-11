@@ -30,6 +30,7 @@ class SettingsResetTest {
         hideIdleDone = true,
         composerMenu = listOf("larger_editor", "insert"),
         sheetSections = listOf("filters"),
+        terminalComposer = false,
         terminalSuggestions = true,
         notifyAttention = false,
         notifyDone = false,
@@ -62,6 +63,7 @@ class SettingsResetTest {
         "composerMenu" to { it.composerMenu },
         "sheetSections" to { it.sheetSections },
         "hideIdleDone" to { it.hideIdleDone },
+        "terminalComposer" to { it.terminalComposer },
         "terminalSuggestions" to { it.terminalSuggestions },
         "notifyAttention" to { it.notifyAttention },
         "notifyDone" to { it.notifyDone },
@@ -75,7 +77,7 @@ class SettingsResetTest {
     private val scopes = mapOf(
         ResetScope.Appearance to setOf("themeMode", "appTheme", "darkScheme", "lightScheme", "uiScale", "density", "accent", "iconVariant"),
         ResetScope.Terminal to setOf("font", "fontSize", "vibrateOnBell", "keepScreenOn", "extraKeys", "showExtraKeys"),
-        ResetScope.Composer to setOf("terminalSuggestions"),
+        ResetScope.Composer to setOf("terminalComposer", "terminalSuggestions"),
         ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "tabsView", "hideShells", "hideIdleDone", "composerMenu", "sheetSections"),
         ResetScope.Notifications to setOf("notifyAttention", "notifyDone", "notifyConnection", "liveActivity", "lockDetail"),
     )
