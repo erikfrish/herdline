@@ -11,6 +11,12 @@ import urllib.request
 
 pid, session, body = int(sys.argv[1]), sys.argv[2], sys.argv[3].encode()
 
+class BoundRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, target):
+        return None
+
+transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), BoundRedirect())
+
 def main():
     env = {}
     for field in open('/proc/%d/environ' % pid, 'rb').read(262144).split(b'\0'):
@@ -33,7 +39,7 @@ def main():
     registration = json.load(open(file))
     url = registration['url']
     address = urllib.parse.urlsplit(url)
-    if address.scheme != 'http' or address.hostname not in ('127.0.0.1', 'localhost', '::1') or address.username or address.password:
+    if address.scheme != 'http' or address.hostname not in ('127.0.0.1', 'localhost', '::1') or address.username or address.password or address.path not in ('', '/') or address.query or address.fragment:
         return 'local'
     server_pid = registration.get('pid')
     if not isinstance(server_pid, int) or server_pid <= 0:
@@ -45,7 +51,7 @@ def main():
     path = url.rstrip('/') + '/api/session/' + urllib.parse.quote(session, safe='')
     try:
         request = urllib.request.Request(path, headers=headers)
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with transport.open(request, timeout=10) as response:
             raw = response.read(65537)
         if len(raw) > 65536 or json.loads(raw)['data']['id'] != session:
             return 'local'
@@ -57,7 +63,7 @@ def main():
     # an admitted input. Never downgrade them to a safe-to-retry refusal.
     try:
         request = urllib.request.Request(path + '/prompt', data=body, headers=headers, method='POST')
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with transport.open(request, timeout=30) as response:
             raw = response.read(65537)
         result = json.loads(raw)['data']
         requested = json.loads(body)

@@ -299,13 +299,15 @@ try:
     for entry in proc.get("result", {{}}).get("process_info", {{}}).get("foreground_processes") or []:
         if entry.get("name") == agent:
             found = entry.get("pid")
-            pid = found if isinstance(found, int) and found >= 0 else None
+            pid = found if isinstance(found, int) and found > 0 else None
             break
 except Exception:
     sys.exit(2)
 
 want = sys.argv[2:]
 want_pid = None if want[2] == "-" else int(want[2])
+if pid is None or want_pid is None or want_pid <= 0:
+    sys.exit(2)
 ok = (
     result.get("pane_id") == want[0]
     and result.get("terminal_id") == want[1]
@@ -392,6 +394,7 @@ fn unsupported_type() -> Value {
 /// for codex and opencode panes (`session_id`-shaped values only).
 fn sendable_session(instance: &Identity) -> bool {
     instance.kind == "id"
+        && instance.pid.is_some_and(|pid| pid > 0)
         && !instance.path.is_empty()
         && instance.path.len() <= 512
         && !instance.path.starts_with('.')
