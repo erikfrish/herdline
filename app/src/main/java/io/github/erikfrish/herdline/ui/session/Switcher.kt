@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.session
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -554,6 +555,7 @@ private fun FilterChip(label: String, selected: Boolean, color: Color, tag: Stri
                 .height(30.dp)
                 .clip(CircleShape)
                 .background(fill)
+                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                 .padding(horizontal = 12.dp)
                 .wrapContentHeight(Alignment.CenterVertically),
         )
