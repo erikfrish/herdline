@@ -18,6 +18,83 @@ the Apache License 2.0. See [Origin and licence](#origin-and-licence).
   from Android 10.
 - English and Simplified Chinese.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/crook/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="branding/crook/banner-light.svg">
+    <img src="branding/crook/banner-light.svg" alt="Herdline — a crook mark with an ember accent" width="100%">
+  </picture>
+</p>
+
+## Highlights
+
+- **Sessions that outlive the phone** — Herdline attaches to a [Herdr](https://herdr.dev/)
+  daemon over SSH; terminals, workspaces and agents keep running when the
+  phone disconnects or sleeps.
+- **Terminal you can actually type on** — Ghostty's VT renderer (via
+  libghostty-vt), an extra-keys row, CJK input in place, fling scrolling,
+  pinch-to-zoom, and hardware keyboard chords.
+- **Composer and Chat** — per-pane drafts that survive reconnects, bracketed
+  paste without Enter, and an OMP agent's transcript as a readable conversation
+  with quiet tool heads and foldable summaries.
+- **Reaching hosts** — jump hosts, device-generated and imported keys kept in
+  the Android Keystore, SSH config import, strict host-key checking.
+- **Two languages** — English and Simplified Chinese, Material 3 themes,
+  checked for contrast; JetBrains Mono Nerd Font ships in the app.
+
+## Quick start
+
+1. **Install Herdline** (see [Install](#install)).
+2. On the host, install **Herdr 0.9.0 or later**; it owns the terminals,
+   workspaces and agents and keeps them running when the phone is away.
+3. Copy the device's public key from
+   **Settings › Security & hosts › Keys & certificates** into the host's
+   `~/.ssh/authorized_keys`, and verify the host-key fingerprint on first
+   connect before trusting it. Details in [Signing in](#signing-in).
+4. Add the host on the start screen, attach, and pick a workspace.
+
+## Install
+
+Herdline is distributed as a GitHub release APK; Android 10 (API 29) or newer,
+arm64 or x86_64. The release keystore is private, so updates install cleanly
+only over a version signed with the same key.
+
+**Public release status:** there is no recommended public release yet. The
+latest published build, **0.2.0**, is a developer-checked candidate whose
+partial runtime QA **failed** on a Terminal navigation defect (terminal
+tab/pane selection can stay on the old target), so it is **not recommended**
+and newer private QA builds have no published APK. Installing via Obtainium
+today therefore gives you 0.2.0, or nothing while it is withheld. The
+in-app updater lists 0.2.0 only as a *not-tested candidate*; nothing is
+installed without an explicit tap on the device.
+
+### Obtainium (one-click add)
+
+<p align="center">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D">
+    <img src="branding/crook/badge_obtainium.png" alt="Get it on Obtainium" width="240">
+  </a>
+</p>
+
+[**Add Herdline to Obtainium →**](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
+(opens [Obtainium](https://obtainium.imranr.dev/) if installed, and offers it
+if not; no silent install — Obtainium shows the config for confirmation.)
+
+Manual fallback: in Obtainium use **Add app** with the source URL
+`https://github.com/erikfrish/herdline`, or import this config as-is
+(`obtainium://app/<URL-encoded JSON>` per the
+[Obtainium deep-link docs](https://wiki.obtainium.imranr.dev/deep_links/)):
+
+```json
+{"id": "io.github.erikfrish.herdline", "url": "https://github.com/erikfrish/herdline", "author": "erikfrish", "name": "Herdline"}
+```
+
+### From source
+
+See [Building](#building) below. Release builds are signed with the private
+release keystore only when published; a build you make yourself is signed with
+your key or the debug key and will not install over the published app.
+
 ## What it does
 
 | Herdr concept | In Herdline |
