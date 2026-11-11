@@ -72,6 +72,8 @@ sealed interface TranscriptBlock {
         val truncated: Boolean,
         /** The command's exit code, for tools that report one. */
         val exitCode: Long? = null,
+        val answers: List<ChatFormAnswer> = emptyList(),
+        val timedOut: Boolean = false,
     ) : TranscriptBlock
     /** An image at [part] of its message's content. */
     data class Image(val part: Int, val source: ImageSource) : TranscriptBlock
@@ -95,6 +97,8 @@ sealed interface TranscriptBlock {
                 images = json.optJSONArray("images").objects().map(::image),
                 truncated = json.optBoolean("truncated"),
                 exitCode = json.optLongOrNull("exit_code"),
+                answers = json.optJSONArray("answers").objects().map(ChatFormAnswer::parse),
+                timedOut = json.optBoolean("timed_out"),
             )
             "image" -> image(json)
             else -> null

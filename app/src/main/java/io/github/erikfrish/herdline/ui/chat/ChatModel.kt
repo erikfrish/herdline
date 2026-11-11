@@ -9,8 +9,6 @@ import io.github.erikfrish.herdline.core.TranscriptImage
 import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.core.TranscriptSteer
-import org.json.JSONException
-import org.json.JSONObject
 
 /** Appends beyond this many loaded entries drop the oldest; "Load older" brings them back. */
 const val MAX_LOADED_ENTRIES = 2000
@@ -170,32 +168,6 @@ fun pendingTool(items: List<ChatItem>): TranscriptBlock.ToolCall? {
     val open = items.filter { it is ChatItem.Tool && it.call != null && it.result == null }
     val newest = items.lastOrNull { it is ChatItem.Tool }
     return (open.singleOrNull()?.takeIf { it === newest } as? ChatItem.Tool)?.call
-}
-
-/** The question an `ask` call shows in the terminal, and the labels of its choices. */
-data class WaitingQuestion(val question: String, val options: List<String>)
-
-/**
- * The one question [call] asks, read from its arguments, for chat to show
- * read-only. Null unless it is a complete `ask` with exactly one question:
- * cut or unreadable arguments, or several questions (the terminal shows one
- * at a time, and which is open is unknown), leave only the tool's name.
- */
-fun waitingQuestion(call: TranscriptBlock.ToolCall): WaitingQuestion? {
-    if (call.name != ASK_TOOL || call.truncated) return null
-    val args = try {
-        JSONObject(call.args)
-    } catch (e: JSONException) {
-        return null
-    }
-    val one = args.optJSONArray("questions")?.let { if (it.length() == 1) it.optJSONObject(0) else null } ?: args
-    val question = one.optString("question").trim().takeIf { it.isNotEmpty() } ?: return null
-    val choices = one.optJSONArray("options")
-    val options = (0 until (choices?.length() ?: 0)).mapNotNull { index ->
-        val option = choices?.opt(index)
-        ((option as? JSONObject)?.optString("label") ?: option as? String)?.trim()?.takeIf { it.isNotEmpty() }
-    }
-    return WaitingQuestion(question, options)
 }
 
 /** OMP's tool for a question dialog in the terminal. */

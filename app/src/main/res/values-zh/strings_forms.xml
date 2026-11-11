@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F-UI: an agent's form question in Chat (ChatForms.kt). -->
+<resources>
+    <string name="form_from_agent">代理的问题</string>
+    <string name="form_untitled">问题</string>
+    <string name="form_kind">类型：%1$s</string>
+    <string name="form_unsupported">Herdline 无法显示这类问题。未作答，也未批准任何操作。</string>
+    <string name="form_required">必填</string>
+    <string name="form_label_required_spoken">%1$s，必填</string>
+    <string name="form_other">其他</string>
+    <string name="form_other_answer">你的回答</string>
+    <string name="form_choose">请选择…</string>
+    <string name="form_no_answer">未作答</string>
+    <string name="form_between">介于 %1$s 和 %2$s 之间</string>
+    <string name="form_at_least">至少 %1$s</string>
+    <string name="form_at_most">至多 %1$s</string>
+    <string name="form_count">%1$d / %2$d</string>
+    <plurals name="form_fix_fields">
+        <item quantity="other">提交前请检查 %d 个字段</item>
+    </plurals>
+    <string name="form_submit">提交</string>
+    <string name="form_submit_again">再次提交</string>
+    <string name="form_sending">正在发送回答…</string>
+    <string name="form_result_not_open">此问题已被回答或已关闭。没有再次发送。</string>
+    <string name="form_result_invalid">代理未接受这些回答。请检查字段后再次提交。</string>
+    <string name="form_result_kind_mismatch">此问题已在电脑上变更。未发送任何内容。</string>
+    <string name="form_result_failed">回答未确认（%1$s），可能已送达 OMP。不会再次发送。</string>
+    <string name="form_answered">已回答</string>
+    <string name="form_timed_out_label">已超时</string>
+    <string name="form_timed_out">OMP 在超时后提交了默认值；这不是用户的选择。</string>
+    <string name="form_answer_spoken">%1$s：%2$s</string>
+    <string name="form_answer_none_spoken">%1$s：未作答</string>
+    <string name="form_image_external">未显示图片：Herdline 不会从网络或文件加载图片。</string>
+    <string name="form_image_too_large">图片过大，无法在此显示。</string>
+    <string name="form_image_unsupported">Herdline 无法显示此图片。</string>
+    <string name="form_svg_unsupported">未显示图示：Herdline 无法安全地绘制 SVG 图片。</string>
+    <string name="form_svg_show_source">显示 SVG 源码</string>
+    <string name="form_svg_hide_source">隐藏 SVG 源码</string>
+    <string name="form_media_alt">描述：%1$s</string>
+</resources>

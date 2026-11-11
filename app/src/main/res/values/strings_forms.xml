@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- F-UI: an agent's form question in Chat (ChatForms.kt). -->
+<resources>
+    <string name="form_from_agent">Question from the agent</string>
+    <string name="form_untitled">Question</string>
+    <string name="form_kind">Kind: %1$s</string>
+    <string name="form_unsupported">Herdline cannot show this kind of question. Nothing was answered or approved.</string>
+    <string name="form_required">Required</string>
+    <!-- Spoken for a field label: %1$s is the label. -->
+    <string name="form_label_required_spoken">%1$s, required</string>
+    <!-- The free answer OMP adds to a choice group. -->
+    <string name="form_other">Other</string>
+    <string name="form_other_answer">Your answer</string>
+    <string name="form_choose">Choose…</string>
+    <string name="form_no_answer">No answer</string>
+    <string name="form_between">Between %1$s and %2$s</string>
+    <string name="form_at_least">At least %1$s</string>
+    <string name="form_at_most">At most %1$s</string>
+    <string name="form_count">%1$d / %2$d</string>
+    <plurals name="form_fix_fields">
+        <item quantity="one">Check %d field before submitting</item>
+        <item quantity="other">Check %d fields before submitting</item>
+    </plurals>
+    <string name="form_submit">Submit</string>
+    <string name="form_submit_again">Submit again</string>
+    <string name="form_sending">Sending answers…</string>
+    <!-- Host results for a submit that was not taken. -->
+    <string name="form_result_not_open">This question was already answered or closed. Nothing was sent again.</string>
+    <string name="form_result_invalid">The agent did not accept these answers. Check the fields and submit again.</string>
+    <string name="form_result_kind_mismatch">This question changed on the computer. Nothing was sent.</string>
+    <string name="form_result_failed">Answer not confirmed (%1$s). It may already have reached OMP. Nothing is resent.</string>
+    <string name="form_answered">Answered</string>
+    <string name="form_timed_out_label">Timed out</string>
+    <string name="form_timed_out">OMP submitted the form defaults after the timeout; this was not a user choice.</string>
+    <string name="form_answer_spoken">%1$s: %2$s</string>
+    <string name="form_answer_none_spoken">%1$s: no answer</string>
+    <string name="form_image_external">Image not shown: Herdline does not load pictures from the network or files.</string>
+    <string name="form_image_too_large">Image too large to show here.</string>
+    <string name="form_image_unsupported">Herdline cannot show this image.</string>
+    <string name="form_svg_unsupported">Diagram not shown: Herdline cannot draw SVG pictures safely.</string>
+    <string name="form_svg_show_source">Show SVG source</string>
+    <string name="form_svg_hide_source">Hide SVG source</string>
+    <!-- %1$s: the picture's description from the form. -->
+    <string name="form_media_alt">Description: %1$s</string>
+</resources>

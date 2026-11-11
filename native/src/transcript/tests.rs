@@ -635,3 +635,21 @@ fn entries_record_their_end_and_how_a_user_message_was_steered() {
     );
     assert_eq!(serde_json::to_value(&entries[1]).unwrap()["steer"], "live");
 }
+
+#[test]
+fn recorded_form_answers_keep_variants_and_timeout_without_guessing() {
+    let line = r#"{"type":"message","id":"r","message":{"role":"toolResult","toolCallId":"ask-1","toolName":"ask","content":[],"details":{"timedOut":true,"answers":[{"name":"db","question":"Database?","answer":"Redis","options":[{"label":"SQLite","selected":false},{"label":"Redis","selected":true}]},{"name":"bad","answer":"missing question"}]}}}"#;
+    let parsed = entries(format!("{line}\n").as_bytes(), 0);
+    let Block::ToolResult { answers, timed_out, .. } = &parsed[0].blocks[0] else { panic!("not a result"); };
+    assert!(*timed_out);
+    assert_eq!(answers.len(), 1);
+    assert_eq!(answers[0].answer, "Redis");
+    assert_eq!(answers[0].options, vec![
+        FormAnswerOption { label: "SQLite".into(), selected: false },
+        FormAnswerOption { label: "Redis".into(), selected: true },
+    ]);
+    let other = entries(format!("{}\n", line.replace("\"toolName\":\"ask\"", "\"toolName\":\"bash\"")).as_bytes(), 0);
+    let Block::ToolResult { answers, timed_out, .. } = &other[0].blocks[0] else { panic!("not a result"); };
+    assert!(answers.is_empty());
+    assert!(!timed_out);
+}

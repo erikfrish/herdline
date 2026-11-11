@@ -593,6 +593,28 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
 - **Recovery.** An endpoint send writes ahead a Queued record with receipt
   `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
 
+### Questions and submitted answers
+
+Chat reads open questions from the same OMP instance's ingress endpoint.
+The host parses HTML once; Android renders its normalized sections, context,
+radio/checkbox/select controls and text fields, preserving defaults and
+hidden values. Only an explicit Submit sends `{data}` to the exact dialog
+ID. OMP validates the answer and races it against the local host: first
+answer wins. This is not a prompt, approval by default or terminal Enter.
+
+A failed submit is unconfirmed and is not retried automatically. The user's
+answers remain visible, with actions disabled until the dialog is resolved.
+An instance or dialog change never inherits an earlier answer. Password
+fields are masked and excluded from Android saved state; display-only
+persisted answers are masked by OMP before export.
+
+An answered ask shows its questions, every recorded option and the selected
+values. A timed-out default is labelled as such, never as the user's choice.
+Old records without structured details retain their original output.
+Inline bitmap form pictures are sampled and bounded. External pictures and
+SVG receive an explicit media notice; no arbitrary file or network fetch
+and no script-enabled HTML surface is opened by a form.
+
 ## Verified against
 
 These were checked against OMP 18.18.3 in a test Herdr session:

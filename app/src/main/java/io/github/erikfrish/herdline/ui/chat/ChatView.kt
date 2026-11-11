@@ -103,6 +103,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
 import io.github.erikfrish.herdline.core.TranscriptSteer
@@ -120,6 +121,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 
 /** How often chat rereads the transcript while the agent is busy or waiting, and otherwise. */
 private const val BUSY_POLL_MS = 1_500L
@@ -251,6 +253,64 @@ private fun ChatContent(
     val identity = shown?.identity
     val images = remember(identity) {
         identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
+    }
+    val dialogTarget = remember(connection, view?.boot, identity, pane) {
+        val boot = view?.boot
+        if (boot == null || identity == null) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, "omp", identity)
+    }
+    var dialogs by remember(dialogTarget) { mutableStateOf<List<ChatDialog>>(emptyList()) }
+    var dialogProblem by remember(dialogTarget) { mutableStateOf<String?>(null) }
+    var submittingDialog by remember(dialogTarget) { mutableStateOf<String?>(null) }
+    val uncertainDialogs = remember(dialogTarget) { mutableStateMapOf<String, Boolean>() }
+    val currentDialogTarget by rememberUpdatedState(dialogTarget)
+    val dialogErrors = remember(dialogTarget) { mutableStateMapOf<String, String>() }
+    LaunchedEffect(dialogTarget, linkLive) {
+        val target = dialogTarget ?: return@LaunchedEffect
+        if (!linkLive) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val result = withContext(Dispatchers.IO) { connection.ingressDialogs(target) }
+                result.onSuccess { array ->
+                    try {
+                        dialogs = (0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) }
+                        dialogProblem = null
+                    } catch (error: IllegalArgumentException) {
+                        dialogs = emptyList()
+                        dialogProblem = error.message
+                    } catch (error: org.json.JSONException) {
+                        dialogs = emptyList()
+                        dialogProblem = error.message
+                    }
+                }.onFailure { error ->
+                    // Keep the user's answers while a read fails; actions remain disabled below.
+                    dialogProblem = error.message
+                }
+                delay(BUSY_POLL_MS)
+            }
+        }
+    }
+    fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject) {
+        val target = dialogTarget ?: return
+        if (!linkLive || submittingDialog != null || dialogs.none { it.id == dialog.id }) return
+        submittingDialog = dialog.id
+        dialogErrors.remove(dialog.id)
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { connection.ingressSubmitDialog(target, dialog.id, answer) }
+                if (currentDialogTarget != target) return@launch
+                if (result.getOrNull() == "submitted") {
+                    dialogs = dialogs.filterNot { it.id == dialog.id }
+                    uncertainDialogs.remove(dialog.id)
+                    wake.trySend(Unit)
+                } else {
+                    val code = result.getOrNull()
+                    if (code == null) uncertainDialogs[dialog.id] = true
+                    dialogErrors[dialog.id] = code ?: "unconfirmed"
+                }
+            } finally {
+                submittingDialog = null
+            }
+        }
     }
     val asking = if (status == AgentStatus.Blocked) pendingTool(items) else null
     // The call the agent is blocked on stands alone, so the waiting row below reads it in place.
@@ -431,9 +491,16 @@ private fun ChatContent(
                             }
                         }
                     }
+                    dialogs.forEach { dialog ->
+                        item(key = "dialog:" + dialog.id) {
+                            LiveGap {
+                                ChatFormCard(dialog, colors, submitting = !linkLive || dialogProblem != null || submittingDialog == dialog.id || uncertainDialogs[dialog.id] == true, submitError = dialogErrors[dialog.id], onSubmit = { submitDialog(dialog, it) })
+                            }
+                        }
+                    }
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
-                        status == AgentStatus.Blocked -> item(key = "blocked") { LiveGap { NeedsInputRow(asking, colors, onTerminal) } }
+                        status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") { LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem) } }
                         status == AgentStatus.Working -> item(key = "working") { LiveGap { WorkingRow(workingOn(items), colors) } }
                         // Herdr has no agent error state; a turn that ended on a failed tool is the error chat can see.
                         failure != null -> item(key = "error") { LiveGap { ErrorRow(failure, colors, onTerminal) } }
@@ -743,7 +810,9 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
         }
         if (open) {
             Column(Modifier.padding(start = ToolBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (result != null && result.text.isNotBlank()) {
+                if (result != null && result.answers.isNotEmpty()) {
+                    ChatFormAnswers(result.answers, result.timedOut, colors)
+                } else if (result != null && result.text.isNotBlank()) {
                     val all = expanded["more:" + item.key] == true
                     val (tail, earlier) = remember(result.text) { outputTail(result.text, TOOL_TAIL_LINES) }
                     ToolOutput(if (all) result.text.trimEnd('\n') else tail, colors)
@@ -1072,42 +1141,18 @@ private fun WorkingRow(what: String?, colors: ChatColors) {
     }
 }
 
-/**
- * A blocked agent. Its dialog is answered in the terminal, never here: no
- * choice is a button and nothing is sent from chat. When the one waiting
- * question is known ([pendingTool], [waitingQuestion]) it shows read-only,
- * its choices as plain text; otherwise only what is waiting is named.
- */
+/** A blocked agent without a usable structured dialog snapshot: keep the terminal route explicit. */
 @Composable
-private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit) {
-    val question = remember(asking) { asking?.let(::waitingQuestion) }
+private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit, problem: String?) {
     StateRow(colors.blocked, colors.blocked, colors.warnBg, "chat:blocked") {
         Text(stringResource(R.string.chat_blocked_title), style = ChatType.button.copy(color = colors.blocked))
-        if (question != null) {
-            ListItem(
-                headlineContent = { Text(question.question, style = ChatType.body.copy(color = colors.text)) },
-                supportingContent = question.options.takeIf { it.isNotEmpty() }?.let { options ->
-                    { Text(options.joinToString("\n") { "• $it" }, style = ChatType.meta.copy(color = colors.muted)) }
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.testTag("chat:question"),
-            )
-        }
         Text(
-            when {
-                question != null -> stringResource(R.string.chat_blocked_question)
-                asking != null -> stringResource(R.string.chat_blocked_tool, asking.name)
-                else -> stringResource(R.string.chat_blocked_other)
-            },
+            if (asking != null) stringResource(R.string.chat_blocked_tool, asking.name) else stringResource(R.string.chat_blocked_other),
             style = ChatType.meta.copy(color = colors.text),
         )
-        val label = stringResource(R.string.chat_answer_in_terminal)
-        val spoken = question?.let { stringResource(R.string.chat_answer_in_terminal_for, it.question) } ?: label
-        FilledTonalButton(
-            onClick = onTerminal,
-            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = spoken }.testTag("chat:answer_in_terminal"),
-        ) {
-            Text(label)
+        if (!problem.isNullOrBlank()) Text(problem, style = ChatType.meta.copy(color = colors.muted))
+        FilledTonalButton(onClick = onTerminal, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:answer_in_terminal")) {
+            Text(stringResource(R.string.chat_answer_in_terminal))
         }
     }
 }

@@ -32,29 +32,4 @@ class WaitingQuestionTest {
         assertNull("stale call", pendingTool(items(ask, call("t3", "read"), result("t3"))))
     }
 
-    @Test
-    fun oneCompleteAskShowsItsQuestionAndChoiceLabels() {
-        val args = """
-            {"questions": [{"id": "scope", "header": "Scope", "question": "Include ORR-2051?",
-              "options": [{"label": "Leave it out", "description": "as staged"}, {"label": "Include it"}], "recommended": 1}]}
-        """.trimIndent()
-        assertEquals(WaitingQuestion("Include ORR-2051?", listOf("Leave it out", "Include it")), waitingQuestion(call("t1", args = args)))
-        // The single-question shape.
-        assertEquals(
-            WaitingQuestion("Proceed?", listOf("Yes", "No")),
-            waitingQuestion(call("t1", args = """{"question": " Proceed? ", "options": ["Yes", {"label": "No"}, ""]}""")),
-        )
-        assertEquals(WaitingQuestion("Name it?", emptyList()), waitingQuestion(call("t1", args = """{"question": "Name it?"}""")))
-    }
-
-    @Test
-    fun anythingUncertainShowsNoQuestion() {
-        val two = """{"questions": [{"question": "A?"}, {"question": "B?"}]}"""
-        val cut = """{"questions": [{"question": "A?", "options": [{"label": "x"""
-        assertNull("several questions", waitingQuestion(call("t1", args = two)))
-        assertNull("cut arguments", waitingQuestion(call("t1", args = cut)))
-        assertNull("marked truncated", waitingQuestion(call("t1", args = """{"question": "A?"}""", truncated = true)))
-        assertNull("another tool", waitingQuestion(call("t1", name = "bash", args = """{"question": "A?"}""")))
-        assertNull("blank question", waitingQuestion(call("t1", args = """{"question": "  "}""")))
-    }
 }

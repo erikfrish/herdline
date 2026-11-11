@@ -259,8 +259,26 @@ pub enum Block {
         /// The command's exit code, for tools that report one.
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_code: Option<i64>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        answers: Vec<FormAnswer>,
+        timed_out: bool,
     },
     Image(Image),
+}
+
+/// Display-only question answers emitted by OMP's form tool.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FormAnswer {
+    pub name: String,
+    pub question: String,
+    pub answer: String,
+    pub options: Vec<FormAnswerOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FormAnswerOption {
+    pub label: String,
+    pub selected: bool,
 }
 
 /// An image part of a message: its index in the content, and where its bytes are.
@@ -1090,6 +1108,22 @@ fn tool_result(message: &Value) -> Block {
             .collect(),
         truncated,
         exit_code: message["details"]["exitCode"].as_i64(),
+        answers: if message["toolName"] == "ask" {
+            message["details"]["answers"].as_array().map(|answers| {
+                answers.iter().take(128).filter_map(|answer| Some(FormAnswer {
+                    name: cap(answer["name"].as_str().unwrap_or_default(), 256).0,
+                    question: cap(answer["question"].as_str()?, TEXT_LIMIT).0,
+                    answer: cap(answer["answer"].as_str()?, TEXT_LIMIT).0,
+                    options: answer["options"].as_array().map(|options| options.iter().take(256).filter_map(|option| Some(FormAnswerOption {
+                        label: cap(option["label"].as_str()?, TEXT_LIMIT).0,
+                        selected: option["selected"].as_bool()?,
+                    })).collect()).unwrap_or_default(),
+                })).collect()
+            }).unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        timed_out: message["toolName"] == "ask" && message["details"]["timedOut"] == true,
     }
 }
 
