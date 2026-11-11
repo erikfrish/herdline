@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity; Android 12+ splash. -->
+<!-- Same theme as values-night/themes.xml plus the splash: the crook on the "ember" night tile
+     (splash_background and ic_splash_glyph resolve to their night variants). -->
+<resources>
+    <style name="Theme.Herdline" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF14161B</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_glyph</item>
+    </style>
+</resources>

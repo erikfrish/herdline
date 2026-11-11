@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity; Android 12+ splash. -->
+<!-- Same theme as values/themes.xml plus the splash: the crook on the "wood" tile.
+     The icon is drawn on the 108dp grid and masked to a circle, like a launcher icon. -->
+<resources>
+    <style name="Theme.Herdline" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFBFAF7</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_glyph</item>
+    </style>
+</resources>

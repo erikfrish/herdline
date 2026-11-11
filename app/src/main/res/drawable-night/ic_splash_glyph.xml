@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Night splash icon: the crook in ember colours. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFF2C98A" android:pathData="@string/launcher_crook_strand" />
+    <path android:fillColor="#FFE8743B" android:pathData="@string/launcher_crook_hook" />
+    <path android:fillColor="#FFFFF1DC" android:pathData="@string/launcher_crook_ink" />
+</vector>

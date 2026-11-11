@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline launcher colours. -->
 <resources>
-    <!-- Herdline: deep pine with a light mint glyph. -->
-    <color name="launcher_background">#FF17332B</color>
-    <color name="launcher_ink">#FFD7F5E3</color>
-    <color name="launcher_mono_paper">#FFF2F4F7</color>
-    <color name="launcher_mono_ink">#FF1B2230</color>
+    <!-- Herdline crook, "wood": terracotta hook, sand and brown strands on warm off-white. -->
+    <color name="launcher_background">#FFF6F1E7</color>
+    <color name="launcher_hook">#FFD05A2A</color>
+    <color name="launcher_strand">#FFE9B46D</color>
+    <color name="launcher_ink">#FF6A361D</color>
+    <color name="launcher_mono_paper">#FFF6F1E7</color>
+    <color name="launcher_mono_ink">#FF2A1A12</color>
+    <!-- Android 12+ splash; values-night has the "ember" night tile. -->
+    <color name="splash_background">#FFF6F1E7</color>
 </resources>

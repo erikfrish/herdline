@@ -1,27 +1,79 @@
-# Herdline logo concepts
+# Herdline brand
 
-These are earlier design explorations, not the integrated launcher icon.
-The app currently has a provisional H/link glyph. Final design is not yet approved.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="crook/banner-dark.svg">
+  <img alt="Herdline: a braided shepherd's crook with a terminal prompt in its hook" src="crook/banner-light.svg">
+</picture>
 
-![Three concepts](concepts/all-concepts.png)
+The approved Herdline mark is a braided three-strand shepherd's crook with a
+`>_` terminal prompt in its hook. The crook stands for leading a herd of coding
+agents, and the shaft runs off the bottom edge on purpose. The strands are
+uneven, like a hand-cut branch. The app's launcher icons, splash and
+notification icon use this mark.
 
-- [A — Lead line](concepts/a-lead-line.svg): terminal prompt and a line of agents.
-- [B — Pane bubble](concepts/b-pane-bubble.svg): chat and terminal in one mark.
-- [C — Converge](concepts/c-converge.svg): several agent threads merge into one line ending at a block cursor; an earlier direction, no longer the recommendation.
+![Brand kit overview](crook/preview.png)
 
-Geometry copyright (c) 2026 erikfrish, Apache-2.0. No third-party artwork.
-The proof sheet shows light/dark, monochrome, launcher masks and 24/48 px renders;
-it is not a screenshot from a device. The SVG geometry was hand-authored and rendered locally.
+The overview is a set of design renders (rsvg), not screenshots from a
+device.
 
-A later, user-requested Codex attempt produced a
-[generated raster reference for C](concepts/c-converge-generated.png).
-It is not the vector master or an approved launcher asset: its marks exceed
-the adaptive safe zone and its strokes are uneven. This direction has since
-been superseded; authentication logs are not distributed.
+## Colours
 
-## Current direction
+| Role | `wood` (main) | `ember` (dark) |
+|---|---|---|
+| Background | `#F6F1E7` | `#1C1310` |
+| Hook, main strand | `#D05A2A` | `#E8743B` |
+| Light strand | `#E9B46D` | `#F2C98A` |
+| Dark strand, prompt, name | `#6A361D` | `#FFF1DC` |
 
-The maintainer selected an orange-on-black crook-chevron as the direction
-for further exploration. Several variants are being considered; no final
-variant or launcher asset has been approved or integrated. The earlier
-Converge previews above are retained as design history, not recommendations.
+One-colour uses: `#2A1A12` on `#F6F1E7` (14.9:1), or white on black.
+
+## Files
+
+| File | Use |
+|---|---|
+| [`crook/symbol.svg`](crook/symbol.svg), [`symbol-ember.svg`](crook/symbol-ember.svg), [`symbol-mono.svg`](crook/symbol-mono.svg) | the mark on the 108-unit adaptive icon grid, transparent |
+| [`crook/herdline-wood.svg`](crook/herdline-wood.svg), [`herdline-ember.svg`](crook/herdline-ember.svg), [`herdline-wood-transparent.svg`](crook/herdline-wood-transparent.svg) | lockup: mark and name |
+| [`crook/herdline-mono-black.svg`](crook/herdline-mono-black.svg), [`herdline-mono-white.svg`](crook/herdline-mono-white.svg) | one-colour lockup |
+| [`crook/banner-light.svg`](crook/banner-light.svg), [`banner-dark.svg`](crook/banner-dark.svg) | README banner, 1280 × 320 |
+| [`crook/social-preview.png`](crook/social-preview.png) | GitHub social preview, 1280 × 640 |
+| [`crook/icon-512.png`](crook/icon-512.png), [`feature-graphic.png`](crook/feature-graphic.png) | store icon 512 × 512, feature graphic 1024 × 500 |
+
+The app resources live in `app/src/main/res`:
+
+- `values/launcher_glyph.xml` holds the path data.
+- `values/colors.xml` holds the launcher colours.
+- `drawable/ic_launcher_glyph*.xml` are the launcher foregrounds.
+- `mipmap-anydpi/ic_launcher{,_mono,_contrast}.xml` are the Default, Mono and Contrast icons.
+- `drawable/ic_notification.xml` is the notification icon.
+- The splash uses `drawable{,-night}/ic_splash_glyph.xml` and `values{,-night}-v31/themes.xml`.
+
+## Rules
+
+- **Safe zone:** keep the hook and prompt inside the adaptive-icon safe
+  zone (they reach r 32.8 of 33 on the 108 grid). The shaft is meant to be cut
+  by every mask.
+- **Keep the mark as it is:** don't smooth the strands, close the hook into a
+  ring, or round off the end of the shaft.
+- **No effects:** don't add shadows, gradients or glow.
+- **Dark tiles:** put the three-colour mark on dark tiles only in `ember`.
+- **Lockup:** the name is set in Fira Sans Medium and the tagline in Fira Sans
+  Regular, both converted to outlines. Minimum lockup height is 24 dp.
+
+## Provenance and licence
+
+The mark is a vector trace of a raster that Codex's built-in image generation
+made from the maintainer's prompts, which the maintainer then approved. The
+text is outlined glyphs of Fira Sans (SIL Open Font License 1.1). No font file
+is distributed. No third-party artwork was used. Geometry copyright (c) 2026
+erikfrish, Apache-2.0.
+
+## Earlier explorations
+
+[`concepts/`](concepts) holds earlier directions that were not chosen:
+
+- [A — Lead line](concepts/a-lead-line.svg)
+- [B — Pane bubble](concepts/b-pane-bubble.svg)
+- [C — Converge](concepts/c-converge.svg)
+
+They also include a [generated reference for C](concepts/c-converge-generated.png).
+They are design history only, not app assets.

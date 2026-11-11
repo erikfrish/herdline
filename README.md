@@ -1,5 +1,10 @@
 # Herdline
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/crook/banner-dark.svg">
+  <img alt="Herdline: herd your coding agents from your phone" src="branding/crook/banner-light.svg">
+</picture>
+
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
 host owns the terminals, workspaces, tabs, panes and agents, and they keep

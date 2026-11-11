@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. -->
+<!-- values-night-v31/themes.xml repeats this style with the splash items: change both. -->
 <resources>
     <style name="Theme.Herdline" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#FF14161B</item>
