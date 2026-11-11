@@ -40,13 +40,25 @@ class StatusGlyphTest {
     }
 
     @Test
-    fun theCloseStartsAsTheArcAndEndsAsTheDisc() {
-        assertEquals(270f, closeSweep(0f), 0f)
+    fun theCloseStartsOpenAndEmptyAndEndsAsTheFullDisc() {
+        assertTrue(closeSweep(0f) < 360f)
         assertEquals(0f, closeFill(0f), 0f)
-        // The ring is shut before it fills: the arc never reads as filled while open.
-        assertEquals(360f, closeSweep(0.6f), 0.001f)
-        assertEquals(0f, closeFill(0.6f), 0.001f)
         assertEquals(360f, closeSweep(1f), 0f)
         assertEquals(1f, closeFill(1f), 0f)
+    }
+
+    @Test
+    fun theCloseNeverFillsWhileOpenAndNeverStepsBack() {
+        var sweep = closeSweep(0f)
+        var fill = closeFill(0f)
+        for (i in 1..100) {
+            val p = i / 100f
+            // A filled arc with a gap would read as neither the Working arc nor the Done disc.
+            if (closeFill(p) > 0f) assertEquals("at $p", 360f, closeSweep(p), 0.001f)
+            assertTrue("sweep at $p", closeSweep(p) >= sweep)
+            assertTrue("fill at $p", closeFill(p) >= fill)
+            sweep = closeSweep(p)
+            fill = closeFill(p)
+        }
     }
 }
