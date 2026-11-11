@@ -1,6 +1,18 @@
 package io.github.erikfrish.herdline.ui.session
 
 import android.text.format.DateFormat
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,12 +42,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.ui.components.motionAllowed
 import kotlinx.coroutines.delay
 import java.util.Date
 
@@ -71,11 +85,20 @@ internal fun rememberOutage(
     return outage
 }
 
+/** M3's emphasized-decelerate curve, as AgentBanner slides in with. */
+private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
 /**
  * The thin strip under the header while a surface shows what it saved
  * (Collie row 4). [title] says what the reader is looking at, [detail] what
  * is known about the loss; neither guesses a cause. Retry shows a spinner
  * while [retrying]; ✕ closes the strip for this outage.
+ *
+ * It slides in from above the moment it is composed and crossfades a new
+ * title or detail, so the loss and each change of it are seen. Both are
+ * drawn over what is under it, which keeps its place (the strip is an
+ * overlay; its height never animates). With motion off it is simply there.
+ * Its going is the caller's: it leaves composition at once.
  */
 @Composable
 internal fun OutageStrip(
@@ -87,40 +110,76 @@ internal fun OutageStrip(
     modifier: Modifier = Modifier,
     tag: String = "outage",
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(tag),
+    val motion = motionAllowed()
+    val shown = remember { MutableTransitionState(!motion).apply { targetState = true } }
+    AnimatedVisibility(
+        visibleState = shown,
+        enter = if (motion) {
+            slideInVertically(tween(200, easing = EmphasizedDecelerate)) { -it } + fadeIn(tween(200))
+        } else {
+            EnterTransition.None
+        },
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Row(
-            Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(tag),
         ) {
-            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!detail.isNullOrBlank()) {
-                    Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            TextButton(
-                onClick = onRetry,
-                enabled = !retrying,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:retry"),
+            Row(
+                Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (retrying) {
-                    val label = stringResource(R.string.outage_retrying)
-                    CircularProgressIndicator(
-                        Modifier.size(16.dp).semantics { contentDescription = label },
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                } else {
-                    Text(stringResource(R.string.outage_retry))
+                AnimatedContent(
+                    targetState = title to detail,
+                    transitionSpec = {
+                        // No size transform: the strip keeps its height while the words change.
+                        if (motion) {
+                            (fadeIn(tween(150)) togetherWith fadeOut(tween(150))).using(null)
+                        } else {
+                            (EnterTransition.None togetherWith ExitTransition.None).using(null)
+                        }
+                    },
+                    label = "outage-text",
+                    modifier = Modifier.weight(1f),
+                ) { (shownTitle, shownDetail) ->
+                    // The words fading out are not read again: only the new ones are announced,
+                    // in full even where the strip cuts them, since the cause is at the end.
+                    val leaving = transition.targetState == EnterExitState.PostExit
+                    val spoken = listOfNotNull(shownTitle, shownDetail?.takeIf { it.isNotBlank() }).joinToString("\n")
+                    Column(
+                        Modifier
+                            .padding(vertical = 6.dp)
+                            .clearAndSetSemantics { if (!leaving) contentDescription = spoken },
+                    ) {
+                        Text(shownTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!shownDetail.isNullOrBlank()) {
+                            // Two lines: a reason such as an SSH error reads to its end. The strip is an
+                            // overlay, so a taller one covers more and resizes nothing.
+                            Text(shownDetail, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
-            }
-            IconButton(onClick = onDismiss, modifier = Modifier.testTag("$tag:dismiss")) {
-                Icon(Icons.Default.Close, stringResource(R.string.outage_dismiss))
+                TextButton(
+                    onClick = onRetry,
+                    enabled = !retrying,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:retry"),
+                ) {
+                    if (retrying) {
+                        val label = stringResource(R.string.outage_retrying)
+                        CircularProgressIndicator(
+                            Modifier.size(16.dp).semantics { contentDescription = label },
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    } else {
+                        Text(stringResource(R.string.outage_retry))
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.testTag("$tag:dismiss")) {
+                    Icon(Icons.Default.Close, stringResource(R.string.outage_dismiss))
+                }
             }
         }
     }
