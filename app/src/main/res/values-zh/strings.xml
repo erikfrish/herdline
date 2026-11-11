@@ -401,6 +401,9 @@
     <string name="agents_none_match">没有匹配的代理。</string>
     <string name="inbox_no_hosts">未连接主机。已连接主机上的代理会显示在这里。</string>
     <string name="scope_all">全部工作区</string>
+    <string name="scope_gone">已关闭的工作区</string>
+    <string name="scope_gone_note">你选择的工作区已关闭。</string>
+    <string name="scope_show_all">显示全部工作区</string>
     <string name="scope_button">工作区筛选，%1$s</string>
     <string name="scope_choose">选择</string>
     <string name="scope_on_host">%1$s · %2$s</string>

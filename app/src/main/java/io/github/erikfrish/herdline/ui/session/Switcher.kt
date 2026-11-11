@@ -146,12 +146,34 @@ fun Switcher(
     here: String? = view?.focusedPane,
     /** Chat: the here row says "Reading here" and Herdr's focused row "On desktop" to TalkBack. */
     reading: Boolean = false,
+    /** The phone sheet's "Show as grid" in the header (TB1); null where the list is the only view. */
+    onShowGrid: (() -> Unit)? = null,
+    /**
+     * Whether this list applies the saved start filter when it first shows.
+     * The phone sheet applies it once per open itself, so Grid ⇄ List keeps
+     * the filter the user chose.
+     */
+    appliesStartFilter: Boolean = true,
+    /**
+     * The phone sheet's workspace scope, shared with its grid (TB1): the
+     * chosen workspace id, or null for all of them. Only with [onScope] does
+     * the list show the selector and keep to that workspace; the sidebar
+     * passes neither and lists every workspace.
+     */
+    scope: String? = null,
+    onScope: ((String?) -> Unit)? = null,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
+    val scoped = remember(groups, scope, onScope != null, view != null) {
+        if (onScope != null) tabsScope(groups, scope, loaded = view != null) else TabsScope(null, false, groups)
+    }
+    // Everything listed, placed and counted comes from the scope; Needs you
+    // panes still open their split tabs from every workspace.
+    val inScope = scoped.groups
     // Pinned then recent places, each once: a one-pane tab remembered under
     // both its tab and its agent's pane key is one chip.
-    val pinnedPlaces = remember(groups, pins) { groups.placesNamed(pins).mapTo(HashSet()) { it.key } }
-    val places = remember(groups, pins, recent) { groups.placesNamed(pins + recent).take(RECENT_LIMIT) }
+    val pinnedPlaces = remember(inScope, pins) { inScope.placesNamed(pins).mapTo(HashSet()) { it.key } }
+    val places = remember(inScope, pins, recent) { inScope.placesNamed(pins + recent).take(RECENT_LIMIT) }
     // The selector writes the persisted setting; the caller's [order] follows it.
     val store = (LocalContext.current.applicationContext as? HerdlineApp)?.settings
     val prefs = store?.settings?.collectAsState()?.value
@@ -165,7 +187,7 @@ fun Switcher(
     LaunchedEffect(Unit) {
         if (!started) {
             started = true
-            store?.let { if (filtersShown) onFilter(it.settings.value.startFilter.switcherFilter) }
+            store?.let { if (filtersShown && appliesStartFilter) onFilter(it.settings.value.startFilter.switcherFilter) }
         }
     }
     LaunchedEffect(filtersShown) {
@@ -173,17 +195,21 @@ fun Switcher(
     }
     // Rows the Tabs list toggles hide come back for this open list on Show,
     // and search always finds them; either way they are marked "hidden".
-    val hiding = remember(groups, prefs?.hideShells, prefs?.hideIdleDone) {
-        groups.hiddenRows(hideShells = prefs?.hideShells == true, hideIdleDone = prefs?.hideIdleDone == true)
+    val hiding = remember(inScope, prefs?.hideShells, prefs?.hideIdleDone) {
+        inScope.hiddenRows(hideShells = prefs?.hideShells == true, hideIdleDone = prefs?.hideIdleDone == true)
     }
     var showHidden by remember { mutableStateOf(false) }
     val revealed = showHidden || query.isNotBlank()
-    val listed = remember(groups, hiding, revealed) { if (revealed) groups else groups.without(hiding.keys) }
+    val listed = remember(inScope, hiding, revealed) { if (revealed) inScope else inScope.without(hiding.keys) }
     val marked = if (revealed) hiding.keys else emptySet()
     val shown = remember(listed, query, filter) { listed.narrowed(query, filter) }
     // Counts come from every row, hidden or not, so the chips stay honest.
     val asking = remember(groups) { groups.agentsWith(AgentStatus.Blocked) }
     val working = remember(groups) { groups.agentsWith(AgentStatus.Working) }
+    // The sheet's chips count as its grid's do: in scope, matching the search.
+    val counts = remember(inScope, query, onScope != null, asking, working) {
+        if (onScope != null) inScope.agentCounts(query) else asking.size to working.size
+    }
     val browsing = query.isBlank() && filter == SwitcherFilter.All
     val flat = order == TargetOrder.LastActivity
     val compact = LocalCompact.current
@@ -191,8 +217,8 @@ fun Switcher(
     // shows, each row with the seq it had then; live seq changes only count
     // towards the Update order pill. A new daemon run starts over, since its
     // pane IDs and seqs share nothing with the last.
-    val fresh = remember(groups, view?.boot, flat) {
-        if (flat) lastActivityOrder(groups.places().activityKeys(view?.boot.orEmpty()) { it.stateSeq }) else emptyList()
+    val fresh = remember(inScope, view?.boot, flat) {
+        if (flat) lastActivityOrder(inScope.places().activityKeys(view?.boot.orEmpty()) { it.stateSeq }) else emptyList()
     }
     var frozen by remember(node.id, view?.boot, order) { mutableStateOf(emptyList<ActivityKey>()) }
     val onScreen = heldOrder(frozen, fresh)
@@ -239,8 +265,19 @@ fun Switcher(
             Modifier.fillMaxWidth().testTag("switcher"),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
-            item(key = "header") { HostLine(node, view, state) }
-            item(key = "search") { SearchField(query, onQuery) }
+            item(key = "header") {
+                HostLine(node, view, state) {
+                    if (onShowGrid != null) {
+                        IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-grid")) {
+                            Icon(GridIcon, stringResource(R.string.overview_as_grid), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            item(key = "search") { SearchField(query, onQuery, stringResource(R.string.switcher_search)) }
+            if (onScope != null && view != null) {
+                item(key = "scope") { Box(Modifier.padding(vertical = 4.dp)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) } }
+            }
             if (store != null) {
                 item(key = "order:select") {
                     OrderSelector(order, accent) { picked -> store.update { it.copy(targetOrder = picked) } }
@@ -250,13 +287,13 @@ fun Switcher(
                 Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, accent, "all") { onFilter(SwitcherFilter.All) }
                     FilterChip(
-                        stringResource(R.string.filter_needs_you, asking.size),
+                        stringResource(R.string.filter_needs_you, counts.first),
                         filter == SwitcherFilter.NeedsYou,
                         AgentStatus.Blocked.color(),
                         "needs_you",
                     ) { onFilter(SwitcherFilter.NeedsYou) }
                     FilterChip(
-                        stringResource(R.string.filter_working, working.size),
+                        stringResource(R.string.filter_working, counts.second),
                         filter == SwitcherFilter.Working,
                         AgentStatus.Working.color(),
                         "working",
@@ -266,7 +303,9 @@ fun Switcher(
             if (browsing && placesShown) {
                 item(key = "places") { PlacesRow(pinnedTitle, recentTitle, places, pinnedPlaces, style) }
             }
-            if ((if (flat) shownPlaces.isEmpty() else shown.isEmpty()) && view != null) {
+            if (scoped.gone && onScope != null) {
+                item(key = "scope:gone") { ScopeGone { onScope(null) } }
+            } else if ((if (flat) shownPlaces.isEmpty() else shown.isEmpty()) && view != null) {
                 item(key = "empty") {
                     Text(
                         stringResource(R.string.switcher_nothing),
@@ -403,10 +442,11 @@ private fun SwitchTarget.TabRow.tabTitle(): String = title
 
 /**
  * One 48 dp line instead of the stats card: the host's name and how much is
- * waiting there. Connecting and disconnected states still say so.
+ * waiting there. Connecting and disconnected states still say so; the
+ * Tabs overview shows it while there is no live view. [trailing] ends the row.
  */
 @Composable
-private fun HostLine(node: Node, view: ShellView?, state: Connection.State) {
+internal fun HostLine(node: Node, view: ShellView?, state: Connection.State, trailing: @Composable () -> Unit = {}) {
     val summary = when (state) {
         is Connection.State.Connecting -> stringResource(R.string.connecting)
         is Connection.State.SettingUp -> stringResource(R.string.herdr_setup_pill)
@@ -442,15 +482,17 @@ private fun HostLine(node: Node, view: ShellView?, state: Connection.State) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        trailing()
     }
 }
 
+/** The search pill; [minHeight] is the overview's font-scaled one (TB1 §4), else the list's 44 dp. */
 @Composable
-private fun SearchField(query: String, onQuery: (String) -> Unit) {
+internal fun SearchField(query: String, onQuery: (String) -> Unit, placeholder: String, minHeight: Dp = 44.dp) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .heightIn(min = minHeight)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -469,7 +511,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
                 Box {
                     if (query.isEmpty()) {
                         Text(
-                            stringResource(R.string.switcher_search),
+                            placeholder,
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1,

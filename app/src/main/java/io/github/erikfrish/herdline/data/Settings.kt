@@ -48,6 +48,9 @@ enum class IconVariant { Default, Mono, Contrast }
 /** Which filter the Tabs list and Agents open with: Herdr's order under each. */
 enum class StartFilter { All, NeedsYou, Working }
 
+/** How the phone Tabs sheet opens: the card overview, or the Switcher list. */
+enum class TabsView { Grid, List }
+
 /** A settings page that can go back to its defaults on its own. */
 enum class ResetScope { Appearance, Terminal, Composer, Layout, Notifications }
 
@@ -76,6 +79,8 @@ data class Settings(
     val sidebarOpen: Boolean = true,
     val targetOrder: TargetOrder = TargetOrder.Workspace,
     val startFilter: StartFilter = StartFilter.All,
+    /** The phone Tabs sheet's view; the tablet sidebar ignores it. */
+    val tabsView: TabsView = TabsView.Grid,
     /** Hide tabs without an agent from the Tabs list; never from the phone tab row or Tabs n/N. */
     val hideShells: Boolean = false,
     /** Hide tabs whose agents are all idle or done from the Tabs list; a tab that needs you stays. */
@@ -125,6 +130,7 @@ data class Settings(
                 sidebarOpen = d.sidebarOpen,
                 targetOrder = d.targetOrder,
                 startFilter = d.startFilter,
+                tabsView = d.tabsView,
                 hideShells = d.hideShells,
                 hideIdleDone = d.hideIdleDone,
                 composerMenu = d.composerMenu,
@@ -199,6 +205,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             sidebarOpen = prefs.getBoolean("sidebar_open", d.sidebarOpen),
             targetOrder = enumOf("target_order", d.targetOrder),
             startFilter = enumOf("start_filter", d.startFilter),
+            tabsView = enumOf("tabs_view", d.tabsView),
             hideShells = prefs.getBoolean("hide_shells", d.hideShells),
             hideIdleDone = prefs.getBoolean("hide_idle_done", d.hideIdleDone),
             composerMenu = ComposerMenu.repaired(savedControls(ids("composer_menu"), ids("composer_menu_known"), ComposerMenu.DEFAULT)),
@@ -237,6 +244,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putBoolean("sidebar_open", next.sidebarOpen)
             .putString("target_order", next.targetOrder.name)
             .putString("start_filter", next.startFilter.name)
+            .putString("tabs_view", next.tabsView.name)
             .putBoolean("hide_shells", next.hideShells)
             .putBoolean("hide_idle_done", next.hideIdleDone)
             .putString("composer_menu", next.composerMenu.joinToString(","))

@@ -2,6 +2,10 @@
 <resources>
     <!-- Agents: the workspace filter beside the status chips (AG2). -->
     <string name="scope_all">All workspaces</string>
+    <!-- Tabs: the selector chip when the chosen workspace has closed; never read as All. -->
+    <string name="scope_gone">Closed workspace</string>
+    <string name="scope_gone_note">The workspace you chose has closed.</string>
+    <string name="scope_show_all">Show all workspaces</string>
     <!-- TalkBack for the selector chip; %1$s is the chosen scope's full name. -->
     <string name="scope_button">Workspace filter, %1$s</string>
     <!-- TalkBack's action for the selector chip: "double tap to choose". -->

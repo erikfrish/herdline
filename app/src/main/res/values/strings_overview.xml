@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TB1: the phone Tabs overview and its pane picker. -->
+<resources>
+    <string name="overview_title">Tabs</string>
+    <string name="overview_sub">%1$s · %2$s in %3$s</string>
+    <plurals name="overview_tabs">
+        <item quantity="one">%d tab</item>
+        <item quantity="other">%d tabs</item>
+    </plurals>
+    <plurals name="overview_workspaces">
+        <item quantity="one">%d workspace</item>
+        <item quantity="other">%d workspaces</item>
+    </plurals>
+    <string name="overview_search">Search tabs, panes, agents</string>
+    <string name="overview_as_list">Show as list</string>
+    <string name="overview_as_grid">Show as grid</string>
+    <string name="overview_current">Current</string>
+    <string name="overview_current_spoken">current tab</string>
+    <string name="overview_tab_n">Tab %1$d</string>
+    <string name="overview_ws_suffix">%1$s #%2$d</string>
+    <string name="overview_matched">%1$d of %2$d panes</string>
+    <string name="overview_linked_worktree">linked worktree</string>
+    <string name="overview_none_match">No tabs match</string>
+    <string name="overview_clear">Clear filters</string>
+    <string name="overview_open">Open</string>
+    <string name="overview_choose_pane">Choose pane</string>
+    <string name="picker_whole_tab">Whole tab</string>
+    <string name="picker_whole_tab_sub">Opens Tab %1$d on the pane Herdr focuses there</string>
+    <string name="picker_panes">Panes</string>
+    <string name="picker_matches">Matches</string>
+    <string name="picker_focused">Focused</string>
+    <string name="picker_shell">Shell</string>
+</resources>
