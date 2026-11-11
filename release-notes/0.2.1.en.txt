@@ -1,0 +1,7 @@
+Herdline 0.2.1 — Terminal navigation hotfix.
+
+Fixes Terminal navigation in 0.2.0: with Terminal on screen, choosing a tab chip, Prev or Next, a Tabs grid or list card, a pane or Whole tab in the pane picker, or a workspace could leave the desktop and the screen where they were when the chosen pane would read in Chat. A choice made in Terminal now moves Herdr's shared focus to it. In Chat, choosing a pane that reads in Chat still changes only what this phone reads and does not focus the desktop. Notifications and deep links keep their 0.2.0 behaviour.
+
+No other changes. Branding, package, signer, delivery identity, receipts, uncertain holds and send guards are unchanged.
+
+Verification: developer checks only, no runtime QA. Terminal and Chat navigation on a device are unverified.
