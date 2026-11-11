@@ -280,7 +280,7 @@ flowchart LR
 Requirements:
 
 - JDK 17 or newer
-- Android SDK with platform 37 (`compileSdk 37`)
+- Android SDK with platform 37 (`compileSdk 37`; sdkmanager package `platforms;android-37.0`)
 - Android NDK 27.2.12479018
 - Rust 1.96.1, pinned in `rust-toolchain.toml` with the
   `aarch64-linux-android` and `x86_64-linux-android` targets

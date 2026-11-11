@@ -234,9 +234,13 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
         Exchange::Unreachable => Ok(unusable("unreachable")),
         Exchange::NoAnswer if send => Ok(uncertain(&request.id)),
         Exchange::NoAnswer => Err(Error::BadReply),
-        Exchange::Answer(answer) => {
-            answer_reply(request.op, &request.id, request.dialog_id.as_deref(), &answer).ok_or(Error::BadReply)
-        }
+        Exchange::Answer(answer) => answer_reply(
+            request.op,
+            &request.id,
+            request.dialog_id.as_deref(),
+            &answer,
+        )
+        .ok_or(Error::BadReply),
     }
 }
 
@@ -369,14 +373,19 @@ fn sidecar(path: &str, content: &str, pid: u32, session_file: &str) -> Discovery
     if value["sessionFile"].as_str() != Some(session_file) {
         return Discovery::Unusable("session_file");
     }
-    if let Some(missing) = value["unsupported"].as_array().filter(|missing| !missing.is_empty()) {
+    if let Some(missing) = value["unsupported"]
+        .as_array()
+        .filter(|missing| !missing.is_empty())
+    {
         return Discovery::Unsupported(
             missing
                 .iter()
                 .filter_map(Value::as_str)
                 .filter(|hook| {
                     (1..=64).contains(&hook.len())
-                        && hook.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                        && hook
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
                 })
                 .take(16)
                 .map(str::to_owned)
@@ -399,15 +408,21 @@ fn sidecar(path: &str, content: &str, pid: u32, session_file: &str) -> Discovery
 
 fn token(value: &str, min: usize) -> bool {
     (min..=128).contains(&value.len())
-        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 fn plain_path(path: &str) -> bool {
     path.starts_with('/')
         && path.len() <= 512
-        && path.bytes().all(|b| b.is_ascii_alphanumeric() || b"._/-".contains(&b))
+        && path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._/-".contains(&b))
         && !path.contains("//")
-        && path.split('/').all(|segment| segment != "." && segment != "..")
+        && path
+            .split('/')
+            .all(|segment| segment != "." && segment != "..")
 }
 
 /// A request id as the app makes them: a lowercase UUID.
@@ -440,7 +455,10 @@ fn send_line(request: &Request, endpoint: &Endpoint) -> String {
             "nonce": endpoint.nonce,
         }),
     );
-    line.insert("text".into(), json!(attach::with_files(&request.text, &request.attachments)));
+    line.insert(
+        "text".into(),
+        json!(attach::with_files(&request.text, &request.attachments)),
+    );
     if !attachments.is_empty() {
         line.insert("attachments".into(), Value::Array(attachments));
     }
@@ -539,16 +557,22 @@ fn answer_reply(op: Op, id: &str, dialog_id: Option<&str>, answer: &Value) -> Op
         }
         Op::Dialogs => {
             // OMP's snapshot as it is: the app's dialog models read it.
-            reply.insert("dialogs".into(), Value::Array(answer["dialogs"].as_array()?.clone()));
+            reply.insert(
+                "dialogs".into(),
+                Value::Array(answer["dialogs"].as_array()?.clone()),
+            );
         }
         Op::DialogSubmit => {
             let dialog_id = dialog_id?;
             if answer["dialogId"].as_str()? != dialog_id {
                 return None;
             }
-            let result = answer["result"]
-                .as_str()
-                .filter(|result| matches!(*result, "submitted" | "not_open" | "invalid" | "kind_mismatch"))?;
+            let result = answer["result"].as_str().filter(|result| {
+                matches!(
+                    *result,
+                    "submitted" | "not_open" | "invalid" | "kind_mismatch"
+                )
+            })?;
             reply.insert("dialogId".into(), json!(dialog_id));
             reply.insert("result".into(), json!(result));
         }
@@ -584,7 +608,9 @@ fn state(state: &Value) -> Option<Value> {
         .iter()
         .filter_map(|entry| {
             let text = entry["text"].as_str()?;
-            let queue = entry["queue"].as_str().filter(|q| matches!(*q, "steering" | "followUp"))?;
+            let queue = entry["queue"]
+                .as_str()
+                .filter(|q| matches!(*q, "steering" | "followUp"))?;
             let request_id = entry["requestId"].as_str().filter(|id| valid_id(id));
             Some(json!({"requestId": request_id, "text": text, "queue": queue}))
         })
@@ -593,12 +619,16 @@ fn state(state: &Value) -> Option<Value> {
 }
 
 fn split<'a>(bytes: &'a [u8], marker: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
-    let at = bytes.windows(marker.len()).position(|window| window == marker)?;
+    let at = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)?;
     Some((&bytes[..at], &bytes[at + marker.len()..]))
 }
 
 fn rsplit<'a>(bytes: &'a [u8], marker: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
-    let at = bytes.windows(marker.len()).rposition(|window| window == marker)?;
+    let at = bytes
+        .windows(marker.len())
+        .rposition(|window| window == marker)?;
     Some((&bytes[..at], &bytes[at + marker.len()..]))
 }
 
