@@ -1,0 +1,180 @@
+package io.github.erikfrish.herdline.ui.session
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessItem
+import io.github.erikfrish.herdline.core.worksHere
+
+/**
+ * Why Chat is off for the pane's program, over the top edge of the box it
+ * is placed in, and what does work there (team/assignments/night-d2-harness-card.md).
+ *
+ * Like AgentBannerSlot it is an overlay: the box's other children keep
+ * their size, so the terminal grid never changes and no resize is sent.
+ * It never takes focus and has no timer; the caller drops it on ✕, on
+ * Open Terminal, on a pane or tab switch, or when the program changes.
+ *
+ * [program] is the Herdr name exactly as reported, null for a shell.
+ */
+@Composable
+internal fun BoxScope.HarnessCardSlot(
+    program: String?,
+    tabName: String,
+    onTerminal: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val chat = stringResource(R.string.chat)
+    val terminal = stringResource(R.string.chat_terminal)
+    val title = if (program == null) {
+        stringResource(R.string.harness_card_shell_title, chat)
+    } else {
+        stringResource(R.string.harness_card_title, program, chat, terminal, tabName)
+    }
+    val body = if (program == null) {
+        stringResource(R.string.harness_card_shell_body, chat, tabName, terminal)
+    } else {
+        stringResource(R.string.harness_card_body, program, chat, terminal, tabName)
+    }
+    val rows = Harness.of(program.orEmpty()).worksHere()
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .atMostOf(0.6f)
+            .semantics { paneTitle = title },
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    ) {
+        // Title, body and actions never scroll away (review N1-1: landscape at
+        // font 1.3 cut Open Terminal under the cap); only the list scrolls.
+        // No outer scroll as a fallback: a weight inside an unbounded
+        // scrolling Column would hand the inner scroll an infinite height.
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(
+                    onClick = onTerminal,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
+                ) { Text(stringResource(R.string.harness_open_terminal, terminal)) }
+                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.harness_close))
+                }
+            }
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(stringResource(R.string.harness_works_here), style = MaterialTheme.typography.labelMedium, color = muted)
+                rows.forEach { (item, available) ->
+                    val name = itemName(item, terminal)
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 40.dp).semantics(mergeDescendants = true) {},
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Shape and words carry the difference, never colour: both icons are muted.
+                        Icon(if (available) Icons.Filled.Check else ClockIcon, null, Modifier.size(18.dp), tint = muted)
+                        Text(
+                            if (available) name else stringResource(R.string.harness_not_yet, name),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Text(stringResource(R.string.harness_checked_only), style = MaterialTheme.typography.bodySmall, color = muted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun itemName(item: HarnessItem, terminal: String): String = when (item) {
+    HarnessItem.Terminal -> stringResource(R.string.harness_item_terminal, terminal)
+    HarnessItem.History -> stringResource(R.string.harness_item_history)
+    HarnessItem.Send -> stringResource(R.string.harness_item_send)
+    HarnessItem.Steer -> stringResource(R.string.harness_item_steer)
+    HarnessItem.Status -> stringResource(R.string.harness_item_status)
+    HarnessItem.Questions -> stringResource(R.string.harness_item_questions)
+    HarnessItem.Subagents -> stringResource(R.string.harness_item_subagents)
+    HarnessItem.Media -> stringResource(R.string.harness_item_media)
+}
+
+/** Caps the height at [fraction] of the box's own, so a long list scrolls inside the card. */
+private fun Modifier.atMostOf(fraction: Float) = layout { measurable, constraints ->
+    val capped = if (constraints.hasBoundedHeight) {
+        constraints.copy(maxHeight = (constraints.maxHeight * fraction).toInt().coerceAtLeast(constraints.minHeight))
+    } else {
+        constraints
+    }
+    val placeable = measurable.measure(capped)
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+
+/*
+ * Material Symbols `schedule` (outlined), path data copied from
+ * material-icons-extended (Icons.Outlined.Schedule, Copyright The Android
+ * Open Source Project, Apache-2.0), as AgentsIcon.kt does, so the app keeps
+ * only the core icons dependency.
+ */
+private val ClockIcon: ImageVector by lazy {
+    ImageVector.Builder(name = "Clock", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = addPathNodes(
+                "M11.99,2C6.47,2 2,6.48 2,12s4.47,10 9.99,10C17.52,22 22,17.52 22,12S17.52,2 11.99,2z" +
+                    "M12,20c-4.42,0 -8,-3.58 -8,-8s3.58,-8 8,-8 8,3.58 8,8 -3.58,8 -8,8z" +
+                    "M12.5,7H11v6l5.25,3.15 0.75,-1.23 -4.5,-2.67z",
+            ),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+        .build()
+}
