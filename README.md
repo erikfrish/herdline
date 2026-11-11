@@ -65,8 +65,8 @@ partial runtime QA **failed** on a Terminal navigation defect (terminal
 tab/pane selection can stay on the old target), so it is **not recommended**
 and newer private QA builds have no published APK. Installing via Obtainium
 today therefore gives you 0.2.0, or nothing while it is withheld. The
-in-app updater lists 0.2.0 only as a *not-tested candidate*; nothing is
-installed without an explicit tap on the device.
+in-app updater marks 0.2.0 as failed QA and does not recommend it; nothing
+is installed without an explicit tap on the device.
 
 ### Obtainium (one-click add)
 
@@ -91,9 +91,8 @@ Manual fallback: in Obtainium use **Add app** with the source URL
 
 ### From source
 
-See [Building](#building) below. Release builds are signed with the private
-release keystore only when published; a build you make yourself is signed with
-your key or the debug key and will not install over the published app.
+See [Building](#building) below. A build you make yourself is signed with
+your own key or the debug key and will not install over the published app.
 
 ## What it does
 
