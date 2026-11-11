@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10032,
-    "versionName": "0.5.2",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.5.2/herdline-0.5.2.apk",
-    "sha256": "1aebfb943bab43d82867f13cf98bc71f649339472b5ab6e39e78b6fc214f0421",
-    "size": 23371631,
+    "versionCode": 10034,
+    "versionName": "0.5.3",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.5.3/herdline-0.5.3.apk",
+    "sha256": "55f4c1c2b54d0e0591044a01eeee569c91883de4d2238c63aea0520958415833",
+    "size": 23388227,
     "minSdk": 29,
     "qa": {
       "state": "passed",
-      "reason": "Visual QA accepted; stock Samsung Now Bar, Terminal scrollback and full OMP integration remain unverified."
+      "reason": "Focused icon surfaces and 24 live-state tests pass; stock Samsung Now Bar not fixed."
     },
     "accepted": true,
     "notes": {
-      "en": "Herdline 0.5.2 \u2014 final visual audit corrections\n\nHost workspace and agent chips now use localized singular/plural quantities, including 1 workspace and 1 agent. Launcher icon previews use the stronger Material outline role, keeping dark artwork distinguishable in Material You dark as well as High Contrast.\n\nThe preceding multi-theme screenshot and designer cycle verified the main visual refinements: form answer deduplication without losing choices, clearer validation and selected dropdown state, readable agent statuses, shorter header attention, aligned growable theme cards and the Preview separator. This update only corrects the two residual issues identified on 0.5.1; its changed-screen verification is recorded separately. No OMP, delivery, privacy or Samsung system-setting changes are included. Stock Samsung Now Bar placement is still not confirmed."
+      "en": "Herdline 0.5.3 \u2014 app-wide icon selection and durable live-update pins\n\nThe selected icon now follows the app into Recents, in-app branding and full-colour notification icons, including redacted lock-screen versions. Existing notifications update silently when the selection changes. Android's package-management screens may still use the static manifest icon; monochrome status glyphs continue to express the agent state.\n\nSamsung may cache the icon of an existing Recents card. Close only Herdline's card and reopen from the launcher to refresh it; connection monitoring remains a foreground service.\n\nA completed task no longer silently removes its agent's live-update pin. The Done card disappears after 10 seconds, while the same pinned agent's next Working task is eligible for a Live Update without pinning again. Explicit Unpin or swipe still removes the pin.\n\nSamsung Now Bar is not fixed on the checked SM-S928U1 / One UI 8.5: Android marks the pinned Working card as promoted with the Samsung test flag off, but the stock Now Bar has no Herdline capsule and its normal Live notifications list does not include Herdline. No test flag, undocumented Samsung payload, media-session impersonation or fake progress is used."
     }
   }
 }

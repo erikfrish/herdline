@@ -7,10 +7,10 @@
 
 [Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%257D)
 
-> **Release status:** [0.5.2](https://github.com/erikfrish/herdline/releases/tag/v0.5.2)
-> is the latest public prerelease candidate. Targeted multi-theme visual QA is
-> accepted; Samsung Now Bar placement and full OMP/Terminal verification remain
-> limited. It is not a general stable release. Obtainium tracks published
+> **Release status:** [0.5.3](https://github.com/erikfrish/herdline/releases/tag/v0.5.3)
+> is the latest public prerelease candidate. App-wide icon identity and durable
+> live-update pins have focused runtime proof. Stock Samsung Now Bar remains
+> broken on the checked One UI 8.5 device. It is not a general stable release. Obtainium tracks published
 > releases; enable prereleases to receive this candidate.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
@@ -72,12 +72,13 @@ Herdline is distributed as a GitHub release APK; Android 10 (API 29) or newer,
 arm64 or x86_64. The release keystore is private, so updates install cleanly
 only over a version signed with the same key.
 
-**Public release status:** [**0.5.2**](https://github.com/erikfrish/herdline/releases/tag/v0.5.2)
+**Public release status:** [**0.5.3**](https://github.com/erikfrish/herdline/releases/tag/v0.5.3)
 is published with the same APK checked and installed on the maintainer's Samsung.
-The visual refinement cycle passed targeted runtime QA and designer acceptance.
+The selected app icon reaches in-app logos, full-colour notifications and Recents
+(an existing Recents card may need closing and reopening). Live pins survive Done.
 This remains a **prerelease candidate**, not a general stable release: stock
-Samsung Now Bar placement, Terminal scrollback privacy and full live-provider
-OMP integration remain unverified. The in-app candidate feed offers it; nothing
+Samsung Now Bar is not fixed; Terminal and full live-provider OMP verification
+remain limited. The in-app candidate feed offers it; nothing
 is installed without an explicit tap on the device. Obtainium users must enable
 prereleases. The older 0.2.0 failed Terminal navigation QA and is superseded.
 
