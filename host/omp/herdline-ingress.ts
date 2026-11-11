@@ -81,9 +81,10 @@ export interface IngressOptions {
 
 /**
  * The public hooks the endpoint needs, missing from [ctx]'s OMP: the queue
- * and dialog-depth hooks of Slice O, the dialog snapshot and submit of O2.
- * Collab is not among them: `ctx.isCollabSession()` (O2) is asked per
- * request, and a request is refused while it is missing ({@link collabRefusal}).
+ * and dialog-depth hooks of Slice O, the dialog snapshot and submit and the
+ * session flush of O2. Collab is not among them: `ctx.isCollabSession()`
+ * (O2) is asked per request, and a request is refused while it is missing
+ * ({@link collabRefusal}).
  */
 export function missingHooks(ctx: ExtensionContext): string[] {
 	const missing: string[] = [];
@@ -92,6 +93,7 @@ export function missingHooks(ctx: ExtensionContext): string[] {
 	if (typeof ctx.ui?.hasOpenDialog !== "function") missing.push("hasOpenDialog");
 	if (typeof ctx.ui?.getOpenDialogs !== "function") missing.push("getOpenDialogs");
 	if (typeof ctx.ui?.submitDialog !== "function") missing.push("submitDialog");
+	if (typeof ctx.sessionManager.flush !== "function") missing.push("flush");
 	return missing;
 }
 
@@ -279,14 +281,21 @@ export class Ingress {
 	#seen(set: Set<string>, requestId: string, late: "accepted" | "admitted"): void {
 		set.add(requestId);
 		for (const wake of this.#waiters) wake();
-		// A send that already answered uncertain becomes known here, for Check.
+		// A send that already answered uncertain becomes known here, for Check; held
+		// like a send so no second upgrade or send runs beside it.
 		const record = this.#records.get(requestId);
 		const published = this.#published;
-		if (record?.outcome === "pending" && !this.#inFlight.has(requestId) && published) {
-			void this.#store(published.ctx, { ...record, outcome: late, at: Date.now() }).catch(() => {});
-		}
+		if (record?.outcome !== "pending" || this.#inFlight.has(requestId) || !published) return;
+		this.#inFlight.add(requestId);
+		this.#store(published.ctx, { ...record, outcome: late, at: Date.now() })
+			.catch((error: unknown) => {
+				// Still pending, so still uncertain: a receipt is never upgraded without its record.
+				this.#pi.logger.warn("herdline-ingress: late outcome not recorded", { requestId, error: String(error) });
+			})
+			.finally(() => this.#inFlight.delete(requestId));
 	}
 
+	/** Request ids with a send or a late record in progress: one at a time per id. */
 	readonly #inFlight = new Set<string>();
 
 	async #send(published: Published, id: string, line: { [key: string]: unknown }): Promise<object> {
@@ -294,45 +303,61 @@ export class Ingress {
 		const refuse = (reason: Reason) => ({ id, outcome: "refused" as Outcome, reason, state: this.#state(ctx) });
 		const uncertain = () => ({ id, outcome: "uncertain" as Outcome, state: this.#state(ctx) });
 		const instance = line.instance as { [key: string]: unknown } | undefined;
-		if (
-			typeof instance !== "object" ||
-			instance === null ||
-			instance.sessionId !== published.sessionId ||
-			instance.sessionFile !== published.sessionFile ||
-			instance.pid !== this.#options.pid ||
-			instance.nonce !== published.nonce ||
-			ctx.sessionManager.getSessionId() !== published.sessionId
-		) {
-			return refuse("instance_changed");
-		}
+		// The exact session, path and nonce this endpoint was published for, still current.
+		const sameInstance = () =>
+			this.#published === published &&
+			typeof instance === "object" &&
+			instance !== null &&
+			instance.sessionId === published.sessionId &&
+			instance.sessionFile === published.sessionFile &&
+			instance.pid === this.#options.pid &&
+			instance.nonce === published.nonce &&
+			ctx.sessionManager.getSessionId() === published.sessionId &&
+			ctx.sessionManager.getSessionFile() === published.sessionFile;
+		if (!sameInstance()) return refuse("instance_changed");
 		const text = typeof line.text === "string" ? line.text : undefined;
 		const deliverAs = line.deliverAs;
 		if (text === undefined || (deliverAs !== "auto" && deliverAs !== "steer" && deliverAs !== "followUp")) {
 			return uncertain();
 		}
 		const digest = digestOf(text, line.attachments);
-		// A repeated id is answered from its record and never sent again.
+		// A repeated id is answered from its record and never sent again; one still in
+		// progress is not known yet, so it is uncertain.
 		const stored = this.#records.get(id);
 		if (stored) {
 			if (stored.digest !== digest || stored.outcome === "pending") return uncertain();
 			if (stored.outcome === "refused") return refuse(stored.reason ?? "dropped");
 			return { id, outcome: "replayed" as Outcome, state: this.#state(ctx) };
 		}
-		if (ctx.ui.hasOpenDialog()) return refuse("dialog_open");
-		const collab = collabRefusal(ctx);
-		if (collab) return refuse(collab);
-		const images = await this.#images(line.attachments);
-		if (typeof images === "string") return refuse(images);
-		if (text.trim() === "" && images.length === 0) return refuse("empty");
-
-		const record: RequestRecord = { id, digest, outcome: "pending", at: Date.now() };
+		if (this.#inFlight.has(id)) return uncertain();
+		// Reserved before the first await: a concurrent duplicate meets it above.
 		this.#inFlight.add(id);
 		try {
+			const gate = () => {
+				if (ctx.ui.hasOpenDialog()) return "dialog_open";
+				return collabRefusal(ctx);
+			};
+			const early = gate();
+			if (early) return refuse(early);
+			const images = await this.#images(line.attachments);
+			if (typeof images === "string") return refuse(images);
+			if (text.trim() === "" && images.length === 0) return refuse("empty");
+
+			const record: RequestRecord = { id, digest, outcome: "pending", at: Date.now() };
+			// Pending in memory at once: whatever the write does, this id is never sent again here.
+			this.#records.set(id, record);
 			try {
 				await this.#store(ctx, record);
 			} catch {
 				// The pending record may or may not be on disk: nothing is sent, and the id stays unknown.
 				return uncertain();
+			}
+			// A dialog, collab or another session may have come during the awaits above.
+			const late = sameInstance() ? gate() : "instance_changed";
+			if (late) {
+				// Nothing was sent, so it is refused even if its record cannot be written.
+				await this.#store(ctx, { ...record, outcome: "refused", reason: late, at: Date.now() }).catch(() => {});
+				return refuse(late);
 			}
 			const content: Content =
 				images.length === 0
@@ -358,6 +383,7 @@ export class Ingress {
 			try {
 				await this.#store(ctx, final);
 			} catch {
+				// The record stays pending: status says uncertain, never an unrecorded accepted.
 				return uncertain();
 			}
 			return result === "dropped" ? refuse("dropped") : { id, outcome: result as Outcome, state: this.#state(ctx) };
@@ -479,11 +505,17 @@ export class Ingress {
 		};
 	}
 
-	/** Appends [record] and waits until the session file holds it, before anything acts on it. */
+	/**
+	 * Appends [record] and fences it: `ensureOnDisk`, then `flush`, so the
+	 * session file holds it if OMP crashes (not if the machine loses power:
+	 * no fsync is claimed). Only then does it count here, so nothing is
+	 * answered or sent on a record that may not be there.
+	 */
 	async #store(ctx: ExtensionContext, record: RequestRecord): Promise<void> {
-		this.#records.set(record.id, record);
 		this.#pi.appendEntry(CUSTOM_TYPE, record);
 		await ctx.sessionManager.ensureOnDisk();
+		await ctx.sessionManager.flush();
+		this.#records.set(record.id, record);
 	}
 
 	/** The records this session already holds: a restart answers from them, never by sending again. */

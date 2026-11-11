@@ -552,12 +552,22 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   repeated id with a durable accepted/admitted record. A pending record or
   another digest under the same id is `uncertain`; a stored refusal
   repeats with its reason.
-- **Durability.** Every record is a `herdline-ingress` session entry:
-  `appendEntry`, then `await sessionManager.ensureOnDisk()` before the
-  pending record's `sendUserMessage` and before any answer. OMP has no
-  public flush, and `ensureOnDisk` returns early when it thinks the file is
-  current, so the last append's fsync is not proven. A restart rebuilds the
-  records from the session.
+- **Persistence fence.** Every record is a `herdline-ingress` session
+  entry: `appendEntry`, then `await sessionManager.ensureOnDisk()`, then
+  `await sessionManager.flush()` (O2; an OMP without it gets `flush` in the
+  sidecar's `unsupported`). The pending record is fenced before
+  `sendUserMessage`, and a final accepted/admitted before its answer. A
+  settled outcome counts in memory only once fenced (pending, which reads
+  as `uncertain`, is held at once), so a failed final write stays pending
+  and `status` says `uncertain`. This survives OMP crashing, not a
+  power loss: nothing is fsynced, and no such durability is claimed. A
+  restart rebuilds the records from the session.
+- **One send per id.** A request id is reserved before the first await; a
+  concurrent duplicate is `uncertain` (in progress), a later one is
+  answered from its record. After the attachment reads and the pending
+  fence, the exact session, path and nonce, `dialog_open` and collab are
+  checked again right before `sendUserMessage`; a late refusal sends
+  nothing.
 - **Dialogs.** The snapshot and the submit pass OMP's O2 types through
   verbatim; a submit answers only its exact `dialogId` (a form's answer is
   `{data: …}`), never a PTY Enter, never a default or auto-approval. A

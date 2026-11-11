@@ -31,6 +31,8 @@ function fakeOmp(options: { hooks?: boolean; entries?: Entry[] } = {}) {
 		collab: false as boolean | "throw" | "missing",
 		dialogs: [] as unknown[],
 		submits: [] as { dialogId: string; answer: unknown }[],
+		// Runs inside each flush, after it logged: a test can fail it or change the world meanwhile.
+		onFlush: (): void => {},
 		// What sendUserMessage does with a call; by default OMP queues it and reports the queue.
 		onSend: (call: Sent): Promise<void> => {
 			const entry = { text: String(call.content), requestId: call.options.requestId };
@@ -60,15 +62,16 @@ function fakeOmp(options: { hooks?: boolean; entries?: Entry[] } = {}) {
 		logger: { warn: () => {}, debug: () => {} },
 	};
 	const ui: { [key: string]: unknown } = { hasOpenDialog: () => omp.dialogOpen };
-	const ctx: { [key: string]: unknown } = {
-		sessionManager: {
-			getSessionId: () => "s1",
-			getSessionFile: () => "/home/u/.omp/sessions/s1.jsonl",
-			getEntries: () => entries,
-			ensureOnDisk: async () => {
-				log.push("disk");
-			},
+	const sessionManager: { [key: string]: unknown } = {
+		getSessionId: () => "s1",
+		getSessionFile: () => "/home/u/.omp/sessions/s1.jsonl",
+		getEntries: () => entries,
+		ensureOnDisk: async () => {
+			log.push("disk");
 		},
+	};
+	const ctx: { [key: string]: unknown } = {
+		sessionManager,
 		isIdle: () => omp.idle,
 		ui,
 	};
@@ -83,6 +86,10 @@ function fakeOmp(options: { hooks?: boolean; entries?: Entry[] } = {}) {
 		ui.submitDialog = (dialogId: string, answer: unknown) => {
 			omp.submits.push({ dialogId, answer });
 			return dialogId === "d1" ? "submitted" : "not_open";
+		};
+		sessionManager.flush = async () => {
+			log.push("flush");
+			omp.onFlush();
 		};
 	}
 	Object.defineProperty(ctx, "isCollabSession", {
@@ -197,7 +204,7 @@ describe("a send", () => {
 		const s = await setup();
 		const reply = await s.send();
 		expect(reply.outcome).toBe("accepted");
-		expect(s.log).toEqual(["append:pending", "disk", "send", "append:accepted", "disk"]);
+		expect(s.log).toEqual(["append:pending", "disk", "flush", "send", "append:accepted", "disk", "flush"]);
 		// A working agent takes auto as a steer, under the request's id.
 		expect(s.sent[0].options).toEqual({ deliverAs: "steer", requestId: ID });
 		expect(reply.state).toEqual({ idle: false, queued: [{ requestId: ID, text: "hello", queue: "steering" }] });
@@ -211,6 +218,35 @@ describe("a send", () => {
 		expect((await s.ingress.handle({ v: 1, id: ID, op: "status" }) as { outcome: string }).outcome).toBe(
 			"uncertain",
 		);
+	});
+
+	test("an accepted send whose record cannot be written stays uncertain, also when asked again", async () => {
+		const s = await setup();
+		s.omp.onFlush = () => {
+			if (s.log.includes("send")) throw new Error("disk full");
+		};
+		expect((await s.send()).outcome).toBe("uncertain");
+		const status = (await s.ingress.handle({ v: 1, id: ID, op: "status" })) as { outcome: string };
+		expect(status.outcome).toBe("uncertain");
+		expect((await s.send()).outcome).toBe("uncertain");
+		expect(s.sent).toHaveLength(1);
+	});
+
+	test("a dialog opening while the pending record is written refuses before the call", async () => {
+		const s = await setup();
+		s.omp.onFlush = () => {
+			s.omp.dialogOpen = true;
+		};
+		expect(await s.send()).toMatchObject({ outcome: "refused", reason: "dialog_open" });
+		expect(s.sent).toHaveLength(0);
+	});
+
+	test("a duplicate arriving while the first is in flight is never sent a second time", async () => {
+		const s = await setup();
+		const [first, second] = await Promise.all([s.send(), s.send()]);
+		expect([first.outcome, second.outcome].sort()).toEqual(["accepted", "uncertain"]);
+		expect((await s.send()).outcome).toBe("replayed");
+		expect(s.sent).toHaveLength(1);
 	});
 
 	test("to an idle agent starts the turn and is admitted at its message_end, not at the turn's end", async () => {
@@ -329,7 +365,13 @@ describe("publishing", () => {
 
 	test("an OMP without the hooks gets a sidecar saying so and no socket", async () => {
 		const s = await setup({ hooks: false });
-		expect(s.sidecar.unsupported).toEqual(["getQueuedMessages", "withdrawQueuedMessage", "getOpenDialogs", "submitDialog"]);
+		expect(s.sidecar.unsupported).toEqual([
+			"getQueuedMessages",
+			"withdrawQueuedMessage",
+			"getOpenDialogs",
+			"submitDialog",
+			"flush",
+		]);
 		expect(s.ingress.socket).toBeUndefined();
 	});
 
