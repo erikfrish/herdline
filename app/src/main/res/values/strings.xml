@@ -122,6 +122,7 @@
     <string name="status_idle">Idle</string>
     <string name="status_blocked_spoken">needs you</string>
     <string name="held_state">delivery not confirmed</string>
+    <string name="tab_changed">changed</string>
     <string name="connection_connected">Connected</string>
     <string name="connection_connecting">Connecting</string>
     <string name="connection_lost">Connection lost</string>
