@@ -409,7 +409,9 @@ impl Session {
         let Some(exec) = lock(&self.shared.exec).clone() else {
             // Nothing was sent: a send is refused, the rest have no answer.
             return match request.op {
-                ingress::Op::Send => Ok(json!({"outcome": "refused", "reason": "not_connected"}).to_string()),
+                ingress::Op::Send => {
+                    Ok(json!({"outcome": "refused", "reason": "not_connected"}).to_string())
+                }
                 _ => Err(Error::NotReady),
             };
         };

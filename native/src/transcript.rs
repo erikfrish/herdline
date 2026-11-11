@@ -22,7 +22,6 @@
 mod tests;
 
 use crate::{Error, Result, herdr_setup::plain_text, ssh::Exec};
-use russh::keys::HashAlg;
 use base64::{
     Engine,
     engine::{
@@ -31,6 +30,7 @@ use base64::{
     },
 };
 use herdr_client::{HERDR_CANDIDATES, shell_quote};
+use russh::keys::HashAlg;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -146,8 +146,13 @@ pub struct MediaAnswer {
 #[serde(untagged)]
 pub enum MediaOutcome {
     /// `mime` is read from the bytes, never taken from the transcript.
-    Image { mime: &'static str, data: String },
-    Refused { error: Refusal },
+    Image {
+        mime: &'static str,
+        data: String,
+    },
+    Refused {
+        error: Refusal,
+    },
 }
 
 /// Why an image is not shown. None of these is retried by the core.
@@ -460,7 +465,9 @@ fn media_outcome(
     }
     let (line, rest) = take(
         file.data,
-        file.size.saturating_sub(file.start).min(media.end - media.offset),
+        file.size
+            .saturating_sub(file.start)
+            .min(media.end - media.offset),
     )?;
     let (blob, rest) = match &media.blob {
         Some(_) => {
@@ -581,7 +588,21 @@ fn image_mime(bytes: &[u8]) -> Option<&'static str> {
         [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, ..] => Some("image/png"),
         [0xff, 0xd8, 0xff, ..] => Some("image/jpeg"),
         [b'G', b'I', b'F', b'8', b'7' | b'9', b'a', ..] => Some("image/gif"),
-        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("image/webp"),
+        [
+            b'R',
+            b'I',
+            b'F',
+            b'F',
+            _,
+            _,
+            _,
+            _,
+            b'W',
+            b'E',
+            b'B',
+            b'P',
+            ..,
+        ] => Some("image/webp"),
         _ => None,
     }
 }
@@ -1109,17 +1130,41 @@ fn tool_result(message: &Value) -> Block {
         truncated,
         exit_code: message["details"]["exitCode"].as_i64(),
         answers: if message["toolName"] == "ask" {
-            message["details"]["answers"].as_array().map(|answers| {
-                answers.iter().take(128).filter_map(|answer| Some(FormAnswer {
-                    name: cap(answer["name"].as_str().unwrap_or_default(), 256).0,
-                    question: cap(answer["question"].as_str()?, TEXT_LIMIT).0,
-                    answer: cap(answer["answer"].as_str()?, TEXT_LIMIT).0,
-                    options: answer["options"].as_array().map(|options| options.iter().take(256).filter_map(|option| Some(FormAnswerOption {
-                        label: cap(option["label"].as_str()?, TEXT_LIMIT).0,
-                        selected: option["selected"].as_bool()?,
-                    })).collect()).unwrap_or_default(),
-                })).collect()
-            }).unwrap_or_default()
+            message["details"]["answers"]
+                .as_array()
+                .map(|answers| {
+                    answers
+                        .iter()
+                        .take(128)
+                        .filter_map(|answer| {
+                            Some(FormAnswer {
+                                name: cap(answer["name"].as_str().unwrap_or_default(), 256).0,
+                                question: cap(answer["question"].as_str()?, TEXT_LIMIT).0,
+                                answer: cap(answer["answer"].as_str()?, TEXT_LIMIT).0,
+                                options: answer["options"]
+                                    .as_array()
+                                    .map(|options| {
+                                        options
+                                            .iter()
+                                            .take(256)
+                                            .filter_map(|option| {
+                                                Some(FormAnswerOption {
+                                                    label: cap(
+                                                        option["label"].as_str()?,
+                                                        TEXT_LIMIT,
+                                                    )
+                                                    .0,
+                                                    selected: option["selected"].as_bool()?,
+                                                })
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
         } else {
             Vec::new()
         },

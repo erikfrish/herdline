@@ -40,7 +40,10 @@ jobs:
 
       - name: Install Android build packages
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37" "build-tools;36.0.0" "ndk;$NDK_VERSION" > /dev/null
+          # sdkmanager prompts for license acceptance on stdin; the feeder can
+          # die of SIGPIPE, so drop pipefail and keep sdkmanager's exit code.
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0" "build-tools;36.0.0" "ndk;$NDK_VERSION" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       # rust-toolchain.toml pins the version, components, and Android targets.

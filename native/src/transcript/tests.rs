@@ -405,7 +405,10 @@ impl Host {
             path: &expect.path,
             offset: media.offset,
             len: media.end - media.offset,
-            blob: media.blob.as_deref().map(|hash| (hash, expect.pid.unwrap())),
+            blob: media
+                .blob
+                .as_deref()
+                .map(|hash| (hash, expect.pid.unwrap())),
         };
         let (status, out) = self.run(Some(fetch));
         media_outcome(status, &out, expect, media).unwrap()
@@ -500,9 +503,15 @@ fn a_blob_is_served_only_as_its_entry_names_it_and_only_whole() {
         ..at(&parsed, 0, 1, Some(&names[0]))
     };
     assert_eq!(host.media(&identity, &other_entry), refused(Refusal::Moved));
-    assert_eq!(host.media(&identity, &at(&parsed, 0, 0, Some(&names[0]))), refused(Refusal::Moved));
+    assert_eq!(
+        host.media(&identity, &at(&parsed, 0, 0, Some(&names[0]))),
+        refused(Refusal::Moved)
+    );
     // A blob reference is not read as inline data.
-    assert_eq!(host.media(&identity, &at(&parsed, 0, 1, None)), refused(Refusal::Moved));
+    assert_eq!(
+        host.media(&identity, &at(&parsed, 0, 1, None)),
+        refused(Refusal::Moved)
+    );
 }
 
 #[test]
@@ -513,7 +522,8 @@ fn the_blob_store_is_the_one_the_omp_process_uses() {
     let media = at(&parsed, 0, 1, Some(&hash));
 
     // A profile in its arguments: that profile's store, not the default one.
-    let (host, identity, _omp) = Host::with_session(&text, &["--profile", "qa"], &[("OMP_PROFILE", "other")]);
+    let (host, identity, _omp) =
+        Host::with_session(&text, &["--profile", "qa"], &[("OMP_PROFILE", "other")]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(host.media(&identity, &media), refused(Refusal::Missing));
     fs::write(host.store(".omp/profiles/qa/agent/blobs").join(&hash), PNG).unwrap();
@@ -526,7 +536,10 @@ fn the_blob_store_is_the_one_the_omp_process_uses() {
     // A layout it cannot pin down is refused, not read from the default store.
     let (host, identity, _omp) = Host::with_session(&text, &[], &[("PI_CONFIG_DIR", ".elsewhere")]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
-    assert_eq!(host.media(&identity, &media), refused(Refusal::UnknownStore));
+    assert_eq!(
+        host.media(&identity, &media),
+        refused(Refusal::UnknownStore)
+    );
 }
 
 #[test]
@@ -597,7 +610,13 @@ fn inline_images_are_read_from_their_own_line_only() {
             }
         })
     );
-    assert_eq!(parsed[0].blocks[1], Block::Image(Image { part: 1, source: Source::Unreadable }));
+    assert_eq!(
+        parsed[0].blocks[1],
+        Block::Image(Image {
+            part: 1,
+            source: Source::Unreadable
+        })
+    );
     // The MIME comes from the bytes, not the transcript's claim.
     assert_eq!(host.media(&identity, &at(1, 1)), png());
     assert_eq!(host.media(&identity, &at(1, 0)), refused(Refusal::Moved));
@@ -606,8 +625,14 @@ fn inline_images_are_read_from_their_own_line_only() {
         ..at(1, 1)
     };
     assert_eq!(host.media(&identity, &wrong_id), refused(Refusal::Moved));
-    assert_eq!(host.media(&identity, &at(2, 1)), refused(Refusal::Unsupported));
-    assert_eq!(host.media(&identity, &at(3, 1)), refused(Refusal::Unsupported));
+    assert_eq!(
+        host.media(&identity, &at(2, 1)),
+        refused(Refusal::Unsupported)
+    );
+    assert_eq!(
+        host.media(&identity, &at(3, 1)),
+        refused(Refusal::Unsupported)
+    );
 
     // A rewritten file no longer holds the entry where it was.
     fs::write(&identity.path, format!("{{}}\n{text}")).unwrap();
@@ -640,16 +665,42 @@ fn entries_record_their_end_and_how_a_user_message_was_steered() {
 fn recorded_form_answers_keep_variants_and_timeout_without_guessing() {
     let line = r#"{"type":"message","id":"r","message":{"role":"toolResult","toolCallId":"ask-1","toolName":"ask","content":[],"details":{"timedOut":true,"answers":[{"name":"db","question":"Database?","answer":"Redis","options":[{"label":"SQLite","selected":false},{"label":"Redis","selected":true}]},{"name":"bad","answer":"missing question"}]}}}"#;
     let parsed = entries(format!("{line}\n").as_bytes(), 0);
-    let Block::ToolResult { answers, timed_out, .. } = &parsed[0].blocks[0] else { panic!("not a result"); };
+    let Block::ToolResult {
+        answers, timed_out, ..
+    } = &parsed[0].blocks[0]
+    else {
+        panic!("not a result");
+    };
     assert!(*timed_out);
     assert_eq!(answers.len(), 1);
     assert_eq!(answers[0].answer, "Redis");
-    assert_eq!(answers[0].options, vec![
-        FormAnswerOption { label: "SQLite".into(), selected: false },
-        FormAnswerOption { label: "Redis".into(), selected: true },
-    ]);
-    let other = entries(format!("{}\n", line.replace("\"toolName\":\"ask\"", "\"toolName\":\"bash\"")).as_bytes(), 0);
-    let Block::ToolResult { answers, timed_out, .. } = &other[0].blocks[0] else { panic!("not a result"); };
+    assert_eq!(
+        answers[0].options,
+        vec![
+            FormAnswerOption {
+                label: "SQLite".into(),
+                selected: false
+            },
+            FormAnswerOption {
+                label: "Redis".into(),
+                selected: true
+            },
+        ]
+    );
+    let other = entries(
+        format!(
+            "{}\n",
+            line.replace("\"toolName\":\"ask\"", "\"toolName\":\"bash\"")
+        )
+        .as_bytes(),
+        0,
+    );
+    let Block::ToolResult {
+        answers, timed_out, ..
+    } = &other[0].blocks[0]
+    else {
+        panic!("not a result");
+    };
     assert!(answers.is_empty());
     assert!(!timed_out);
 }

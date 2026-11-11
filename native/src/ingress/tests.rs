@@ -56,7 +56,10 @@ impl Host {
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
         let host = Self { home };
-        host.environ(&format!("HOME=/home/u\0XDG_RUNTIME_DIR={}\0", host.runtime().display()));
+        host.environ(&format!(
+            "HOME=/home/u\0XDG_RUNTIME_DIR={}\0",
+            host.runtime().display()
+        ));
         fs::create_dir_all(host.runtime()).unwrap();
         host
     }
@@ -100,13 +103,21 @@ impl Host {
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        let status = output.status.code().and_then(|code| u32::try_from(code).ok());
+        let status = output
+            .status
+            .code()
+            .and_then(|code| u32::try_from(code).ok());
         (status, output.stdout)
     }
 
     fn discover(&self, expected: &Identity) -> Discovery {
         let proc = self.home.path().join("proc");
-        let (status, bytes) = self.sh(&discovery_script("lab", "w1:p1", PID, proc.to_str().unwrap()));
+        let (status, bytes) = self.sh(&discovery_script(
+            "lab",
+            "w1:p1",
+            PID,
+            proc.to_str().unwrap(),
+        ));
         parse_discovery(status, &bytes, expected)
     }
 }
@@ -170,7 +181,10 @@ fn a_private_sidecar_for_this_instance_names_its_socket() {
         panic!("endpoint not found");
     };
     assert_eq!(endpoint.sidecar, path.to_str().unwrap());
-    assert_eq!(endpoint.socket, host.dir().join(format!("s1-{PID}.sock")).to_str().unwrap());
+    assert_eq!(
+        endpoint.socket,
+        host.dir().join(format!("s1-{PID}.sock")).to_str().unwrap()
+    );
     assert_eq!(endpoint.nonce, NONCE);
     assert_eq!(endpoint.session_id, "s1");
 }
@@ -181,7 +195,10 @@ fn another_instance_in_the_pane_is_refused_before_any_endpoint_is_used() {
     host.publish("s1", &sidecar_json("s1"));
     let mut draft_for = expected();
     draft_for.terminal_id = "term_0".into();
-    assert_eq!(host.discover(&draft_for), Discovery::Refused(Refusal::AgentRestarted));
+    assert_eq!(
+        host.discover(&draft_for),
+        Discovery::Refused(Refusal::AgentRestarted)
+    );
 }
 
 #[test]
@@ -192,14 +209,20 @@ fn a_sidecar_from_another_version_session_or_process_is_unusable() {
 
     let mut switched = sidecar_json("s1");
     switched["sessionFile"] = json!("/home/u/.omp/agent/sessions/-work/t.jsonl");
-    assert_eq!(sidecar_at("s1", &switched), Discovery::Unusable("session_file"));
+    assert_eq!(
+        sidecar_at("s1", &switched),
+        Discovery::Unusable("session_file")
+    );
 
     let mut other = sidecar_json("s1");
     other["pid"] = json!(43);
     assert_eq!(sidecar_at("s1", &other), Discovery::Unusable("sidecar"));
 
     // The file's name and the session it claims must agree.
-    assert_eq!(sidecar_at("s2", &sidecar_json("s1")), Discovery::Unusable("sidecar"));
+    assert_eq!(
+        sidecar_at("s2", &sidecar_json("s1")),
+        Discovery::Unusable("sidecar")
+    );
 }
 
 #[test]
@@ -223,7 +246,10 @@ fn sidecar_at(name: &str, value: &Value) -> Discovery {
 
 /// An endpoint in `host` with a real socket served by `serve`, which gets
 /// the one line the client sent.
-fn served(host: &Host, serve: impl FnOnce(String, &mut std::os::unix::net::UnixStream) + Send + 'static) -> (Endpoint, thread::JoinHandle<()>) {
+fn served(
+    host: &Host,
+    serve: impl FnOnce(String, &mut std::os::unix::net::UnixStream) + Send + 'static,
+) -> (Endpoint, thread::JoinHandle<()>) {
     let sidecar = host.publish("s1", &sidecar_json("s1"));
     let socket = host.dir().join(format!("s1-{PID}.sock"));
     let listener = UnixListener::bind(&socket).unwrap();
@@ -231,7 +257,9 @@ fn served(host: &Host, serve: impl FnOnce(String, &mut std::os::unix::net::UnixS
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let mut line = String::new();
-        BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
         serve(line, &mut stream);
     });
     (endpoint(&sidecar, &socket), server)
@@ -263,8 +291,16 @@ fn the_answer_is_the_line_naming_the_request_after_any_pushes() {
         // A push and another request's answer come first; the client keeps
         // its side open until its own answer arrives.
         writeln!(stream, r#"{{"queue":[],"liveSteered":[]}}"#).unwrap();
-        writeln!(stream, r#"{{"id":"11111111-2222-3333-4444-555555555555","outcome":"accepted"}}"#).unwrap();
-        writeln!(stream, r#"{{"id":"{ID}","outcome":"accepted","state":{{"idle":false,"queued":[]}}}}"#).unwrap();
+        writeln!(
+            stream,
+            r#"{{"id":"11111111-2222-3333-4444-555555555555","outcome":"accepted"}}"#
+        )
+        .unwrap();
+        writeln!(
+            stream,
+            r#"{{"id":"{ID}","outcome":"accepted","state":{{"idle":false,"queued":[]}}}}"#
+        )
+        .unwrap();
     });
     let line = json!({"v": 1, "id": ID, "op": "status"}).to_string();
     let answer = exchange(&host, &endpoint, &line);
@@ -309,7 +345,10 @@ fn a_socket_nobody_listens_on_sends_nothing() {
     // A crashed extension leaves its socket file behind.
     drop(UnixListener::bind(&socket).unwrap());
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o600)).unwrap();
-    assert_eq!(exchange(&host, &endpoint(&sidecar, &socket), "{}"), Exchange::Unreachable);
+    assert_eq!(
+        exchange(&host, &endpoint(&sidecar, &socket), "{}"),
+        Exchange::Unreachable
+    );
 }
 
 #[test]
@@ -320,9 +359,18 @@ fn only_a_refusal_with_its_reason_says_nothing_was_queued() {
     let refused = reply(json!({"id": ID, "outcome": "refused", "reason": "dialog_open"}));
     assert_eq!(refused["outcome"], "refused");
     assert_eq!(refused["reason"], "dialog_open");
-    assert_eq!(reply(json!({"id": ID, "outcome": "refused"}))["outcome"], "uncertain");
-    assert_eq!(reply(json!({"id": ID, "outcome": "queued?"}))["outcome"], "uncertain");
-    assert_eq!(reply(json!({"id": ID, "outcome": "replayed"}))["outcome"], "replayed");
+    assert_eq!(
+        reply(json!({"id": ID, "outcome": "refused"}))["outcome"],
+        "uncertain"
+    );
+    assert_eq!(
+        reply(json!({"id": ID, "outcome": "queued?"}))["outcome"],
+        "uncertain"
+    );
+    assert_eq!(
+        reply(json!({"id": ID, "outcome": "replayed"}))["outcome"],
+        "replayed"
+    );
     let admitted = reply(json!({"id": ID, "outcome": "admitted"}));
     assert_eq!(admitted["outcome"], "admitted");
     assert!(admitted.get("reason").is_none());
@@ -336,7 +384,8 @@ fn the_queue_keeps_only_entries_of_the_documented_shape() {
         {"requestId": ID, "text": "b", "queue": "elsewhere"},
         {"text": 3, "queue": "steering"},
     ]}});
-    let reply: Value = serde_json::from_str(&answer_reply(Op::State, ID, None, &answer).unwrap()).unwrap();
+    let reply: Value =
+        serde_json::from_str(&answer_reply(Op::State, ID, None, &answer).unwrap()).unwrap();
     assert_eq!(
         reply,
         json!({"endpoint": "live", "state": {"idle": false, "queued": [
@@ -349,9 +398,16 @@ fn the_queue_keeps_only_entries_of_the_documented_shape() {
 
 #[test]
 fn a_withdraw_answer_must_say_whether_it_withdrew() {
-    let reply: Value =
-        serde_json::from_str(&answer_reply(Op::Withdraw, ID, None, &json!({"id": ID, "withdrawn": true})).unwrap())
-            .unwrap();
+    let reply: Value = serde_json::from_str(
+        &answer_reply(
+            Op::Withdraw,
+            ID,
+            None,
+            &json!({"id": ID, "withdrawn": true}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(reply["withdrawn"], true);
     assert!(answer_reply(Op::Withdraw, ID, None, &json!({"id": ID})).is_none());
 }
@@ -359,21 +415,33 @@ fn a_withdraw_answer_must_say_whether_it_withdrew() {
 #[test]
 fn the_dialog_snapshot_passes_through_as_omp_gave_it() {
     let dialogs = json!([{"dialogId": "d1", "kind": "form", "source": "ask", "form": {"fields": []}, "createdAt": 5}]);
-    let reply: Value =
-        serde_json::from_str(&answer_reply(Op::Dialogs, ID, None, &json!({"id": ID, "dialogs": dialogs})).unwrap())
-            .unwrap();
+    let reply: Value = serde_json::from_str(
+        &answer_reply(
+            Op::Dialogs,
+            ID,
+            None,
+            &json!({"id": ID, "dialogs": dialogs}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(reply, json!({"endpoint": "live", "dialogs": dialogs}));
     assert!(answer_reply(Op::Dialogs, ID, None, &json!({"id": ID})).is_none());
 }
 
 #[test]
 fn a_dialog_submit_counts_only_for_the_dialog_it_named() {
-    let answer = |dialog: &str, result: &str| json!({"id": ID, "dialogId": dialog, "result": result});
+    let answer =
+        |dialog: &str, result: &str| json!({"id": ID, "dialogId": dialog, "result": result});
     for result in ["submitted", "not_open", "invalid", "kind_mismatch"] {
-        let reply: Value =
-            serde_json::from_str(&answer_reply(Op::DialogSubmit, ID, Some("d1"), &answer("d1", result)).unwrap())
-                .unwrap();
-        assert_eq!(reply, json!({"endpoint": "live", "dialogId": "d1", "result": result}));
+        let reply: Value = serde_json::from_str(
+            &answer_reply(Op::DialogSubmit, ID, Some("d1"), &answer("d1", result)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            reply,
+            json!({"endpoint": "live", "dialogId": "d1", "result": result})
+        );
     }
     // Another dialog's answer, or a result OMP does not give, says nothing about this submit.
     assert!(answer_reply(Op::DialogSubmit, ID, Some("d1"), &answer("d2", "submitted")).is_none());
@@ -418,7 +486,10 @@ fn images_go_as_images_and_files_as_mentions() {
     let line: Value = serde_json::from_str(&send_line(
         &request(
             "look",
-            vec![attachment(Kind::Image, "a.jpg"), attachment(Kind::File, "notes.txt")],
+            vec![
+                attachment(Kind::Image, "a.jpg"),
+                attachment(Kind::File, "notes.txt"),
+            ],
             Some(DeliverAs::Steer),
         ),
         &host_endpoint,
