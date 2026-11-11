@@ -14,9 +14,9 @@
     </plurals>
     <string name="chat_agent_label">omp</string>
     <string name="chat_thinking">Thinking</string>
-    <plurals name="chat_thinking_lines">
-        <item quantity="one">Thinking · %d line</item>
-        <item quantity="other">Thinking · %d lines</item>
+    <plurals name="chat_thought_lines">
+        <item quantity="one">Thought · %d line</item>
+        <item quantity="other">Thought · %d lines</item>
     </plurals>
     <string name="chat_compacted">Context compacted</string>
     <string name="chat_tool_failed">failed</string>
@@ -76,4 +76,18 @@
     <string name="focus_reading_shared">Show %1$s (moves the desktop)</string>
     <string name="chat_pane_closed">%1$s has closed. Your draft is kept.</string>
     <string name="reason_target_unchecked">Not sent: Send types into %1$s\'s terminal, and that terminal can\'t be checked from here right now. Your text is kept.</string>
+    <plurals name="chat_fold_tools">
+        <item quantity="one">Worked · %d tool call</item>
+        <item quantity="other">Worked · %d tool calls</item>
+    </plurals>
+    <plurals name="chat_fold_tools_timed">
+        <item quantity="one">Worked %1$d s · %2$d tool call</item>
+        <item quantity="other">Worked %1$d s · %2$d tool calls</item>
+    </plurals>
+    <plurals name="chat_fold_thoughts">
+        <item quantity="one">%d thought</item>
+        <item quantity="other">%d thoughts</item>
+    </plurals>
+    <string name="chat_state_collapsed">collapsed</string>
+    <string name="chat_state_expanded">expanded</string>
 </resources>

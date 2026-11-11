@@ -111,6 +111,93 @@ fun runStart(group: ChatLine.ToolGroup, open: Boolean, held: Boolean): Int? = wh
     else -> null
 }
 
+/**
+ * The completed runs among these lines, each with the answer that ended it:
+ * a group no step of which still runs, followed in its turn by a reply.
+ * Only these draw as the "Worked" fold; any other group stays a run.
+ */
+fun List<ChatLine>.completedRuns(): Map<String, ChatItem.Assistant> {
+    val runs = HashMap<String, ChatItem.Assistant>()
+    for (at in 0 until size - 1) {
+        val group = this[at] as? ChatLine.ToolGroup ?: continue
+        val next = this[at + 1]
+        val answer = (next as? ChatLine.Single)?.item as? ChatItem.Assistant
+        if (!group.live && answer != null && next.gap != Gap.Turn) runs[group.key] = answer
+    }
+    return runs
+}
+
+/** What a completed run's fold says: counts, the distinct tool names in order, and how long, when known. */
+data class RunFold(val tools: Int, val thoughts: Int, val failed: Int, val denied: Int, val names: List<String>, val seconds: Long?)
+
+fun runFold(group: ChatLine.ToolGroup, answer: ChatItem.Assistant): RunFold = RunFold(
+    tools = group.tools.size,
+    thoughts = group.steps.count { it is ChatItem.Thinking },
+    failed = group.failed,
+    denied = group.denied,
+    names = group.tools.map { it.name }.filter { it.isNotBlank() }.distinct(),
+    seconds = workedSeconds(group.steps.first().timestamp, answer.timestamp),
+)
+
+/**
+ * Whole seconds from the run's first step to its answer, both as the
+ * transcript recorded them; null when either is missing, the answer is
+ * earlier, or under a second passed. Nothing is estimated.
+ */
+fun workedSeconds(start: Long?, end: Long?): Long? {
+    if (start == null || end == null || end < start) return null
+    return ((end - start) / 1000).takeIf { it >= 1 }
+}
+
+/**
+ * The held runs (`"held:" + key`, seen live) that fold now: only when a new
+ * user turn, [newestUser] after [seenUser], arrives while the reader
+ * [follow]s the end, and only the completed ones above that turn. A first
+ * load (no [seenUser] yet) releases nothing, and a reader who scrolled up
+ * keeps every run as it is. Only the held mark goes: a run the reader
+ * opened stays open.
+ */
+fun releasedRuns(lines: List<ChatLine>, held: Set<String>, follow: Boolean, seenUser: String?, newestUser: String?): Set<String> {
+    if (!follow || seenUser == null || newestUser == null || newestUser == seenUser) return emptySet()
+    val turn = lines.indexOfFirst { it is ChatLine.Single && it.key == newestUser }
+    if (turn < 0) return emptySet()
+    val completed = lines.subList(0, turn).completedRuns().keys
+    return held.filterTo(HashSet()) { it in completed }
+}
+
+/** An http(s) address in tool output, ending before whitespace, quotes and closing punctuation. */
+private val OUTPUT_LINK = Regex("""https?://[^\s<>"'`]+""", RegexOption.IGNORE_CASE)
+
+/** Where [text] has openable links, each without the trailing `.,;:!?)]}` a sentence puts after it. */
+fun outputLinks(text: String): List<IntRange> = OUTPUT_LINK.findAll(text).mapNotNull { match ->
+    var end = match.range.last
+    while (end > match.range.first && text[end] in ".,;:!?)]}") end--
+    // Something must be left after the scheme's "://".
+    (match.range.first..end).takeIf { end > text.indexOf("://", match.range.first) + 2 }
+}.toList()
+
+/**
+ * The link a tap at ([x], [y]) opens when it misses every link's own box:
+ * the nearest one whose line box, grown to [reach] tall about its centre,
+ * holds the tap within the link's width. [boxes] are the links' line boxes
+ * as (left, top, right, bottom); null when no box is in reach.
+ */
+fun nearLink(x: Float, y: Float, boxes: List<FloatArray>, reach: Float): Int? {
+    var best: Int? = null
+    var distance = Float.MAX_VALUE
+    boxes.forEachIndexed { index, (left, top, right, bottom) ->
+        if (x < left || x > right) return@forEachIndexed
+        val centre = (top + bottom) / 2
+        val half = maxOf(reach, bottom - top) / 2
+        val off = kotlin.math.abs(y - centre)
+        if (off <= half && off < distance) {
+            best = index
+            distance = off
+        }
+    }
+    return best
+}
+
 /** The line that shows the item keyed [key], itself or inside its group. */
 fun List<ChatLine>.indexOfItem(key: String): Int = indexOfFirst { line ->
     when (line) {

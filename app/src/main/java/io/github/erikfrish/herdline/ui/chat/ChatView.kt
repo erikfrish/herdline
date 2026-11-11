@@ -5,6 +5,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.horizontalScroll
@@ -64,21 +67,34 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -229,6 +245,8 @@ private fun ChatContent(
     val asking = if (status == AgentStatus.Blocked) pendingTool(items) else null
     // The call the agent is blocked on stands alone, so the waiting row below reads it in place.
     val lines = remember(items, asking) { chatLines(items, asking) }
+    // Runs a reply ended, drawn as the "Worked" fold, each with that reply.
+    val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
     val unavailable = shown == null && problem != null
     val report by rememberUpdatedState(onUnavailable)
@@ -262,6 +280,15 @@ private fun ChatContent(
     // The newest item the reader has seen at the bottom; anything after it is "new" for the Latest pill.
     var seen by kept::seen
     val band = with(LocalDensity.current) { FollowBand.roundToPx() }
+    // A run held open because it was seen live folds when the next user turn arrives, only while
+    // the reader follows the end (releasedRuns): nothing above a reader who scrolled up changes.
+    val newestUser = remember(items) { items.lastOrNull { it is ChatItem.User }?.key }
+    var seenUser by remember { mutableStateOf(newestUser) }
+    LaunchedEffect(newestUser) {
+        val held = expanded.keys.filter { it.startsWith("held:") }.mapTo(HashSet()) { it.removePrefix("held:") }
+        releasedRuns(lines, held, follow, seenUser, newestUser).forEach { expanded.remove("held:$it") }
+        seenUser = newestUser
+    }
 
     // To the very end, also when the last item is taller than the list. A scroll of the reader's
     // own outranks it and wins; then their scroll decides.
@@ -387,7 +414,7 @@ private fun ChatContent(
                                 }
                                 is ChatLine.ToolGroup -> {
                                     if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
-                                    ToolGroupRow(line, colors, expanded, dense)
+                                    ToolGroupRow(line, colors, expanded, runs[line.key], dense)
                                 }
                             }
                         }
@@ -523,7 +550,7 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         }
         is ChatItem.Thinking -> {
             val count = remember(item.text) { item.text.trimEnd().lines().size }
-            Aside(pluralStringResource(R.plurals.chat_thinking_lines, count, count), null, colors, open, toggle, italic = true) {
+            Aside(pluralStringResource(R.plurals.chat_thought_lines, count, count), null, colors, open, toggle, italic = true) {
                 Text(item.text, style = ChatType.aside.copy(color = colors.muted), modifier = Modifier.widthIn(max = ProseMaxWidth))
             }
         }
@@ -609,27 +636,32 @@ private fun ToolGlyph(state: ToolState, colors: ChatColors) {
 /**
  * A tool's state at the end of its head row, drawn like a small outlined
  * M3 AssistChip but not a target of its own: the row is the target, and a
- * full chip's 48 dp would make every collapsed row taller. [spoken] is what
- * TalkBack reads; null when the glyph already said it.
+ * full chip's 48 dp would make every collapsed row taller. TalkBack hears
+ * the state from the head's one node.
  */
 @Composable
-private fun StatusChip(label: String, color: Color, spoken: String?) {
+private fun StatusChip(label: String, color: Color) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = Color.Transparent,
         border = BorderStroke(1.dp, color),
-        modifier = Modifier.clearAndSetSemantics { if (spoken != null) contentDescription = spoken },
+        modifier = Modifier.clearAndSetSemantics {},
     ) {
         Text(label, style = ChatType.meta.copy(color = color), maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp))
     }
 }
 
+/** Where a tool's output starts: under its name, past the 16 dp glyph and the 8 dp gap. */
+private val ToolBodyIndent = 24.dp
+
 /**
- * A tool as one 36 dp row: status, name, what it worked on, its state chip
- * (failed or `exit N`, denied), chevron. Open, the last [TOOL_TAIL_LINES]
- * lines of the result show on a container surface, with the arguments
- * behind their own disclosure. A failed tool starts open; a denied one,
- * which did not run, does not.
+ * A tool as one quiet 48 dp head, with no card around it: status glyph,
+ * name, what it worked on, its state chip (failed or `exit N`, denied) and
+ * a chevron; TalkBack reads the head as one node that expands and
+ * collapses. Open, the last [TOOL_TAIL_LINES] lines of the result sit in
+ * one frame under the name, with the arguments behind their own
+ * disclosure. The glyph and the chip carry the state, never a border. A
+ * failed tool starts open; a denied one, which did not run, does not.
  */
 @Composable
 private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMap<String, Boolean>) {
@@ -637,86 +669,144 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
     val result = item.result
     val exit = remember(result) { result?.let(::exitCode)?.takeIf { it != 0 } }
     val open = expanded[item.key] ?: (state == ToolState.Failed)
-    val edge = when (state) {
-        ToolState.Failed -> colors.err
-        ToolState.Denied -> colors.blocked
-        else -> colors.border
-    }
-    val shape = MaterialTheme.shapes.medium
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surf)
-            .border(1.dp, edge, shape)
-            .animateContentSize()
-            .testTag("chat:tool"),
-    ) {
+    val toggle = { expanded[item.key] = !open }
+    val summary = item.summary()
+    val spoken = listOfNotNull(
+        item.name,
+        summary.takeIf { it.isNotBlank() },
+        stringResource(
+            when (state) {
+                ToolState.Running -> R.string.chat_tool_running
+                ToolState.Failed -> R.string.chat_tool_failed
+                ToolState.Denied -> R.string.chat_tool_denied
+                ToolState.Done -> R.string.chat_tool_done
+            },
+        ),
+        exit?.takeIf { state == ToolState.Failed }?.let { stringResource(R.string.chat_tool_exit_spoken, it) },
+    ).joinToString(", ")
+    val stateText = stringResource(if (open) R.string.chat_state_expanded else R.string.chat_state_collapsed)
+    Column(Modifier.fillMaxWidth().animateContentSize().testTag("chat:tool")) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 36.dp)
-                .clickable(role = Role.Button) { expanded[item.key] = !open }
-                .padding(horizontal = 10.dp),
+                .heightIn(min = 48.dp)
+                .clickable(role = Role.Button, onClick = toggle)
+                .clearAndSetSemantics {
+                    contentDescription = spoken
+                    stateDescription = stateText
+                    if (open) collapse { toggle(); true } else expand { toggle(); true }
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ToolGlyph(state, colors)
             Text(item.name, style = ChatType.toolName.copy(color = colors.text), maxLines = 1)
             Text(
-                item.summary(),
+                summary,
                 style = ChatType.toolArg.copy(color = colors.muted),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             when {
-                state == ToolState.Failed && exit != null ->
-                    StatusChip(stringResource(R.string.chat_tool_exit, exit), colors.err, stringResource(R.string.chat_tool_exit_spoken, exit))
-                state == ToolState.Failed -> StatusChip(stringResource(R.string.chat_tool_failed), colors.err, null)
-                state == ToolState.Denied -> StatusChip(stringResource(R.string.chat_tool_denied), colors.blocked, null)
+                state == ToolState.Failed && exit != null -> StatusChip(stringResource(R.string.chat_tool_exit, exit), colors.err)
+                state == ToolState.Failed -> StatusChip(stringResource(R.string.chat_tool_failed), colors.err)
+                state == ToolState.Denied -> StatusChip(stringResource(R.string.chat_tool_denied), colors.blocked)
                 else -> Unit
             }
-            Icon(
-                if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                stringResource(if (open) R.string.chat_hide_output else R.string.chat_show_output),
-                Modifier.size(16.dp),
-                tint = colors.dim,
-            )
+            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.dim)
         }
         if (open) {
-            Barred(if (state == ToolState.Done || state == ToolState.Running) colors.rule else edge, 2.dp, Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (result != null && result.text.isNotBlank()) {
-                        val all = expanded["more:" + item.key] == true
-                        val (tail, earlier) = remember(result.text) { outputTail(result.text, TOOL_TAIL_LINES) }
-                        Surface(color = colors.codeChip, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                if (all) result.text.trimEnd('\n') else tail,
-                                style = ChatType.toolOutput.copy(color = colors.text),
-                                softWrap = false,
-                                modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-                            )
-                        }
-                        if (!all && earlier > 0) {
-                            val total = earlier + TOOL_TAIL_LINES
-                            Disclosure(pluralStringResource(R.plurals.chat_show_all_lines, total, total), colors) { expanded["more:" + item.key] = true }
-                        }
+            Column(Modifier.padding(start = ToolBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (result != null && result.text.isNotBlank()) {
+                    val all = expanded["more:" + item.key] == true
+                    val (tail, earlier) = remember(result.text) { outputTail(result.text, TOOL_TAIL_LINES) }
+                    ToolOutput(if (all) result.text.trimEnd('\n') else tail, colors)
+                    if (!all && earlier > 0) {
+                        val total = earlier + TOOL_TAIL_LINES
+                        Disclosure(pluralStringResource(R.plurals.chat_show_all_lines, total, total), colors) { expanded["more:" + item.key] = true }
                     }
-                    if (result != null && result.images > 0) {
-                        Text(stringResource(R.string.chat_tool_images, result.images), style = ChatType.meta.copy(color = colors.muted))
-                    }
-                    item.call?.takeIf { it.args.isNotBlank() }?.let { call ->
-                        val args = expanded["args:" + item.key] == true
-                        Disclosure(stringResource(R.string.chat_tool_arguments), colors, open = args) { expanded["args:" + item.key] = !args }
-                        if (args) CodeBlock(call.args, colors)
-                    }
-                    if (item.call?.truncated == true || result?.truncated == true) {
-                        Text(stringResource(R.string.chat_truncated), style = ChatType.meta.copy(color = colors.dim))
-                    }
+                }
+                if (result != null && result.images > 0) {
+                    Text(stringResource(R.string.chat_tool_images, result.images), style = ChatType.meta.copy(color = colors.muted))
+                }
+                item.call?.takeIf { it.args.isNotBlank() }?.let { call ->
+                    val args = expanded["args:" + item.key] == true
+                    Disclosure(stringResource(R.string.chat_tool_arguments), colors, open = args) { expanded["args:" + item.key] = !args }
+                    if (args) CodeBlock(call.args, colors)
+                }
+                if (item.call?.truncated == true || result?.truncated == true) {
+                    Text(stringResource(R.string.chat_truncated), style = ChatType.meta.copy(color = colors.dim))
                 }
             }
         }
+    }
+}
+
+private val ToolOutputPadH = 12.dp
+private val ToolOutputPadV = 8.dp
+
+/**
+ * A tool's output in its one frame, scrolling sideways. Each http(s)
+ * address ([outputLinks]) is a link of its own for taps and TalkBack; a tap
+ * that misses every link but lands within a 48 dp-tall box about a link's
+ * line opens the nearest one ([nearLink]). Only a tap counts: a long press
+ * or a drag opens nothing.
+ */
+@Composable
+private fun ToolOutput(text: String, colors: ChatColors) {
+    val links = remember(text) { outputLinks(text) }
+    val linkStyle = TextLinkStyles(SpanStyle(color = colors.accentText, textDecoration = TextDecoration.Underline))
+    val shown = remember(text, links, linkStyle) {
+        buildAnnotatedString {
+            var at = 0
+            for (link in links) {
+                append(text, at, link.first)
+                withLink(LinkAnnotation.Url(text.substring(link.first, link.last + 1), linkStyle)) { append(text, link.first, link.last + 1) }
+                at = link.last + 1
+            }
+            append(text, at, text.length)
+        }
+    }
+    val uri = LocalUriHandler.current
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val shape = MaterialTheme.shapes.medium
+    val near = if (links.isEmpty()) Modifier else Modifier.pointerInput(links) {
+        val reach = 48.dp.toPx()
+        val pad = Offset(ToolOutputPadH.toPx(), ToolOutputPadV.toPx())
+        // Inside the sideways scroll and outside the padding: positions are the scrolled content's, so less
+        // the padding they are the text layout's own.
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // A scroll consumes the move and cancels; a hold past the long-press time is not a tap.
+            val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() } ?: return@awaitEachGesture
+            if ((up.position - down.position).getDistance() > viewConfiguration.touchSlop) return@awaitEachGesture
+            val laid = layout ?: return@awaitEachGesture
+            val tap = up.position - pad
+            val boxes = links.map { link ->
+                val line = laid.getLineForOffset(link.first)
+                val a = laid.getHorizontalPosition(link.first, usePrimaryDirection = true)
+                val b = laid.getHorizontalPosition(link.last + 1, usePrimaryDirection = true)
+                floatArrayOf(minOf(a, b), laid.getLineTop(line), maxOf(a, b), laid.getLineBottom(line))
+            }
+            // A tap on a link itself is the link's own.
+            if (boxes.any { (l, t, r, b) -> tap.x in l..r && tap.y in t..b }) return@awaitEachGesture
+            val hit = nearLink(tap.x, tap.y, boxes, reach) ?: return@awaitEachGesture
+            val link = links[hit]
+            runCatching { uri.openUri(text.substring(link.first, link.last + 1)) }
+        }
+    }
+    Box(Modifier.fillMaxWidth().clip(shape).background(colors.codeBg).border(1.dp, colors.border, shape)) {
+        Text(
+            shown,
+            style = ChatType.toolOutput.copy(color = colors.text),
+            softWrap = false,
+            onTextLayout = { layout = it },
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .then(near)
+                .padding(horizontal = ToolOutputPadH, vertical = ToolOutputPadV),
+        )
     }
 }
 
@@ -734,17 +824,39 @@ private fun Disclosure(label: String, colors: ChatColors, open: Boolean? = null,
     }
 }
 
-/** A run's one 48 dp control row: a disclosure glyph TalkBack names and [content]. */
+/**
+ * A run's one 48 dp control row: a disclosure glyph and [content]. TalkBack
+ * names the glyph, or, given [spoken], reads the row as that one node in
+ * [state] with an expand or collapse action.
+ */
 @Composable
-private fun RunRow(open: Boolean, colors: ChatColors, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+private fun RunRow(
+    open: Boolean,
+    colors: ChatColors,
+    onClick: () -> Unit,
+    spoken: String? = null,
+    state: String? = null,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .then(
+                if (spoken == null) Modifier else Modifier.clearAndSetSemantics {
+                    contentDescription = spoken
+                    if (state != null) stateDescription = state
+                    if (open) collapse { onClick(); true } else expand { onClick(); true }
+                },
+            )
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(
             if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            stringResource(if (open) R.string.chat_hide_steps else R.string.chat_show_steps),
+            if (spoken != null) null else stringResource(if (open) R.string.chat_hide_steps else R.string.chat_show_steps),
             Modifier.size(16.dp),
             tint = colors.dim,
         )
@@ -759,14 +871,20 @@ private fun RunRow(open: Boolean, colors: ChatColors, onClick: () -> Unit, conte
  * live run draws its last [LIVE_TAIL] steps under an "N earlier" row, and
  * stays that way once it finishes ([runStart]): a run seen live is held
  * open, so its finishing never pulls the steps out from under the eye.
+ * A run [answer]ed by a reply draws, when not held, as the "Worked" fold
+ * ([WorkedRun]) instead.
  */
 @Composable
-private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded: MutableMap<String, Boolean>, dense: Boolean) {
+private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded: MutableMap<String, Boolean>, answer: ChatItem.Assistant?, dense: Boolean) {
     val live = group.live
     // Kept in the list-wide map, not in the row: a run scrolled away and back is still held.
     LaunchedEffect(group.key, live) { if (live) expanded["held:" + group.key] = true }
     val open = expanded[group.key] == true
     val start = runStart(group, open, held = expanded["held:" + group.key] == true)
+    if (answer != null && (start == null || open)) {
+        WorkedRun(group, answer, open, colors, expanded, dense)
+        return
+    }
     val tools = group.tools
     val names = tools.map { it.name }.filter { it.isNotBlank() }.distinct().joinToString(", ")
     val counts = pluralStringResource(R.plurals.chat_tool_group, tools.size, tools.size) + " · " + names
@@ -776,16 +894,7 @@ private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(counts, style = ChatType.toolArg.copy(color = colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        if (group.failed > 0) {
-                            Badge(containerColor = colors.errBg, contentColor = colors.err) {
-                                Text(pluralStringResource(R.plurals.chat_tool_group_failed, group.failed, group.failed), style = ChatType.meta)
-                            }
-                        }
-                        if (group.denied > 0) {
-                            Badge(containerColor = colors.warnBg, contentColor = colors.blocked) {
-                                Text(pluralStringResource(R.plurals.chat_tool_group_denied, group.denied, group.denied), style = ChatType.meta)
-                            }
-                        }
+                        RunBadges(group, colors)
                     }
                     tools.lastOrNull()?.let { last ->
                         Text(last.stepLine(), style = ChatType.meta.copy(color = colors.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -808,6 +917,94 @@ private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded
                 key(step.key) {
                     if (at > 0 || open || start > 0) Spacer(Modifier.height(ChatSpace.tool))
                     ChatRow(step, colors, expanded, dense)
+                }
+            }
+        }
+    }
+}
+
+/** A run's failed and denied counts as words on their badges. */
+@Composable
+private fun RunBadges(group: ChatLine.ToolGroup, colors: ChatColors) {
+    if (group.failed > 0) {
+        Badge(containerColor = colors.errBg, contentColor = colors.err) {
+            Text(pluralStringResource(R.plurals.chat_tool_group_failed, group.failed, group.failed), style = ChatType.meta, maxLines = 1)
+        }
+    }
+    if (group.denied > 0) {
+        Badge(containerColor = colors.warnBg, contentColor = colors.blocked) {
+            Text(pluralStringResource(R.plurals.chat_tool_group_denied, group.denied, group.denied), style = ChatType.meta, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * A run a reply ended, as one row at least `max(48, 12 + 18·fs + 16·fs)` dp
+ * tall: "Worked · N tool calls · N thoughts" (with the time between the
+ * run's first step and the reply only when the transcript dated both,
+ * [RunFold.seconds]), then the failed and denied counts and the tools'
+ * names; only the names ellipsize. Open, every step shows as its head,
+ * 16 dp in, beside a 1 dp rule under the chevron. Its open state is the
+ * group key's in [expanded], so it holds across reads and older pages.
+ */
+@Composable
+private fun WorkedRun(group: ChatLine.ToolGroup, answer: ChatItem.Assistant, open: Boolean, colors: ChatColors, expanded: MutableMap<String, Boolean>, dense: Boolean) {
+    val fold = remember(group, answer) { runFold(group, answer) }
+    val seconds = fold.seconds
+    val title = buildList {
+        add(
+            if (seconds != null) pluralStringResource(R.plurals.chat_fold_tools_timed, fold.tools, seconds.toInt(), fold.tools)
+            else pluralStringResource(R.plurals.chat_fold_tools, fold.tools, fold.tools),
+        )
+        if (fold.thoughts > 0) add(pluralStringResource(R.plurals.chat_fold_thoughts, fold.thoughts, fold.thoughts))
+    }
+    val spoken = buildList {
+        title.forEach { part -> addAll(part.split(" · ")) }
+        if (fold.failed > 0) add(pluralStringResource(R.plurals.chat_tool_group_failed, fold.failed, fold.failed))
+        if (fold.denied > 0) add(pluralStringResource(R.plurals.chat_tool_group_denied, fold.denied, fold.denied))
+    }.joinToString(", ")
+    val state = stringResource(if (open) R.string.chat_state_expanded else R.string.chat_state_collapsed)
+    val rule = colors.rule
+    Column(Modifier.fillMaxWidth().animateContentSize().testTag("chat:worked")) {
+        RunRow(
+            open,
+            colors,
+            onClick = {
+                expanded[group.key] = !open
+                expanded.remove("held:" + group.key)
+            },
+            spoken = spoken,
+            state = state,
+        ) {
+            Column(Modifier.weight(1f).padding(vertical = 2.dp)) {
+                Text(title.joinToString(" · "), style = ChatType.fold.copy(color = colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    RunBadges(group, colors)
+                    Text(
+                        fold.names.joinToString(", "),
+                        style = ChatType.toolArg.copy(color = colors.dim),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+            }
+        }
+        if (open) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val x = 8.dp.toPx().let { if (layoutDirection == LayoutDirection.Ltr) it else size.width - it }
+                        drawLine(rule, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                    }
+                    .padding(start = 16.dp),
+            ) {
+                group.steps.forEachIndexed { at, step ->
+                    key(step.key) {
+                        if (at > 0) Spacer(Modifier.height(ChatSpace.tool))
+                        ChatRow(step, colors, expanded, dense)
+                    }
                 }
             }
         }
