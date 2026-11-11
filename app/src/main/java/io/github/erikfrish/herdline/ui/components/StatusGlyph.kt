@@ -137,10 +137,11 @@ private class LastStatus {
 /**
  * A 270° arc: its 90° gap keeps it apart from Lost's full ring even when still.
  * The turn is read in the layer only, so it redraws without recomposing, and
- * its transition exists only while an arc is shown and may move.
+ * its transition exists only while an arc is shown and may move. [onTurn]
+ * hears each angle drawn, so a shape that follows can start where it stopped.
  */
 @Composable
-private fun Arc(color: Color, modifier: Modifier, turning: Boolean) {
+private fun Arc(color: Color, modifier: Modifier, turning: Boolean, onTurn: ((Float) -> Unit)? = null) {
     val turn = if (turning) {
         rememberInfiniteTransition(label = "arc").animateFloat(
             initialValue = 0f,
@@ -151,7 +152,13 @@ private fun Arc(color: Color, modifier: Modifier, turning: Boolean) {
     } else {
         null
     }
-    Canvas(modifier.graphicsLayer { rotationZ = turn?.value ?: 0f }) {
+    Canvas(
+        modifier.graphicsLayer {
+            val angle = turn?.value ?: 0f
+            onTurn?.invoke(angle)
+            rotationZ = angle
+        },
+    ) {
         val stroke = (size.minDimension * 0.16f).coerceIn(1.5.dp.toPx(), 2.dp.toPx())
         val inset = stroke / 2
         drawArc(
@@ -209,9 +216,11 @@ internal fun closeSweep(progress: Float): Float = 270f + 90f * (progress / CLOSE
 /** The disc's fill alpha at [progress] (0..1): none while the arc closes, then up to opaque. */
 internal fun closeFill(progress: Float): Float = ((progress - CLOSE_SWEEP) / (1f - CLOSE_SWEEP)).coerceIn(0f, 1f)
 
-/** The link a glyph showed last, read only by its change effect, so it is no state of its own. */
+/** What a link glyph showed last, read only by its change effect and the close, so it is no state of its own. */
 private class LastLink {
     var link: Link? = null
+    /** The Working arc's last drawn turn, in degrees. */
+    var angle = 0f
 }
 
 /**
@@ -242,12 +251,14 @@ fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
     val last = remember { LastLink() }
     // Decided in the composition that first shows Up, so its first frame is already the open arc, never a flash of the disc.
     val close = remember(link) { Animatable(if (motion && closes(last.link, link)) 0f else 1f) }
+    // The close starts where the turning arc stopped, so its gap does not jump.
+    val start = remember(link) { -90f + last.angle }
     LaunchedEffect(link) {
         last.link = link
         if (close.value < 1f) close.animateTo(1f, tween(250, easing = LinearEasing))
     }
     if (link.shape() == GlyphShape.Arc) {
-        Arc(color, tagged, turning = motion)
+        Arc(color, tagged, turning = motion, onTurn = { last.angle = it })
         return
     }
     Canvas(tagged) {
@@ -274,7 +285,7 @@ fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
                     val inset = stroke / 2
                     drawArc(
                         color,
-                        startAngle = -90f,
+                        startAngle = start,
                         sweepAngle = closeSweep(progress),
                         useCenter = false,
                         topLeft = Offset(inset, inset),
