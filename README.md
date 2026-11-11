@@ -24,7 +24,7 @@ the Apache License 2.0. See [Origin and licence](#origin-and-licence).
 | --- | --- |
 | Host and session | **Hosts** on the start screen, grouped and searchable, each with a colour label. Each one names a Herdr session (`default` unless you use named sessions). Several hosts can stay attached at once. |
 | Workspaces | The switcher: a bottom sheet on a phone, a sidebar on a tablet. It searches workspaces, branches, tabs, panes and agents, filters to **Needs you** or **Working**, and lists every workspace with its tabs and panes in Herdr's order. |
-| Tabs | The tab row under the top bar, with each tab's status; **+** opens a new tab. |
+| Tabs | The tab row under the top bar, with each tab's status. On a phone, the Tabs button opens workspace-grouped cards or a list, with shared workspace scope, search and attention filters. Split tabs open an explicit pane picker; card previews use existing metadata, not captured terminal screenshots. |
 | Panes | Drawn as Herdr lays them out, with a chip per pane when a tab has several. Split, zoom and close act on Herdr's shared layout, so the desktop sees them too, and the controls say so. |
 | Agents | The **Agents** screen lists agents on every attached host by attention (**Needs you**, **Working**, **Done**, **Idle**) and can be narrowed to one workspace with the workspace filter. |
 
@@ -97,6 +97,13 @@ share the composer and its draft.
   ones, keeping your place.
 - When the agent asks a question, Chat shows it read-only and opens the
   terminal to answer it. Chat never answers dialogs.
+- Completed work can be folded into a summary with tool and thought counts;
+  a duration appears only when transcript timestamps support it. Tool heads
+  are quiet rows with one frame around their output. Prose, code and user
+  bubbles use the updated spacing; dense Chat keeps its compact line height.
+- **Verification:** 0.2.0 is a developer-checked candidate, not a runtime-QA
+  pass. Grid/List/picker, folding and scrolling, large-font chip layout,
+  TalkBack, RTL and device lifecycle still need isolated runtime checks.
 
 ### Notifications
 
