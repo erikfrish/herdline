@@ -141,4 +141,24 @@ class AttachmentsTest {
         assertEquals(AttachmentsLine.NotHere(2), attachmentsLine(listOf(file("a", other), file("b", null)), emptySet(), omp))
         assertEquals(AttachmentsLine.NotHere(1), attachmentsLine(listOf(file("a")), emptySet(), null))
     }
+
+    @Test
+    fun aChipFlagsOnlyARefusalAsAnErrorAndAFileForAnotherPaneAsAMove() {
+        val other = omp.copy(pane = "w1:p2")
+        fun file(target: Connection.ComposerTarget?, failure: String? = null) = DraftAttachment(
+            "a", "content://docs/a", AttachmentKind.FILE, "a.txt", 3,
+            staged = target?.let { Attachment(AttachmentKind.FILE, "a.txt", "/s/a.txt", 3, "00", it) },
+            failure = failure,
+        )
+        assertEquals(ChipProblem.None, chipProblem(file(omp), uploading = false, omp))
+        assertEquals(ChipProblem.Failed, chipProblem(file(null, "no_exec"), uploading = false, omp))
+        // A refusal outranks a copy left for another pane.
+        assertEquals(ChipProblem.Failed, chipProblem(file(other, "target_changed"), uploading = false, omp))
+        // New, interrupted by process death, or gone from the host.
+        assertEquals(ChipProblem.NotUploaded, chipProblem(file(null), uploading = false, omp))
+        assertEquals(ChipProblem.OtherTarget, chipProblem(file(other), uploading = false, omp))
+        assertEquals(ChipProblem.OtherTarget, chipProblem(file(omp), uploading = false, null))
+        // While it uploads, the ring shows instead: an old refusal or copy is being replaced.
+        assertEquals(ChipProblem.None, chipProblem(file(other, "failed"), uploading = true, omp))
+    }
 }

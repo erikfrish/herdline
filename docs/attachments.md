@@ -86,12 +86,17 @@ sending, the pane must be confirmed again, the pane has no OMP whose
 instance was read, or the draft already holds its 10 files
 (`attachBlock`; null exactly where files may be attached).
 
-- **Chips.** In the Regular fit each file is a 48 dp chip above the field,
-  at most 260 dp wide: a 36 dp thumbnail that the provider decodes off the
-  main thread (a glyph for other files), the name, its state (uploading %,
-  the size in KiB/MiB and type, not uploaded, failed with the reason), and
-  Remove. A chip not uploaded for this target uploads again when tapped,
-  except one refused as too large. A state change is announced politely,
+- **Chips.** In the Regular fit each file is a chip above the field,
+  max(48, 12 + 32·fs) dp tall (48 / 53.6 / 58.4 dp at 1.0 / 1.3 / 1.45) and at most
+  260 dp wide: a 36 dp thumbnail that the provider decodes off the main
+  thread (a glyph for other files), the name, its state (uploading %, the
+  size in KiB/MiB and type, not uploaded, failed with the reason), and
+  Remove. An upload draws a 20 dp ring over the thumbnail. A "!" badge
+  marks a file that won't go with Send (`chipProblem`): error-coloured for
+  a refusal or a file not uploaded, tertiary for a copy staged for another
+  pane. Only a refusal turns the chip's outline and state line red. A chip
+  not uploaded for this target uploads again when tapped, except one
+  refused as too large. A state change is announced politely,
   an upload's progress in 25 % steps. One line names the host the files go
   to. Compact and Side have no chip row: the To-line leads with the files'
   state instead, "Uploading k of n…", "k upload failed", "k not uploaded
