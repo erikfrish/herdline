@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -198,19 +201,41 @@ internal fun pickedAttachment(resolver: ContentResolver, uri: Uri): DraftAttachm
 /** The edge of a chip's thumbnail, in dp: a two-line, 48 dp chip, never a large preview. */
 private const val THUMB_DP = 36
 
+/** The upload ring over the thumbnail, and the `!` badge on its corner, in dp. */
+private const val RING_DP = 20
+private const val BADGE_DP = 14
+
 // [AttachmentChips]' layout, shared with its budget in [attachmentsRowDp], in
 // dp: the consent line (bodySmall, 16 sp a line, at most two lines) and the
-// gap under it, a chip (labelMedium over bodySmall, 16 sp each, at least its
-// 48 dp Remove) and the gap under the chip row.
+// gap under it, a chip ([attachmentChipDp]) and the gap under the chip row.
 internal const val ATTACH_LABEL_LINE = 16
 private const val CONSENT_LINES = 2
 private const val CONSENT_GAP = 4
 private const val CHIP_MIN = 48
+
+/** Above and below a chip's two text lines only; Remove and the thumbnail take the chip's height as it is. */
+internal const val CHIP_PAD = 6
 private const val CHIP_ROW_GAP = 6
 private const val CHIP_MAX = 260
 
 /** Refusals a tap can't fix: the same file is refused again. */
 private val NOT_RETRYABLE = setOf("too_large")
+
+/**
+ * What a chip that isn't ready for this target shows besides its words: a
+ * refusal is an error; a file not uploaded (new, interrupted, gone from the
+ * host) gets the error badge alone; one uploaded for another pane, the
+ * tertiary badge, as it only needs moving.
+ */
+internal enum class ChipProblem { None, Failed, NotUploaded, OtherTarget }
+
+internal fun chipProblem(a: DraftAttachment, uploading: Boolean, target: Connection.ComposerTarget?): ChipProblem = when {
+    uploading -> ChipProblem.None
+    a.failure != null -> ChipProblem.Failed
+    a.staged == null -> ChipProblem.NotUploaded
+    target == null || a.staged.target != target -> ChipProblem.OtherTarget
+    else -> ChipProblem.None
+}
 
 /**
  * [bytes] in binary units, as the limits are written (20 MiB, 64 MiB), so a
@@ -236,8 +261,17 @@ internal fun spokenPercent(fraction: Float): Int = (fraction * 4).toInt().coerce
 
 /** [AttachmentChips] at its tallest at [fontScale], in dp: what a draft with files adds above the band. */
 internal fun attachmentsRowDp(fontScale: Float): Float =
-    CONSENT_LINES * ATTACH_LABEL_LINE * fontScale + CONSENT_GAP +
-        maxOf(CHIP_MIN.toFloat(), 2 * ATTACH_LABEL_LINE * fontScale) + CHIP_ROW_GAP
+    CONSENT_LINES * ATTACH_LABEL_LINE * fontScale + CONSENT_GAP + attachmentChipDp(fontScale) + CHIP_ROW_GAP
+
+/**
+ * A chip's height at [fontScale], in dp: the tallest of its children laid
+ * side by side, the 48 dp Remove (also the chip's floor), the 36 dp
+ * thumbnail, and the name over the state inside [CHIP_PAD] above and below.
+ * The padding sits on the text alone, so a chip is 48 dp up to font scale
+ * 1.125, then grows with its text.
+ */
+internal fun attachmentChipDp(fontScale: Float): Float =
+    maxOf(CHIP_MIN.toFloat(), THUMB_DP.toFloat(), 2 * CHIP_PAD + 2 * ATTACH_LABEL_LINE * fontScale)
 
 /**
  * The draft's attachments as a row of chips over the field: a small
@@ -279,7 +313,7 @@ internal fun AttachmentChips(
                 attachments.forEach { a ->
                     val uploading = a.id in progress
                     val fraction = progress[a.id]
-                    val problem = !uploading && (a.failure != null || a.staged == null || a.staged.target != target)
+                    val problem = chipProblem(a, uploading, target)
                     val status = when {
                         uploading -> fraction?.let { stringResource(R.string.attachment_uploading, (it * 100).toInt()) }
                             ?: stringResource(R.string.attachment_uploading_unknown)
@@ -296,8 +330,9 @@ internal fun AttachmentChips(
                         stateStyle = stateStyle,
                         maxWidth = chipMax,
                         problem = problem,
-                        retryable = problem && a.failure !in NOT_RETRYABLE,
+                        retryable = problem != ChipProblem.None && a.failure !in NOT_RETRYABLE,
                         uploading = uploading,
+                        fraction = fraction,
                         enabled = enabled,
                         onRemove = { onRemove(a) },
                         onRetry = { onRetry(a) },
@@ -323,15 +358,18 @@ private fun AttachmentChip(
     spokenStatus: String,
     stateStyle: TextStyle,
     maxWidth: Dp,
-    problem: Boolean,
+    problem: ChipProblem,
     /** A tap on the chip uploads it again. */
     retryable: Boolean,
     uploading: Boolean,
+    /** The upload's progress, or null while its size is unknown. */
+    fraction: Float?,
     enabled: Boolean,
     onRemove: () -> Unit,
     onRetry: () -> Unit,
 ) {
     val shape = MaterialTheme.shapes.small
+    val failed = problem == ChipProblem.Failed
     val spoken = stringResource(
         if (attachment.kind == AttachmentKind.IMAGE) R.string.attachment_image_description else R.string.attachment_file_description,
         attachment.name,
@@ -344,7 +382,7 @@ private fun AttachmentChip(
             .heightIn(min = CHIP_MIN.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(1.dp, if (problem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant, shape)
+            .border(1.dp, if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant, shape)
             .then(
                 if (retryable) {
                     Modifier.clickable(enabled = enabled, role = Role.Button, onClickLabel = retryLabel, onClick = onRetry)
@@ -356,21 +394,39 @@ private fun AttachmentChip(
             .testTag("composer:attachment"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Thumbnail(attachment)
+        Box {
+            Thumbnail(attachment)
+            // Each repeats what line 2 says in words; neither is read out.
+            if (uploading) {
+                val ring = Modifier.align(Alignment.Center).size(RING_DP.dp)
+                if (fraction != null) {
+                    CircularProgressIndicator(progress = { fraction }, modifier = ring, strokeWidth = 2.dp)
+                } else {
+                    CircularProgressIndicator(modifier = ring, strokeWidth = 2.dp)
+                }
+            }
+            if (problem != ChipProblem.None) ProblemBadge(problem, Modifier.align(Alignment.TopEnd))
+        }
         Column(
             Modifier
                 .weight(1f, fill = false)
-                .padding(horizontal = 8.dp)
+                .padding(horizontal = 8.dp, vertical = CHIP_PAD.dp)
                 .semantics(mergeDescendants = true) {
                     contentDescription = spoken
                     liveRegion = LiveRegionMode.Polite
                 },
         ) {
-            Text(attachment.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                attachment.name,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 status,
                 style = stateStyle,
-                color = if (problem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -379,6 +435,16 @@ private fun AttachmentChip(
         IconButton(onClick = onRemove, enabled = enabled || uploading, modifier = Modifier.testTag("composer:attachment_remove")) {
             Icon(Icons.Default.Close, stringResource(R.string.attachment_remove, attachment.name))
         }
+    }
+}
+
+/** The `!` on a chip's thumbnail: error, or tertiary for a file that only needs moving. */
+@Composable
+private fun ProblemBadge(problem: ChipProblem, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val (fill, mark) = if (problem == ChipProblem.OtherTarget) scheme.tertiary to scheme.onTertiary else scheme.error to scheme.onError
+    Box(modifier.size(BADGE_DP.dp).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+        Text("!", color = mark, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), maxLines = 1)
     }
 }
 
@@ -405,7 +471,14 @@ private fun Thumbnail(attachment: DraftAttachment) {
             }
         }
     }
-    Box(Modifier.size(THUMB_DP.dp).clip(MaterialTheme.shapes.extraSmall), contentAlignment = Alignment.Center) {
+    val glyph = bitmap == null
+    Box(
+        Modifier
+            .size(THUMB_DP.dp)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .then(if (glyph) Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
         val image = bitmap
         if (image != null) {
             Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(THUMB_DP.dp))

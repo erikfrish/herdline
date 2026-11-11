@@ -128,9 +128,10 @@ class ComposerFitTest {
         // height is the one the row's budget counts.
         assertEquals(ATTACH_LABEL_LINE.toFloat(), HerdlineTypography.bodySmall.lineHeight.value, 0f)
         assertEquals(ATTACH_LABEL_LINE.toFloat(), HerdlineTypography.labelMedium.lineHeight.value, 0f)
-        // Regular: the consent line's two lines, a 48 dp chip, and the gaps
-        // (80 → 170 dp at 1.0; 89 → 188 at 1.3; 93 → 197 at 1.45).
-        for ((scale, bare, withFiles) in listOf(Triple(1.0f, 80, 170), Triple(1.3f, 89, 188), Triple(1.45f, 93, 197))) {
+        // Regular: the consent line's two lines, a chip of max(48, 12 + 32·fs)
+        // dp (48 / 53.6 / 58.4), and the gaps (80 → 170 dp at 1.0; 89 → 194
+        // at 1.3; 93 → 208 at 1.45).
+        for ((scale, bare, withFiles) in listOf(Triple(1.0f, 80, 170), Triple(1.3f, 89, 194), Triple(1.45f, 93, 208))) {
             assertEquals(bare, ComposerFit.Regular.heightDp(1, notice = false, scale))
             assertEquals(withFiles, ComposerFit.Regular.heightDp(1, notice = false, scale, attachments = 1))
             // A second file scrolls sideways in the same row.
@@ -144,6 +145,23 @@ class ComposerFitTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun aChipsBudgetIsItsTallestChildSoNothingClipsAndNothingIsWasted() {
+        // Remove is an IconButton: Material's 48 dp touch target, never shrunk.
+        val remove = 48f
+        for (scale in listOf(0.85f, 1.0f, 1.1f, 1.125f, 1.15f, 1.3f, 1.45f, 2.0f)) {
+            // The name over the state, each at its style's real line height, inside the text's padding.
+            val text = 2 * CHIP_PAD + (HerdlineTypography.labelMedium.lineHeight.value + HerdlineTypography.bodySmall.lineHeight.value) * scale
+            val chip = attachmentChipDp(scale)
+            assertTrue("chip $chip dp clips Remove at $scale", chip >= remove)
+            assertTrue("chip $chip dp clips its text ($text dp) at $scale", chip >= text - 0.001f)
+            // No slack beyond the taller of the two: the field keeps every other dp.
+            assertEquals("chip at $scale", maxOf(remove, text), chip, 0.001f)
+        }
+        // At the default font size a chip is exactly its Remove: the compact row stays 48 dp.
+        assertEquals(48f, attachmentChipDp(1.0f), 0f)
     }
 
     @Test

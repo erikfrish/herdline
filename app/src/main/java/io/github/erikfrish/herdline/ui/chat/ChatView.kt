@@ -383,11 +383,11 @@ private fun ChatContent(
                             when (line) {
                                 is ChatLine.Single -> {
                                     if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
-                                    ChatRow(line.item, colors, expanded)
+                                    ChatRow(line.item, colors, expanded, dense)
                                 }
                                 is ChatLine.ToolGroup -> {
                                     if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
-                                    ToolGroupRow(line, colors, expanded)
+                                    ToolGroupRow(line, colors, expanded, dense)
                                 }
                             }
                         }
@@ -497,27 +497,28 @@ private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, onCli
 }
 
 @Composable
-private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<String, Boolean>) {
+private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<String, Boolean>, dense: Boolean) {
     val open = expanded[item.key] == true
     val toggle = { expanded[item.key] = !open }
     when (item) {
         // The row ends on the prose edge, so a bubble never sits far right of the reply.
         is ChatItem.User -> BoxWithConstraints(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            val shape = MaterialTheme.shapes.medium
+            // The small corner points at the end edge, where the turn sits; it mirrors in RTL.
+            val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 6.dp, bottomStart = 18.dp)
             Box(
                 Modifier
                     .widthIn(max = minOf(maxWidth * 0.85f, BubbleMaxWidth))
                     .clip(shape)
                     .background(colors.userBubble)
-                    .border(1.dp, colors.border, shape)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .border(1.dp, colors.bubbleEdge, shape)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
                     .testTag("chat:user"),
             ) {
-                Markdown(item.text, colors)
+                Markdown(item.text, colors, dense = dense)
             }
         }
         is ChatItem.Assistant -> Column(Modifier.fillMaxWidth().testTag("chat:assistant")) {
-            Markdown(item.text, colors)
+            Markdown(item.text, colors, dense = dense)
             if (item.truncated) Text(stringResource(R.string.chat_truncated), style = ChatType.meta.copy(color = colors.dim), modifier = Modifier.padding(top = 4.dp))
         }
         is ChatItem.Thinking -> {
@@ -528,10 +529,10 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         }
         is ChatItem.Tool -> ToolRow(item, colors, expanded)
         is ChatItem.Note -> Aside(item.role, item.text.lineSequence().firstOrNull(), colors, open, toggle, italic = false) {
-            Markdown(item.text, colors, color = colors.muted)
+            Markdown(item.text, colors, color = colors.muted, dense = dense)
         }
         is ChatItem.Compaction -> CompactionDivider(colors, open, toggle) {
-            Markdown(item.summary, colors, color = colors.muted)
+            Markdown(item.summary, colors, color = colors.muted, dense = dense)
         }
         is ChatItem.Image -> Text(stringResource(R.string.chat_image), style = ChatType.body.copy(color = colors.muted))
     }
@@ -760,7 +761,7 @@ private fun RunRow(open: Boolean, colors: ChatColors, onClick: () -> Unit, conte
  * open, so its finishing never pulls the steps out from under the eye.
  */
 @Composable
-private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded: MutableMap<String, Boolean>) {
+private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded: MutableMap<String, Boolean>, dense: Boolean) {
     val live = group.live
     // Kept in the list-wide map, not in the row: a run scrolled away and back is still held.
     LaunchedEffect(group.key, live) { if (live) expanded["held:" + group.key] = true }
@@ -806,7 +807,7 @@ private fun ToolGroupRow(group: ChatLine.ToolGroup, colors: ChatColors, expanded
             group.steps.drop(start).forEachIndexed { at, step ->
                 key(step.key) {
                     if (at > 0 || open || start > 0) Spacer(Modifier.height(ChatSpace.tool))
-                    ChatRow(step, colors, expanded)
+                    ChatRow(step, colors, expanded, dense)
                 }
             }
         }

@@ -4,6 +4,7 @@ import io.github.erikfrish.herdline.ui.theme.AppPalettes
 import io.github.erikfrish.herdline.ui.theme.ChatTokens
 import io.github.erikfrish.herdline.ui.theme.NodeColors
 import androidx.compose.ui.graphics.Color
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.pow
@@ -50,4 +51,20 @@ class ChatContrastTest {
 
     @Test
     fun light_roles_meet_aa() = AppPalettes.all.forEach { check(it.tokens(false).chat) }
+
+    @Test
+    fun aUserBubbleTooCloseToThePageGetsAnOutlineAndOnlyThen() {
+        AppPalettes.all.flatMap { listOf(it.tokens(false), it.tokens(true)) }.forEach { theme ->
+            val c = chatPalette(theme.chat, NodeColors.all.first())
+            val fill = contrast(c.userBubble, c.bg)
+            if (fill < 1.15) {
+                assertTrue("a ${"%.2f".format(fill)}:1 bubble needs an outline", c.bubbleEdge.alpha > 0f && c.bubbleEdge != c.bg)
+            } else {
+                assertEquals("a ${"%.2f".format(fill)}:1 bubble reads alone", Color.Transparent, c.bubbleEdge)
+            }
+        }
+        // Herdline's own pair, the one the outline was made for: light 1.07:1, dark 1.20:1.
+        assertEquals(AppPalettes.Herdline.tokens(false).chat.border, chatPalette(AppPalettes.Herdline.tokens(false).chat, NodeColors.all.first()).bubbleEdge)
+        assertEquals(Color.Transparent, chatPalette(AppPalettes.Herdline.tokens(true).chat, NodeColors.all.first()).bubbleEdge)
+    }
 }
