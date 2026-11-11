@@ -444,6 +444,20 @@ fun SessionScreen(
     }
     // Panes whose delivery is unconfirmed: their tabs carry the lock (M5).
     val held = remember(view, flying, node.id, node.session) { drafts.held(node.id, node.session) }
+    // Terminal without the composer (Settings › Composer): the terminal and its extra keys take its place. A delivery
+    // waiting on its receipt or steer, or left unconfirmed, keeps the composer: its editor holds that state and Unlock.
+    val composerPinned = composerPane?.let { it in held || DraftKey(node.id, node.session, it) in flying } == true
+    val composerHidden = !chatMode && !settings.terminalComposer && !composerPinned
+    val composerKept = !chatMode && !settings.terminalComposer && composerPinned
+    LaunchedEffect(composerKept) { if (composerKept) snackbar.showSnackbar(context.getString(R.string.terminal_composer_kept)) }
+    // Hidden, the composer measures nothing: no stale height, open space or held grid for the terminal to keep.
+    LaunchedEffect(composerHidden, terminal) {
+        if (composerHidden) {
+            composerPx = 0
+            openSpace.clear()
+            terminal?.holdHeightPx = 0
+        }
+    }
     // The pane on screen has been seen: withdraw its notification, on a deep-link
     // arrival, a tab switch and every return to the app (lab.3 D7: resuming onto
     // the pane left its notification posted, since the pane itself never changed).
@@ -487,7 +501,9 @@ fun SessionScreen(
         }
     }
     // While the composer on screen holds a draft, its notice coming and going never resizes the pane (V4-a).
-    LaunchedEffect(composerText, rawKeys, chatMode, terminal) { terminal?.keepRows = composerText && !(rawKeys && !chatMode) }
+    LaunchedEffect(composerText, composerHidden, rawKeys, chatMode, terminal) {
+        terminal?.keepRows = composerText && !composerHidden && !(rawKeys && !chatMode)
+    }
     // S3: once per switch from Chat to Terminal while the desktop is on another pane; only its action moves the desktop.
     // It uses the screen's existing notice slot (the snackbar) and goes when Chat returns or the two panes match.
     var terminalNotice by remember { mutableStateOf<String?>(null) }
@@ -688,7 +704,7 @@ fun SessionScreen(
             Box(Modifier.weight(1f)) {
                 // Sideways and typing, the composer becomes a column beside the content (J2).
                 val sessionWidth = if (wide) windowWidth - (if (settings.sidebarOpen) SidebarWidth else SidebarRailWidth) - 1.dp else windowWidth
-                val sideComposer = sideComposerWidthDp(sessionWidth.value, typingShort)?.dp
+                val sideComposer = sideComposerWidthDp(sessionWidth.value, typingShort)?.dp?.takeIf { !composerHidden }
                 // Typing beside the content, Terminal only: the armed window over the grid.
                 val focusWanted = outputFocus && sideComposer != null && !chatMode && !rawKeys
                 val focusApplies = focusWanted && !receiptNotice
@@ -1052,8 +1068,8 @@ fun SessionScreen(
                         )
                         GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
                     }
-                    if (rawKeys && !chatMode) {
-                        // Raw input: the terminal's own keys, and one way back to the composer.
+                    if ((rawKeys || composerHidden) && !chatMode) {
+                        // Raw input: the terminal's own keys, and one way back to the composer when it is shown.
                         Column(Modifier.navigationBarsPadding()) {
                             if (settings.showExtraKeys) {
                                 ExtraKeysRow(
@@ -1067,7 +1083,7 @@ fun SessionScreen(
                                     compact = LocalCompact.current,
                                 )
                             }
-                            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                            if (!composerHidden) Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                                 GlassButton(
                                     stringResource(R.string.session_back_to_composer),
                                     onClick = {

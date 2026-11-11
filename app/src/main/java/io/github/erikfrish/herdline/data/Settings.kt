@@ -89,6 +89,8 @@ data class Settings(
     val composerMenu: List<String> = ComposerMenu.DEFAULT,
     /** Shown Tabs sheet and sidebar sections; their order is fixed. */
     val sheetSections: List<String> = SheetSections.DEFAULT,
+    /** The message composer under the terminal in Terminal; Chat always has it. */
+    val terminalComposer: Boolean = true,
     /** Keyboard suggestions while typing straight into the terminal; the composer always has them. */
     val terminalSuggestions: Boolean = false,
     val notifyAttention: Boolean = true,
@@ -124,7 +126,7 @@ data class Settings(
                 extraKeys = d.extraKeys,
                 showExtraKeys = d.showExtraKeys,
             )
-            ResetScope.Composer -> copy(terminalSuggestions = d.terminalSuggestions)
+            ResetScope.Composer -> copy(terminalComposer = d.terminalComposer, terminalSuggestions = d.terminalSuggestions)
             ResetScope.Layout -> copy(
                 layoutMode = d.layoutMode,
                 sidebarOpen = d.sidebarOpen,
@@ -210,6 +212,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             hideIdleDone = prefs.getBoolean("hide_idle_done", d.hideIdleDone),
             composerMenu = ComposerMenu.repaired(savedControls(ids("composer_menu"), ids("composer_menu_known"), ComposerMenu.DEFAULT)),
             sheetSections = savedControls(ids("sheet_sections"), ids("sheet_sections_known"), SheetSections.DEFAULT),
+            terminalComposer = prefs.getBoolean("terminal_composer", d.terminalComposer),
             terminalSuggestions = prefs.getBoolean("terminal_suggestions", d.terminalSuggestions),
             notifyAttention = prefs.getBoolean("notify_attention", d.notifyAttention),
             notifyDone = prefs.getBoolean("notify_done", d.notifyDone),
@@ -251,6 +254,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putString("composer_menu_known", ComposerMenu.DEFAULT.joinToString(","))
             .putString("sheet_sections", next.sheetSections.joinToString(","))
             .putString("sheet_sections_known", SheetSections.DEFAULT.joinToString(","))
+            .putBoolean("terminal_composer", next.terminalComposer)
             .putBoolean("terminal_suggestions", next.terminalSuggestions)
             .putBoolean("notify_attention", next.notifyAttention)
             .putBoolean("notify_done", next.notifyDone)

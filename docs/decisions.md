@@ -162,6 +162,7 @@ layout; it settles when the keyboard closes. The Session layout setting
 |⋮ menu|New tab, Rename tab, Close tab…; then Split right / Split down / Zoom / Close pane… (shared; phones only); then Settings, Reconnect (only while a live link is lost) and Disconnect…, which asks first. Close pane… is offered only on a split tab, as in the pane toolbar: the only pane closes with its tab, through Close tab…|the same without the pane group|
 |Composer|one band: +, a 1–5 line field "Message ‹title›", Send; a larger editor on request|the same, centred|
 |Raw terminal|the composer's keyboard button: terminal keyboard plus extra keys, and Back to composer|the same|
+|Terminal without composer|Settings › Composer › Show message composer in Terminal, on by default. Off, Terminal shows the terminal and its extra keys under it, without Back to composer; a tap on the terminal brings its keyboard. Chat always has the composer. A delivery waiting on its receipt or steer, or left unconfirmed, keeps the composer, with a notice, until it settles or Unlock. Hidden, it takes no bottom or side slot, and its measured height, open space and held grid go, so the terminal gets the whole column. Drafts and files stay in the draft store; an upload under way is cancelled, as on leaving its pane, and its file reads back as not uploaded|the same|
 
 A window shorter than 480 dp (a phone held sideways) merges the header and
 the tab row into one 48 dp row. It holds ←, the connection dot, the

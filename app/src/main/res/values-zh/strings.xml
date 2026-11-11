@@ -444,4 +444,7 @@
     </plurals>
     <string name="chat_state_collapsed">已折叠</string>
     <string name="chat_state_expanded">已展开</string>
+    <string name="terminal_composer">在终端中显示消息编辑框</string>
+    <string name="terminal_composer_help">关闭后，终端模式只显示终端：轻点终端即可输入，下方显示额外按键。聊天模式始终显示编辑框，草稿和文件仍保留在各自的窗格。编辑框的投递尚未确认时，编辑框会一直显示，直到投递完成或你解锁。</string>
+    <string name="terminal_composer_kept">投递尚未确认，编辑框暂时保留</string>
 </resources>

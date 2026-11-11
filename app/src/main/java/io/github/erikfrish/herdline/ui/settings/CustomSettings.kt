@@ -293,10 +293,14 @@ private fun SheetSection.label(): Int = when (this) {
     SheetSection.Filters -> R.string.controls_filters
 }
 
-/** Keyboard suggestions outside the composer. */
+/** The composer in Terminal, and keyboard suggestions outside the composer. */
 internal fun LazyListScope.composerSettings(store: SettingsStore, settings: Settings) {
     item {
         Group {
+            Toggle(stringResource(R.string.terminal_composer), stringResource(R.string.terminal_composer_help), settings.terminalComposer) { on ->
+                store.update { it.copy(terminalComposer = on) }
+            }
+            GlassDivider()
             Toggle(stringResource(R.string.terminal_suggestions), stringResource(R.string.terminal_suggestions_help), settings.terminalSuggestions) { on ->
                 store.update { it.copy(terminalSuggestions = on) }
             }
