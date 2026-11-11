@@ -1,0 +1,13 @@
+Herdline 0.3.0 — Chat and Terminal usability candidate.
+
+Adds an option in Settings › Composer to hide the phone's message composer in Terminal. Chat keeps its composer. Draft text and attachments are kept; a pending or uncertain delivery keeps its safety controls visible. Terminal's own input remains available.
+
+Chat-local pane and tab choices no longer resize the shared host panes. Terminal owns the shared grid; returning to Terminal fits its actual layout. The existing Send, dialog, instance and uncertain-delivery guards remain in force. Photo-only drafts now show the same refusal and target-mismatch explanations as text; a caption is not required.
+
+Integrates the approved braided-crook Herdline brand: Default, Mono, Contrast and themed launcher icons, notification icon, and light/dark system splash on Android 12+. Android 10–11 retain their existing startup surface.
+
+Android promotion status is not a claim of Samsung Now Bar placement. Android 16 QPR1 (36.1) or newer is required for the standard promotion request. A pinned running task is distinct from the ordinary Attached service notification.
+
+Known limitations: independent Chat Send and Working steering without Terminal geometry remain blocked on OMP's public acceptance, dialog and queue interfaces. Do not treat Insert without Enter as a complete send. Pending steering text and consumption cannot be inferred from a terminal write receipt. Samsung Now Bar placement is unverified; the user's Samsung was checked readonly as Android 16.1 / One UI 8.5, with ordinary service notifications but no proven promotion. No automatic phone installation or notification-permission change.
+
+Verification: source changes only at this checkpoint. Candidate build and exact-hash emulator verification are pending. Not published or recommended.
