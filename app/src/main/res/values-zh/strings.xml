@@ -127,7 +127,6 @@
     <string name="status_idle">空闲</string>
     <string name="status_blocked_spoken">需要你处理</string>
     <string name="held_state">送达未确认</string>
-    <string name="tab_changed">有变化</string>
     <string name="connection_connected">已连接</string>
     <string name="connection_connecting">正在连接</string>
     <string name="connection_lost">连接已断开</string>
