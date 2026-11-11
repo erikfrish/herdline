@@ -1,4 +1,5 @@
-# The Rust half of Bellterm: the JNI core in `native/` and the Herdr client and
+# Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity.
+# The Rust half of Herdline: the JNI core in `native/` and the Herdr client and
 # protocol crates it builds on (see NOTICE).
 [workspace]
 members  = ["crates/herdr-client", "crates/herdr-protocol", "native"]

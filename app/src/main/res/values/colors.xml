@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline launcher colours. -->
 <resources>
-    <color name="launcher_background">#FF13202F</color>
+    <!-- Herdline: deep pine with a light mint glyph. -->
+    <color name="launcher_background">#FF17332B</color>
+    <color name="launcher_ink">#FFD7F5E3</color>
+    <color name="launcher_mono_paper">#FFF2F4F7</color>
+    <color name="launcher_mono_ink">#FF1B2230</color>
 </resources>

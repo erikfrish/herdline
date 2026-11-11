@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Herdline's glyph on the 108dp adaptive-icon grid: an H whose crossbar is
+     one chain link, kept inside the 66dp safe zone. Every icon draws these. -->
+<resources>
+    <string name="launcher_glyph_bars" translatable="false">M39,30a5,5 0,0 1,5 5v38a5,5 0,0 1,-10 0v-38a5,5 0,0 1,5 -5zM69,30a5,5 0,0 1,5 5v38a5,5 0,0 1,-10 0v-38a5,5 0,0 1,5 -5z</string>
+    <string name="launcher_glyph_link" translatable="false">M48,46h12a8,8 0,0 1,0 16h-12a8,8 0,0 1,0 -16zM49,51h10a3,3 0,0 1,0 6h-10a3,3 0,0 1,0 -6z</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Herdline glyph, inked for the Mono launcher icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="@color/launcher_mono_ink" android:pathData="@string/launcher_glyph_bars" />
+    <path android:fillColor="@color/launcher_mono_ink" android:fillType="evenOdd" android:pathData="@string/launcher_glyph_link" />
+</vector>

@@ -1,4 +1,5 @@
 .gradle/
+.kotlin/
 build/
 local.properties
 /target/
@@ -6,10 +7,5 @@ local.properties
 .idea/
 *.jks
 *.keystore
-
-# wrangler files
-.wrangler
-.dev.vars*
-!.dev.vars.example
 .env*
 !.env.example

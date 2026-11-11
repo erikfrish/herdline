@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline's own glyph and colours. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+    <foreground android:drawable="@drawable/ic_launcher_glyph" />
+    <monochrome android:drawable="@drawable/ic_launcher_glyph_light" />
 </adaptive-icon>

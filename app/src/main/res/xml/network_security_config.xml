@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every host, the update channel's GitHub hosts included, keeps the
+  platform defaults: system trust anchors only, no cleartext, the platform
+  hostname verifier. No user-added or bundled anchor is trusted.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

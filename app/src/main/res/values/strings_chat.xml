@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat">Chat</string>
+    <string name="chat_terminal">Terminal</string>
+    <string name="chat_load_older">Load older messages</string>
+    <string name="chat_loading">Reading the transcript…</string>
+    <string name="chat_unavailable">Chat cannot read this agent: %1$s</string>
+    <!-- Under the saved-at title of the shared outage strip, while the link is up but a read failed. -->
+    <string name="chat_not_refreshed">Chat could not read the transcript again; it keeps trying</string>
+    <string name="chat_open_terminal">Open Terminal</string>
+    <plurals name="chat_latest_new">
+        <item quantity="one">Latest · %d new</item>
+        <item quantity="other">Latest · %d new</item>
+    </plurals>
+    <string name="chat_agent_label">omp</string>
+    <string name="chat_thinking">Thinking</string>
+    <plurals name="chat_thinking_lines">
+        <item quantity="one">Thinking · %d line</item>
+        <item quantity="other">Thinking · %d lines</item>
+    </plurals>
+    <string name="chat_compacted">Context compacted</string>
+    <string name="chat_tool_failed">failed</string>
+    <string name="chat_tool_done">done</string>
+    <string name="chat_tool_running">running</string>
+    <!-- The call was refused by the person or a policy and did not run; not a failure. -->
+    <string name="chat_tool_denied">denied</string>
+    <string name="chat_tool_exit">exit %1$d</string>
+    <string name="chat_tool_exit_spoken">exit code %1$d</string>
+    <string name="chat_show_output">Show output</string>
+    <string name="chat_hide_output">Hide output</string>
+    <string name="chat_show_steps">Show steps</string>
+    <string name="chat_hide_steps">Hide steps</string>
+    <string name="chat_tool_arguments">Arguments</string>
+    <plurals name="chat_tool_group">
+        <item quantity="one">%d tool</item>
+        <item quantity="other">%d tools</item>
+    </plurals>
+    <plurals name="chat_tool_group_failed">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
+    <plurals name="chat_tool_group_denied">
+        <item quantity="one">%d denied</item>
+        <item quantity="other">%d denied</item>
+    </plurals>
+    <plurals name="chat_run_earlier">
+        <item quantity="one">%d earlier step</item>
+        <item quantity="other">%d earlier steps</item>
+    </plurals>
+    <plurals name="chat_show_all_lines">
+        <item quantity="one">Show all %d line</item>
+        <item quantity="other">Show all %d lines</item>
+    </plurals>
+    <string name="chat_copy">Copy</string>
+    <string name="chat_tool_images">%1$d image(s) in the result; open the terminal to see them</string>
+    <string name="chat_image">Image: open the terminal to see it</string>
+    <string name="chat_truncated">Shortened for chat; the terminal has the rest</string>
+    <string name="chat_working">Working</string>
+    <string name="chat_working_on">Working · %1$s</string>
+    <string name="chat_blocked_title">Waiting for you in the terminal</string>
+    <string name="chat_blocked_tool">%1$s is waiting for an answer. Chat cannot answer dialogs; answer it in the terminal.</string>
+    <string name="chat_blocked_other">The agent is waiting for input. Chat cannot answer dialogs; answer it in the terminal.</string>
+    <string name="chat_blocked_question">Shown here to read only. Chat cannot answer it; choose in the terminal.</string>
+    <string name="chat_answer_in_terminal">Answer in Terminal</string>
+    <string name="chat_answer_in_terminal_for">Answer in Terminal: %1$s</string>
+    <string name="chat_error_title">Stopped after a failed tool</string>
+    <string name="chat_empty">No messages yet in this session.</string>
+    <string name="chat_you">You</string>
+    <!-- CT-1: the pane read here vs Herdr's shared focus (design/CHAT-TARGET.md). -->
+    <string name="chat_reading_here">Reading here</string>
+    <string name="chat_on_desktop">On desktop</string>
+    <string name="chat_desktop_elsewhere">Desktop: %1$s</string>
+    <string name="chat_desktop_elsewhere_spoken">Reading %1$s here. The desktop is on %2$s.</string>
+    <string name="chat_send_route">Sends into %1$s\'s terminal</string>
+    <string name="terminal_shows_desktop">Terminal shows the desktop\'s pane, %1$s. You were reading %2$s.</string>
+    <string name="focus_reading_shared">Show %1$s (moves the desktop)</string>
+    <string name="chat_pane_closed">%1$s has closed. Your draft is kept.</string>
+    <string name="reason_target_unchecked">Not sent: Send types into %1$s\'s terminal, and that terminal can\'t be checked from here right now. Your text is kept.</string>
+</resources>

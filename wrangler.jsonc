@@ -1,8 +1,0 @@
-// bellterm.app: the static site in site/, served as Worker static assets.
-// .github/workflows/site.yml deploys it from main; never deploy a local checkout.
-{
-  "name": "bellterm",
-  "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./site" },
-  "routes": [{ "pattern": "bellterm.app", "custom_domain": true }]
-}

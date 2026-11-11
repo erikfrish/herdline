@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. -->
 <resources>
-    <style name="Theme.Bellterm" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.Herdline" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#FFFBFAF7</item>
     </style>
 </resources>

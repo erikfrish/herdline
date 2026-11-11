@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline name and help links. -->
 <resources>
-    <string name="app_name" translatable="false">Bellterm</string>
-    <string name="channel_connection">Attached sessions</string>
-    <string name="channel_agents">Agents</string>
+    <string name="app_name" translatable="false">Herdline</string>
+    <string name="channel_live">Attached sessions and live card</string>
+    <string name="channel_connection">Connection status</string>
     <string name="attached_to">Attached to %1$s</string>
     <string name="attached_detail">Herdr keeps running on the host after you disconnect</string>
     <string name="attached_count">%1$d attached</string>
@@ -14,10 +15,10 @@
     <string name="reconnect">Reconnect</string>
     <string name="could_not_connect">Could not connect</string>
     <string name="incompatible_daemon_title">Update Herdr on the host</string>
-    <string name="incompatible_daemon_text">Herdr on this host is %1$s; Bellterm needs %2$s or later.\n\nUpdate Herdr runs herdr update --handoff on the host, which hands running sessions to the new version. Or run it there yourself, then tap Reconnect.</string>
+    <string name="incompatible_daemon_text">Herdr on this host is %1$s; Herdline needs %2$s or later.\n\nUpdate Herdr runs herdr update --handoff on the host, which hands running sessions to the new version. Or run it there yourself, then tap Reconnect.</string>
     <string name="update_herdr">Update Herdr</string>
     <string name="herdr_missing_title">No Herdr on the host</string>
-    <string name="herdr_missing_text">No Herdr that Bellterm can use answered on this host.\n\nInstall Herdr downloads Herdr’s installer from herdr.dev/install.sh and runs it on the host, which puts herdr in ~/.local/bin. If a Herdr is already there but too old to answer, it is updated instead.</string>
+    <string name="herdr_missing_text">No Herdr that Herdline can use answered on this host.\n\nInstall Herdr downloads Herdr’s installer from herdr.dev/install.sh and runs it on the host, which puts herdr in ~/.local/bin. If a Herdr is already there but too old to answer, it is updated instead.</string>
     <string name="install_herdr">Install Herdr</string>
     <string name="herdr_setup_running_title">Installing or updating Herdr</string>
     <string name="herdr_setup_running_text">Running Herdr’s installer or updater on the host. This can take a few minutes.</string>
@@ -26,8 +27,8 @@
     <string name="herdr_setup_failed_text">The host stopped with exit status %1$s. The end of its output:</string>
     <string name="unknown_exit_status">unknown</string>
     <string name="try_again">Try again</string>
-    <string name="incompatible_app_title">Update Bellterm</string>
-    <string name="incompatible_app_text">Herdr on this host (%1$s) is newer than this version of Bellterm supports. Update Bellterm, then reconnect.</string>
+    <string name="incompatible_app_title">Update Herdline</string>
+    <string name="incompatible_app_text">Herdr on this host (%1$s) is newer than this version of Herdline supports. Update Herdline, then reconnect.</string>
     <string name="unknown_version">an unknown version</string>
     <string name="needs_input_named">%1$s needs input</string>
     <string name="more">More options</string>
@@ -69,7 +70,7 @@
     <string name="section_sign_in">Sign in</string>
     <string name="section_route">Route</string>
     <string name="section_more">More</string>
-    <string name="node_name">Name</string>
+    <string name="node_name">Name (optional)</string>
     <string name="host_address">Host or IP address</string>
     <string name="host_user">User</string>
     <string name="host_port">Port</string>
@@ -81,7 +82,7 @@
     <string name="identity">Key</string>
     <string name="jump_host">Jump host</string>
     <string name="jump_none">None (connect directly)</string>
-    <string name="jump_help">Bellterm connects to the jump host first and reaches this node through it, as ssh -J does. Jump hosts can have jump hosts of their own.</string>
+    <string name="jump_help">Herdline connects to the jump host first and reaches this node through it, as ssh -J does. Jump hosts can have jump hosts of their own.</string>
     <string name="group">Group</string>
     <string name="group_help">Type a new group, pick one from the list, or leave blank.</string>
     <string name="keepalive">Keepalive (seconds)</string>
@@ -119,6 +120,28 @@
     <string name="status_blocked">Needs input</string>
     <string name="status_done">Done</string>
     <string name="status_idle">Idle</string>
+    <string name="status_blocked_spoken">needs you</string>
+    <string name="held_state">delivery not confirmed</string>
+    <string name="connection_connected">Connected</string>
+    <string name="connection_connecting">Connecting</string>
+    <string name="connection_lost">Connection lost</string>
+    <string name="connection_failed">Can’t connect</string>
+    <!-- J2 F: output focus while typing. -->
+    <string name="output_focus_on">Focus on output</string>
+    <string name="output_focus_off">Show full terminal</string>
+    <string name="output_focus_menu">Output focus while typing</string>
+    <string name="output_focus_help">Hides the bottom rows while the keyboard is up. Nothing is deleted.</string>
+    <plurals name="output_focus_hidden">
+        <item quantity="one">Bottom %1$d row hidden</item>
+        <item quantity="other">Bottom %1$d rows hidden</item>
+    </plurals>
+    <string name="output_focus_show_all">Show all</string>
+    <string name="output_focus_nothing">Output focus · nothing hidden</string>
+    <string name="output_focus_turn_off">Turn off</string>
+    <plurals name="output_focus_strip_description">
+        <item quantity="one">Output focus is on. The bottom %1$d terminal row is hidden.</item>
+        <item quantity="other">Output focus is on. The bottom %1$d terminal rows are hidden.</item>
+    </plurals>
     <string name="split_right">Split right</string>
     <string name="split_down">Split down</string>
     <string name="zoom_pane">Zoom pane</string>
@@ -187,10 +210,10 @@
     <string name="certificate_validity">Valid from %1$s to %2$s</string>
     <string name="certificate_ca">CA: %1$s</string>
     <string name="known_hosts_help">Host keys you trusted. Forget one to be asked again on the next connection, for example after reinstalling a host.</string>
-    <string name="known_hosts_empty">No host keys trusted yet. Bellterm asks the first time you connect to each host.</string>
+    <string name="known_hosts_empty">No host keys trusted yet. Herdline asks the first time you connect to each host.</string>
     <string name="forget">Forget</string>
     <string name="forget_host_title">Forget %1$s?</string>
-    <string name="forget_host_text">Bellterm will ask you to check its fingerprint again next time.</string>
+    <string name="forget_host_text">Herdline will ask you to check its fingerprint again next time.</string>
     <string name="section_appearance">Appearance</string>
     <string name="theme_mode">Theme</string>
     <string name="theme_system">System</string>
@@ -217,16 +240,8 @@
     <string name="section_about">About</string>
     <string name="about_text">Version %1$s</string>
     <string name="licenses">Open source licences</string>
-    <string name="check_updates">Check for updates</string>
-    <string name="update_checking">Checking…</string>
-    <string name="update_up_to_date">You’re up to date</string>
-    <string name="update_failed">Couldn’t check for updates. Try again later.</string>
-    <string name="update_available_detail">Version %1$s is available. Tap to download.</string>
-    <string name="update_available_title">Bellterm %1$s is available</string>
-    <string name="update_skip">Skip this version</string>
     <string name="help">Help</string>
-    <string name="visit_website">Visit website</string>
-    <string name="join_discord">Join Discord</string>
+    <string name="visit_website">Open on GitHub</string>
     <plurals name="attached_hosts">
         <item quantity="one">Attached to %d node</item>
         <item quantity="other">Attached to %d nodes</item>

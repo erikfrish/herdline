@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Agents: the workspace filter beside the status chips (AG2). -->
+    <string name="scope_all">All workspaces</string>
+    <!-- TalkBack for the selector chip; %1$s is the chosen scope's full name. -->
+    <string name="scope_button">Workspace filter, %1$s</string>
+    <!-- TalkBack's action for the selector chip: "double tap to choose". -->
+    <string name="scope_choose">choose</string>
+    <!-- A chosen workspace with its host, when the label alone is ambiguous. -->
+    <string name="scope_on_host">%1$s · %2$s</string>
+    <!-- Line 2 of the All workspaces item; %2$s is scope_hosts. -->
+    <plurals name="scope_agents">
+        <item quantity="one">%1$d agent on %2$s</item>
+        <item quantity="other">%1$d agents on %2$s</item>
+    </plurals>
+    <plurals name="scope_hosts">
+        <item quantity="one">%d host</item>
+        <item quantity="other">%d hosts</item>
+    </plurals>
+    <!-- While no attached host has sent its first view. -->
+    <string name="agents_loading">Loading agents…</string>
+    <!-- Line 2 of a workspace item: its Herdr number and its agents. -->
+    <plurals name="scope_ws_agents">
+        <item quantity="one">#%2$d · %1$d agent</item>
+        <item quantity="other">#%2$d · %1$d agents</item>
+    </plurals>
+    <!-- TalkBack for a workspace item: "default, on talos2, 1 agent"; the status follows. -->
+    <plurals name="scope_item_spoken">
+        <item quantity="one">%2$s, on %3$s, %1$d agent</item>
+        <item quantity="other">%2$s, on %3$s, %1$d agents</item>
+    </plurals>
+</resources>

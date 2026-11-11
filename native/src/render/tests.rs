@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. */
 use super::*;
 
 fn run(row: u16, col: u16, text: &str) -> Run {
@@ -87,7 +88,7 @@ fn long_strings_are_cut_at_a_character_boundary() {
 }
 
 /// The packed layout is a contract with `RenderFrame.kt`, whose unit test
-/// parses this same fixture. Set `BELLTERM_BLESS=1` to rewrite it after
+/// parses this same fixture. Set `HERDLINE_BLESS=1` to rewrite it after
 /// a deliberate format change, and bump `FORMAT_VERSION` with it.
 #[test]
 fn packed_frame_matches_the_kotlin_fixture() {
@@ -109,7 +110,7 @@ fn packed_frame_matches_the_kotlin_fixture() {
     });
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../app/src/test/resources/frame-v1.bin");
-    if std::env::var_os("BELLTERM_BLESS").is_some() {
+    if std::env::var_os("HERDLINE_BLESS").is_some() {
         std::fs::write(&path, frame.pack()).unwrap();
     }
     assert_eq!(std::fs::read(&path).unwrap(), frame.pack());

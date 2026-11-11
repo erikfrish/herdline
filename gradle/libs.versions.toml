@@ -5,7 +5,6 @@ compose-bom = "2026.09.00"
 activity-compose = "1.9.3"
 core-ktx = "1.19.1"
 lifecycle = "2.8.7"
-coui = "1.1.0"
 androidx-test-runner = "1.7.0"
 androidx-test-core = "1.7.0"
 uiautomator = "2.4.1"
@@ -22,7 +21,6 @@ compose-material-icons = { module = "androidx.compose.material:material-icons-co
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 junit = { module = "junit:junit", version = "4.13.2" }
-coui-blur = { module = "io.github.suqi8.coui.kmp:coui-blur", version.ref = "coui" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }

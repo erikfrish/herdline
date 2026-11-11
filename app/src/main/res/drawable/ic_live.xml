@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Live (neutral): a terminal frame with a prompt. design/mockups/nowbar/glyphs/live.svg; a status-bar mask, so only the shape carries the state. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M6,4 H18 A3,3 0 0 1 21,7 V17 A3,3 0 0 1 18,20 H6 A3,3 0 0 1 3,17 V7 A3,3 0 0 1 6,4 Z"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M7,9.5 L10,12 L7,14.5"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M12.5,15 H17"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+</vector>

@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. */
 use super::*;
 
 const ENCRYPTED: &str = include_str!("../../tests/fixtures/encrypted_ed25519");
@@ -9,10 +10,10 @@ const EXPIRED: &str = include_str!("../../tests/fixtures/user-cert-expired.pub")
 
 #[test]
 fn generated_keys_round_trip_and_differ() {
-    let first = generate("bellterm").unwrap();
-    let second = generate("bellterm").unwrap();
+    let first = generate("herdline").unwrap();
+    let second = generate("herdline").unwrap();
     assert!(first.public.starts_with("ssh-ed25519 "));
-    assert!(first.public.ends_with(" bellterm"));
+    assert!(first.public.ends_with(" herdline"));
     assert_eq!(public_of(&first.private).unwrap(), first.public);
     assert_ne!(first.public, second.public);
 }

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The session header's up button: back to the host list. -->
+    <string name="session_up">Hosts</string>
+    <string name="session_back_to_composer">Back to composer</string>
+    <string name="session_unzoom_shared">Unzoom (shared)</string>
+    <string name="session_split_right_shared">Split right (shared)</string>
+    <string name="session_split_down_shared">Split down (shared)</string>
+    <string name="session_zoom_help">Also zooms on the desktop</string>
+    <string name="session_close_pane">Close pane…</string>
+    <string name="session_close_tab">Close tab…</string>
+    <string name="session_disconnect">Disconnect…</string>
+    <string name="session_disconnect_title">Disconnect from %1$s?</string>
+    <string name="session_disconnect_text">Herdr keeps running on the host, with every agent and terminal. Connect again at any time.</string>
+    <!-- Header line 2: the host, then how many tabs the workspace has. -->
+    <plurals name="session_tab_count">
+        <item quantity="one">%1$d tab</item>
+        <item quantity="other">%1$d tabs</item>
+    </plurals>
+    <!-- The tab row: previous/next, and the button that opens the Tabs sheet with the position, "3/8". -->
+    <string name="session_tab_previous">Previous tab</string>
+    <string name="session_tab_next">Next tab</string>
+    <string name="session_tabs_position">%1$d/%2$d</string>
+    <string name="session_tabs_button">Tabs, %1$d of %2$d</string>
+    <string name="session_panes">Panes</string>
+    <!-- Chat | Terminal on a pane Chat cannot read. %1$s is the tab, %2$s the program in it. -->
+    <string name="session_chat_shell">Chat needs an agent. %1$s runs a shell, so it stays in Terminal. Chat stays your choice for agent tabs.</string>
+    <string name="session_chat_other_agent">Chat reads OMP agents only. %1$s runs %2$s, so it stays in Terminal. Chat stays your choice for OMP tabs.</string>
+    <string name="session_chat_unreadable">Chat can\'t read this agent right now, so this tab shows Terminal. It switches back when Chat can read it.</string>
+    <!-- The strip under the header while the screen is what was saved (Collie row 4). %1$s is a clock time. -->
+    <string name="outage_saved_at">Showing what was saved at %1$s</string>
+    <string name="outage_reconnecting">Reconnecting…</string>
+    <string name="outage_last_live">Last live at %1$s</string>
+    <!-- Under the saved-at title: what the link reported, never a guessed cause. %1$s is that report. -->
+    <string name="outage_not_connected">Not connected: %1$s</string>
+    <string name="outage_retry">Retry</string>
+    <string name="outage_retrying">Retrying</string>
+    <string name="outage_dismiss">Hide this notice</string>
+    <string name="session_reconnected">Reconnected</string>
+    <string name="banner_dismiss">Dismiss notification</string>
+    <!-- BN-1: the top banner's Open, its line once the pane has gone, and what TalkBack reads. -->
+    <string name="banner_open">Open</string>
+    <string name="banner_open_action">Open %1$s</string>
+    <string name="banner_pane_closed">That pane has closed</string>
+    <string name="banner_announcement">%1$s, %2$s. Notification.</string>
+    <string name="banner_announcement_title">%1$s. Notification.</string>
+    <string name="sidebar_fold">Fold sidebar</string>
+    <string name="sidebar_show">Show sidebar</string>
+    <!-- A rail item: the workspace name, then its agents' state. -->
+    <string name="rail_workspace">%1$s, %2$s</string>
+</resources>

@@ -1,4 +1,5 @@
-//! The JNI surface of `app.bellterm.core.Native`. Sessions cross the
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
+//! The JNI surface of `io.github.erikfrish.herdline.core.Native`. Sessions cross the
 //! boundary as registry IDs rather than pointers, so no handle can dangle or
 //! be freed twice; strings are parsed into domain types here and nowhere else.
 //!
@@ -12,7 +13,7 @@
 #![allow(unsafe_code)]
 
 use crate::{
-    Error, Result, config, herdr_setup,
+    Error, Result, attach, config, herdr_setup,
     input::Touch,
     keys,
     session::{self, Session},
@@ -130,20 +131,20 @@ fn u32_of(value: jint) -> u32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_init<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_init<'local>(
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
     #[cfg(target_os = "android")]
     {
         use tracing_subscriber::layer::SubscriberExt as _;
-        let subscriber = tracing_subscriber::registry().with(paranoid_android::layer("Bellterm"));
+        let subscriber = tracing_subscriber::registry().with(paranoid_android::layer("Herdline"));
         let _ = tracing::subscriber::set_global_default(subscriber);
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_generateKey<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_generateKey<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     comment: JString<'local>,
@@ -156,7 +157,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_generateKey<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_publicKey<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_publicKey<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     private: JString<'local>,
@@ -171,7 +172,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_publicKey<'local>(
 /// Start connecting with the JSON document `config.rs` describes. The text
 /// holds secrets: it is parsed into zeroizing types and not kept.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_connect<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_connect<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     config_json: JString<'local>,
@@ -193,7 +194,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_connect<'local>(
 /// `{"exit_status": …, "output": …}`. Blocks for minutes: never call it on
 /// the main thread.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_setupHerdr<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_setupHerdr<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     config_json: JString<'local>,
@@ -209,7 +210,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_setupHerdr<'local>(
 /// Import key text; returns `{"private": …, "info": KeyInfo}`, the private
 /// key decrypted for storage.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_importKey<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_importKey<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     text: JString<'local>,
@@ -228,7 +229,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_importKey<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_certificateInfo<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_certificateInfo<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     certificate: JString<'local>,
@@ -244,7 +245,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_certificateInfo<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_parseSshConfig<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_parseSshConfig<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     text: JString<'local>,
@@ -257,7 +258,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_parseSshConfig<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_nextEvent<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_nextEvent<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -277,7 +278,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_nextEvent<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_takeFrame<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_takeFrame<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -292,7 +293,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_takeFrame<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_takeView<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_takeView<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -307,7 +308,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_takeView<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_key<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_key<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -329,7 +330,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_key<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_chord<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_chord<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -348,7 +349,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_chord<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_text<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_text<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -364,7 +365,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_text<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_paste<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_paste<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -380,7 +381,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_paste<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_touch<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_touch<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -403,7 +404,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_touch<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_resize<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_resize<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -424,7 +425,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_resize<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_request<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_request<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -441,7 +442,217 @@ pub extern "system" fn Java_app_bellterm_core_Native_request<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_setTheme<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerCheck<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    pane: JString<'local>,
+    viewport: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let pane = string(env, &pane)?;
+        let viewport = optional(env, &viewport)?;
+        let check = session(id)?.composer_check(&pane, viewport.as_deref())?;
+        Ok(env.new_string(check)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerDeliver<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let outcome = session(id)?.composer_deliver(&request)?;
+        Ok(env.new_string(outcome)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// The first step of a steer. Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerSteer<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let outcome = session(id)?.composer_steer(&request)?;
+        Ok(env.new_string(outcome)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// The Enter step of a steer. Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerSteerEnter<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    target: JString<'local>,
+    receipt: JString<'local>,
+    viewport: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let target = string(env, &target)?;
+        let receipt = string(env, &receipt)?;
+        let viewport = optional(env, &viewport)?;
+        let outcome = session(id)?.composer_steer_enter(&target, &receipt, viewport.as_deref())?;
+        Ok(env.new_string(outcome)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerSteerCancel<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    target: JString<'local>,
+) {
+    env.with_env(|env| -> Result<_> { Session::composer_steer_cancel(&string(env, &target)?) })
+        .resolve::<ThrowIo>()
+}
+
+/// Opens one attachment upload. Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_attachmentBegin<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let outcome = session(id)?.attachment_begin(&request)?;
+        Ok(env.new_string(outcome)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// The first `length` bytes of `bytes`, next in the upload. Blocks while
+/// the host is slower than the phone.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_attachmentWrite<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    upload: jlong,
+    bytes: JByteArray<'local>,
+    length: jint,
+) {
+    env.with_env(|env| -> Result<_> {
+        let mut chunk = env.convert_byte_array(&bytes)?;
+        let length = usize::try_from(length).map_err(|_| Error::BadReply)?;
+        if length > chunk.len() {
+            return Err(Error::BadReply);
+        }
+        chunk.truncate(length);
+        attach::write(upload, chunk)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// Ends an upload and names the file once the host's SHA-256 is `sha256`.
+/// Blocks on the host.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_attachmentFinish<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    upload: jlong,
+    sha256: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let sha256 = string(env, &sha256)?;
+        let outcome = attach::finish(upload, &sha256)?;
+        Ok(env.new_string(outcome)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// Abandons an upload; returns at once.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_attachmentCancel<'local>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    upload: jlong,
+) {
+    attach::cancel(upload);
+}
+
+/// Removes a staged attachment from the host. Blocks on the host.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_attachmentDiscard<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    attachment: JString<'local>,
+) {
+    env.with_env(|env| -> Result<_> {
+        let attachment = string(env, &attachment)?;
+        session(id)?.attachment_discard(&attachment)
+    })
+    .resolve::<ThrowIo>()
+}
+
+/// Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerInstance<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    pane: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let pane = string(env, &pane)?;
+        let instance = session(id)?.composer_instance(&pane)?;
+        Ok(env.new_string(instance)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerHold<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    target: JString<'local>,
+) {
+    env.with_env(|env| -> Result<_> { Session::composer_hold(&string(env, &target)?) })
+        .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerUnlock<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    target: JString<'local>,
+) {
+    env.with_env(|env| -> Result<_> { Session::composer_unlock(&string(env, &target)?) })
+        .resolve::<ThrowIo>()
+}
+
+/// Blocks on the host: Kotlin calls it off the main thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_transcript<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+    request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let transcript = session(id)?.transcript(&request)?;
+        Ok(env.new_string(transcript)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_setTheme<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -462,7 +673,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_setTheme<'local>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_selectionText<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_selectionText<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,
@@ -488,7 +699,7 @@ pub extern "system" fn Java_app_bellterm_core_Native_selectionText<'local>(
 /// Drop the session. Its worker stops on its own thread; nothing is joined
 /// here, so the UI thread never waits on the network.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_app_bellterm_core_Native_disconnect<'local>(
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_disconnect<'local>(
     _env: EnvUnowned<'local>,
     _class: JClass<'local>,
     id: jlong,

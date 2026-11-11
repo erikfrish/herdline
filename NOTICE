@@ -25,13 +25,53 @@ adapted files, the upstream revision they came from, and the modifications
 made to them are recorded in crates/herdr-protocol/NOTICE.md. No upstream
 NOTICE file was present at the revision used.
 
-app/src/main/java/app/bellterm/ui/glass/Lens.kt
------------------------------------------------
-Copyright 2026, compose-coui-ui contributors.
-Licensed under the Apache License, Version 2.0. Taken from the COUI example
-app (https://github.com/suqi8/coui), which adapted it from
-Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
-also Apache-2.0. Changes: the package name.
+Colour palettes
+---------------
+The app themes and terminal colour schemes use these published palettes,
+each under the MIT License (Gruvbox: "MIT/X11", as stated in its README; the
+repository has no LICENSE file). Bellterm derives some surface and text
+tones from them and lifts some colours for contrast; design/THEMES.md lists
+the values.
+
+  Catppuccin   Copyright (c) 2021 Catppuccin
+               https://github.com/catppuccin/palette
+  Nord         Copyright (c) 2016-present Sven Greb
+               https://github.com/nordtheme/nord
+  Gruvbox      Copyright (c) morhetz <morhetz@gmail.com>
+               https://github.com/morhetz/gruvbox
+  Solarized    Copyright (c) 2011 Ethan Schoonover
+               https://github.com/altercation/solarized
+  Rosé Pine    Copyright (c) 2023 Rosé Pine
+               https://github.com/rose-pine/rose-pine-theme
+               terminal colours: https://github.com/rose-pine/alacritty
+  Everforest   Copyright (c) 2019 sainnhe
+               https://github.com/sainnhe/everforest
+  GitHub       Copyright (c) 2018 GitHub Inc. (Primer primitives)
+               https://github.com/primer/primitives
+  Dracula      Copyright (c) 2023 Dracula Theme
+               https://github.com/dracula/dracula-theme
+  One Dark     Copyright (c) 2016 GitHub Inc.
+               https://github.com/atom/one-dark-syntax
+  Tokyo Night  Copyright (c) 2018-present Enkia
+               https://github.com/enkia/tokyo-night-vscode-theme
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 Fonts
 -----
@@ -41,3 +81,25 @@ shipped beside them in that directory.
 The app shows this notice, the Apache License, and the herdr-protocol
 attribution under Settings > Open source licences; the build copies them into
 the APK's assets.
+
+Herdline
+--------
+Herdline (Android application ID io.github.erikfrish.herdline,
+https://github.com/erikfrish/herdline) is an independent fork of Bellterm,
+https://github.com/nimrc/bellterm, maintained by erikfrish. Everything above
+is Bellterm's notice and is kept as it was. Bellterm is Copyright (c) 2026
+Terry Wang; the third-party parts above keep their own copyright and
+licences.
+
+Herdline's changes are Copyright (c) 2026 erikfrish and are licensed under
+the Apache License, Version 2.0, as Bellterm is. Files changed from Bellterm
+carry a notice that they were modified for Herdline, beside their original
+copyright.
+
+Herdline is not affiliated with, endorsed by or supported by Bellterm, Terry
+Wang, Herdr or herdr.dev.
+
+References to Bellterm design documents in the preserved notice above refer
+to the original Bellterm distribution. Herdline maintains its own source
+and documentation in the repository linked above; no Tern assets, fonts,
+stylesheets or extracted application resources are distributed by Herdline.

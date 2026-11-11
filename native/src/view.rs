@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 //! The parts of a daemon snapshot the Android UI shows, as compact JSON:
 //! workspaces with their worktree and branch, each workspace's tabs, panes,
 //! and agents with the daemon's status, in the daemon's own order.
@@ -8,6 +9,8 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct ShellView<'a> {
     pub revision: u64,
+    /// The daemon run this view belongs to; pane IDs are unique within it.
+    pub boot: &'a str,
     pub focused_workspace: Option<&'a str>,
     pub focused_tab: Option<&'a str>,
     pub focused_pane: Option<&'a str>,
@@ -63,6 +66,8 @@ pub struct Agent<'a> {
     pub agent: Option<&'a str>,
     pub title: Option<&'a str>,
     pub status: &'static str,
+    /// Herdr's `state_change_seq`: it orders agent state changes, but carries no time.
+    pub state_seq: u64,
     pub focused: bool,
 }
 
@@ -89,6 +94,7 @@ impl<'a> From<&'a ClientShellSnapshot> for ShellView<'a> {
         });
         Self {
             revision: snapshot.revision,
+            boot: &snapshot.boot_id,
             focused_workspace: snapshot.focused_workspace_id.as_deref(),
             focused_tab: snapshot.focused_tab_id.as_deref(),
             focused_pane: snapshot.focused_pane_id.as_deref(),
@@ -145,6 +151,7 @@ impl<'a> From<&'a ClientShellSnapshot> for ShellView<'a> {
                     agent: a.display_agent.as_deref().or(a.agent.as_deref()),
                     title: a.title.as_deref().or(a.terminal_title_stripped.as_deref()),
                     status: status(a.agent_status),
+                    state_seq: a.state_change_seq,
                     focused: a.focused,
                 })
                 .collect(),

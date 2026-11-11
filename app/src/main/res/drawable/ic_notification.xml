@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Herdline glyph cropped to the status bar's 24dp; the system tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-26">
+        <path android:fillColor="@android:color/white" android:pathData="@string/launcher_glyph_bars" />
+        <path android:fillColor="@android:color/white" android:fillType="evenOdd" android:pathData="@string/launcher_glyph_link" />
+    </group>
+</vector>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App destinations, shown on the compact bottom bar and the wide rail. -->
+    <string name="dest_hosts">Hosts</string>
+    <string name="dest_agents">Agents</string>
+    <!-- Reuses R.string.settings for Settings. -->
+    <string name="return_to_session">Return to session</string>
+    <string name="needs_you_across_hosts">Needs you · across hosts</string>
+    <!-- Agents shows this for any empty filter, not only Needs you. -->
+    <string name="agents_none_match">No agents match.</string>
+    <string name="inbox_no_hosts">No hosts attached. Agents on attached hosts appear here.</string>
+</resources>

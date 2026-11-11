@@ -1,4 +1,5 @@
 name: CI
+# Modified for Herdline (2026): independent SDK and artifact identity.
 
 on:
   push:
@@ -37,9 +38,9 @@ jobs:
         with:
           version: 0.15.2
 
-      - name: Install the NDK
+      - name: Install Android build packages
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37" "build-tools;36.0.0" "ndk;$NDK_VERSION" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       # rust-toolchain.toml pins the version, components, and Android targets.
@@ -63,7 +64,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: bellterm-apks
+          name: herdline-apks
           path: app/build/outputs/apk/*/*.apk
           if-no-files-found: error
           retention-days: 14

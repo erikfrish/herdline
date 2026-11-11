@@ -1,8 +1,9 @@
+# Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes.
 [package]
-description            = "Bellterm's Android core: SSH bridge, libghostty-vt screen, and JNI surface"
+description            = "Herdline's Android core: SSH bridge, libghostty-vt screen, and JNI surface"
 edition.workspace      = true
 license.workspace      = true
-name                   = "bellterm"
+name                   = "herdline"
 publish.workspace      = true
 rust-version.workspace = true
 version.workspace      = true
@@ -27,7 +28,7 @@ serde             = { workspace = true }
 serde_json        = { workspace = true }
 strip-ansi-escapes = "0.2"
 thiserror         = { workspace = true }
-tokio             = { features = ["io-util", "net", "rt", "time"], version = "1" }
+tokio             = { features = ["io-util", "macros", "net", "rt", "sync", "time"], version = "1" }
 tracing           = { workspace = true }
 unicode-width     = "0.2.2"
 zeroize           = { features = ["serde"], version = "=1.9.1" }

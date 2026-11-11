@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline name and launcher icons. -->
+<resources>
+    <string name="settings_back_returns">Back returns to %1$s</string>
+    <string name="section_composer">Composer</string>
+    <string name="section_layout">Layout</string>
+    <string name="section_security">Security &amp; hosts</string>
+    <string name="summary_appearance">Theme, colours, language, interface size, launcher icon variant</string>
+    <string name="summary_terminal">Font, extra keys, bell, keep screen on</string>
+    <string name="summary_composer">Keyboard suggestions</string>
+    <string name="summary_layout">Sidebar layout, tab order, controls</string>
+    <string name="summary_notifications">Needs you, done, live card, lock screen</string>
+    <string name="summary_security">SSH keys, known hosts</string>
+    <string name="summary_about">Version, updates, licences, reset</string>
+    <string name="security_keys_help">Keys and certificates Herdline signs in with</string>
+    <string name="security_known_help">Host fingerprints you have accepted</string>
+
+    <string name="section_interface">Interface</string>
+    <string name="ui_scale">Interface size: %1$d%%</string>
+    <string name="ui_scale_help">Scales menus, buttons and the switcher. The terminal keeps its own font size.</string>
+    <string name="density">Density</string>
+    <string name="density_comfortable">Comfortable</string>
+    <string name="density_compact">Compact</string>
+    <string name="accent">Accent colour</string>
+    <string name="accent_node">Each node\'s colour</string>
+    <string name="accent_help">Tints the app and every session. Without a choice, a session wears its node\'s colour.</string>
+    <string name="accent_dynamic_help">Overrides the wallpaper\'s colour. Choose “Each node\'s colour” to follow it.</string>
+    <string name="layout_mode">Session layout</string>
+    <string name="layout_auto">Auto</string>
+    <string name="layout_compact">Drawer</string>
+    <string name="layout_wide">Sidebar</string>
+    <string name="layout_help">Auto keeps Herdr\'s sidebar beside the terminal when the window is at least 840 dp wide and 480 dp tall. Its ‹ button folds it to a rail of workspaces.</string>
+
+    <string name="section_tabs_list">Tabs list</string>
+    <string name="start_filter">Start with filter</string>
+    <string name="start_filter_needs_you">Needs you</string>
+    <string name="start_filter_working">Working</string>
+    <string name="start_filter_help">The Tabs sheet and sidebar open on this filter each time, and Agents when it opens. Tapping a chip there changes only that open list.</string>
+    <string name="hide_shells">Hide shell tabs</string>
+    <string name="hide_idle_done">Hide idle and done agents</string>
+    <string name="hide_help">Only the Tabs sheet and sidebar hide rows, and a line under the list shows how many, with Show. Search still finds them. A tab that needs you is never hidden. The phone tab row, Tabs n/N, Agents and notifications always count every tab.</string>
+    <string name="terminal_suggestions">Keyboard suggestions in the terminal</string>
+    <string name="terminal_suggestions_help">Off, the terminal asks the keyboard for plain keys. On, it offers words and corrections; a picked correction replaces its word in the pane. The composer always has them.</string>
+
+    <string name="section_extra_keys">Extra keys</string>
+    <string name="show_extra_keys">Show the extra keys row</string>
+    <string name="extra_key_up">Move %1$s left</string>
+    <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier.</string>
+    <string name="extra_keys_default">Restore the default keys</string>
+
+    <string name="section_notifications">Notifications &amp; privacy</string>
+    <string name="notify_attention">When an agent needs you</string>
+    <string name="notify_done">When an agent finishes</string>
+    <string name="notify_connection">When a connection drops</string>
+    <string name="notify_connection_help">Quiet, and only while Herdline is in the background.</string>
+    <string name="live_activity">Live updates for pinned agents</string>
+    <string name="live_activity_help">Pin an agent from its ⋮ menu in the switcher or the session menu. Samsung decides whether Live Updates appear in the Now Bar.</string>
+    <string name="live_lock_detail">Live update lock detail</string>
+    <string name="live_lock_detail_help">Chosen when you pin a live update. Alert and done notifications keep the setting above.</string>
+    <string name="lock_state_only">State only</string>
+    <string name="live_promotion">Live Update status</string>
+    <string name="live_promotion_settings">Open Android settings</string>
+    <string name="promotion_off">Live updates are off.</string>
+    <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
+    <string name="promotion_stale">Not connected: not shown as live</string>
+    <string name="promotion_unsupported">This Android version shows an ordinary notification instead</string>
+    <string name="promotion_not_allowed">Live Updates are off for Herdline</string>
+    <string name="promotion_not_promotable">Ordinary ongoing notification: Android reports it does not qualify as a Live Update.</string>
+    <string name="promotion_requested">Requested; Android or Samsung hasn\'t promoted it</string>
+    <string name="promotion_promoted">Shown as a Live Update</string>
+    <string name="lock_detail">On the lock screen</string>
+    <string name="lock_hidden">Hidden</string>
+    <string name="lock_names">Names</string>
+    <string name="lock_full">Full</string>
+    <string name="lock_detail_help">Names adds the host, the agent and its status; Full adds titles and messages.</string>
+    <string name="lock_preview_title">Locked, an agent that finishes shows as:</string>
+    <string name="lock_preview_sample">The agent\'s message appears here</string>
+    <string name="lock_preview_description">Preview: %1$s</string>
+
+    <string name="section_icon">Launcher icon variant</string>
+    <string name="icon_default">Herdline</string>
+    <string name="icon_mono">Mono</string>
+    <string name="icon_contrast">Contrast</string>
+    <string name="icon_help">Herdline includes three launcher icon variants. The home screen switches to the one you pick. Some launchers take a moment, and may move or remove a home-screen shortcut. Custom icons and pinned shortcuts are not available yet.</string>
+
+    <string name="preview_title">Preview</string>
+    <string name="preview_description">Preview of the session with the current settings</string>
+    <string name="preview_header">work · qa-host</string>
+    <string name="preview_modes">Chat | Terminal</string>
+    <string name="preview_tabs">alice · split · build</string>
+    <string name="preview_user">Fix the token</string>
+    <string name="preview_reply">Rotated expires_at; tests pass.</string>
+    <string name="preview_composer">Message alice…</string>
+    <string name="preview_thinking">Thinking…</string>
+    <string name="preview_link">the diff</string>
+    <string name="preview_tool">Edit · auth/token.go</string>
+    <string name="preview_notice">Held: alice is still working</string>
+    <string name="preview_insert">Insert</string>
+    <string name="preview_send">Send</string>
+    <string name="status_error">Error</string>
+
+    <string name="section_app_theme">Colour theme</string>
+    <string name="app_theme_dark_only">Dark only</string>
+    <string name="app_theme_dark_only_help">Dark only · light uses Herdline</string>
+    <string name="app_theme_dynamic_help">Colours from your wallpaper. Status colours and the terminal stay fixed.</string>
+    <string name="app_theme_description">Theme %1$s, dark and light</string>
+    <string name="app_theme_description_dark_only">Theme %1$s, dark only</string>
+    <string name="app_theme_selected">%1$s, selected</string>
+    <string name="scheme_match_theme">Match theme</string>
+
+    <string name="restore_section">Restore %1$s defaults</string>
+    <string name="restore">Restore</string>
+    <string name="restore_appearance_confirm">Mode, colour theme, terminal schemes, interface size, density, accent and launcher icon variant go back to their defaults. Language stays. Nodes, keys and drafts stay.</string>
+    <string name="restore_terminal_confirm">Font, font size, vibrate on bell, keep screen on and the extra keys go back to their defaults. Imported and downloaded fonts stay. Nodes, keys and drafts stay.</string>
+    <string name="restore_composer_confirm">Keyboard suggestions in the terminal go back to off. Nodes, keys and drafts stay.</string>
+    <string name="restore_layout_confirm">Session layout, the open or folded sidebar, tab order, the start filter, both hide toggles and every control on the Controls page go back to their defaults. Pins stay. Nodes, keys and drafts stay.</string>
+    <string name="restore_controls_confirm">Every + menu entry and Tabs list section comes back, in the original order. Nodes, keys and drafts stay.</string>
+    <string name="restore_notifications_confirm">Every notification and the live card go back on, and the lock screen goes back to Hidden. Android\'s own notification settings stay. Nodes, keys and drafts stay.</string>
+
+    <string name="reset_settings">Reset to defaults</string>
+    <string name="reset_settings_detail">Appearance, terminal and extra keys, composer, layout with the Tabs list and controls, notifications and lock screen. Language, nodes, keys and drafts stay.</string>
+    <string name="reset_settings_confirm">Reset every setting on this screen to its default?</string>
+    <string name="reset">Reset</string>
+
+    <string name="controls_title">Controls</string>
+    <string name="controls_all_shown">All shown</string>
+    <plurals name="controls_hidden">
+        <item quantity="one">%d hidden</item>
+        <item quantity="other">%d hidden</item>
+    </plurals>
+    <string name="section_composer_menu">Composer + menu</string>
+    <string name="section_sheet_sections">Tabs sheet and sidebar</string>
+    <string name="controls_move_up">Move %1$s up</string>
+    <string name="controls_keeps_insert">Keeps Insert without Enter reachable. Show the other one first to hide this.</string>
+    <string name="controls_places">Places (pinned and recent)</string>
+    <string name="controls_filters">Status filters</string>
+    <string name="controls_filters_help">While hidden, the Tabs list always shows All.</string>
+    <string name="controls_fixed">Send, Chat | Terminal, Search and the order selector are always shown. Insert without Enter stays in the + menu or inside the larger editor.</string>
+    <string name="composer_hide_keyboard">Hide keyboard</string>
+    <string name="composer_portrait_reaches_send">%1$s. Portrait gives the pane 12 rows</string>
+    <string name="composer_checking">Checking the pane before Send…</string>
+    <string name="composer_checking_resizing">Checking the pane before Send: it is still resizing…</string>
+    <string name="composer_steer">Steer</string>
+    <string name="steer_help">The agent is working, so Send is off until it is idle. Steer pastes your text, then presses Enter once; if the turn ends just before, the text starts a new turn.</string>
+    <string name="steer_pending">Steering: pasting your text, then one Enter…</string>
+    <string name="steer_left">The steer stopped before Enter: your text is in the pane\'s input box</string>
+    <string name="agent_idle">The agent is idle: use Send</string>
+    <string name="steer_expired">The steer was not finished: check the pane</string>
+    <string name="steer_not_shown">Waiting for the pane to show the text…</string>
+</resources>

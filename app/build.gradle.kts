@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -7,36 +8,38 @@ plugins {
 }
 
 android {
-    namespace = "app.bellterm"
+    namespace = "io.github.erikfrish.herdline"
     compileSdk = 37
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "app.bellterm"
+        // An independent app: it installs beside Bellterm and Bellterm Lab and
+        // never takes their updates.
+        applicationId = "io.github.erikfrish.herdline"
         // libghostty-vt's Zig code uses ELF thread-local storage, which Android's
         // loader supports from API 29; older releases refuse the library.
         minSdk = 29
         targetSdk = 36
-        versionCode = 10001
-        versionName = "1.0.1"
+        versionCode = 10024
+        versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
-    // A release keystore comes from BELLTERM_* environment variables or Gradle
+    // A release keystore comes from HERDLINE_* environment variables or Gradle
     // properties of the same names, never from the repository; see README.md.
     fun signing(name: String): String? =
         System.getenv(name)?.takeIf { it.isNotEmpty() } ?: providers.gradleProperty(name).orNull
-    val keystore = signing("BELLTERM_KEYSTORE")
+    val keystore = signing("HERDLINE_KEYSTORE")
     signingConfigs {
         if (keystore != null) {
             create("release") {
                 storeFile = file(keystore)
-                storePassword = signing("BELLTERM_KEYSTORE_PASSWORD")
-                keyAlias = signing("BELLTERM_KEY_ALIAS")
-                keyPassword = signing("BELLTERM_KEY_PASSWORD") ?: signing("BELLTERM_KEYSTORE_PASSWORD")
+                storePassword = signing("HERDLINE_KEYSTORE_PASSWORD")
+                keyAlias = signing("HERDLINE_KEY_ALIAS")
+                keyPassword = signing("HERDLINE_KEY_PASSWORD") ?: signing("HERDLINE_KEYSTORE_PASSWORD")
             }
         }
     }
@@ -122,7 +125,6 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)
     implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.coui.blur)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     androidTestImplementation(platform(libs.compose.bom))

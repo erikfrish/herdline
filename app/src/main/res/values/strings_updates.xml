@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Herdline's App updates, from its GitHub releases. -->
+<resources>
+    <string name="app_updates">App updates</string>
+    <string name="about_update_available">Stable update available</string>
+    <!-- TalkBack for the bottom bar and rail Settings item while the dot shows. -->
+    <string name="settings_update_available">Settings, stable update available</string>
+    <string name="update_available_title">Herdline %1$s is available</string>
+    <string name="update_skip">Skip this version</string>
+    <string name="update_checking">Checking…</string>
+    <string name="updates_review">Review update</string>
+
+    <string name="updates_this_phone">This phone</string>
+    <string name="updates_version">%1$s (%2$d)</string>
+    <string name="updates_stable_title">Stable · recommended</string>
+    <string name="updates_candidate_title">Test candidate · latest build</string>
+    <string name="updates_stable_available">Stable update: %1$s</string>
+    <string name="updates_on_stable">You’re on the stable build</string>
+    <string name="updates_ahead">Ahead of stable</string>
+    <string name="updates_ahead_body">You’re ahead of stable. This phone runs %1$s; stable is %2$s. The app doesn’t install older builds.</string>
+    <string name="updates_no_stable_candidate_row">No stable update · test build available</string>
+    <string name="updates_no_stable_newer">No stable build newer than yours</string>
+    <string name="updates_not_checked">Not checked yet</string>
+    <string name="updates_size_from">%1$s · from %2$s</string>
+    <string name="updates_whats_new">What’s new</string>
+    <string name="updates_more">More</string>
+    <string name="updates_less">Less</string>
+    <string name="updates_download_install">Download and install</string>
+    <string name="updates_install_test">Install test build</string>
+
+    <string name="qa_passed">✓ Passed QA</string>
+    <string name="qa_not_tested">◇ Not yet tested</string>
+    <string name="qa_failed">✕ Failed QA</string>
+    <string name="qa_unknown">QA state unknown</string>
+    <string name="qa_accepted">Accepted</string>
+    <string name="updates_not_offered">Not offered for install.</string>
+
+    <string name="updates_offline_row">Can’t reach GitHub</string>
+    <string name="updates_offline_body">Can’t reach GitHub, where Herdline’s releases are. Check the connection and try again.</string>
+    <string name="updates_failed_row">Couldn’t check for updates</string>
+    <string name="updates_failed_body">The update list couldn’t be read. Nothing was downloaded.</string>
+    <string name="updates_unavailable">This build isn’t signed with Herdline’s release key, so it has no update channel. A build of your own is updated by hand.</string>
+    <string name="updates_refused_row">Update list isn’t for this app</string>
+    <string name="updates_refused_package">The update list is for another app, so it wasn’t used. This build is fine; nothing was downloaded.</string>
+    <string name="updates_refused_signer">The update list names a signing key other than Herdline’s, so it wasn’t used. This build is fine; nothing was downloaded.</string>
+    <string name="updates_last_check_failed">Last check didn’t finish</string>
+    <string name="updates_last_check_failed_since">Last check didn’t finish · last good check %1$s</string>
+    <string name="updates_last_checked">Last checked %1$s</string>
+    <string name="updates_source">Updates come only from Herdline’s releases on GitHub.</string>
+    <string name="updates_check_now">Check now</string>
+
+    <string name="updates_downloading_row">Downloading %1$d%%</string>
+    <string name="updates_downloading_title">Downloading</string>
+    <string name="updates_progress">%1$s of %2$s</string>
+    <string name="updates_verifying">Checking the download…</string>
+    <string name="updates_mismatch_row">Download didn’t match</string>
+    <string name="updates_mismatch_body">The file didn’t match the release (%1$s). It was deleted and nothing was installed.</string>
+    <string name="updates_reason_size">size</string>
+    <string name="updates_reason_checksum">checksum</string>
+    <string name="updates_reason_package">package</string>
+    <string name="updates_reason_version">version</string>
+    <string name="updates_reason_signer">signer</string>
+    <string name="updates_signer_row">Not signed by Herdline</string>
+    <string name="updates_signer_body">This file isn’t signed with Herdline’s release key, so Android would replace your data or refuse it. It was deleted and nothing was installed.</string>
+    <string name="updates_stopped_row">Download stopped</string>
+    <string name="updates_stopped_body">The download stopped (%1$s).</string>
+    <string name="updates_reason_offline">offline</string>
+    <string name="updates_reason_timeout">timeout</string>
+    <string name="updates_reason_server">server</string>
+    <string name="updates_reason_cancelled">cancelled</string>
+    <string name="updates_try_again">Try again</string>
+
+    <string name="updates_permission_row">Allow installs to continue</string>
+    <string name="updates_permission_title">Allow Herdline to install updates?</string>
+    <string name="updates_permission_body">Android asks once. Herdline only installs its own signed releases from GitHub, and Android still asks you before each install. You can turn this off in Settings › Apps › Special access.</string>
+    <string name="updates_open_settings">Open settings</string>
+    <string name="updates_not_now">Not now</string>
+
+    <string name="updates_waiting_row">Waiting for Android’s installer</string>
+    <string name="updates_waiting_body">Android will ask you to update Herdline. The app closes while it updates; your hosts, keys, drafts and settings stay. If you closed that prompt, tap Install to open it again.</string>
+    <string name="updates_install">Install</string>
+    <string name="updates_not_installed">Not installed</string>
+    <string name="updates_installer_failed">Android’s installer couldn’t be opened. Nothing was installed.</string>
+
+    <string name="updates_updated_row">Updated to %1$s</string>
+    <string name="updates_what_changed">What changed in %1$s</string>
+
+    <string name="updates_candidate_confirm_title">Install a test build?</string>
+    <string name="updates_candidate_confirm_body">%1$s is newer than stable and %2$s. It may have known problems. The app can’t take you back to an older build afterwards.</string>
+    <string name="candidate_untested">hasn’t been tested yet</string>
+    <string name="candidate_passed">passed QA but isn’t stable yet</string>
+</resources>

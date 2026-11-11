@@ -1,3 +1,4 @@
+/* Part of herdr-client, Copyright 2026 Fabien Penso and contributors, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. */
 use super::*;
 use crate::VersionMismatch;
 
@@ -66,7 +67,7 @@ fn generation_says_which_side_is_older_even_in_a_rejection() {
             server_version: Some("0.8.2".into())
         })
     );
-    assert!(newer.to_string().contains("update Bellterm"));
+    assert!(newer.to_string().contains("update Herdline"));
 }
 
 #[test]

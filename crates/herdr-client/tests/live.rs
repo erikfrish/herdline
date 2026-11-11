@@ -1,3 +1,4 @@
+/* Part of herdr-client, Copyright 2026 Fabien Penso and contributors, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 //! Explicitly opt-in: never discovers or attaches to an existing daemon.
 //! The daemon under test is a POSIX process with a POSIX sandbox, so the whole
 //! harness compiles on Unix only.
@@ -27,6 +28,8 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 
 #[path = "live/plugins.rs"]
 mod plugins;
+#[path = "live/sizing.rs"]
+mod sizing;
 
 /// Verify the CLI contract used by the picker against an explicitly selected
 /// installation. Every command has the sandbox's cleared, private environment.
@@ -412,6 +415,90 @@ fn stable_endpoint_live() {
     eprintln!(
         "detach verified: daemon alive; reconnected to same boot {boot} with 2 workspaces / 3 tabs"
     );
+}
+
+/// Herdline reads an agent's input box from a pane's bottom rows and only
+/// while the pane shows all of them: each pane's inner rect must be exactly
+/// the viewport Herdr's scroll metrics count, through resizes and splits.
+#[test]
+#[ignore = "requires explicit HERDR_TEST_BINARY; spawns an isolated live daemon"]
+fn pane_inner_rect_is_the_scroll_viewport_live() {
+    let daemon = Daemon::start();
+    let mut session = Session::open(&daemon);
+    let snapshot = session.snapshot.as_ref().unwrap();
+    let boot = snapshot.boot_id.clone();
+    let pane = snapshot.focused_pane_id.clone().unwrap();
+    let mut checked = 0;
+    let mut check = |session: &mut Session, label: &str, cols: u16, rows: u16, panes: usize| {
+        session
+            .client
+            .handle
+            .resize(
+                &boot,
+                ConnectOptions {
+                    surface_size: ClientSurfaceSize { cols, rows },
+                    ..ConnectOptions::default()
+                },
+            )
+            .unwrap();
+        session.until(label, |event| {
+            let ClientEvent::Surface(s) = event else {
+                return false;
+            };
+            if s.frame.width != cols || s.frame.height != rows || s.panes.len() != panes {
+                return false;
+            }
+            if s.panes.iter().any(|p| p.scroll.is_none()) {
+                return false;
+            }
+            for p in &s.panes {
+                let metrics = p.scroll.as_ref().unwrap();
+                assert_eq!(
+                    u64::from(p.inner_rect.height),
+                    metrics.viewport_rows,
+                    "{label}: pane {} inner {:?}",
+                    p.pane_id,
+                    p.inner_rect
+                );
+                eprintln!(
+                    "{label}: pane {} inner height {} = viewport_rows {}",
+                    p.pane_id, p.inner_rect.height, metrics.viewport_rows
+                );
+            }
+            true
+        });
+        checked += 1;
+    };
+    for (cols, rows) in [(45, 30), (45, 13), (80, 7), (100, 30)] {
+        check(
+            &mut session,
+            &format!("{cols}x{rows} one pane"),
+            cols,
+            rows,
+            1,
+        );
+    }
+    let id = session
+        .client
+        .handle
+        .request(
+            &boot,
+            Method::PaneSplit,
+            json!({"target_pane_id": pane, "direction": "down", "focus": true}),
+        )
+        .unwrap();
+    session.response(id);
+    for (cols, rows) in [(45, 30), (45, 25), (100, 30)] {
+        check(
+            &mut session,
+            &format!("{cols}x{rows} split down"),
+            cols,
+            rows,
+            2,
+        );
+    }
+    assert_eq!(checked, 7);
+    session.detach();
 }
 
 #[test]

@@ -1,37 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- coui-blur needs RuntimeShader (API 33); ui/glass only calls it after
-         isRuntimeShaderSupported() and draws a plain tint below that. -->
-    <uses-sdk tools:overrideLibrary="io.github.suqi8.coui.kmp.blur,io.github.suqi8.coui.kmp.shader" />
+<!-- Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline package, application class, theme and launcher icon. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Lets the monitored-agents card ask to be a Live Update (Android 16). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- Hands a verified update to Android's installer; the user confirms there. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
-        android:name=".BelltermApp"
+        android:name=".HerdlineApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Bellterm">
+        android:theme="@style/Theme.Herdline">
 
         <activity
             android:name=".ui.MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density"
             android:exported="true"
             android:launchMode="singleTop"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Launcher entries, one per icon variant; IconVariants enables exactly one. -->
+        <activity-alias
+            android:name=".ui.LauncherDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:targetActivity=".ui.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherMono"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mono"
+            android:roundIcon="@mipmap/ic_launcher_mono"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ui.LauncherContrast"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_contrast"
+            android:roundIcon="@mipmap/ic_launcher_contrast"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".service.ConnectionService"
@@ -41,5 +75,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps the SSH connection to the user's Herdr terminal daemon open while agents run" />
         </service>
+
+        <!-- Only cacheDir/updates/, read-only to the installer it is granted to. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

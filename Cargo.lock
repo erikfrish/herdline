@@ -102,30 +102,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bellterm"
-version = "0.1.0"
-dependencies = [
- "base64",
- "crossbeam-channel",
- "getrandom 0.4.3",
- "herdr-client",
- "jni",
- "libghostty-vt",
- "paranoid-android",
- "russh",
- "serde",
- "serde_json",
- "strip-ansi-escapes",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unicode-width",
- "zeroize",
-]
-
-[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -750,6 +726,30 @@ dependencies = [
  "ff",
  "rand_core",
  "subtle",
+]
+
+[[package]]
+name = "herdline"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "crossbeam-channel",
+ "getrandom 0.4.3",
+ "herdr-client",
+ "jni",
+ "libghostty-vt",
+ "paranoid-android",
+ "russh",
+ "serde",
+ "serde_json",
+ "strip-ansi-escapes",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
+ "zeroize",
 ]
 
 [[package]]

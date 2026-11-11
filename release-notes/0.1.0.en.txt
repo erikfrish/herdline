@@ -1,0 +1,11 @@
+Herdline 0.1.0 — independent Android client for Herdr.
+
+Originally based on Bellterm, with Apache-2.0 attribution retained. Installs as io.github.erikfrish.herdline beside Bellterm and Bellterm Lab; data is not copied automatically from either app. Host attachments use ~/.cache/herdline/attachments.
+
+Includes the existing OMP Chat/Terminal views, image and file attachment picker with per-host upload consent, Agents with workspace filtering, a top in-app dismissible banner, and pinned Live Updates with configurable lock-screen privacy. Android/OEM controls actual Live Update promotion; Samsung Now Bar support remains unverified.
+
+Updates use the Herdline GitHub repository and its release assets, not the original Bellterm service or a private home server. APKs are checked for package, version, size, SHA-256 and signer before the system installer is opened on an explicit action.
+
+Verification: developer-checked candidate; no runtime QA. Chat has a local reading target: selection no longer automatically moves Herdr's shared focus. Prompt delivery is still terminal-backed and subject to visible-editor/resize guards. An explicit Fit action can move and crop the desktop view; it never sends automatically. Remaining device lifecycle, attachment, installer and held-grid geometry cases are unverified. The Safari-inspired tab overview and Tern-inspired chat redesign are not included. No automatic installation or migration of existing credentials.
+
+The initial H/link launcher glyph is provisional. A separately designed original Herdline logo has not yet been approved.

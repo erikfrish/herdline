@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 //! Android input as Herdr's semantic pane input. Printable text from the
 //! soft keyboard or IME arrives committed and is sent as `TextCommit`; keys
 //! are only for what text cannot say: editing and navigation keys, function
@@ -140,6 +141,11 @@ fn press(code: ClientKeyCode, modifiers: Modifiers, repeat: bool) -> ClientPaneI
     }
 }
 
+/// One plain Enter press.
+pub fn enter() -> ClientPaneInputEvent {
+    press(ClientKeyCode::Enter, Modifiers::default(), false)
+}
+
 /// Committed text without control characters other than tab and newline,
 /// which a keyboard can legitimately produce. Newlines become Enter presses
 /// so a multi-line commit submits like typing would.
@@ -160,8 +166,9 @@ pub fn text(text: &str) -> Vec<ClientPaneInputEvent> {
     events
 }
 
-/// What a touch does at a pane cell, which Herdr turns into a click, a
-/// focus change, or scrolling as the pane's mouse mode dictates.
+/// What a touch does at a cell. A tap is a click Herdr turns into focus or
+/// a click as the pane's mouse mode dictates; a scroll is a wheel, sent only
+/// where [`crate::scroll`] decided the program reads the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Touch {
     Tap,

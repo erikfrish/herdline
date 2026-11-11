@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="switcher">Switch place</string>
+    <string name="switcher_search">Search workspaces, tabs, agents</string>
+    <string name="switcher_clear_search">Clear search</string>
+    <string name="switcher_nothing">Nothing matches.</string>
+    <string name="filter_all">All</string>
+    <string name="filter_needs_you">Needs you %1$d</string>
+    <string name="filter_working">Working %1$d</string>
+    <string name="section_pinned">Pinned</string>
+    <string name="section_recent">Recent</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="pinned">Pinned</string>
+    <string name="zoomed_badge">Zoomed</string>
+    <plurals name="attached_short">
+        <item quantity="one">%1$d ws · %2$d agent</item>
+        <item quantity="other">%1$d ws · %2$d agents</item>
+    </plurals>
+    <plurals name="pane_count">
+        <item quantity="one">%d pane</item>
+        <item quantity="other">%d panes</item>
+    </plurals>
+    <plurals name="need_you_chip">
+        <item quantity="one">%d needs you</item>
+        <item quantity="other">%d need you</item>
+    </plurals>
+    <string name="working_chip">%1$d working</string>
+    <string name="zoom_shared">Zoom (shared)</string>
+    <string name="zoom_shared_help">Zoom is Herdr\'s: every client attached to this tab sees it.</string>
+    <string name="switcher_here">here</string>
+    <string name="switcher_shell">shell</string>
+    <string name="connected_empty">Connected</string>
+    <string name="switcher_expand">Show panes</string>
+    <string name="switcher_collapse">Hide panes</string>
+    <string name="switcher_hidden_badge">hidden</string>
+    <plurals name="switcher_hidden">
+        <item quantity="one">%d hidden · Show</item>
+        <item quantity="other">%d hidden · Show</item>
+    </plurals>
+    <plurals name="switcher_workspace_count">
+        <item quantity="one">%d workspace</item>
+        <item quantity="other">%d workspaces</item>
+    </plurals>
+    <string name="order_title">Tab order</string>
+    <string name="order_label">Order</string>
+    <string name="order_workspace">Workspace</string>
+    <string name="order_last_activity">Last activity</string>
+    <string name="order_help">Last activity lists tabs by Herdr\'s last state change on each host. Times show only changes Herdline saw itself.</string>
+    <string name="order_limit">Ordered by Herdr\'s last state change. Times show only changes Herdline saw itself.</string>
+    <string name="order_limit_short">Ordered by Herdr\'s last state change. Times: only changes Herdline saw.</string>
+    <string name="order_unranked">No state change yet · Herdr order</string>
+    <plurals name="order_update">
+        <item quantity="one">%d changed · Update order</item>
+        <item quantity="other">%d changed · Update order</item>
+    </plurals>
+    <string name="changed_now">changed now</string>
+    <plurals name="changed_minutes">
+        <item quantity="one">changed %d min ago</item>
+        <item quantity="other">changed %d min ago</item>
+    </plurals>
+    <plurals name="changed_hours">
+        <item quantity="one">changed %d h ago</item>
+        <item quantity="other">changed %d h ago</item>
+    </plurals>
+    <plurals name="changed_days">
+        <item quantity="one">changed %d day ago</item>
+        <item quantity="other">changed %d days ago</item>
+    </plurals>
+</resources>

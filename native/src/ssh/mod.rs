@@ -1,3 +1,4 @@
+/* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 //! SSH without an `ssh` executable, which Android does not have. An
 //! in-process client (russh) walks a route of hops: it connects to the first,
 //! opens a `direct-tcpip` channel through each jump host to the next, checks
@@ -5,8 +6,9 @@
 //! and runs Herdr's remote bridge on the last. The bridge channel is pumped
 //! through a Unix socket pair so herdr-client's blocking worker reads it like
 //! the bridge it spawns on the desktop. The async runtime is confined to this
-//! one thread and owns only the SSH sessions. [`run`] walks the same route to
-//! run one command and collect what it prints.
+//! one thread and owns only the SSH sessions. [`Exec`] runs short commands
+//! on the bridge's own SSH session while it is up; [`run`] walks the same
+//! route afresh to run one command and collect what it prints.
 
 mod auth;
 
@@ -60,17 +62,112 @@ pub struct Route {
     pub keepalive: Option<Duration>,
 }
 
+/// Runs commands on the last host over the open bridge's SSH session, so
+/// each one costs a channel, not a new sign-in. It stops working, with
+/// [`Error::SshClosed`], once the bridge ends.
+#[derive(Debug, Clone)]
+pub struct Exec {
+    jobs: tokio::sync::mpsc::Sender<Job>,
+}
+
+#[derive(Debug)]
+struct Job {
+    command: String,
+    timeout: Duration,
+    limit: usize,
+    /// The command's stdin, for an [`Upload`]; `None` gives it none.
+    input: Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
+    reply: tokio::sync::oneshot::Sender<Result<Output>>,
+}
+
+/// Chunks an upload holds before [`Writer::write`] blocks.
+const UPLOAD_QUEUE: usize = 4;
+
+impl Exec {
+    /// Blocks for at most `timeout` after the channel opens: call it from a
+    /// background thread, never from async code.
+    pub fn run(&self, command: String, timeout: Duration, limit: usize) -> Result<Output> {
+        let (reply, outcome) = tokio::sync::oneshot::channel();
+        self.jobs
+            .blocking_send(Job {
+                command,
+                timeout,
+                limit,
+                input: None,
+                reply,
+            })
+            .map_err(|_| Error::SshClosed)?;
+        outcome.blocking_recv().map_err(|_| Error::SshClosed)?
+    }
+
+    /// Start `command` with its stdin open for [`Writer::write`]. It runs
+    /// beside other commands, which never wait for it. It ends, closing
+    /// stdin, once the upload is finished or dropped, or once `idle` passes
+    /// with no chunk taken by the phone or the host; then its output is
+    /// collected for at most `idle`, keeping the last `limit` bytes.
+    pub fn upload(&self, command: String, idle: Duration, limit: usize) -> Result<Upload> {
+        let (reply, outcome) = tokio::sync::oneshot::channel();
+        let (input, chunks) = tokio::sync::mpsc::channel(UPLOAD_QUEUE);
+        self.jobs
+            .blocking_send(Job {
+                command,
+                timeout: idle,
+                limit,
+                input: Some(chunks),
+                reply,
+            })
+            .map_err(|_| Error::SshClosed)?;
+        Ok(Upload {
+            input: Some(input),
+            outcome,
+        })
+    }
+}
+
+/// A command started by [`Exec::upload`], its stdin still open.
+#[derive(Debug)]
+pub struct Upload {
+    input: Option<tokio::sync::mpsc::Sender<Vec<u8>>>,
+    outcome: tokio::sync::oneshot::Receiver<Result<Output>>,
+}
+
+impl Upload {
+    /// A handle that writes to this upload's stdin from another thread.
+    pub fn writer(&self) -> Option<Writer> {
+        self.input.clone().map(Writer)
+    }
+
+    /// Close stdin and wait for the command's output. Blocks.
+    pub fn finish(mut self) -> Result<Output> {
+        self.input = None;
+        self.outcome.blocking_recv().map_err(|_| Error::SshClosed)?
+    }
+}
+
+/// Writes to an [`Upload`]'s stdin. Stdin closes only once every writer is gone.
+#[derive(Debug, Clone)]
+pub struct Writer(tokio::sync::mpsc::Sender<Vec<u8>>);
+
+impl Writer {
+    /// Blocks while the host is slower than the phone; fails once the
+    /// command ended.
+    pub fn write(&self, chunk: Vec<u8>) -> Result<()> {
+        self.0.blocking_send(chunk).map_err(|_| Error::SshClosed)
+    }
+}
+
 /// Open the bridge to the route's Herdr and answer its discovery. Blocks, so
 /// it runs on herdr-client's I/O worker inside the connector; `stop` cancels.
-pub fn open(route: Route, stop: &AtomicBool) -> Result<Stream> {
+pub fn open(route: Route, stop: &AtomicBool) -> Result<(Stream, Exec)> {
     if route.hops.is_empty() {
         return Err(Error::EmptyRoute);
     }
     let command = remote_bridge_command(&route.session)?;
     let (mut ours, theirs) = UnixStream::pair()?;
     let (ready, outcome) = mpsc::sync_channel(1);
+    let (jobs, queue) = tokio::sync::mpsc::channel(4);
     thread::Builder::new()
-        .name("bellterm-ssh".into())
+        .name("herdline-ssh".into())
         .spawn(move || {
             let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -82,7 +179,7 @@ pub fn open(route: Route, stop: &AtomicBool) -> Result<Stream> {
                     return;
                 }
             };
-            runtime.block_on(run_bridge(route, command, theirs, ready));
+            runtime.block_on(run_bridge(route, command, theirs, ready, queue));
         })?;
     let started = Instant::now();
     loop {
@@ -99,7 +196,7 @@ pub fn open(route: Route, stop: &AtomicBool) -> Result<Stream> {
     ours.set_read_timeout(Some(POLL))?;
     ours.set_write_timeout(Some(Duration::from_secs(1)))?;
     answer_remote_bridge(&mut ours, stop)?;
-    Ok(ours)
+    Ok((ours, Exec { jobs }))
 }
 
 /// What a command run with [`run`] left behind.
@@ -134,7 +231,11 @@ pub fn run(route: Route, command: &str, timeout: Duration, limit: usize) -> Resu
     })
 }
 
-async fn collect(mut channel: russh::Channel<client::Msg>, limit: usize) -> Output {
+async fn collect(channel: russh::Channel<client::Msg>, limit: usize) -> Output {
+    drain(channel.split().0, limit).await
+}
+
+async fn drain(mut channel: russh::ChannelReadHalf, limit: usize) -> Output {
     let mut tail = Vec::new();
     let mut exit_status = None;
     while let Some(message) = channel.wait().await {
@@ -159,6 +260,7 @@ async fn run_bridge(
     command: String,
     theirs: UnixStream,
     ready: mpsc::SyncSender<Result<()>>,
+    mut queue: tokio::sync::mpsc::Receiver<Job>,
 ) {
     let (handles, channel) = match tokio::time::timeout(SETUP_TIMEOUT, start(route, command)).await
     {
@@ -181,13 +283,89 @@ async fn run_bridge(
         // disconnect, or the remote bridge exiting.
         tokio::io::copy_bidirectional(&mut channel, &mut theirs).await
     };
-    if let Err(error) = pumped.await {
-        tracing::info!(kind = ?error.kind(), "ssh bridge pump ended");
+    let handles = Arc::new(handles);
+    // One command at a time; an upload runs beside them, so a long one
+    // never delays a check. A job still queued when the pump ends is
+    // dropped, which its caller sees as a closed connection.
+    let jobs = async {
+        while let Some(job) = queue.recv().await {
+            let Some(last) = handles.len().checked_sub(1) else {
+                let _ = job.reply.send(Err(Error::EmptyRoute));
+                continue;
+            };
+            match job.input {
+                Some(input) => {
+                    let handles = handles.clone();
+                    tokio::spawn(async move {
+                        let outcome =
+                            upload(&handles[last], job.command, input, job.timeout, job.limit)
+                                .await;
+                        let _ = job.reply.send(outcome);
+                    });
+                }
+                None => {
+                    let outcome = exec(&handles[last], job.command, job.timeout, job.limit).await;
+                    let _ = job.reply.send(outcome);
+                }
+            }
+        }
+        std::future::pending::<()>().await;
+    };
+    tokio::select! {
+        pumped = pumped => {
+            if let Err(error) = pumped {
+                tracing::info!(kind = ?error.kind(), "ssh bridge pump ended");
+            }
+        }
+        () = jobs => {}
     }
     // The last hop first: each inner session rides on the one before it.
     for handle in handles.iter().rev() {
         let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
     }
+}
+
+async fn exec(
+    session: &Session,
+    command: String,
+    timeout: Duration,
+    limit: usize,
+) -> Result<Output> {
+    let channel = session.channel_open_session().await?;
+    channel.exec(true, command).await?;
+    tokio::time::timeout(timeout, collect(channel, limit))
+        .await
+        .map_err(|_| Error::CommandTimeout)
+}
+
+/// Run `command`, feeding it `input` until that closes, then collect its
+/// output. Each wait, for a chunk, for the host to take one, or for the
+/// output, may last `idle`.
+async fn upload(
+    session: &Session,
+    command: String,
+    mut input: tokio::sync::mpsc::Receiver<Vec<u8>>,
+    idle: Duration,
+    limit: usize,
+) -> Result<Output> {
+    let channel = session.channel_open_session().await?;
+    channel.exec(true, command).await?;
+    let (read, write) = channel.split();
+    let output = tokio::spawn(drain(read, limit));
+    loop {
+        let chunk = tokio::time::timeout(idle, input.recv())
+            .await
+            .map_err(|_| Error::CommandTimeout)?;
+        let Some(chunk) = chunk else { break };
+        tokio::time::timeout(idle, write.data_bytes(chunk))
+            .await
+            .map_err(|_| Error::CommandTimeout)??;
+    }
+    write.eof().await?;
+    tokio::time::timeout(idle, output)
+        .await
+        .map_err(|_| Error::CommandTimeout)?
+        .map_err(|_| Error::SshClosed)
 }
 
 type Session = Handle<Verifier>;

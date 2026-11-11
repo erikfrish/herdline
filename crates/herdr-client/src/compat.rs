@@ -1,3 +1,4 @@
+/* Part of herdr-client, Copyright 2026 Fabien Penso and contributors, Apache-2.0. Modified for Herdline, 2026: renamed to the Herdline package and identity. */
 //! Which side of a refused handshake must be updated, so the owner can tell
 //! the user what to do instead of reporting a protocol error.
 
@@ -52,7 +53,7 @@ pub(crate) fn version_note(version: Option<&str>) -> String {
 /// this app's to fix; an older or equal one lacks what this app requires.
 pub(crate) fn generation_advice(generation: u32) -> &'static str {
     if generation > ENDPOINT_PROTOCOL_GENERATION {
-        "update Bellterm"
+        "update Herdline"
     } else {
         "run `herdr update` and reconnect"
     }
