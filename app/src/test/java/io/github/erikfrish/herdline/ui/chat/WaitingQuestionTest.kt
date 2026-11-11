@@ -12,12 +12,12 @@ class WaitingQuestionTest {
     private fun call(id: String, name: String = "ask", args: String = "{}", truncated: Boolean = false) =
         TranscriptBlock.ToolCall(id, name, args, null, truncated)
 
-    private fun result(id: String, name: String = "read") = TranscriptBlock.ToolResult(id, name, "ok", false, 0, false)
+    private fun result(id: String, name: String = "read") = TranscriptBlock.ToolResult(id, name, "ok", false, emptyList(), false)
 
     private fun items(vararg blocks: TranscriptBlock): List<ChatItem> = chatItems(
         blocks.mapIndexed { index, block ->
             val role = if (block is TranscriptBlock.ToolResult) "toolResult" else "assistant"
-            TranscriptEntry("e$index", if (index == 0) null else "e${index - 1}", index * 10L, TranscriptKind.Message, role, listOf(block))
+            TranscriptEntry("e$index", if (index == 0) null else "e${index - 1}", index * 10L, index * 10L + 10, TranscriptKind.Message, role, listOf(block))
         },
     )
 

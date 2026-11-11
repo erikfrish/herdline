@@ -52,8 +52,18 @@
         <item quantity="other">Show all %d lines</item>
     </plurals>
     <string name="chat_copy">Copy</string>
-    <string name="chat_tool_images">%1$d image(s) in the result; open the terminal to see them</string>
-    <string name="chat_image">Image: open the terminal to see it</string>
+    <string name="chat_image">Image</string>
+    <string name="chat_image_open">Image. Tap to open.</string>
+    <string name="chat_image_loading">Loading image…</string>
+    <string name="chat_image_close">Close image</string>
+    <string name="chat_image_failed">Image not loaded. Tap to try again.</string>
+    <string name="chat_image_gone">This image is no longer in the session.</string>
+    <string name="chat_image_too_large">Image too large to show here (over 20 MB).</string>
+    <string name="chat_image_unsupported">Chat cannot show this image.</string>
+    <string name="chat_image_unreadable">This image cannot be read safely.</string>
+    <!-- How OMP recorded a message sent while it ran; never a message still waiting. -->
+    <string name="chat_steer_steering">Steering message</string>
+    <string name="chat_steer_live">Steered into active response</string>
     <string name="chat_truncated">Shortened for chat; the terminal has the rest</string>
     <string name="chat_working">Working</string>
     <string name="chat_working_on">Working · %1$s</string>

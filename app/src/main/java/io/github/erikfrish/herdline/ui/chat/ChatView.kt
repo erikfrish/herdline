@@ -62,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -104,6 +105,8 @@ import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
+import io.github.erikfrish.herdline.core.TranscriptSteer
+import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.OutageStrip
@@ -186,6 +189,7 @@ internal class ChatKept {
     var problem by mutableStateOf<String?>(null)
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
+    val media = ChatMedia()
 }
 
 @Composable
@@ -212,6 +216,11 @@ private fun ChatContent(
     // Retry cuts the wait before the next read short.
     val wake = remember { Channel<Unit>(Channel.CONFLATED) }
     val colors = chatColors(accent)
+    // What the agent does now: the live view's agent in this pane, never the last poll's answer.
+    val linkLive = connection.state.collectAsState().value is Connection.State.Connected
+    val view by connection.view.collectAsState()
+    val status = chatStatus(linkLive, pane, view?.agentIn(pane))
+    val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -224,11 +233,10 @@ private fun ChatContent(
                     history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
                     problem = null
                 }.onFailure { problem = it.message ?: it.javaClass.simpleName }
-                val status = history?.status
                 withTimeoutOrNull(
                     when {
                         page.isFailure -> ERROR_POLL_MS
-                        status == AgentStatus.Working || status == AgentStatus.Blocked -> BUSY_POLL_MS
+                        busy -> BUSY_POLL_MS
                         else -> IDLE_POLL_MS
                     },
                 ) { wake.receive() }
@@ -238,10 +246,12 @@ private fun ChatContent(
 
     val shown = history
     // A refresh that fails after a transcript loaded. A lost link is the session's strip, not this one.
-    val linkLive = connection.state.collectAsState().value is Connection.State.Connected
     var outage by rememberOutage(if (shown == null) null else problem == null)
     val items = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
-    val status = shown?.status ?: AgentStatus.Unknown
+    val identity = shown?.identity
+    val images = remember(identity) {
+        identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
+    }
     val asking = if (status == AgentStatus.Blocked) pendingTool(items) else null
     // The call the agent is blocked on stands alone, so the waiting row below reads it in place.
     val lines = remember(items, asking) { chatLines(items, asking) }
@@ -406,15 +416,17 @@ private fun ChatContent(
                         item(key = "older") { LoadOlder(loadingOlder, colors, ::loadOlder) }
                     }
                     items(lines, key = { it.key }) { line ->
-                        Column(Modifier.padding(top = line.gap.dp())) {
-                            when (line) {
-                                is ChatLine.Single -> {
-                                    if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
-                                    ChatRow(line.item, colors, expanded, dense)
-                                }
-                                is ChatLine.ToolGroup -> {
-                                    if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
-                                    ToolGroupRow(line, colors, expanded, runs[line.key], dense)
+                        CompositionLocalProvider(LocalChatImages provides images) {
+                            Column(Modifier.padding(top = line.gap.dp())) {
+                                when (line) {
+                                    is ChatLine.Single -> {
+                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
+                                        ChatRow(line.item, colors, expanded, dense)
+                                    }
+                                    is ChatLine.ToolGroup -> {
+                                        if (line.labelled) AgentLabel(colors, tabTitle.takeIf { line.key == titled })
+                                        ToolGroupRow(line, colors, expanded, runs[line.key], dense)
+                                    }
                                 }
                             }
                         }
@@ -532,16 +544,26 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         is ChatItem.User -> BoxWithConstraints(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             // The small corner points at the end edge, where the turn sits; it mirrors in RTL.
             val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 6.dp, bottomStart = 18.dp)
-            Box(
-                Modifier
-                    .widthIn(max = minOf(maxWidth * 0.85f, BubbleMaxWidth))
-                    .clip(shape)
-                    .background(colors.userBubble)
-                    .border(1.dp, colors.bubbleEdge, shape)
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-                    .testTag("chat:user"),
-            ) {
-                Markdown(item.text, colors, dense = dense)
+            Column(horizontalAlignment = Alignment.End) {
+                // Already in the history: how OMP took it in, never a queue it still waits in.
+                item.steer?.let { steer ->
+                    Text(
+                        stringResource(if (steer == TranscriptSteer.Live) R.string.chat_steer_live else R.string.chat_steer_steering),
+                        style = ChatType.meta.copy(color = colors.muted),
+                        modifier = Modifier.padding(bottom = 4.dp).testTag("chat:steer"),
+                    )
+                }
+                Box(
+                    Modifier
+                        .widthIn(max = minOf(maxWidth * 0.85f, BubbleMaxWidth))
+                        .clip(shape)
+                        .background(colors.userBubble)
+                        .border(1.dp, colors.bubbleEdge, shape)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .testTag("chat:user"),
+                ) {
+                    Markdown(item.text, colors, dense = dense)
+                }
             }
         }
         is ChatItem.Assistant -> Column(Modifier.fillMaxWidth().testTag("chat:assistant")) {
@@ -561,7 +583,9 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         is ChatItem.Compaction -> CompactionDivider(colors, open, toggle) {
             Markdown(item.summary, colors, color = colors.muted, dense = dense)
         }
-        is ChatItem.Image -> Text(stringResource(R.string.chat_image), style = ChatType.body.copy(color = colors.muted))
+        is ChatItem.Image -> Box(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = if (item.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
+            ChatImageThumb(item.image, colors)
+        }
     }
 }
 
@@ -727,8 +751,10 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
                         Disclosure(pluralStringResource(R.plurals.chat_show_all_lines, total, total), colors) { expanded["more:" + item.key] = true }
                     }
                 }
-                if (result != null && result.images > 0) {
-                    Text(stringResource(R.string.chat_tool_images, result.images), style = ChatType.meta.copy(color = colors.muted))
+                if (item.images.isNotEmpty()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item.images.forEach { ChatImageThumb(it, colors) }
+                    }
                 }
                 item.call?.takeIf { it.args.isNotBlank() }?.let { call ->
                     val args = expanded["args:" + item.key] == true

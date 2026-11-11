@@ -455,6 +455,57 @@ never moves the desktop.
 - **A closed pane.** If the read pane closes, Chat says "‹pane› has closed.
   Your draft is kept." and never falls back to the desktop's pane by itself.
 
+### Images in Chat
+
+User, assistant and tool-result images are read through the existing
+`Native.transcript` call (no new JNI export). A request carrying `media`
+(version 1) answers one image; pages carry only descriptors, never bytes.
+
+- **Descriptors.** An image block is `{type:"image", part, source}` with
+  `source` `{kind:"inline", bytes}` (decoded size from the base64 length),
+  `{kind:"blob", hash}` for OMP's `blob:sha256:<64 lowercase hex>`, or
+  `{kind:"unreadable"}` for anything else. A tool result's `images` is an
+  array of the same. Entries carry `end`, so an image is named by its entry
+  id, its line `[offset, end)` and its content index.
+- **The entry is the authority, not the hash.** A media read re-reads exactly
+  that line of the session file, confined as pages are, and serves an image
+  only if the line is still that whole entry (same start, length, id) and
+  the part is still an image. A blob is read only when that part's data is
+  exactly `blob:sha256:<hash>` (the host checks before reading the store;
+  the core checks again exactly), and its bytes must hash to that name, else
+  `corrupt`. A hash the phone sends is never enough to read a blob.
+- **One instance, one exec.** The pane, the line, the blob and the pane again
+  are read in one exec. Both reports must name the instance the request was
+  made for (pane, terminal, OMP pid, session file), else `instance_changed`.
+- **The blob store is the OMP process's own.** It is resolved from that
+  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does: the
+  last `--profile` before `--`, else `OMP_PROFILE` when set, else
+  `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a profile
+  `PI_CODING_AGENT_DIR`, else `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a
+  profile `…/profiles/<name>`) takes its place when it exists. What cannot be
+  pinned down is refused as `unknown_store`, never guessed: no `/proc` (e.g.
+  macOS hosts), another `HOME`, `PI_CONFIG_DIR`, relative paths, unusual
+  profile names. The store must resolve inside `$HOME`, and a blob that
+  links out of it is refused (`unconfined`). XDG existence is checked at read
+  time, not when OMP started.
+- **Bounds.** At most 20 MiB of decoded image; a larger blob or inline image
+  is `too_large`. Pages grow up to 32 MiB, enough for one line holding a
+  20 MiB inline image, so such a line never wedges the reader; a longer line
+  is an explicit error. Reads get 20 s plus 1 s per 512 KiB.
+- **The MIME comes from the bytes.** PNG, JPEG, GIF and WebP by their magic
+  bytes; anything else, or invalid base64, is `unsupported`.
+- **Refusals.** `instance_changed`, `moved` (the line no longer names that
+  image), `missing`, `unconfined`, `unknown_store`, `corrupt`, `too_large`,
+  `unsupported`, `version`. Link failures stay errors, not refusals.
+- **Steering labels.** A user message OMP saved with `steering: true` reads
+  "Steering message"; with `liveSteered: true`, "Steered into active
+  response". Neither means it is still queued.
+- **Not available: the pending queue.** Chat does not show texts waiting in
+  OMP's queue, cancel them, or say when one was consumed. That needs OMP to
+  expose a queue peek/dequeue to extensions, an awaitable acceptance of a
+  send, and the request id on the entry that consumed it. It is never
+  inferred from the terminal.
+
 ## Verified against
 
 These were checked against OMP 18.18.3 in a test Herdr session:

@@ -11,23 +11,38 @@
 //! lines are parsed, text is capped, and an identity that changed between
 //! reads (another session, a fork, a replaced pane or process) starts over
 //! from the end of the new file instead of mixing two transcripts.
+//!
+//! Images stay on the host until chat shows one: an entry names each image
+//! (its part and where its bytes are) and a media read fetches that one,
+//! inline base64 from its line or a `blob:sha256:` file from OMP's blob
+//! store beside the session folder, for the same agent instance only.
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests;
 
 use crate::{Error, Result, herdr_setup::plain_text, ssh::Exec};
+use russh::keys::HashAlg;
+use base64::{
+    Engine,
+    engine::{
+        DecodePaddingMode,
+        general_purpose::{GeneralPurpose, GeneralPurposeConfig, STANDARD},
+    },
+};
 use herdr_client::{HERDR_CANDIDATES, shell_quote};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
-/// A read over a slow mobile link.
+/// A read over a slow mobile link, plus a second for each further 512 KiB.
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// The newest part of a transcript, enough for a first screen.
 const FIRST_WINDOW: u64 = 256 * 1024;
 /// A window doubles up to this to fit one long line; a longer one is refused.
-const MAX_WINDOW: u64 = 8 * 1024 * 1024;
+/// It holds a line carrying one inline image at [`MAX_IMAGE`] (base64 of
+/// 20 MiB is 27 962 028 bytes) with room for its text and JSON.
+const MAX_WINDOW: u64 = 32 * 1024 * 1024;
 /// Room for Herdr's pane and process reports around the data.
 const HEADER_ROOM: usize = 64 * 1024;
 const TEXT_LIMIT: usize = 64 * 1024;
@@ -35,17 +50,42 @@ const RESULT_LIMIT: usize = 16 * 1024;
 const ARGS_LIMIT: usize = 8 * 1024;
 const PATH_LIMIT: usize = 4096;
 const SESSIONS_DIR: &str = "/.omp/agent/sessions/";
-/// Reads that may chain within one fetch: identity, a reset, window growth.
-const MAX_READS: usize = 8;
+const BLOB_PREFIX: &str = "blob:sha256:";
+/// The most image bytes one media read decodes and hands to the app.
+pub const MAX_IMAGE: u64 = 20 * 1024 * 1024;
+/// The media request and answer shape this core speaks.
+const MEDIA_VERSION: u32 = 1;
+/// Reads that may chain within one fetch: identity, a reset, and window
+/// growth from [`FIRST_WINDOW`] to [`MAX_WINDOW`].
+const MAX_READS: usize = 12;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
     pub pane: String,
     /// What the caller already shows; `None` when it shows nothing yet.
+    /// A media read needs it: the image must come from that instance.
     #[serde(default)]
     pub expect: Option<Identity>,
     #[serde(default)]
     pub read: Read,
+    /// Read one image instead of transcript lines.
+    #[serde(default)]
+    pub media: Option<Media>,
+}
+
+/// One image an [`Entry`] named: the entry's line `[offset, end)`, the
+/// image's `part` in its content, and, for a blob, its hash.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Media {
+    pub v: u32,
+    /// The entry's ID, checked against the line; `None` for entries without one.
+    #[serde(default)]
+    pub entry: Option<String>,
+    pub offset: u64,
+    pub end: u64,
+    pub part: usize,
+    #[serde(default)]
+    pub blob: Option<String>,
 }
 
 /// Which bytes to read. Offsets are line boundaries a previous [`Response`]
@@ -72,6 +112,14 @@ pub struct Identity {
     pub path: String,
 }
 
+/// What [`fetch`] answers: transcript lines, or the one image asked for.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum Answer {
+    Page(Response),
+    Media { media: MediaAnswer },
+}
+
 #[derive(Debug, Serialize)]
 pub struct Response {
     pub identity: Identity,
@@ -86,12 +134,53 @@ pub struct Response {
     pub entries: Vec<Entry>,
 }
 
+/// One image's bytes as base64, or why there are none.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct MediaAnswer {
+    pub v: u32,
+    #[serde(flatten)]
+    pub outcome: MediaOutcome,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum MediaOutcome {
+    /// `mime` is read from the bytes, never taken from the transcript.
+    Image { mime: &'static str, data: String },
+    Refused { error: Refusal },
+}
+
+/// Why an image is not shown. None of these is retried by the core.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Refusal {
+    /// Another agent, process or session file is in the pane now.
+    InstanceChanged,
+    /// The line no longer holds that entry or that image.
+    Moved,
+    /// No such blob in the store, or the request named no valid image.
+    Missing,
+    /// The blob resolves outside OMP's blob store.
+    Unconfined,
+    /// Which blob store the OMP process uses could not be told exactly.
+    UnknownStore,
+    /// The blob's bytes do not hash to its name.
+    Corrupt,
+    TooLarge,
+    /// Not valid base64, or not a PNG, JPEG, GIF or WebP.
+    Unsupported,
+    /// A media version this core does not speak.
+    Version,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Entry {
     pub id: Option<String>,
     pub parent_id: Option<String>,
     /// Where the line starts in the file: a stable key for entries without an ID.
     pub offset: u64,
+    /// Where the line ends, after its newline.
+    pub end: u64,
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -106,6 +195,20 @@ pub struct Entry {
     /// Why an assistant message ended, such as `stop`, `toolUse` or `error`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
+    /// How a user message reached a running agent, as OMP recorded it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steer: Option<Steer>,
+}
+
+/// How OMP recorded a user message that reached a running agent:
+/// `steering: true` marks one injected mid-turn, and `liveSteered: true` one
+/// the active response took in. Either is already in the history; neither
+/// says anything about messages still waiting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Steer {
+    Steering,
+    Live,
 }
 
 /// An assistant message's token counts and OMP's own cost estimate in USD.
@@ -151,17 +254,54 @@ pub enum Block {
         name: String,
         text: String,
         is_error: bool,
-        images: usize,
+        images: Vec<Image>,
         truncated: bool,
         /// The command's exit code, for tools that report one.
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_code: Option<i64>,
     },
-    Image,
+    Image(Image),
 }
 
-/// Read the pane's transcript. Blocks on the host for at most a few reads.
-pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
+/// An image part of a message: its index in the content, and where its bytes are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Image {
+    pub part: usize,
+    pub source: Source,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Source {
+    /// Base64 in the line; `bytes` is the decoded size it claims.
+    Inline { bytes: u64 },
+    /// A file in OMP's blob store, named by this SHA-256.
+    Blob { hash: String },
+    /// Neither: no data, or a reference that is not a valid blob hash.
+    Unreadable,
+}
+
+/// Read the pane's transcript, or with [`Request::media`] one image of it.
+/// Blocks on the host for at most a few reads.
+pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
+    if let Some(media) = &request.media {
+        let outcome = match &request.expect {
+            Some(expect) => image(exec, session, &request.pane, expect, media)?,
+            None => MediaOutcome::Refused {
+                error: Refusal::InstanceChanged,
+            },
+        };
+        return Ok(Answer::Media {
+            media: MediaAnswer {
+                v: MEDIA_VERSION,
+                outcome,
+            },
+        });
+    }
+    page(exec, session, request).map(Answer::Page)
+}
+
+fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     let mut expect = request.expect.clone();
     let mut read = request.read;
     let mut window = FIRST_WINDOW;
@@ -172,11 +312,11 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Response> 
             read,
             window,
         });
-        let script = script(session, &request.pane, target);
+        let script = script(session, &request.pane, target.map(Fetch::Lines));
         let limit = usize::try_from(window).unwrap_or(usize::MAX) + 1 + HEADER_ROOM;
         let output = exec.run(
             format!("/bin/sh -c {}", shell_quote(&script)),
-            TIMEOUT,
+            read_timeout(window),
             limit,
         )?;
         let reply = parse_reply(output.exit_status, &output.tail)?;
@@ -213,12 +353,230 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Response> 
     Err(Error::BadReply)
 }
 
+/// One image of the instance `expect`: its entry's line is read again and
+/// must still name that image, and the pane must hold `expect` both before
+/// and after the read, all in one exec on the host.
+fn image(
+    exec: &Exec,
+    session: &str,
+    pane: &str,
+    expect: &Identity,
+    media: &Media,
+) -> Result<MediaOutcome> {
+    let refused = |error| Ok(MediaOutcome::Refused { error });
+    if media.v != MEDIA_VERSION {
+        return refused(Refusal::Version);
+    }
+    let len = match media.end.checked_sub(media.offset) {
+        Some(len) if len > 0 && len <= MAX_WINDOW => len,
+        // A line that long holds more than chat reads at once.
+        Some(len) if len > MAX_WINDOW => return refused(Refusal::TooLarge),
+        _ => return refused(Refusal::Missing),
+    };
+    let blob = match media.blob.as_deref() {
+        None => None,
+        Some(hash) if !blob_hash(hash) => return refused(Refusal::Missing),
+        Some(hash) => match expect.pid {
+            Some(pid) => Some((hash, pid)),
+            // Without the process its store cannot be told.
+            None => return refused(Refusal::UnknownStore),
+        },
+    };
+    let fetch = Fetch::Image {
+        path: &expect.path,
+        offset: media.offset,
+        len,
+        blob,
+    };
+    let bytes = len + if blob.is_some() { MAX_IMAGE } else { 0 };
+    let output = exec.run(
+        format!(
+            "/bin/sh -c {}",
+            shell_quote(&script(session, pane, Some(fetch)))
+        ),
+        read_timeout(bytes),
+        usize::try_from(bytes).unwrap_or(usize::MAX) + 1 + 2 * HEADER_ROOM,
+    )?;
+    media_outcome(output.exit_status, &output.tail, expect, media)
+}
+
+/// How long a read of `bytes` may take: [`TIMEOUT`], plus a second for each 512 KiB.
+fn read_timeout(bytes: u64) -> Duration {
+    TIMEOUT + Duration::from_secs(bytes / (512 * 1024))
+}
+
+/// The image in a media script's reply, once the pane held `expect` before
+/// and after it and the line still names that image.
+fn media_outcome(
+    exit_status: Option<u32>,
+    bytes: &[u8],
+    expect: &Identity,
+    media: &Media,
+) -> Result<MediaOutcome> {
+    // The pane is reported before anything else is looked at, so a refusal
+    // still says whose pane it was.
+    let file_refusal = match exit_status {
+        Some(EXIT_NO_MEDIA | EXIT_NO_FILE) => Some(Refusal::Missing),
+        Some(EXIT_TOO_LARGE) => Some(Refusal::TooLarge),
+        Some(EXIT_UNCONFINED) => Some(Refusal::Unconfined),
+        Some(EXIT_NO_STORE) => Some(Refusal::UnknownStore),
+        Some(EXIT_MOVED) => Some(Refusal::Moved),
+        _ => None,
+    };
+    let reply = parse_reply(file_refusal.map_or(exit_status, |_| Some(0)), bytes)?;
+    let refused = |error| Ok(MediaOutcome::Refused { error });
+    if !same_instance(&reply.pane, &reply.process, expect)? {
+        return refused(Refusal::InstanceChanged);
+    }
+    if let Some(error) = file_refusal {
+        return refused(error);
+    }
+    let file = reply.file.ok_or(Error::BadReply)?;
+    // Cut by the lengths the host reported, never by a marker the session
+    // file's own bytes could hold.
+    fn take(bytes: &[u8], len: u64) -> Result<(&[u8], &[u8])> {
+        let len = usize::try_from(len).map_err(|_| Error::BadReply)?;
+        (bytes.len() >= len)
+            .then(|| bytes.split_at(len))
+            .ok_or(Error::BadReply)
+    }
+    let (line, rest) = take(
+        file.data,
+        file.size.saturating_sub(file.start).min(media.end - media.offset),
+    )?;
+    let (blob, rest) = match &media.blob {
+        Some(_) => {
+            let rest = rest.strip_prefix(b"\n@@blob ").ok_or(Error::BadReply)?;
+            let (size, rest) = split(rest, b"\n@@data\n").ok_or(Error::BadReply)?;
+            let size = std::str::from_utf8(size)
+                .ok()
+                .and_then(|size| size.parse::<u64>().ok())
+                .ok_or(Error::BadReply)?;
+            let (blob, rest) = take(rest, size)?;
+            (Some(blob), rest)
+        }
+        None => (None, rest),
+    };
+    let after = rest.strip_prefix(b"\n@@after\n").ok_or(Error::BadReply)?;
+    let (pane, process) = split(after, b"\n@@proc\n").ok_or(Error::BadReply)?;
+    let pane = serde_json::from_slice(pane)?;
+    let process = serde_json::from_slice(process).unwrap_or(Value::Null);
+    if !same_instance(&pane, &process, expect)? {
+        return refused(Refusal::InstanceChanged);
+    }
+    let decoded = match image_part_bytes(&file, line, blob, media) {
+        Ok(decoded) => decoded,
+        Err(error) => return refused(error),
+    };
+    match image_mime(&decoded) {
+        Some(mime) => Ok(MediaOutcome::Image {
+            mime,
+            data: STANDARD.encode(&decoded),
+        }),
+        None => refused(Refusal::Unsupported),
+    }
+}
+
+/// Whether Herdr's reports name the instance `expect`.
+fn same_instance(pane: &Value, process: &Value, expect: &Identity) -> Result<bool> {
+    match identity(pane, process) {
+        Ok((identity, _)) => Ok(identity == *expect),
+        Err(Error::NoTranscript | Error::TranscriptUnconfined) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// The image bytes `media` names, once `line` (read from `file.start`) is
+/// still that whole entry and its part is still that image: inline base64,
+/// or a reference to exactly the blob read, whose bytes hash to its name.
+fn image_part_bytes(
+    file: &File,
+    line: &[u8],
+    blob: Option<&[u8]>,
+    media: &Media,
+) -> std::result::Result<Vec<u8>, Refusal> {
+    if file.start != media.offset
+        || file.size < media.end
+        || line.len() as u64 != media.end - media.offset
+        || line.last() != Some(&b'\n')
+    {
+        return Err(Refusal::Moved);
+    }
+    let value: Value = serde_json::from_slice(line).map_err(|_| Refusal::Moved)?;
+    if value["id"].as_str() != media.entry.as_deref() {
+        return Err(Refusal::Moved);
+    }
+    let part = &content_parts(&value)
+        .and_then(|parts| parts.get(media.part))
+        .ok_or(Refusal::Moved)?;
+    if part["type"] != "image" {
+        return Err(Refusal::Moved);
+    }
+    let data = part["data"].as_str().ok_or(Refusal::Moved)?;
+    match (data.strip_prefix(BLOB_PREFIX), media.blob.as_deref(), blob) {
+        (Some(named), Some(hash), Some(bytes)) if named == hash => {
+            let digest = HashAlg::Sha256.digest(bytes);
+            if hex(&digest) == hash {
+                Ok(bytes.to_vec())
+            } else {
+                Err(Refusal::Corrupt)
+            }
+        }
+        (None, None, None) if inline_bytes(data) > MAX_IMAGE => Err(Refusal::TooLarge),
+        (None, None, None) => LENIENT.decode(data).map_err(|_| Refusal::Unsupported),
+        _ => Err(Refusal::Moved),
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+/// Base64 as OMP's `Buffer.from(…, "base64")` writes it, padded or not.
+const LENIENT: GeneralPurpose = GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
+
+/// The decoded size base64 `data` claims, without decoding it.
+fn inline_bytes(data: &str) -> u64 {
+    let padding = data.bytes().rev().take_while(|&byte| byte == b'=').count();
+    ((data.len() - padding) as u64 * 3) / 4
+}
+
+/// A canonical OMP blob name: exactly 64 lowercase hex digits.
+fn blob_hash(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// The image type the bytes start with; only those Android decodes.
+fn image_mime(bytes: &[u8]) -> Option<&'static str> {
+    match bytes {
+        [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, ..] => Some("image/png"),
+        [0xff, 0xd8, 0xff, ..] => Some("image/jpeg"),
+        [b'G', b'I', b'F', b'8', b'7' | b'9', b'a', ..] => Some("image/gif"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("image/webp"),
+        _ => None,
+    }
+}
+
 /// The OMP instance in the pane now, read on the host without touching its
 /// session file; `None` when the pane names no OMP session. Blocks on the
 /// host for one short command.
 pub fn instance(exec: &Exec, session: &str, pane: &str) -> Result<Option<Identity>> {
     let output = exec.run(
-        format!("/bin/sh -c {}", shell_quote(&script(session, pane, None))),
+        format!(
+            "/bin/sh -c {}",
+            shell_quote(&script(session, pane, None))
+        ),
         TIMEOUT,
         HEADER_ROOM,
     )?;
@@ -237,18 +595,45 @@ struct Target<'a> {
     window: u64,
 }
 
+/// What a script reads after the pane: a range of the session file, or the
+/// line of one image's entry and, for a blob reference, that blob from the
+/// store OMP process `pid` writes to.
+#[derive(Debug, Clone, Copy)]
+enum Fetch<'a> {
+    Lines(Target<'a>),
+    Image {
+        path: &'a str,
+        offset: u64,
+        len: u64,
+        /// The blob's hash, checked as canonical, and the OMP process.
+        blob: Option<(&'a str, u32)>,
+    },
+}
+
 /// Exit statuses the script uses for refusals.
 const EXIT_UNCONFINED: u32 = 3;
 const EXIT_NO_HERDR: u32 = 4;
 const EXIT_NO_PANE: u32 = 5;
 const EXIT_NO_FILE: u32 = 6;
+const EXIT_NO_MEDIA: u32 = 7;
+const EXIT_TOO_LARGE: u32 = 8;
+const EXIT_NO_STORE: u32 = 9;
+const EXIT_MOVED: u32 = 10;
 
-/// Report the pane and its processes, then, given a target, the requested
-/// bytes of that file once it resolves inside OMP's session folder. Errors
-/// are silenced so they never mix with the data.
-fn script(session: &str, pane: &str, target: Option<Target>) -> String {
+/// Report the pane and its processes, then, given what to fetch, those
+/// bytes of the session file once it resolves inside OMP's session folder.
+/// An image read adds the blob its line names, once it resolves inside OMP's
+/// blob store, and reports the pane again after it. Errors are silenced so
+/// they never mix with the data.
+fn script(session: &str, pane: &str, fetch: Option<Fetch>) -> String {
     let session = shell_quote(session);
     let pane = shell_quote(pane);
+    let report = format!(
+        r#""$herdr" --session {session} pane get {pane} </dev/null || exit {EXIT_NO_PANE}
+printf '\n@@proc\n'
+"$herdr" --session {session} pane process-info --pane {pane} </dev/null || printf '{{}}'
+"#
+    );
     let mut script = format!(
         r#"exec 2>/dev/null
 herdr=
@@ -257,29 +642,36 @@ herdr=
 done
 [ -n "$herdr" ] || exit {EXIT_NO_HERDR}
 printf '@@pane\n'
-"$herdr" --session {session} pane get {pane} </dev/null || exit {EXIT_NO_PANE}
-printf '\n@@proc\n'
-"$herdr" --session {session} pane process-info --pane {pane} </dev/null || printf '{{}}'
-"#
+{report}"#
     );
-    let Some(target) = target else {
-        return script;
-    };
-    let range = match target.read {
-        Read::Tail => format!(
-            "start=$(( size > {w} ? size - {w} : 0 ))\nlen={w}",
-            w = target.window
+    let (path, range, blob) = match fetch {
+        None => return script,
+        Some(Fetch::Image {
+            path,
+            offset,
+            len,
+            blob,
+        }) => (path, format!("start={offset}\nlen={len}"), Some(blob)),
+        Some(Fetch::Lines(target)) => (
+            target.path,
+            match target.read {
+                Read::Tail => format!(
+                    "start=$(( size > {w} ? size - {w} : 0 ))\nlen={w}",
+                    w = target.window
+                ),
+                // One byte early: the newline before `offset` shows the file was
+                // only appended to.
+                Read::After { offset } if offset > 0 => {
+                    format!("start={}\nlen={}", offset - 1, target.window + 1)
+                }
+                Read::After { offset } => format!("start={offset}\nlen={}", target.window),
+                Read::Before { offset } => {
+                    let start = offset.saturating_sub(target.window);
+                    format!("start={start}\nlen={}", offset - start)
+                }
+            },
+            None,
         ),
-        // One byte early: the newline before `offset` shows the file was
-        // only appended to.
-        Read::After { offset } if offset > 0 => {
-            format!("start={}\nlen={}", offset - 1, target.window + 1)
-        }
-        Read::After { offset } => format!("start={offset}\nlen={}", target.window),
-        Read::Before { offset } => {
-            let start = offset.saturating_sub(target.window);
-            format!("start={start}\nlen={}", offset - start)
-        }
     };
     script.push_str(&format!(
         r#"real=$(realpath -- {path}) || exit {EXIT_NO_FILE}
@@ -292,9 +684,75 @@ size=$((size))
 printf '\n@@file %s %s\n@@data\n' "$size" "$start"
 tail -c +$((start + 1)) "$real" | head -c "$len"
 "#,
-        path = shell_quote(target.path),
+        path = shell_quote(path),
     ));
+    let Some(blob) = blob else {
+        return script;
+    };
+    if let Some((hash, pid)) = blob {
+        // Only a blob the entry names, and only the store's own file by that
+        // name: no link out of it. The core checks the line exactly.
+        script.push_str(&format!(
+            r#"tail -c +$((start + 1)) "$real" | head -c "$len" | grep -qF -- '"{BLOB_PREFIX}{hash}"' || exit {EXIT_MOVED}
+{store}blob=$(realpath -- "$store"/{hash}) || exit {EXIT_NO_MEDIA}
+[ "$blob" = "$store"/{hash} ] || exit {EXIT_UNCONFINED}
+[ -f "$blob" ] || exit {EXIT_NO_MEDIA}
+bytes=$(wc -c < "$blob") || exit {EXIT_NO_MEDIA}
+bytes=$((bytes))
+[ "$bytes" -le {MAX_IMAGE} ] || exit {EXIT_TOO_LARGE}
+printf '\n@@blob %s\n@@data\n' "$bytes"
+head -c "$bytes" "$blob"
+"#,
+            store = blob_store(pid),
+        ));
+    }
+    script.push_str("printf '\\n@@after\\n'\n");
+    script.push_str(&report);
     script
+}
+
+/// Sets `$home` and `$store`: the blob store OMP process `pid` writes to,
+/// resolved as pi-utils `getBlobsDir()` does, `agentSubdir(undefined,
+/// "blobs", "data")` (18.18.8). The profile is the last `--profile` in its
+/// arguments before `--`, else `OMP_PROFILE` when set at all, else
+/// `PI_PROFILE`; its agent directory is `~/.omp/profiles/<name>/agent`, or
+/// without one `PI_CODING_AGENT_DIR`, else `~/.omp/agent`. Without an
+/// override, `$XDG_DATA_HOME/omp` (with a profile, `…/profiles/<name>`)
+/// takes its place when it exists. Whatever this cannot pin down exactly (no
+/// `/proc`, another `HOME`, `PI_CONFIG_DIR`, a relative or unusual value)
+/// is refused rather than guessed, and the store must resolve inside `$HOME`.
+fn blob_store(pid: u32) -> String {
+    format!(
+        r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
+env=/proc/{pid}/environ
+[ -r "$env" ] && [ -r /proc/{pid}/cmdline ] || exit {EXIT_NO_STORE}
+has() {{ tr '\0' '\n' < "$env" | grep -q "^$1="; }}
+val() {{ tr '\0' '\n' < "$env" | sed -n "s/^$1=//p" | head -n 1; }}
+own=$(realpath -- "$(val HOME)") || exit {EXIT_NO_STORE}
+[ "$own" = "$home" ] || exit {EXIT_NO_STORE}
+[ -z "$(val PI_CONFIG_DIR)" ] || exit {EXIT_NO_STORE}
+if has OMP_PROFILE; then profile=$(val OMP_PROFILE); else profile=$(val PI_PROFILE); fi
+flag=$(tr '\0' '\n' < /proc/{pid}/cmdline | awk '$0 == "--" {{ exit }} $0 == "--profile" {{ getline v; p = v; s = 1; next }} index($0, "--profile=") == 1 {{ p = substr($0, 11); s = 1 }} END {{ if (s) print "=" p }}')
+[ -n "$flag" ] && profile=${{flag#=}}
+profile=$(printf '%s' "$profile" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+case "$profile" in default) profile= ;; *[!A-Za-z0-9_-]* | -*) exit {EXIT_NO_STORE} ;; esac
+xdg=$(val XDG_DATA_HOME)
+case "$xdg" in '' | /*) ;; *) exit {EXIT_NO_STORE} ;; esac
+if [ -n "$profile" ]; then
+    root=$home/.omp/profiles/$profile/agent
+    [ -n "$xdg" ] && [ -e "$xdg/omp/profiles/$profile" ] && root=$xdg/omp/profiles/$profile
+else
+    root=$(val PI_CODING_AGENT_DIR)
+    case "$root" in
+        '' | "$home/.omp/agent") root=$home/.omp/agent; [ -n "$xdg" ] && [ -e "$xdg/omp" ] && root=$xdg/omp ;;
+        /*) ;;
+        *) exit {EXIT_NO_STORE} ;;
+    esac
+fi
+store=$(realpath -- "$root/blobs") || exit {EXIT_NO_MEDIA}
+case "$store" in "$home"/*) ;; *) exit {EXIT_UNCONFINED} ;; esac
+"#
+    )
 }
 
 #[derive(Debug)]
@@ -498,14 +956,14 @@ fn entries(lines: &[u8], start: u64) -> Vec<Entry> {
         let at = offset;
         offset += line.len() as u64;
         match serde_json::from_slice::<Value>(line) {
-            Ok(value) => entries.push(entry(&value, at)),
+            Ok(value) => entries.push(entry(&value, at, offset)),
             Err(error) => tracing::debug!(%error, offset = at, "transcript line skipped"),
         }
     }
     entries
 }
 
-fn entry(value: &Value, offset: u64) -> Entry {
+fn entry(value: &Value, offset: u64, end: u64) -> Entry {
     let id = value["id"].as_str().map(str::to_owned);
     let parent_id = value["parentId"].as_str().map(str::to_owned);
     let (kind, role, blocks) = match value["type"].as_str() {
@@ -532,10 +990,22 @@ fn entry(value: &Value, offset: u64) -> Entry {
     } else {
         &none
     };
+    let steer = if message["role"] == "user" {
+        if message["liveSteered"] == true {
+            Some(Steer::Live)
+        } else if message["steering"] == true {
+            Some(Steer::Steering)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     Entry {
         id,
         parent_id,
         offset,
+        end,
         kind,
         role,
         blocks,
@@ -544,6 +1014,17 @@ fn entry(value: &Value, offset: u64) -> Entry {
         stop_reason: message["stopReason"]
             .as_str()
             .map(|reason| cap(reason, 32).0),
+        steer,
+    }
+}
+
+/// The content parts of a line, where [`content`] and [`tool_result`] read
+/// them; a media read finds an image's `part` in the same array.
+fn content_parts(value: &Value) -> Option<&Vec<Value>> {
+    match value["type"].as_str()? {
+        "message" => value["message"]["content"].as_array(),
+        "custom_message" => value["content"].as_array(),
+        _ => None,
     }
 }
 
@@ -589,7 +1070,12 @@ fn tool_result(message: &Value) -> Block {
         name: string(&message["toolName"]),
         text,
         is_error: message["isError"] == true,
-        images: parts.iter().filter(|part| part["type"] == "image").count(),
+        images: parts
+            .iter()
+            .enumerate()
+            .filter(|(_, part)| part["type"] == "image")
+            .map(|(part, value)| image_part(part, value))
+            .collect(),
         truncated,
         exit_code: message["details"]["exitCode"].as_i64(),
     }
@@ -605,14 +1091,34 @@ fn content(content: &Value) -> Vec<Block> {
     };
     parts
         .iter()
-        .filter_map(|part| match part["type"].as_str()? {
+        .enumerate()
+        .filter_map(|(index, part)| match part["type"].as_str()? {
             "text" => Some(text_block(part["text"].as_str()?, false)),
             "thinking" => Some(text_block(part["thinking"].as_str()?, true)),
             "toolCall" => Some(tool_call(part)),
-            "image" => Some(Block::Image),
+            "image" => Some(Block::Image(image_part(index, part))),
             _ => None,
         })
         .collect()
+}
+
+/// Where image part `part` keeps its bytes. The data itself never leaves
+/// the host on a poll.
+fn image_part(part: usize, value: &Value) -> Image {
+    let source = match value["data"].as_str() {
+        Some(data) => match data.strip_prefix(BLOB_PREFIX) {
+            Some(hash) if blob_hash(hash) => Source::Blob {
+                hash: hash.to_owned(),
+            },
+            Some(_) => Source::Unreadable,
+            None if !data.is_empty() => Source::Inline {
+                bytes: inline_bytes(data),
+            },
+            None => Source::Unreadable,
+        },
+        None => Source::Unreadable,
+    };
+    Image { part, source }
 }
 
 fn text_block(text: &str, thinking: bool) -> Block {

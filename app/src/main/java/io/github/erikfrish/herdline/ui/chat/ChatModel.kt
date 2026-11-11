@@ -1,11 +1,14 @@
 package io.github.erikfrish.herdline.ui.chat
 
+import io.github.erikfrish.herdline.core.Agent
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptEntry
 import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.TranscriptImage
 import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptPage
+import io.github.erikfrish.herdline.core.TranscriptSteer
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -18,7 +21,6 @@ const val MAX_LOADED_ENTRIES = 2000
  */
 data class ChatHistory(
     val identity: TranscriptIdentity,
-    val status: AgentStatus,
     val start: Long,
     val end: Long,
     val entries: List<TranscriptEntry>,
@@ -41,13 +43,27 @@ data class ChatHistory(
             merged = merged.takeLast(MAX_LOADED_ENTRIES)
             start = merged.first().offset
         }
-        return copy(status = page.status, start = start, end = maxOf(end, page.end), entries = merged)
+        return copy(start = start, end = maxOf(end, page.end), entries = merged)
     }
 
     companion object {
-        fun of(page: TranscriptPage) = ChatHistory(page.identity, page.status, page.start, page.end, page.entries.sortedBy { it.offset })
+        fun of(page: TranscriptPage) = ChatHistory(page.identity, page.start, page.end, page.entries.sortedBy { it.offset })
     }
 }
+
+/**
+ * What chat says the agent in [pane] is doing: the status of the agent the
+ * live view has in that pane, and only while the link is up and that agent
+ * is OMP. A lost link, no agent, another program, or a view of another pane
+ * is [AgentStatus.Unknown]: chat never keeps a Working it can no longer see.
+ */
+fun chatStatus(connected: Boolean, pane: String, agent: Agent?): AgentStatus = when {
+    !connected || agent == null || agent.pane != pane || !agent.agent.equals(OMP_AGENT, ignoreCase = true) -> AgentStatus.Unknown
+    else -> agent.status
+}
+
+/** The Herdr agent kind chat reads transcripts of. */
+internal const val OMP_AGENT = "omp"
 
 /**
  * One row of the chat list; [key] stays the same across reads. [timestamp]
@@ -57,21 +73,30 @@ sealed interface ChatItem {
     val key: String
     val timestamp: Long?
 
-    data class User(override val key: String, val text: String, override val timestamp: Long? = null) : ChatItem
+    /** [steer]: how OMP recorded a message that reached a running agent, null for an ordinary one. */
+    data class User(override val key: String, val text: String, override val timestamp: Long? = null, val steer: TranscriptSteer? = null) : ChatItem
     data class Assistant(override val key: String, val text: String, val truncated: Boolean, override val timestamp: Long? = null) : ChatItem
     data class Thinking(override val key: String, val text: String, override val timestamp: Long? = null) : ChatItem
-    /** A tool call and, once it arrived, its result; either may be outside what is loaded. [timestamp] is the call's. */
+    /**
+     * A tool call and, once it arrived, its result; either may be outside what is loaded. [timestamp] is the call's.
+     * [images] are the result's, located on its line.
+     */
     data class Tool(
         override val key: String,
         val call: TranscriptBlock.ToolCall?,
         val result: TranscriptBlock.ToolResult?,
         override val timestamp: Long? = null,
+        val images: List<TranscriptImage> = emptyList(),
     ) : ChatItem
     /** Text the agent's harness added, such as a developer or extension message. */
     data class Note(override val key: String, val role: String, val text: String, override val timestamp: Long? = null) : ChatItem
     data class Compaction(override val key: String, val summary: String, override val timestamp: Long? = null) : ChatItem
-    data class Image(override val key: String, override val timestamp: Long? = null) : ChatItem
+    /** An image of a message; [fromUser] draws it in the user's turn. */
+    data class Image(override val key: String, val image: TranscriptImage, val fromUser: Boolean, override val timestamp: Long? = null) : ChatItem
 }
+
+/** A row of the user's turn: their text or an image they sent. */
+val ChatItem.inUserTurn: Boolean get() = this is ChatItem.User || this is ChatItem.Image && fromUser
 
 /**
  * The entries on the session's current branch. OMP appends every entry with
@@ -110,7 +135,7 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
                 val key = "$base:$index"
                 when (block) {
                     is TranscriptBlock.Text -> items += when (entry.role) {
-                        "user" -> ChatItem.User(key, block.text, at)
+                        "user" -> ChatItem.User(key, block.text, at, entry.steer)
                         "assistant" -> ChatItem.Assistant(key, block.text, block.truncated, at)
                         else -> ChatItem.Note(key, entry.role.orEmpty(), block.text, at)
                     }
@@ -120,17 +145,20 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
                         items += ChatItem.Tool(key, block, null, at)
                     }
                     is TranscriptBlock.ToolResult -> {
+                        val images = block.images.map { it.at(entry) }
                         val call = calls[block.callId]
                         val tool = call?.let { items[it] as? ChatItem.Tool }
-                        if (call != null && tool != null) items[call] = tool.copy(result = block) else items += ChatItem.Tool(key, null, block, at)
+                        if (call != null && tool != null) items[call] = tool.copy(result = block, images = images) else items += ChatItem.Tool(key, null, block, at, images)
                     }
-                    TranscriptBlock.Image -> items += ChatItem.Image(key, at)
+                    is TranscriptBlock.Image -> items += ChatItem.Image(key, block.at(entry), entry.role == "user", at)
                 }
             }
         }
     }
     return items.filterNot { it is ChatItem.User && it.text.isBlank() || it is ChatItem.Assistant && it.text.isBlank() }
 }
+
+private fun TranscriptBlock.Image.at(entry: TranscriptEntry) = TranscriptImage(entry.id, entry.offset, entry.end, part, source)
 
 /**
  * The tool call a blocked agent is asking about, joined fail-closed: the

@@ -76,8 +76,9 @@ fun chatLines(items: List<ChatItem>, pending: TranscriptBlock.ToolCall? = null):
     var i = 0
     while (i < items.size) {
         val item = items[i]
-        val turn = previous == null || item is ChatItem.User || previous is ChatItem.User
-        val labelled = item !is ChatItem.User && (previous == null || previous is ChatItem.User)
+        // A user's image sits in their turn, below their text.
+        val turn = previous == null || item is ChatItem.User || item.inUserTurn != previous.inUserTurn
+        val labelled = !item.inUserTurn && (previous == null || previous.inUserTurn)
         val gap = when {
             previous == null -> Gap.None
             turn -> Gap.Turn

@@ -7,7 +7,7 @@ import org.junit.Test
 
 class ToolStatusTest {
     private fun result(text: String, error: Boolean = true, name: String = "bash", truncated: Boolean = false) =
-        TranscriptBlock.ToolResult("t", name, text, error, 0, truncated)
+        TranscriptBlock.ToolResult("t", name, text, error, emptyList(), truncated)
 
     private fun state(text: String?, error: Boolean = true) = toolState(
         ChatItem.Tool("t", TranscriptBlock.ToolCall("t", "bash", "{}", null, false), text?.let { result(it, error) }),

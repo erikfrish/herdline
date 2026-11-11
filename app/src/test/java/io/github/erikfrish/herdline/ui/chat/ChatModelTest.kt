@@ -1,12 +1,18 @@
 package io.github.erikfrish.herdline.ui.chat
 
+import io.github.erikfrish.herdline.core.Agent
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.ImageSource
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptEntry
 import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.TranscriptImage
 import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptPage
+import io.github.erikfrish.herdline.core.TranscriptSteer
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -15,10 +21,12 @@ class ChatModelTest {
     private val agent = TranscriptIdentity("w1:p1", "term_1", 42, "/h/.omp/agent/sessions/x/a.jsonl")
 
     private fun text(id: String, parent: String?, offset: Long, role: String, text: String) =
-        TranscriptEntry(id, parent, offset, TranscriptKind.Message, role, listOf(TranscriptBlock.Text(text, false)))
+        TranscriptEntry(id, parent, offset, offset + 10, TranscriptKind.Message, role, listOf(TranscriptBlock.Text(text, false)))
 
     private fun page(vararg entries: TranscriptEntry, start: Long = 0, end: Long = 100, reset: Boolean = false, identity: TranscriptIdentity = agent) =
-        TranscriptPage(identity, AgentStatus.Idle, reset, end, start, end, entries.toList())
+        TranscriptPage(identity, reset, end, start, end, entries.toList())
+
+    private fun wire(json: String) = TranscriptEntry.parse(JSONObject(json))
 
     private fun texts(entries: List<TranscriptEntry>) = chatItems(entries).map {
         when (it) {
@@ -51,8 +59,8 @@ class ChatModelTest {
     fun tool_results_pair_with_their_call_and_a_blocked_call_is_pending() {
         val call = TranscriptBlock.ToolCall("t1", "ask", "{}", "Asking", false)
         val entries = listOf(
-            TranscriptEntry("a", null, 0, TranscriptKind.Message, "assistant", listOf(call)),
-            TranscriptEntry("r", "a", 10, TranscriptKind.Message, "toolResult", listOf(TranscriptBlock.ToolResult("t1", "ask", "red", false, 0, false))),
+            TranscriptEntry("a", null, 0, 10, TranscriptKind.Message, "assistant", listOf(call)),
+            TranscriptEntry("r", "a", 10, 20, TranscriptKind.Message, "toolResult", listOf(TranscriptBlock.ToolResult("t1", "ask", "red", false, emptyList(), false))),
         )
         val items = chatItems(entries)
         assertEquals(1, items.size)
@@ -84,6 +92,59 @@ class ChatModelTest {
         assertEquals(MAX_LOADED_ENTRIES, history.entries.size)
         assertEquals(50L, history.start)
         assertEquals(true, history.hasOlder)
+    }
+
+    @Test
+    fun images_are_located_on_their_own_line_and_a_users_image_stays_in_their_turn() {
+        val hash = "ab".repeat(32)
+        val entries = listOf(
+            wire("""{"id":"u","offset":0,"end":40,"kind":"message","role":"user","blocks":[{"type":"text","text":"look","truncated":false},{"type":"image","part":1,"source":{"kind":"inline","bytes":9}}]}"""),
+            wire("""{"id":"a","parent_id":"u","offset":40,"end":60,"kind":"message","role":"assistant","blocks":[{"type":"tool_call","call_id":"c","name":"read","args":"{}","truncated":false}]}"""),
+            wire("""{"id":"r","parent_id":"a","offset":60,"end":90,"kind":"message","role":"toolResult","blocks":[{"type":"tool_result","call_id":"c","name":"read","text":"","is_error":false,"truncated":false,"images":[{"part":2,"source":{"kind":"blob","hash":"$hash"}},{"part":3,"source":{"kind":"blob","hash":"not-hex"}}]}]}"""),
+        )
+        val items = chatItems(entries)
+        val image = items[1] as ChatItem.Image
+        assertEquals(TranscriptImage("u", 0, 40, 1, ImageSource.Inline(9)), image.image)
+        assertEquals(true, image.fromUser)
+        // A tool's images are read from the result's line, not the call's.
+        assertEquals(
+            listOf(TranscriptImage("r", 60, 90, 2, ImageSource.Blob(hash)), TranscriptImage("r", 60, 90, 3, ImageSource.Unreadable)),
+            (items[2] as ChatItem.Tool).images,
+        )
+        val lines = chatLines(items)
+        assertEquals(listOf(Gap.None, Gap.Block, Gap.Turn), lines.map { it.gap })
+        assertEquals(listOf(false, false, true), lines.map { it.labelled })
+    }
+
+    @Test
+    fun an_image_key_holds_across_reads_and_differs_by_line_and_part() {
+        val json = """{"offset":120,"end":180,"kind":"message","role":"assistant","blocks":[{"type":"image","part":0,"source":{"kind":"inline","bytes":3}},{"type":"image","part":1,"source":{"kind":"inline","bytes":3}}]}"""
+        val first = chatItems(listOf(wire(json))).map { (it as ChatItem.Image).image.key }
+        assertEquals(first, chatItems(listOf(wire(json))).map { (it as ChatItem.Image).image.key })
+        assertEquals(2, first.toSet().size)
+        val elsewhere = chatItems(listOf(wire(json.replace("\"offset\":120", "\"offset\":60")))).map { (it as ChatItem.Image).image.key }
+        assertFalse(elsewhere.any { it in first })
+    }
+
+    @Test
+    fun a_steered_user_message_says_how_omp_took_it_and_nothing_else_does() {
+        fun steer(value: String?) = (chatItems(listOf(wire("""{"id":"u","offset":0,"end":9,"kind":"message","role":"user",${value?.let { "\"steer\":\"$it\"," }.orEmpty()}"blocks":[{"type":"text","text":"hi","truncated":false}]}"""))).single() as ChatItem.User).steer
+        assertEquals(TranscriptSteer.Steering, steer("steering"))
+        assertEquals(TranscriptSteer.Live, steer("live"))
+        assertNull(steer(null))
+        assertNull("an unknown mark is no steer", steer("queued"))
+    }
+
+    @Test
+    fun the_status_is_the_live_omp_in_this_pane_and_unknown_otherwise() {
+        val omp = Agent("w1:p1", "w1", "t1", null, "omp", null, AgentStatus.Working, false)
+        assertEquals(AgentStatus.Working, chatStatus(connected = true, pane = "w1:p1", agent = omp))
+        assertEquals("link lost", AgentStatus.Unknown, chatStatus(connected = false, pane = "w1:p1", agent = omp))
+        assertEquals("no agent", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = null))
+        assertEquals("another pane", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p2", agent = omp))
+        assertEquals("replaced by another program", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = "claude")))
+        assertEquals("unknown program", AgentStatus.Unknown, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(agent = null)))
+        assertEquals(AgentStatus.Idle, chatStatus(connected = true, pane = "w1:p1", agent = omp.copy(status = AgentStatus.Idle)))
     }
 
     @Test

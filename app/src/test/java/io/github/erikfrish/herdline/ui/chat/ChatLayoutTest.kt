@@ -15,7 +15,7 @@ class ChatLayoutTest {
     private fun tool(key: String, done: Boolean = true, error: Boolean = false) = ChatItem.Tool(
         key,
         TranscriptBlock.ToolCall(key, "read", "{}", null, false),
-        if (done) TranscriptBlock.ToolResult(key, "read", "ok", error, 0, false) else null,
+        if (done) TranscriptBlock.ToolResult(key, "read", "ok", error, emptyList(), false) else null,
     )
 
     private fun user(key: String) = ChatItem.User(key, "hi")
@@ -165,10 +165,10 @@ class ChatLayoutTest {
     @Test
     fun the_fold_counts_tools_thoughts_and_failures_and_names_each_tool_once_in_order() {
         val steps = listOf(
-            ChatItem.Tool("s:0", TranscriptBlock.ToolCall("s:0", "bash", "{}", null, false), TranscriptBlock.ToolResult("s:0", "bash", "no", true, 0, false)),
+            ChatItem.Tool("s:0", TranscriptBlock.ToolCall("s:0", "bash", "{}", null, false), TranscriptBlock.ToolResult("s:0", "bash", "no", true, emptyList(), false)),
             ChatItem.Thinking("s:1", "hmm"),
-            ChatItem.Tool("s:2", TranscriptBlock.ToolCall("s:2", "read", "{}", null, false), TranscriptBlock.ToolResult("s:2", "read", "ok", false, 0, false)),
-            ChatItem.Tool("s:3", TranscriptBlock.ToolCall("s:3", "bash", "{}", null, false), TranscriptBlock.ToolResult("s:3", "bash", "ok", false, 0, false)),
+            ChatItem.Tool("s:2", TranscriptBlock.ToolCall("s:2", "read", "{}", null, false), TranscriptBlock.ToolResult("s:2", "read", "ok", false, emptyList(), false)),
+            ChatItem.Tool("s:3", TranscriptBlock.ToolCall("s:3", "bash", "{}", null, false), TranscriptBlock.ToolResult("s:3", "bash", "ok", false, emptyList(), false)),
         )
         val lines = chatLines(steps + reply("r"))
         val fold = runFold(group(lines), lines.completedRuns().getValue("g:s:0"))
@@ -176,7 +176,7 @@ class ChatLayoutTest {
     }
 
     private fun entry(id: String, parent: String?, offset: Long, role: String, at: Long?, blocks: List<TranscriptBlock>) =
-        TranscriptEntry(id, parent, offset, TranscriptKind.Message, role, blocks, timestamp = at)
+        TranscriptEntry(id, parent, offset, offset + 1, TranscriptKind.Message, role, blocks, timestamp = at)
 
     /** The fold's seconds for a run whose call entry is dated [start] and whose answer [end]. */
     private fun timed(start: Long?, end: Long?): Long? {
@@ -184,7 +184,7 @@ class ChatLayoutTest {
         val entries = listOf(
             entry("u", null, 0, "user", 0, listOf(TranscriptBlock.Text("go", false))),
             entry("a", "u", 1, "assistant", start, calls),
-            entry("t", "a", 2, "toolResult", 99_999_999, calls.map { TranscriptBlock.ToolResult(it.callId, "read", "ok", false, 0, false) }),
+            entry("t", "a", 2, "toolResult", 99_999_999, calls.map { TranscriptBlock.ToolResult(it.callId, "read", "ok", false, emptyList(), false) }),
             entry("r", "t", 3, "assistant", end, listOf(TranscriptBlock.Text("done", false))),
         )
         val lines = chatLines(chatItems(entries))

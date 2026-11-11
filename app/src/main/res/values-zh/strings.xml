@@ -447,4 +447,15 @@
     <string name="terminal_composer">在终端中显示消息编辑框</string>
     <string name="terminal_composer_help">关闭后，终端模式只显示终端：轻点终端即可输入，下方显示额外按键。聊天模式始终显示编辑框，草稿和文件仍保留在各自的窗格。编辑框的投递尚未确认时，编辑框会一直显示，直到投递完成或你解锁。</string>
     <string name="terminal_composer_kept">投递尚未确认，编辑框暂时保留</string>
+    <string name="chat_image">图片</string>
+    <string name="chat_image_open">图片。轻点打开。</string>
+    <string name="chat_image_loading">正在加载图片…</string>
+    <string name="chat_image_close">关闭图片</string>
+    <string name="chat_image_failed">图片未加载。轻点重试。</string>
+    <string name="chat_image_gone">此图片已不在会话中。</string>
+    <string name="chat_image_too_large">图片过大，无法在此显示（超过 20 MB）。</string>
+    <string name="chat_image_unsupported">聊天无法显示此图片。</string>
+    <string name="chat_image_unreadable">无法安全读取此图片。</string>
+    <string name="chat_steer_steering">引导消息</string>
+    <string name="chat_steer_live">已并入进行中的回复</string>
 </resources>

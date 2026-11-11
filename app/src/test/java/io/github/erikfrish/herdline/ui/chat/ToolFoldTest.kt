@@ -11,7 +11,7 @@ class ToolFoldTest {
     private fun tool(key: String, name: String = "read", done: Boolean = true, error: Boolean = false) = ChatItem.Tool(
         key,
         TranscriptBlock.ToolCall(key, name, "{}", null, false),
-        if (done) TranscriptBlock.ToolResult(key, name, "ok", error, 0, false) else null,
+        if (done) TranscriptBlock.ToolResult(key, name, "ok", error, emptyList(), false) else null,
     )
 
     private fun thinking(key: String) = ChatItem.Thinking(key, "hmm")
@@ -94,7 +94,7 @@ class ToolFoldTest {
         val denied = ChatItem.Tool(
             "d",
             TranscriptBlock.ToolCall("d", "bash", "{}", null, false),
-            TranscriptBlock.ToolResult("d", "bash", "Tool call denied by user: bash", true, 0, false),
+            TranscriptBlock.ToolResult("d", "bash", "Tool call denied by user: bash", true, emptyList(), false),
         )
         val group = chatLines(listOf(tool("a", error = true), denied, tool("c"))).single() as ChatLine.ToolGroup
         assertEquals(1 to 1, group.failed to group.denied)

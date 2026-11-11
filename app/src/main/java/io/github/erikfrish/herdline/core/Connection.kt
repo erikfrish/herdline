@@ -417,6 +417,23 @@ class Connection(val node: Node) {
     }
 
     /**
+     * One image of a pane's transcript ([mediaRequest]). A refusal is a
+     * success; a lost link or a bad reply is a failure. Blocks on the host:
+     * call it off the main thread.
+     */
+    fun media(request: JSONObject): Result<MediaAnswer> {
+        val session = live()
+        if (session == 0L) return Result.failure(IOException("not connected"))
+        return try {
+            Result.success(MediaAnswer.parse(Native.transcript(session, request.toString())))
+        } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: org.json.JSONException) {
+            Result.failure(IOException(e.message, e))
+        }
+    }
+
+    /**
      * Hands [text] to exactly [target]'s pane as one bracketed paste, and with
      * [submit] one Enter after it. Never retried: a lost link reports
      * [DeliveryUpdate.Uncertain] and the text stays with the user. Only a

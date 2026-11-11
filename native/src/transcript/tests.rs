@@ -42,13 +42,13 @@ impl Host {
         dir
     }
 
-    fn run(&self, target: Option<Target>) -> (Option<u32>, Vec<u8>) {
+    fn run(&self, fetch: Option<Fetch>) -> (Option<u32>, Vec<u8>) {
         // The fake Herdr leads PATH: `command -v herdr` comes first in the
         // host's candidates, and a machine with Herdr in /usr/bin would run it.
         let bin = self.home.path().join(".local/bin");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(script("lab", "w1:p1", target))
+            .arg(script("lab", "w1:p1", fetch))
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -61,12 +61,12 @@ impl Host {
     }
 }
 
-fn tail(path: &str) -> Option<Target<'_>> {
-    Some(Target {
+fn tail(path: &str) -> Option<Fetch<'_>> {
+    Some(Fetch::Lines(Target {
         path,
         read: Read::Tail,
         window: 1024,
-    })
+    }))
 }
 
 #[test]
@@ -342,4 +342,296 @@ fn messages_keep_their_time_usage_stop_reason_and_exit_code() {
     let json = serde_json::to_value(&entries[1]).unwrap();
     assert_eq!(json["usage"]["total_tokens"], 15);
     assert_eq!(json["stop_reason"], "toolUse");
+}
+
+/// The smallest bytes Android takes for a PNG: the signature and some IHDR.
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/// The OMP process in the pane: the host reads its arguments and
+/// environment to find its blob store. A lone shell blocked in the `read`
+/// builtin, so it starts no child; stopped and reaped when dropped.
+struct Omp(std::process::Child);
+
+impl Drop for Omp {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Host {
+    /// A host whose pane shows the session file `s.jsonl` holding `lines`,
+    /// run by an OMP started with `args` and, besides HOME, `env`.
+    fn with_session(lines: &str, args: &[&str], env: &[(&str, &str)]) -> (Self, Identity, Omp) {
+        let host = Host::new("unused");
+        let file = host.sessions().join("s.jsonl");
+        fs::write(&file, lines).unwrap();
+        let path = file.to_str().unwrap().to_owned();
+        fs::write(host.home.path().join("pane.json"), pane_json(&path)).unwrap();
+        let omp = Command::new("/bin/sh")
+            .args(["-c", "read -r line", "omp"])
+            .args(args)
+            .env_clear()
+            .env("HOME", host.home.path())
+            .envs(env.iter().copied())
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = omp.id();
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS.replace("\"pid\":42", &format!("\"pid\":{pid}")),
+        )
+        .unwrap();
+        let identity = Identity {
+            pane_id: "w1:p1".into(),
+            terminal_id: "term_1".into(),
+            pid: Some(pid),
+            path,
+        };
+        (host, identity, Omp(omp))
+    }
+
+    fn store(&self, dir: &str) -> std::path::PathBuf {
+        let dir = self.home.path().join(dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// What a media read of `media` answers for the instance `expect`.
+    fn media(&self, expect: &Identity, media: &Media) -> MediaOutcome {
+        let fetch = Fetch::Image {
+            path: &expect.path,
+            offset: media.offset,
+            len: media.end - media.offset,
+            blob: media.blob.as_deref().map(|hash| (hash, expect.pid.unwrap())),
+        };
+        let (status, out) = self.run(Some(fetch));
+        media_outcome(status, &out, expect, media).unwrap()
+    }
+}
+
+/// A user message with a text part and, as part 1, an image of `data`.
+fn image_line(id: &str, data: &str) -> String {
+    format!(
+        r#"{{"type":"message","id":"{id}","message":{{"role":"user","content":[{{"type":"text","text":"look"}},{{"type":"image","data":"{data}","mimeType":"image/jpeg"}}]}}}}"#
+    ) + "\n"
+}
+
+/// A media read of image `part` of `entries[index]`.
+fn at(entries: &[Entry], index: usize, part: usize, blob: Option<&str>) -> Media {
+    Media {
+        v: MEDIA_VERSION,
+        entry: entries[index].id.clone(),
+        offset: entries[index].offset,
+        end: entries[index].end,
+        part,
+        blob: blob.map(str::to_owned),
+    }
+}
+
+fn sha(bytes: &[u8]) -> String {
+    hex(&HashAlg::Sha256.digest(bytes))
+}
+
+fn refused(error: Refusal) -> MediaOutcome {
+    MediaOutcome::Refused { error }
+}
+
+fn png() -> MediaOutcome {
+    MediaOutcome::Image {
+        mime: "image/png",
+        data: STANDARD.encode(PNG),
+    }
+}
+
+#[test]
+fn a_blob_is_served_only_as_its_entry_names_it_and_only_whole() {
+    let names = [
+        sha(PNG),
+        sha(b"corrupt"),
+        sha(b"linked"),
+        sha(b"missing"),
+        sha(b"big"),
+        sha(b"plain text"),
+    ];
+    let text: String = names
+        .iter()
+        .enumerate()
+        .map(|(index, hash)| image_line(&format!("e{index}"), &format!("blob:sha256:{hash}")))
+        .collect();
+    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    let parsed = entries(text.as_bytes(), 0);
+    assert_eq!(
+        parsed[0].blocks[1],
+        Block::Image(Image {
+            part: 1,
+            source: Source::Blob {
+                hash: names[0].clone()
+            }
+        })
+    );
+    let store = host.store(".omp/agent/blobs");
+    fs::write(store.join(&names[0]), PNG).unwrap();
+    fs::write(store.join(&names[1]), PNG).unwrap();
+    let outside = host.home.path().join("secret.png");
+    fs::write(&outside, PNG).unwrap();
+    std::os::unix::fs::symlink(&outside, store.join(&names[2])).unwrap();
+    fs::File::create(store.join(&names[4]))
+        .unwrap()
+        .set_len(MAX_IMAGE + 1)
+        .unwrap();
+    fs::write(store.join(&names[5]), "plain text").unwrap();
+    let read = |index: usize| host.media(&identity, &at(&parsed, index, 1, Some(&names[index])));
+
+    assert_eq!(read(0), png());
+    assert_eq!(read(1), refused(Refusal::Corrupt));
+    assert_eq!(read(2), refused(Refusal::Unconfined));
+    assert_eq!(read(3), refused(Refusal::Missing));
+    assert_eq!(read(4), refused(Refusal::TooLarge));
+    assert_eq!(read(5), refused(Refusal::Unsupported));
+
+    // The store holds it, but this entry names another blob.
+    let unnamed = at(&parsed, 5, 1, Some(&names[0]));
+    assert_eq!(host.media(&identity, &unnamed), refused(Refusal::Moved));
+    let other_entry = Media {
+        entry: Some("e1".into()),
+        ..at(&parsed, 0, 1, Some(&names[0]))
+    };
+    assert_eq!(host.media(&identity, &other_entry), refused(Refusal::Moved));
+    assert_eq!(host.media(&identity, &at(&parsed, 0, 0, Some(&names[0]))), refused(Refusal::Moved));
+    // A blob reference is not read as inline data.
+    assert_eq!(host.media(&identity, &at(&parsed, 0, 1, None)), refused(Refusal::Moved));
+}
+
+#[test]
+fn the_blob_store_is_the_one_the_omp_process_uses() {
+    let hash = sha(PNG);
+    let text = image_line("u", &format!("blob:sha256:{hash}"));
+    let parsed = entries(text.as_bytes(), 0);
+    let media = at(&parsed, 0, 1, Some(&hash));
+
+    // A profile in its arguments: that profile's store, not the default one.
+    let (host, identity, _omp) = Host::with_session(&text, &["--profile", "qa"], &[("OMP_PROFILE", "other")]);
+    fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
+    assert_eq!(host.media(&identity, &media), refused(Refusal::Missing));
+    fs::write(host.store(".omp/profiles/qa/agent/blobs").join(&hash), PNG).unwrap();
+    assert_eq!(host.media(&identity, &media), png());
+
+    let (host, identity, _omp) = Host::with_session(&text, &[], &[("OMP_PROFILE", "qa")]);
+    fs::write(host.store(".omp/profiles/qa/agent/blobs").join(&hash), PNG).unwrap();
+    assert_eq!(host.media(&identity, &media), png());
+
+    // A layout it cannot pin down is refused, not read from the default store.
+    let (host, identity, _omp) = Host::with_session(&text, &[], &[("PI_CONFIG_DIR", ".elsewhere")]);
+    fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
+    assert_eq!(host.media(&identity, &media), refused(Refusal::UnknownStore));
+}
+
+#[test]
+fn an_image_of_another_instance_is_refused() {
+    let hash = sha(PNG);
+    let text = image_line("u", &format!("blob:sha256:{hash}"));
+    let parsed = entries(text.as_bytes(), 0);
+    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
+    let replaced = Identity {
+        pid: identity.pid.map(|pid| pid + 1),
+        ..identity.clone()
+    };
+    assert_eq!(
+        host.media(&replaced, &at(&parsed, 0, 1, Some(&hash))),
+        refused(Refusal::InstanceChanged)
+    );
+    let other_file = Identity {
+        path: identity.path.replace("s.jsonl", "t.jsonl"),
+        ..identity
+    };
+    assert_eq!(
+        host.media(&other_file, &at(&parsed, 0, 1, None)),
+        refused(Refusal::InstanceChanged)
+    );
+}
+
+#[test]
+fn only_canonical_blob_names_are_kept() {
+    for bad in [
+        HASH[1..].to_owned(),
+        HASH.to_uppercase(),
+        "../../../../etc/passwd".to_owned(),
+        format!("{}/..", &HASH[..61]),
+    ] {
+        assert!(!blob_hash(&bad), "{bad}");
+        let line = format!(
+            r#"{{"type":"message","id":"u","message":{{"role":"user","content":[{{"type":"image","data":"blob:sha256:{bad}"}}]}}}}"#
+        );
+        let entries = entries(format!("{line}\n").as_bytes(), 0);
+        assert_eq!(
+            entries[0].blocks,
+            vec![Block::Image(Image {
+                part: 0,
+                source: Source::Unreadable
+            })]
+        );
+    }
+}
+
+#[test]
+fn inline_images_are_read_from_their_own_line_only() {
+    let data = STANDARD.encode(PNG);
+    let text = image_line("x", "")
+        + &image_line("u", &data)
+        + &image_line("bad", "!!!!")
+        + &image_line("txt", &STANDARD.encode("plain text"));
+    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    let parsed = entries(text.as_bytes(), 0);
+    let at = |index: usize, part: usize| at(&parsed, index, part, None);
+
+    assert_eq!(
+        parsed[1].blocks[1],
+        Block::Image(Image {
+            part: 1,
+            source: Source::Inline {
+                bytes: PNG.len() as u64
+            }
+        })
+    );
+    assert_eq!(parsed[0].blocks[1], Block::Image(Image { part: 1, source: Source::Unreadable }));
+    // The MIME comes from the bytes, not the transcript's claim.
+    assert_eq!(host.media(&identity, &at(1, 1)), png());
+    assert_eq!(host.media(&identity, &at(1, 0)), refused(Refusal::Moved));
+    let wrong_id = Media {
+        entry: Some("x".into()),
+        ..at(1, 1)
+    };
+    assert_eq!(host.media(&identity, &wrong_id), refused(Refusal::Moved));
+    assert_eq!(host.media(&identity, &at(2, 1)), refused(Refusal::Unsupported));
+    assert_eq!(host.media(&identity, &at(3, 1)), refused(Refusal::Unsupported));
+
+    // A rewritten file no longer holds the entry where it was.
+    fs::write(&identity.path, format!("{{}}\n{text}")).unwrap();
+    assert_eq!(host.media(&identity, &at(1, 1)), refused(Refusal::Moved));
+}
+
+#[test]
+fn entries_record_their_end_and_how_a_user_message_was_steered() {
+    let lines = [
+        r#"{"type":"message","id":"q","message":{"role":"user","content":"later","steering":true}}"#,
+        r#"{"type":"message","id":"l","message":{"role":"user","content":"now","steering":true,"liveSteered":true}}"#,
+        r#"{"type":"message","id":"p","message":{"role":"user","content":"plain"}}"#,
+        r#"{"type":"message","id":"a","message":{"role":"assistant","content":[],"liveSteered":true}}"#,
+    ];
+    let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    let entries = entries(text.as_bytes(), 10);
+    assert_eq!(
+        (entries[0].offset, entries[0].end),
+        (10, 10 + lines[0].len() as u64 + 1)
+    );
+    assert_eq!(entries[1].offset, entries[0].end);
+    assert_eq!(
+        entries.iter().map(|entry| entry.steer).collect::<Vec<_>>(),
+        [Some(Steer::Steering), Some(Steer::Live), None, None]
+    );
+    assert_eq!(serde_json::to_value(&entries[1]).unwrap()["steer"], "live");
 }
