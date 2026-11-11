@@ -55,9 +55,12 @@ fun outputTail(text: String, limit: Int): Pair<String, Int> {
     return if (lines.size <= limit) lines.joinToString("\n") to 0 else lines.takeLast(limit).joinToString("\n") to lines.size - limit
 }
 
-/** The one-line summary of a tool call: its intent, else the first line of its arguments. */
-fun ChatItem.Tool.summary(): String =
-    call?.intent?.takeIf { it.isNotBlank() } ?: call?.args?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+/** Ask uses its intent or recorded question, never a raw JSON/HTML argument line. */
+fun ChatItem.Tool.summary(): String {
+    call?.intent?.takeIf(String::isNotBlank)?.let { return it }
+    if (name == ASK_TOOL) return result?.answers?.firstOrNull()?.question.orEmpty()
+    return call?.args?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+}
 
 val ChatItem.Tool.name: String get() = call?.name ?: result?.name.orEmpty()
 

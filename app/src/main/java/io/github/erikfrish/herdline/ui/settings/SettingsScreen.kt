@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -47,6 +50,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -450,6 +454,7 @@ fun SettingsScreen(app: HerdlineApp, onBack: (() -> Unit)?, backLabel: String? =
                 val preview = shown == SettingsSection.Appearance || shown == SettingsSection.Terminal
                 Column(Modifier.fillMaxSize()) {
                     if (preview) SettingsPreview(app, settings, tall = wide, Modifier.padding(top = padding.calculateTopPadding()))
+                    if (preview) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     LazyColumn(
                         contentPadding = if (preview) PaddingValues(top = 4.dp, bottom = padding.calculateBottomPadding()) else padding,
                         modifier = Modifier.weight(1f).testTag("settings:${shown.name.lowercase()}"),
@@ -549,7 +554,7 @@ private fun ThemeRow(selected: String, onSelect: (String) -> Unit) {
         AppPalettes.byId(selected).id
     }
     Row(
-        Modifier.horizontalScroll(rememberScrollState()).selectableGroup().padding(horizontal = 16.dp, vertical = 6.dp),
+        Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min).selectableGroup().padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -583,6 +588,7 @@ private fun ThemeCard(palette: AppPalette, tokens: ThemeTokens, selected: Boolea
     Column(
         Modifier
             .width(88.dp)
+            .fillMaxHeight()
             .clip(ThemeSampleShape)
             .testTag("settings:theme:${palette.id}")
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
@@ -624,19 +630,18 @@ private fun ThemeCard(palette: AppPalette, tokens: ThemeTokens, selected: Boolea
             }
         }
         // At a large font scale the name wraps and the card grows rather than clipping.
-        Text(palette.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+        Text(palette.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, minLines = 2)
+        Spacer(Modifier.weight(1f))
         if (badge != null) {
             Text(badge, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, textAlign = TextAlign.Center,
                 modifier = Modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 4.dp, vertical = 2.dp))
         }
-        if (palette.darkOnly) {
-            Text(
-                stringResource(R.string.app_theme_dark_only),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
+        Text(
+            if (palette.darkOnly) stringResource(R.string.app_theme_dark_only) else "",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

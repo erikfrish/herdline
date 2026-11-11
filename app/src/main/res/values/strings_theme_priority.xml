@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="theme_material_you_badge">Material You · Dynamic</string>
+    <string name="theme_material_you_badge">Dynamic</string>
     <string name="theme_material_badge">Material 3</string>
 </resources>

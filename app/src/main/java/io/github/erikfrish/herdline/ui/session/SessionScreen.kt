@@ -746,9 +746,10 @@ fun SessionScreen(
                                 val trailing = @Composable {
                                     if (blocked.isNotEmpty()) {
                                         AttentionChip(
-                                            pluralStringResource(R.plurals.need_you_chip, blocked.size, blocked.size),
+                                            blocked.size.toString(),
                                             AgentStatus.Blocked.color(),
                                             "session:need_you",
+                                            spokenLabel = pluralStringResource(R.plurals.need_you_chip, blocked.size, blocked.size),
                                         ) {
                                             groups.nextNeedingInput(focusedPane)?.let(::go)
                                         }
@@ -1474,13 +1475,14 @@ private fun SessionMenu(
 
 /** The header's one-tap way to what needs the user: the next agent asking, or the working ones. */
 @Composable
-private fun AttentionChip(label: String, color: Color, tag: String, onClick: () -> Unit) {
+private fun AttentionChip(label: String, color: Color, tag: String, spokenLabel: String = label, onClick: () -> Unit) {
     Row(
         Modifier
             .height(36.dp)
             .clip(CircleShape)
             .background(color.copy(alpha = 0.2f))
             .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = spokenLabel }
             .padding(horizontal = 12.dp)
             .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,

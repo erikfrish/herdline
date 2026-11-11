@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -19,6 +21,8 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import io.github.erikfrish.herdline.core.ChatDialog
+import io.github.erikfrish.herdline.core.ChatFormAnswer
+import io.github.erikfrish.herdline.core.ChatAnswerOption
 import io.github.erikfrish.herdline.core.visibleDialogs
 import io.github.erikfrish.herdline.ui.theme.HerdlineTheme
 import org.json.JSONObject
@@ -68,5 +72,25 @@ class ChatFormInteractionTest {
         target.parentFile!!.mkdirs()
         target.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
         image.recycle()
+    }
+
+    @Test fun recordedChoicesShowTheirSelectionOnceAndKeepOtherText() {
+        val answers = listOf(
+            ChatFormAnswer("checks", "Checks", "Lint", listOf(ChatAnswerOption("Lint", true), ChatAnswerOption("Tests", false))),
+            ChatFormAnswer("tone", "Tone", "Blue", listOf(ChatAnswerOption("Red", false), ChatAnswerOption("Blue", true))),
+            ChatFormAnswer("colour", "Colour", "Other: custom", listOf(ChatAnswerOption("Green", false), ChatAnswerOption("Other", true))),
+        )
+        compose.setContent {
+            HerdlineTheme(dark = false) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ChatFormAnswers(answers, false, chatColors(Color(0xFF00696A)))
+                }
+            }
+        }
+        compose.onAllNodesWithText("Lint", useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodesWithText("Blue", useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithText("Tests", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Red", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Other: custom", useUnmergedTree = true).assertExists()
     }
 }

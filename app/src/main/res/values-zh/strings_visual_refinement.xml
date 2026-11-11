@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="host_workspace_count">%1$d 个工作区</string>
+    <string name="host_agent_count">%1$d 个智能体</string>
+    <string name="form_fix_fields_named">提交前请检查：%1$s</string>
+</resources>

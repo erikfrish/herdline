@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.inbox
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -120,11 +122,7 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
     ) { padding ->
         LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("inbox")) {
             item(key = "filters") {
-                FlowRow(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     ScopeSelector(
                         state = state,
                         groups = groups,
@@ -132,12 +130,14 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
                         hosts = hosts.size,
                         onScope = { scope = it },
                     )
-                    StatusChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { filter = SwitcherFilter.All }
-                    StatusChip(stringResource(R.string.filter_needs_you, scoped.needsYou()), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
-                        filter = SwitcherFilter.NeedsYou
-                    }
-                    StatusChip(stringResource(R.string.filter_working, scoped.working()), filter == SwitcherFilter.Working, AgentStatus.Working) {
-                        filter = SwitcherFilter.Working
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatusChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { filter = SwitcherFilter.All }
+                        StatusChip(stringResource(R.string.filter_needs_you, scoped.needsYou()), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
+                            filter = SwitcherFilter.NeedsYou
+                        }
+                        StatusChip(stringResource(R.string.filter_working, scoped.working()), filter == SwitcherFilter.Working, AgentStatus.Working) {
+                            filter = SwitcherFilter.Working
+                        }
                     }
                 }
             }
@@ -345,10 +345,11 @@ private fun InboxItem(row: InboxRow, onOpen: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            Text(statusLabel(row.status), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.size(2.dp))
         Text(
-            listOfNotNull(row.host, row.where.takeIf { it.isNotEmpty() }, statusLabel(row.status)).joinToString(" · "),
+            listOfNotNull(row.host, row.where.takeIf { it.isNotEmpty() }).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.chat
 
 import io.github.erikfrish.herdline.core.TranscriptBlock
+import io.github.erikfrish.herdline.core.ChatFormAnswer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -62,10 +63,11 @@ class ToolStatusTest {
     }
 
     @Test
-    fun a_step_line_is_the_name_and_what_it_worked_on() {
-        val call = TranscriptBlock.ToolCall("t", "bash", "{\n  \"command\": \"ls\"\n}", null, false)
-        assertEquals("bash · {", ChatItem.Tool("t", call, null).stepLine())
-        assertEquals("bash · Listing", ChatItem.Tool("t", call.copy(intent = "Listing"), null).stepLine())
-        assertEquals("bash", ChatItem.Tool("t", null, result("x")).stepLine())
+    fun askSummaryNeverShowsRawFormArgumentsAndUsesTheRecordedQuestion() {
+        val call = TranscriptBlock.ToolCall("t", "ask", "{\"html\":\"<form>private form</form>\"}", null, false)
+        assertEquals("", ChatItem.Tool("t", call, null).summary())
+        val answered = result("answer", error = false, name = "ask").copy(answers = listOf(ChatFormAnswer("target", "Deploy where?", "Stage")))
+        assertEquals("Deploy where?", ChatItem.Tool("t", call, answered).summary())
+        assertEquals("Review destination", ChatItem.Tool("t", call.copy(intent = "Review destination"), answered).summary())
     }
 }

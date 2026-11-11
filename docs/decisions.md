@@ -266,6 +266,12 @@ Switcher:
   their stored names. Material You is first on supported devices, followed by
   the fixed Herdline Material 3 family, with explicit Material badges. Other
   palettes and saved ids remain unchanged.
+- **Visual refinement from device captures.** The pinned Settings preview has
+  a separator from scrolling controls; icon artwork uses an outline of its actual
+  adaptive mask. Theme cards share growable height, not a fixed text-clipping
+  height. Host counts use short separate chips; Agents keep status words outside
+  truncated location text and status filters on one scrollable row. The session
+  attention control keeps a compact count and a full spoken label.
 - **Why Send is off.** When Herdr's precheck refuses Send for a written
   draft, its reason shows as the composer notice before any tap, with the
   same actions a refusal offers.
@@ -628,6 +634,11 @@ persisted answers are masked by OMP before export.
 
 An answered ask shows its questions, every recorded option and the selected
 values. A timed-out default is labelled as such, never as the user's choice.
+A selected answer is not repeated below the options when its text is exactly
+the selected option labels. Distinct summaries and Other text remain, and no
+unselected variant is dropped. Ask tool heads use intent or the recorded question
+instead of raw JSON/HTML arguments. Required controls use a visible asterisk with
+spoken required semantics; the validation summary names the controls to check.
 Old records without structured details retain their original output.
 Inline bitmap form pictures are sampled and bounded. External pictures and
 SVG receive an explicit media notice; no arbitrary file or network fetch

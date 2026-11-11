@@ -463,11 +463,10 @@ private fun NodeCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         when (state) {
-                            is Connection.State.Connected -> Pill(
-                                stringResource(R.string.attached_summary, view?.workspaces?.size ?: 0, view?.agents?.size ?: 0),
-                                MaterialTheme.colorScheme.tertiary,
-                                dot = true,
-                            )
+                            is Connection.State.Connected -> {
+                                Pill(stringResource(R.string.host_workspace_count, view?.workspaces?.size ?: 0), MaterialTheme.colorScheme.tertiary, dot = true)
+                                Pill(stringResource(R.string.host_agent_count, view?.agents?.size ?: 0), MaterialTheme.colorScheme.tertiary)
+                            }
                             is Connection.State.Connecting -> Pill(stringResource(R.string.connecting), MaterialTheme.colorScheme.secondary, dot = true)
                             is Connection.State.SettingUp -> Pill(stringResource(R.string.herdr_setup_pill), MaterialTheme.colorScheme.secondary, dot = true)
                             null -> {}

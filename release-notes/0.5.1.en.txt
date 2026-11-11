@@ -1,0 +1,9 @@
+Herdline 0.5.1 — visual refinement after screenshot review
+
+Recorded form answers no longer repeat a selected choice as a second identical summary line. Unselected choices remain visible, and free-text Other answers and distinct answer summaries are retained.
+
+Appearance and Terminal settings separate the pinned preview from scrolling controls with a subtle divider. Icon pictures have an outline following the launcher's actual adaptive mask, keeping pale colourways distinct from light tiles without changing the artwork. Theme cards align their labels and badges while remaining free to grow with larger text. Material You's badge reads Dynamic instead of repeating its title.
+
+Host workspace/agent counts are separate compact chips. Agents keep readable status words beside the title and place status filters in one scrollable row. Session attention uses a compact count with a full accessible label, leaving more room for the workspace name. Ask tool heads no longer summarize raw JSON; required-field summaries name the controls, and selected dropdown choices have a check mark.
+
+The refinements come from actual 0.5.0 release screenshots and designer feedback. Multi-theme QA and changed-screen verification are recorded separately; this is not a new full delivery-safety or real-provider test. Samsung stock Now Bar placement remains unconfirmed and no system developer flag is changed. Personal OMP is unchanged.

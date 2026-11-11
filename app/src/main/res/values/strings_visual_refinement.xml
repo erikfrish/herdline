@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="host_workspace_count">%1$d workspaces</string>
+    <string name="host_agent_count">%1$d agents</string>
+    <string name="form_fix_fields_named">Check before submitting: %1$s</string>
+</resources>

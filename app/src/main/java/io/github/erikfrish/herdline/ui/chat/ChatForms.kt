@@ -240,6 +240,8 @@ fun ChatFormAnswers(answers: List<ChatFormAnswer>, timedOut: Boolean, colors: Ch
 private fun AnswerRow(answer: ChatFormAnswer, colors: ChatColors) {
     val question = answer.question.ifBlank { answer.name }
     val empty = answer.answer.isBlank()
+    val selectedLabels = answer.options.filter { it.selected }.joinToString(", ") { it.label }
+    val summaryNeeded = empty || selectedLabels != answer.answer
     val spoken = if (empty) {
         stringResource(R.string.form_answer_none_spoken, question)
     } else {
@@ -265,13 +267,15 @@ private fun AnswerRow(answer: ChatFormAnswer, colors: ChatColors) {
                 Text(option.label, style = ChatType.body.copy(color = if (option.selected) colors.text else colors.muted), modifier = Modifier.weight(1f))
             }
         }
-        Row(Modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (empty) {
-                Text(stringResource(R.string.form_no_answer), style = ChatType.body.copy(color = colors.muted, fontStyle = FontStyle.Italic))
-            } else {
-                Icon(Icons.Filled.CheckCircle, null, tint = colors.accentText, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Text(answer.answer, style = ChatType.body.copy(color = colors.text), modifier = Modifier.weight(1f))
+        if (summaryNeeded) {
+            Row(Modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (empty) {
+                    Text(stringResource(R.string.form_no_answer), style = ChatType.body.copy(color = colors.muted, fontStyle = FontStyle.Italic))
+                } else {
+                    Icon(Icons.Filled.CheckCircle, null, tint = colors.accentText, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(answer.answer, style = ChatType.body.copy(color = colors.text), modifier = Modifier.weight(1f))
+                }
             }
         }
     }
@@ -329,7 +333,12 @@ private fun FormEditor(
     }
     if (tried && errors.isNotEmpty() && editable) {
         Text(
-            pluralStringResource(R.plurals.form_fix_fields, errors.size, errors.size),
+            stringResource(R.string.form_fix_fields_named, form.fields.filter { it.name in errors }.joinToString(", ") { field ->
+                formText(field.label).ifBlank {
+                    form.sections.firstOrNull { section -> section.blocks.any { it is FormBlock.Field && it.field.name == field.name } }
+                        ?.let { formText(it.title) }?.takeIf(String::isNotBlank) ?: field.name
+                }
+            }),
             style = ChatType.meta.copy(color = colors.err),
         )
     }
@@ -581,7 +590,7 @@ private fun FieldLabel(field: FormField, colors: ChatColors, groupTitle: String?
     val grouped = field is FormField.Choice && ownLabel.isBlank() && groupTitle != null
     if (grouped && !field.required) return
     val label = ownLabel.ifBlank { if (grouped) groupTitle!! else field.name }
-    val required = stringResource(R.string.form_required)
+    val required = "*"
     val spoken = if (field.required) stringResource(R.string.form_label_required_spoken, label) else label
     Row(
         Modifier.semantics(mergeDescendants = true) { contentDescription = spoken; heading() },
@@ -730,12 +739,18 @@ private fun Select(field: FormField.Choice, draft: ChoiceDraft, colors: ChatColo
                     text = { Text(spanned(optionLabel(option), colors)) },
                     enabled = !option.disabled,
                     onClick = { set(draft.copy(selected = listOf(option.value), otherOn = false)); expanded = false },
+                    trailingIcon = if (!draft.otherOn && option.value in draft.selected) {
+                        { Icon(Icons.Filled.CheckCircle, null, tint = colors.accentText, modifier = Modifier.size(20.dp)) }
+                    } else null,
                 )
             }
             if (field.other) {
                 DropdownMenuItem(
                     text = { Text(other) },
                     onClick = { set(draft.copy(selected = emptyList(), otherOn = true)); expanded = false },
+                    trailingIcon = if (draft.otherOn) {
+                        { Icon(Icons.Filled.CheckCircle, null, tint = colors.accentText, modifier = Modifier.size(20.dp)) }
+                    } else null,
                 )
             }
         }

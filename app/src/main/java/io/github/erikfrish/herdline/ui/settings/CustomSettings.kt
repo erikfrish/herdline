@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.settings
 
 import android.content.ActivityNotFoundException
+import android.graphics.Canvas
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.view.View
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
@@ -53,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -439,6 +442,7 @@ private fun LauncherIconChoice(variant: IconVariant, selected: Boolean, onClick:
     val label = stringResource(variant.labelRes)
     val context = LocalContext.current
     val drawable = remember(context, variant) { context.getDrawable(variant.drawableRes) }
+    val outlineColor = MaterialTheme.colorScheme.outlineVariant.toArgb()
     Column(
         Modifier.width(88.dp)
             .clip(MaterialTheme.shapes.medium)
@@ -453,13 +457,33 @@ private fun LauncherIconChoice(variant: IconVariant, selected: Boolean, onClick:
     ) {
         Box(Modifier.size(72.dp)) {
             AndroidView(
-                factory = { ctx -> ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO } },
-                update = { it.setImageDrawable(drawable) },
+                factory = { ctx -> LauncherIconPreview(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO } },
+                update = { it.setImageDrawable(drawable); it.outlineColor = outlineColor },
                 modifier = Modifier.fillMaxSize(),
             )
             if (selected) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.align(Alignment.BottomEnd).size(22.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(3.dp))
         }
         Text(label, style = MaterialTheme.typography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+/** Outline the actual launcher's adaptive mask, without tinting or replacing its artwork. */
+private class LauncherIconPreview(context: android.content.Context) : ImageView(context) {
+    private val outline = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = resources.displayMetrics.density
+    }
+    var outlineColor: Int = 0
+        set(value) { if (field != value) { field = value; invalidate() } }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val adaptive = drawable as? AdaptiveIconDrawable ?: return
+        outline.color = outlineColor
+        val save = canvas.save()
+        canvas.concat(imageMatrix)
+        canvas.drawPath(adaptive.iconMask, outline)
+        canvas.restoreToCount(save)
     }
 }
 
