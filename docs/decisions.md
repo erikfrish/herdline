@@ -622,6 +622,18 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
 - **Recovery.** An endpoint send writes ahead a Queued record with receipt
   `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
 
+### Codex and OpenCode input binding
+
+Control-API input requires a positive foreground PID as well as the exact
+pane, terminal and session reference. A retained session identity without
+its foreground process does not authorize a send. OpenCode connects only
+to its private, already-running loopback service registration: no automatic
+service start, HTTP redirects or environment proxy routing. An unknown
+acknowledgement after POST remains uncertain; discovery failure before POST
+is a refusal. The real loopback transport boundary is exercised with
+`python native/src/agent_chat/test_opencode_send.py`.
+
+
 ### Questions and submitted answers
 
 Chat reads open questions from the same OMP instance's ingress endpoint.
