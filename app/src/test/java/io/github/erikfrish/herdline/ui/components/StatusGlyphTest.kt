@@ -28,4 +28,25 @@ class StatusGlyphTest {
         assertFalse(bumps(AgentStatus.Blocked, AgentStatus.Working))
         assertFalse(bumps(AgentStatus.Done, AgentStatus.Idle))
     }
+
+    @Test
+    fun onlyAConnectionCompletingClosesTheArc() {
+        assertTrue(closes(Link.Trying, Link.Up))
+        // A session opened already connected shows the disc still.
+        assertFalse(closes(null, Link.Up))
+        assertFalse(closes(Link.Up, Link.Up))
+        assertFalse(closes(Link.Lost, Link.Up))
+        assertFalse(closes(Link.Trying, Link.Lost))
+    }
+
+    @Test
+    fun theCloseStartsAsTheArcAndEndsAsTheDisc() {
+        assertEquals(270f, closeSweep(0f), 0f)
+        assertEquals(0f, closeFill(0f), 0f)
+        // The ring is shut before it fills: the arc never reads as filled while open.
+        assertEquals(360f, closeSweep(0.6f), 0.001f)
+        assertEquals(0f, closeFill(0.6f), 0.001f)
+        assertEquals(360f, closeSweep(1f), 0f)
+        assertEquals(1f, closeFill(1f), 0f)
+    }
 }

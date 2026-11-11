@@ -194,10 +194,33 @@ fun connectionSpoken(state: Connection.State): String = when (state.link()) {
 }
 
 /**
+ * Whether going from [before] to [now] closes the arc into the disc: only a
+ * connection completing (Trying → Up), never a glyph that first shows Up
+ * ([before] null), so opening a session already connected is still.
+ */
+internal fun closes(before: Link?, now: Link): Boolean = before == Link.Trying && now == Link.Up
+
+/** The share of the close spent sweeping the arc shut; the rest fills it in. */
+private const val CLOSE_SWEEP = 0.6f
+
+/** The closing arc's sweep at [progress] (0..1): 270° grows to the full 360°, then holds. */
+internal fun closeSweep(progress: Float): Float = 270f + 90f * (progress / CLOSE_SWEEP).coerceIn(0f, 1f)
+
+/** The disc's fill alpha at [progress] (0..1): none while the arc closes, then up to opaque. */
+internal fun closeFill(progress: Float): Float = ((progress - CLOSE_SWEEP) / (1f - CLOSE_SWEEP)).coerceIn(0f, 1f)
+
+/** The link a glyph showed last, read only by its change effect, so it is no state of its own. */
+private class LastLink {
+    var link: Link? = null
+}
+
+/**
  * The session's link, 12 dp: a filled circle when connected, the Working
  * arc (turning while motion is allowed) while connecting or setting up, a
- * hollow full ring when lost, ✕ when it cannot connect. Tagged
- * `session:state:<State>`.
+ * hollow full ring when lost, ✕ when it cannot connect. When a connection
+ * completes, the arc closes into the circle once (250 ms) while motion is
+ * allowed, drawn only, in the same 12 dp; otherwise the circle is there at
+ * once. Tagged `session:state:<State>`.
  */
 @Composable
 fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
@@ -215,8 +238,16 @@ fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
         .size(12.dp)
         .semantics { stateDescription = spoken }
         .testTag("session:state:" + state::class.simpleName)
+    val motion = motionAllowed()
+    val last = remember { LastLink() }
+    // Decided in the composition that first shows Up, so its first frame is already the open arc, never a flash of the disc.
+    val close = remember(link) { Animatable(if (motion && closes(last.link, link)) 0f else 1f) }
+    LaunchedEffect(link) {
+        last.link = link
+        if (close.value < 1f) close.animateTo(1f, tween(250, easing = LinearEasing))
+    }
     if (link.shape() == GlyphShape.Arc) {
-        Arc(color, tagged, turning = motionAllowed())
+        Arc(color, tagged, turning = motion)
         return
     }
     Canvas(tagged) {
@@ -232,7 +263,27 @@ fun ConnectionGlyph(state: Connection.State, modifier: Modifier = Modifier) {
                 drawLine(color, Offset(inset, inset), Offset(end, end), stroke, StrokeCap.Round)
                 drawLine(color, Offset(end, inset), Offset(inset, end), stroke, StrokeCap.Round)
             }
-            else -> drawCircle(color)
+            else -> {
+                // Read here, in the draw phase: the close redraws without recomposing or laying out.
+                val progress = close.value
+                if (progress >= 1f) {
+                    drawCircle(color)
+                } else {
+                    // The Working arc's own stroke and start, so the close continues the shape that was there.
+                    val stroke = (size.minDimension * 0.16f).coerceIn(1.5.dp.toPx(), 2.dp.toPx())
+                    val inset = stroke / 2
+                    drawArc(
+                        color,
+                        startAngle = -90f,
+                        sweepAngle = closeSweep(progress),
+                        useCenter = false,
+                        topLeft = Offset(inset, inset),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        style = Stroke(stroke, cap = StrokeCap.Butt),
+                    )
+                    closeFill(progress).takeIf { it > 0f }?.let { drawCircle(color, alpha = it) }
+                }
+            }
         }
     }
 }
