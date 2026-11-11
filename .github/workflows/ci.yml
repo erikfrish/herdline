@@ -28,6 +28,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install native test dependencies
+        run: sudo apt-get update && sudo apt-get install --yes socat
+
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin

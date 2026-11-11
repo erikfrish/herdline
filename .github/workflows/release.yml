@@ -23,6 +23,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install native test dependencies
+        run: sudo apt-get update && sudo apt-get install --yes socat
       - name: Read the release identity
         run: |
           version=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)

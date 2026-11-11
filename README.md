@@ -288,6 +288,7 @@ Requirements:
 - [cargo-ndk](https://github.com/bbqsrc/cargo-ndk)
 - **Zig 0.15.2**, exactly; `libghostty-vt-sys` uses it to build the pinned
   Ghostty
+- `socat` for the native ingress socket tests (`sudo apt-get install socat` on Ubuntu)
 - [just](https://github.com/casey/just), optional, for the recipes below
 
 ```sh
