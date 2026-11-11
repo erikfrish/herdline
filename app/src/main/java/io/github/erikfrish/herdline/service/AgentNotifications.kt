@@ -18,9 +18,12 @@ import android.os.PowerManager
 import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
+import io.github.erikfrish.herdline.data.IconVariant
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.ui.MainActivity
 
@@ -83,12 +86,13 @@ object AgentNotifications {
     )
 
     /** What a child notification carries beyond its constant fields. */
-    private data class ChildPost(val words: Redacted, val lock: LockDetail, val at: Long)
+    private data class ChildPost(val words: Redacted, val lock: LockDetail, val at: Long, val variant: IconVariant)
+    private data class SummaryPost(val words: Redacted, val lock: LockDetail, val variant: IconVariant)
 
     private val alerts = AgentAlerts()
     private val notes = HashMap<String, Note>()
     private val children = Posted<ChildPost>()
-    private val summaries = Posted<Pair<Redacted, LockDetail>>()
+    private val summaries = Posted<SummaryPost>()
 
     /** How long after a burst of re-posts [reassert] checks what the shade shows. */
     private const val REASSERT_MS = 1_500L
@@ -298,7 +302,7 @@ object AgentNotifications {
         for (note in notes.values.sortedBy { it.at }) {
             val tag = note.key.tag
             val nodeId = note.key.nodeId
-            if (differs(AGENT_ID, tag, children[tag]?.words?.main) || differs(SUMMARY_ID, summaryTag(nodeId), summaries[summaryTag(nodeId)]?.first?.main)) {
+            if (differs(AGENT_ID, tag, children[tag]?.words?.main) || differs(SUMMARY_ID, summaryTag(nodeId), summaries[summaryTag(nodeId)]?.words?.main)) {
                 publish(context, manager, note, lock, silent = true, force = true)
             }
         }
@@ -347,6 +351,7 @@ object AgentNotifications {
     internal fun publicOf(context: Context, channel: String, content: NoteContent, icon: Int = R.drawable.ic_notification): NotificationCompat.Builder =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(icon)
+            .setLargeIcon(IconVariants.currentIcon(context))
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setSubText(content.subText)
@@ -405,9 +410,11 @@ object AgentNotifications {
         // The Needs input glyph: the same shape as the in-app Blocked diamond.
         val icon = if (attention) R.drawable.ic_needs_input else R.drawable.ic_notification
         val words = agentContent(texts, attention, note.node, note.agent, note.title, note.body, stale, lock, locked)
-        if (children.put(note.key.tag, ChildPost(words, lock, note.at)) || force) {
+        val variant = (context.applicationContext as HerdlineApp).settings.settings.value.iconVariant
+        if (children.put(note.key.tag, ChildPost(words, lock, note.at, variant)) || force) {
             val child = NotificationCompat.Builder(context, channel)
                 .setSmallIcon(icon)
+                .setLargeIcon(IconVariants.icon(context, variant))
                 .setWhen(note.at)
                 .setShowWhen(true)
                 .setCategory(if (attention) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
@@ -428,9 +435,10 @@ object AgentNotifications {
         }
 
         val sum = summaryContent(texts, note.node, lock, locked)
-        if (summaries.put(summaryTag(nodeId), sum to lock) || force) {
+        if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock, variant)) || force) {
             val summary = NotificationCompat.Builder(context, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_notification)
+                .setLargeIcon(IconVariants.icon(context, variant))
                 .setGroup(group(nodeId))
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)

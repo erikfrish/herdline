@@ -52,6 +52,24 @@ The app resources live in `app/src/main/res`:
 - `drawable/ic_notification.xml` is the notification icon.
 - The splash uses `drawable{,-night}/ic_splash_glyph.xml` and `values{,-night}-v31/themes.xml`.
 
+## Icon identity in the app
+
+The icon a person picks in Settings › Appearance is the app's identity
+everywhere in app code: launcher entry (`IconVariants.apply`), the Recents
+task icon (`MainActivity`), notification large icons and the in-app logo
+(`IconVariants.icon`/`currentIcon` draw the variant's own adaptive art once
+and cache it). Recognition-critical semantic glyphs — terminal status glyphs,
+badges, navigation icons, the notification small icon the status bar tints —
+stay the mark's one-colour form or their own symbols, never the variant tile.
+
+One surface cannot follow the pick and never will: the icon in Android
+Settings › App info and other system package views is fixed at install time
+from the manifest (`android:icon`) and activity-alias resources. The platform
+has no API to change it at runtime; only the launcher, Recents and
+notifications can carry the selected variant. The Android 12+ splash is
+theme-defined per day/night (`values{,-night}-v31`) and is equally static
+within a theme.
+
 ## Rules
 
 - **Safe zone:** keep the hook and prompt inside the adaptive-icon safe

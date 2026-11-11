@@ -57,7 +57,7 @@
     <string name="notify_connection">When a connection drops</string>
     <string name="notify_connection_help">Quiet, and only while Herdline is in the background.</string>
     <string name="live_activity">Live updates for pinned agents</string>
-    <string name="live_activity_help">Pin an agent from its ⋮ menu in the switcher or the session menu. Samsung decides whether Live Updates appear in the Now Bar.</string>
+    <string name="live_activity_help">Pin an agent from its ⋮ menu. The pin stays between tasks until you Unpin or swipe its live notification. Samsung controls Now Bar placement separately from Android Live Update promotion.</string>
     <string name="live_lock_detail">Live update lock detail</string>
     <string name="live_lock_detail_help">Chosen when you pin a live update. Alert and done notifications keep the setting above.</string>
     <string name="lock_state_only">State only</string>
@@ -80,11 +80,11 @@
     <string name="lock_preview_sample">The agent\'s message appears here</string>
     <string name="lock_preview_description">Preview: %1$s</string>
 
-    <string name="section_icon">Launcher icon variant</string>
+    <string name="section_icon">App icon variant</string>
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">Mono</string>
     <string name="icon_contrast">Contrast</string>
-    <string name="icon_help">Choose a launcher icon by its picture. The home screen uses the selected colourway; themed icons follow the launcher\'s colours. Some launchers take a moment and may move a home-screen shortcut.</string>
+    <string name="icon_help">The selected colourway is used on the home screen, in Recents, full-colour notification icons and the app logo. Android app-info screens and the initial system splash use the installed icon. Status icons remain monochrome. Some launchers take a moment and may move a home-screen shortcut.</string>
 
     <string name="preview_title">Preview</string>
     <string name="preview_description">Preview of the session with the current settings</string>

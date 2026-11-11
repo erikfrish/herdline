@@ -197,13 +197,13 @@ class LiveFieldsTest {
     }
 
     @Test
-    fun workingIsPromotedAndOffersUnpinWhileDoneUnpinsItself() {
+    fun workingAndDoneOfferExplicitUnpinWithoutForgettingTheAgent() {
         val working = fields(shown.getValue("working"), LockDetail.StateOnly)!!
         assertTrue(working.promote)
         assertTrue(working.unpin)
         val done = fields(shown.getValue("done"), LockDetail.StateOnly)!!
         assertTrue(done.promote)
-        assertFalse(done.unpin)
+        assertTrue(done.unpin)
     }
 
     @Test

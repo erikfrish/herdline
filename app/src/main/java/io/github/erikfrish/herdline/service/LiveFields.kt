@@ -61,7 +61,7 @@ internal data class LiveFields(
     val state: LiveState,
     /** Ask Android to promote it: only while a task is actually running or just finished. */
     val promote: Boolean,
-    /** Offer Unpin; a finished pin unpins itself. */
+    /** A durable pin may be removed explicitly in every live state. */
     val unpin: Boolean,
     val main: LiveFace,
     val public: LiveFace,
@@ -81,6 +81,27 @@ internal fun liveState(card: LiveCard): LiveState? = when {
     else -> null
 }
 
+/** Hides finished episodes without deleting the user's durable monitoring pins. */
+internal class DoneCards {
+    private val until = HashMap<MonitorKey, Long>()
+
+    fun visible(card: LiveCard?, pins: Set<MonitorKey>, now: Long): LiveCard? {
+        until.keys.retainAll(pins)
+        if (card == null) return null
+        if (card.staleSince == null) {
+            for (row in card.rows) {
+                if (row.status == AgentStatus.Done) until.putIfAbsent(row.key, now + 10_000L)
+                else until.remove(row.key)
+            }
+        }
+        val rows = card.rows.filter { it.status != AgentStatus.Done || now < (until[it.key] ?: Long.MAX_VALUE) }
+        return if (rows.isEmpty()) null else if (rows.size == card.rows.size) card else card.copy(rows = rows)
+    }
+
+    fun nextExpiry(now: Long): Long? = until.values.filter { it > now }.minOrNull()
+}
+
+
 /**
  * The live update for [card] at lock [level], or null when the foreground
  * notification shows the plain Attached content instead. [now] dates the
@@ -99,7 +120,7 @@ internal fun liveFields(t: LiveTexts, card: LiveCard?, level: LockDetail, locked
         state = state,
         // Link lost: demoted at once; it is old news, not a live task.
         promote = state != LiveState.Disconnected,
-        unpin = state != LiveState.Done,
+        unpin = true,
         main = if (locked) permitted else face(t, card, state, top, LockDetail.Full, titles = true, now, time),
         public = permitted,
         top = top,

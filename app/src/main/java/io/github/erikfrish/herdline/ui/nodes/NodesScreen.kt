@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -62,10 +63,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -80,6 +83,7 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.data.Node
@@ -355,6 +359,9 @@ private fun MenuItem(label: Int, icon: Painter, destructive: Boolean = false, on
 
 @Composable
 private fun EmptyNodes(modifier: Modifier, navigation: NodesNavigation) {
+    val context = LocalContext.current
+    val settings by (context.applicationContext as HerdlineApp).settings.settings.collectAsState()
+    val logo = remember(context, settings.iconVariant) { IconVariants.icon(context, settings.iconVariant).asImageBitmap() }
     Box(modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
         Column(
             Modifier
@@ -366,7 +373,7 @@ private fun EmptyNodes(modifier: Modifier, navigation: NodesNavigation) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            NodeAvatar("B", 0, size = 76.dp)
+            Image(logo, null, Modifier.size(76.dp))
             Text(stringResource(R.string.no_nodes_title), style = MaterialTheme.typography.titleLarge)
             Text(
                 stringResource(R.string.no_nodes_text),

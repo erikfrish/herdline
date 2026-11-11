@@ -103,8 +103,8 @@ fields; `ConnectionService.build` posts them).
   the notification lock detail the user ever saved (Hidden included), else
   State only, marked "Suggested".
 - **States.** Shown only while a pinned agent is Working (promoted) or just
-  finished. Done is shown once with the run's length, then the pin unpins
-  itself after 10 s. Blocked hands off: the live update drops it and one
+  finished. Done is shown once with the run's length, then hidden after 10 s
+  without deleting the pin; the next Working episode is live again. Blocked hands off: one
   attention notification is posted per Blocked episode, on the same slot
   and alert policy as Herdr's own, so the two never alert twice. Idle or
   Unknown shows nothing but keeps the pin. A lost link demotes at once.
@@ -121,7 +121,7 @@ fields; `ConnectionService.build` posts them).
   per pinned row. There is no progress bar or percentage; the category is
   `progress`.
 - **Actions.** Tap opens the top row's pane. Unpin unpins every row shown,
-  except on Done. The Attached content keeps Disconnect.
+  including Done. The Attached content keeps Disconnect.
 - **Unpin, swipe and the service.** Swipe-dismiss (Android 14+) unpins the
   shown rows like Unpin. The notification is never cancelled while a host is
   attached: it is updated in place to the unpromoted Attached content, and
@@ -194,9 +194,13 @@ showing. A new notification while locked still alerts.
   to "not attention". All of them reach `agent_done`, labelled to say so.
   Splitting them needs the kind in the native event (`native/src/session.rs`).
 - Elapsed time exists only for status changes Herdline saw while attached.
-- Whether `FLAG_PROMOTED_ONGOING` matches what Samsung One UI shows on the
-  Now Bar is unverified. The four lock levels have not been checked on a
-  device for this release.
+- Stock Samsung verification on SM-S928U1 / One UI 8.5 / Android 36.1:
+  a pinned Working card carried `FLAG_PROMOTED_ONGOING` with
+  `enable_notification_nowbar_test=0`, but the lock screen showed no Herdline
+  Now Bar capsule and Samsung's ongoing-activity lists were empty. Android
+  promotion is not a Samsung placement claim. Check Samsung's normal
+  Lock screen and AOD › Now bar › Live notifications settings; no test flag
+  or undocumented Samsung payload is used.
 - The promotion state in Settings is read when Settings resumes, not live.
 
 ---

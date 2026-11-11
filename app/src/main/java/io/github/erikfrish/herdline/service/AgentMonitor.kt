@@ -9,8 +9,9 @@ data class MonitorKey(val nodeId: String, val pane: String)
 
 /**
  * The agents pinned as live updates. Pinned only by the user, from the pin
- * sheet; unpinned by the user, the notification's Unpin or swipe, or a
- * finished task. Kept across restarts. Herdr reuses no pane ID within one
+ * sheet; unpinned by the user, the notification's Unpin or swipe. A finished
+ * task hides its card without forgetting the pin. Kept across restarts.
+ * Herdr reuses no pane ID within one
  * daemon run, but a restarted daemon may, so the card always names what the
  * pane runs now.
  */

@@ -22,6 +22,8 @@ import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AppLanguages
+import io.github.erikfrish.herdline.data.IconVariant
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.data.Settings
 import io.github.erikfrish.herdline.ui.MainActivity
@@ -30,6 +32,7 @@ import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -65,6 +68,7 @@ class ConnectionService : Service() {
         val lock: LockDetail,
         val live: LockDetail,
         val promote: Boolean,
+        val variant: IconVariant = IconVariant.Default,
         val minute: Long = 0,
     )
 
@@ -73,6 +77,7 @@ class ConnectionService : Service() {
 
     /** The lock-screen privacy last applied to the lost notes, to notice setting changes. */
     private var appliedLock: LockDetail? = null
+    private var appliedIcon: IconVariant? = null
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(AppLanguages.wrap(base))
 
@@ -105,7 +110,7 @@ class ConnectionService : Service() {
         }
         val live = liveLevel(app.settings.liveLockDetail.value, settings.lockDetail)
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
-            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title)
+            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant)
         shown = state
         ServiceCompat.startForeground(
             this,
@@ -165,8 +170,9 @@ class ConnectionService : Service() {
         val lastSeen = HashMap<String, Long>()
         val connected = HashMap<String, Boolean>()
         val clock = StatusClock()
-        /** Done rows waiting to unpin themselves, cancelled if they leave Done. */
-        val finishing = HashMap<MonitorKey, Job>()
+        val done = DoneCards()
+        val expiryTick = MutableStateFlow(0L)
+        var expiry: Job? = null
         /** Pinned agents whose current Blocked episode was handed to an attention notification. */
         val handedOff = HashSet<MonitorKey>()
         val minutes = flow {
@@ -196,15 +202,17 @@ class ConnectionService : Service() {
         val choices = combine(app.monitor.monitored, app.settings.settings, app.settings.liveLockDetail) { monitored, settings, live ->
             Triple(monitored, settings, liveLevel(live, settings.lockDetail))
         }
-        combine(nodes, choices, minutes) { list, (monitored, settings, level), minute -> Choice(list, monitored, settings, level, minute) }
+        val ticks = combine(minutes, expiryTick) { minute, _ -> minute }
+        combine(nodes, choices, ticks) { list, (monitored, settings, level), minute -> Choice(list, monitored, settings, level, minute) }
             .collect { (list, monitored, settings, level, minute) ->
                 val now = System.currentTimeMillis()
                 val context = this@ConnectionService
                 // A privacy-setting change re-posts the lost note: it is not re-posted
                 // on the lock edge, so a note posted under Names would keep the host
                 // under Hidden (P8). HerdlineApp re-posts the agent notes.
-                if (appliedLock != settings.lockDetail) {
+                if (appliedLock != settings.lockDetail || appliedIcon != settings.iconVariant) {
                     appliedLock = settings.lockDetail
+                    appliedIcon = settings.iconVariant
                     val active = context.getSystemService(NotificationManager::class.java).activeNotifications
                     lost.values.toList().forEach { connection ->
                         if (active.any { it.id == LOST_ID && it.tag == lostTag(connection) }) {
@@ -240,14 +248,17 @@ class ConnectionService : Service() {
                     }
                     NodeSnapshot(id, connection.node.title, up, view, lastSeen[id] ?: now)
                 }
-                val live = if (settings.liveActivity) liveCard(snapshots, monitored, clock::since, clock::worked) else null
-                // While the link is lost the rows are a memory: Done timers and
-                // hand-offs keep their state until it returns (NB-C3), so a row
-                // still Done after a reconnect is neither shown nor timed twice.
-                if (live?.staleSince == null) {
-                    val rows = live?.rows.orEmpty()
-                    finish(app, rows, finishing)
-                    handOff(app, rows, list, settings, handedOff)
+                val raw = if (settings.liveActivity) liveCard(snapshots, monitored, clock::since, clock::worked) else null
+                val live = done.visible(raw, monitored, now)
+                expiry?.cancel()
+                expiry = done.nextExpiry(now)?.let { deadline ->
+                    launch {
+                        delay(deadline - now)
+                        expiryTick.value++
+                    }
+                }
+                if (raw?.staleSince == null) {
+                    handOff(app, raw?.rows.orEmpty(), list, settings, handedOff)
                 }
                 val next = Shown(
                     count = list.size,
@@ -256,6 +267,7 @@ class ConnectionService : Service() {
                     lock = settings.lockDetail,
                     live = level,
                     promote = settings.liveActivity,
+                    variant = settings.iconVariant,
                     minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
                 )
                 AgentNotifications.card = when (live?.let(::liveState)) {
@@ -278,20 +290,6 @@ class ConnectionService : Service() {
         val minute: Long,
     )
 
-    /** A finished pin unpins itself shortly after, unless it starts working again first. */
-    private fun finish(app: HerdlineApp, rows: List<LiveRow>, finishing: HashMap<MonitorKey, Job>) {
-        val done = rows.filter { it.status == AgentStatus.Done }.map { it.key }.toSet()
-        finishing.keys.retainAll { key -> (key in done).also { if (!it) finishing[key]?.cancel() } }
-        done.forEach { key ->
-            if (key !in finishing) {
-                finishing[key] = app.scope.launch {
-                    delay(DONE_UNPIN_MS)
-                    finishing.remove(key)
-                    app.monitor.unpin(setOf(key))
-                }
-            }
-        }
-    }
 
     /**
      * A pinned agent turned Blocked: the live update drops it, and one
@@ -339,6 +337,7 @@ class ConnectionService : Service() {
         val words = lostContent(ResourceTexts(this), connection.node.title, lock)
         val notification = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_CONNECTION)
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(IconVariants.currentIcon(this))
             .setContentTitle(words.main.title)
             .setContentText(words.main.text)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -377,6 +376,7 @@ class ConnectionService : Service() {
         )
         val builder = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_LIVE)
             .setOngoing(true)
+            .setLargeIcon(IconVariants.icon(this, shown.variant))
             .setOnlyAlertOnce(true)
             .setContentIntent(content)
             .setDeleteIntent(dismiss)
@@ -474,8 +474,6 @@ class ConnectionService : Service() {
         private const val ACTION_CARD_DISMISSED = "io.github.erikfrish.herdline.CARD_DISMISSED"
         private const val ACTION_UNPIN = "io.github.erikfrish.herdline.UNPIN"
 
-        /** A finished pin stays this long, so the user sees it finish, then unpins itself. */
-        private const val DONE_UNPIN_MS = 10_000L
 
         /** MetricStyle is new in Android 17 (API 37). */
         private const val API_METRIC_STYLE = 37

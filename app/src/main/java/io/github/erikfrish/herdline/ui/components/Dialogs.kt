@@ -2,10 +2,12 @@
 package io.github.erikfrish.herdline.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -13,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -29,8 +33,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.data.Node
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassField
@@ -84,6 +90,8 @@ private const val WEBSITE = "https://github.com/erikfrish/herdline"
 @Composable
 fun HelpDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val settings by (context.applicationContext as HerdlineApp).settings.settings.collectAsState()
+    val logo = remember(context, settings.iconVariant) { IconVariants.icon(context, settings.iconVariant).asImageBitmap() }
     val uri = LocalUriHandler.current
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
     // No browser installed is the only way this fails; there is nothing better to offer then.
@@ -95,7 +103,10 @@ fun HelpDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.help)) },
         text = {
+            // The selected icon variant is the app's logo here (brand rules);
+            // semantic glyphs elsewhere keep their meaning.
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Image(logo, null, Modifier.size(40.dp).align(Alignment.CenterHorizontally))
                 GlassButton(stringResource(R.string.visit_website), onClick = { open(WEBSITE) }, primary = true, modifier = Modifier.fillMaxWidth())
                 Text(
                     stringResource(R.string.about_text, version),

@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.ui
 
 import android.Manifest
 import android.content.Context
+import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -66,6 +67,8 @@ import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.data.AppLanguages
 import io.github.erikfrish.herdline.data.Node
+import io.github.erikfrish.herdline.data.IconVariants
+import io.github.erikfrish.herdline.data.drawableRes
 import io.github.erikfrish.herdline.data.Density as UiDensity
 import io.github.erikfrish.herdline.ui.components.AgentsIconFilled
 import io.github.erikfrish.herdline.ui.components.AgentsIconOutlined
@@ -96,6 +99,17 @@ class MainActivity : ComponentActivity() {
         val app = application as HerdlineApp
         setContent {
             val settings by app.settings.settings.collectAsState()
+            // Recents follows the selected icon: this re-runs on every variant
+            // change and on recreation, so in-flight tasks change with it too.
+            DisposableEffect(settings.iconVariant) {
+                val task = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ActivityManager.TaskDescription.Builder().setLabel(getString(R.string.app_name)).setIcon(settings.iconVariant.drawableRes).build()
+                } else {
+                    ActivityManager.TaskDescription(getString(R.string.app_name), IconVariants.currentIcon(app), 0)
+                }
+                setTaskDescription(task)
+                onDispose {}
+            }
             val dark = settings.themeMode.isDark(isSystemInDarkTheme())
             // System bar icons follow the app's theme, not the system's, so a
             // light theme on a dark system keeps dark, readable icons.

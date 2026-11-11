@@ -48,6 +48,6 @@
     <string name="pin_suggested">Suggested</string>
     <string name="pin_preview">Locked, while it works</string>
     <string name="pin_preview_chip" translatable="false">4:00</string>
-    <string name="pin_disclosure">Shows on the lock screen and in the status bar. Samsung decides whether it appears in the Now Bar. Alert and done notification privacy stays as set.</string>
+    <string name="pin_disclosure">Keeps this agent pinned between tasks. Done hides after 10 seconds without removing the pin. Unpin or swipe stops monitoring. Samsung controls Now Bar placement. Alert and done notification privacy stays as set.</string>
     <string name="pin_confirm">Pin</string>
 </resources>

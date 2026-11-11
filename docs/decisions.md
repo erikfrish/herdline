@@ -317,7 +317,8 @@ Switcher:
     written only by Pin, so no default, reset or migration changes it. Until
     the first Pin it follows the notification lock detail.
   - Blocked hands off to one deduplicated attention note per episode. Done
-    unpins itself after 10 s, and a lost link demotes at once.
+    hides after 10 s but keeps the pin for the agent's next task; a lost link
+    demotes at once.
   - Swipe-dismiss is Unpin: the notification is updated in place to the
     unpromoted Attached content, and promotion returns only after a new pin.
 - **Screen off counts as locked.** With a lock delay, the keyguard engages on
