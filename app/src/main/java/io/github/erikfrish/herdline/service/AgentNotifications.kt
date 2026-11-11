@@ -309,7 +309,9 @@ object AgentNotifications {
         if (!liveActivity) return Promotion.Off
         val state = card
         if (state != Promotion.Requested) return state
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return Promotion.Unsupported
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA ||
+            Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1
+        ) return Promotion.Unsupported
         val manager = context.getSystemService(NotificationManager::class.java)
         if (!manager.canPostPromotedNotifications()) return Promotion.NotAllowed
         val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification

@@ -66,11 +66,11 @@
     <string name="promotion_off">Live updates are off.</string>
     <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
     <string name="promotion_stale">Not connected: not shown as live</string>
-    <string name="promotion_unsupported">This Android version shows an ordinary notification instead</string>
+    <string name="promotion_unsupported">Android 16 QPR1 (36.1) or newer is required; this version shows an ordinary notification instead.</string>
     <string name="promotion_not_allowed">Live Updates are off for Herdline</string>
     <string name="promotion_not_promotable">Ordinary ongoing notification: Android reports it does not qualify as a Live Update.</string>
     <string name="promotion_requested">Requested; Android or Samsung hasn\'t promoted it</string>
-    <string name="promotion_promoted">Shown as a Live Update</string>
+    <string name="promotion_promoted">Promoted by Android. Samsung Now Bar placement must be checked on the lock screen.</string>
     <string name="lock_detail">On the lock screen</string>
     <string name="lock_hidden">Hidden</string>
     <string name="lock_names">Names</string>

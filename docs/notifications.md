@@ -141,11 +141,17 @@ resumes:
 | off | live updates setting off |
 | no card | no pinned agent is working or just finished |
 | stale | link down; promotion not requested |
-| ordinary, unsupported | Android < 16 |
+| ordinary, unsupported | Android before 16 QPR1 (full SDK 36.1) |
 | ordinary, not allowed | `NotificationManager.canPostPromotedNotifications()` is false |
 | ordinary, not qualifying | the posted card fails `Notification.hasPromotableCharacteristics()` |
 | requested | allowed and qualifying; the system has not set `FLAG_PROMOTED_ONGOING` |
 | promoted | the posted card carries `FLAG_PROMOTED_ONGOING` |
+
+`promoted` proves Android promotion only, not the Samsung Now Bar location.
+The bottom lock-screen capsule must be observed on the Samsung itself; an
+ordinary Attached notification or an emulator card is not equivalent.
+The promotion request API requires Android 16 QPR1 (36.1), not merely API 36.
+See [Android Live Updates](https://developer.android.com/develop/ui/views/notifications/live-update).
 
 "Open Android settings" opens the app's promotion page on Android 16
 (`ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS`) and the app's notification
