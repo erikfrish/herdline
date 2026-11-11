@@ -508,17 +508,20 @@ fun SessionScreen(
         terminalNotice = null
     }
 
-    /** A choice of [pane] on this phone: it is read here; only a pane that shows Terminal also moves the desktop to it. */
-    fun choosePane(pane: String) {
+    /**
+     * A choice of [pane] on this phone: it is read here. From Terminal it also moves the desktop to it;
+     * from Chat ([fromChat]) only a pane that shows Terminal does ([choiceMovesDesktop]).
+     */
+    fun choosePane(pane: String, fromChat: Boolean = chatMode) {
         readHere(pane)
-        if (!chatFor(pane)) connection.focusPane(pane)
+        if (choiceMovesDesktop(fromChat, chatFor(pane))) connection.focusPane(pane)
     }
 
-    /** A choice of [tab]: Chat reads its pane here; Terminal focuses the tab, as Herdr picks its pane. */
+    /** A choice of [tab]: from Chat, a pane read in Chat is read here only; otherwise Herdr focuses the tab and picks its pane. */
     fun chooseTab(tab: String) {
         val shown = view ?: return
         val pane = paneForTab(shown, tab, lastRead)
-        if (pane != null && chatFor(pane)) {
+        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
             readHere(pane)
         } else {
             pendingTab = tab
@@ -530,7 +533,7 @@ fun SessionScreen(
     fun chooseWorkspace(workspace: String) {
         val shown = view ?: return
         val pane = paneForWorkspace(shown, workspace, lastRead)
-        if (pane != null && chatFor(pane)) {
+        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
             readHere(pane)
         } else {
             pendingTab = shown.workspaces.firstOrNull { it.id == workspace }?.activeTab
@@ -545,9 +548,10 @@ fun SessionScreen(
         readHere(landed)
     }
     // A notification, deep link or Agents row: that pane, read here in Chat; only Terminal focuses it on the desktop.
+    // It arrives rather than being chosen from the screen shown, so only the pane's own mode decides.
     val linked = view?.boot?.takeIf { focusPane != null && state is Connection.State.Connected && view?.panes?.any { it.id == focusPane } == true }
     LaunchedEffect(focusPane, linked) {
-        if (linked != null && focusPane != null) choosePane(focusPane)
+        if (linked != null && focusPane != null) choosePane(focusPane, fromChat = true)
     }
     fun showChat(on: Boolean, pane: String? = chatPane) {
         pane ?: return

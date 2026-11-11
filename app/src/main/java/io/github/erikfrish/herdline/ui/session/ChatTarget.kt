@@ -55,3 +55,12 @@ fun paneForWorkspace(view: ShellView, workspace: String, lastRead: Map<String, S
  */
 fun desktopElsewhere(reading: String?, desktop: String?): String? =
     desktop?.takeIf { reading != null && it != reading }
+
+/**
+ * Whether a tab, pane or workspace chosen on this phone also moves Herdr's
+ * shared focus. From Terminal ([chatShown] false) always: Terminal shows the
+ * desktop's pane, so a choice there goes there even when the chosen pane
+ * would read in Chat. From Chat only when the chosen pane shows Terminal
+ * ([chosenShowsChat] false); a choice read in Chat never asks Herdr to focus.
+ */
+fun choiceMovesDesktop(chatShown: Boolean, chosenShowsChat: Boolean): Boolean = !chatShown || !chosenShowsChat

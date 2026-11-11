@@ -79,4 +79,14 @@ class ChatTargetTest {
         assertNull(desktopElsewhere(null, "p2"))
         assertNull(desktopElsewhere("p1", null))
     }
+
+    @Test
+    fun aChoiceFromTerminalMovesTheDesktopEvenToAChatPaneAndFromChatOnlyToATerminalPane() {
+        // QA F-B: Terminal on screen, an OMP tab whose saved or default mode is Chat; the desktop must go there.
+        assertTrue(choiceMovesDesktop(chatShown = false, chosenShowsChat = true))
+        assertTrue(choiceMovesDesktop(chatShown = false, chosenShowsChat = false))
+        // CT-1: from Chat, a pane read in Chat stays local; one shown in Terminal is focused.
+        assertFalse(choiceMovesDesktop(chatShown = true, chosenShowsChat = true))
+        assertTrue(choiceMovesDesktop(chatShown = true, chosenShowsChat = false))
+    }
 }
