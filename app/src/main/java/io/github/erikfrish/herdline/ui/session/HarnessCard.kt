@@ -85,8 +85,12 @@ internal fun BoxScope.HarnessCardSlot(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
+        // Title, body and actions never scroll away (review N1-1: landscape at
+        // font 1.3 cut Open Terminal under the cap); only the list scrolls.
+        // No outer scroll as a fallback: a weight inside an unbounded
+        // scrolling Column would hand the inner scroll an infinite height.
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -105,24 +109,29 @@ internal fun BoxScope.HarnessCardSlot(
                     Text(stringResource(R.string.harness_close))
                 }
             }
-            Text(stringResource(R.string.harness_works_here), style = MaterialTheme.typography.labelMedium, color = muted)
-            rows.forEach { (item, available) ->
-                val name = itemName(item, terminal)
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 40.dp).semantics(mergeDescendants = true) {},
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Shape and words carry the difference, never colour: both icons are muted.
-                    Icon(if (available) Icons.Filled.Check else ClockIcon, null, Modifier.size(18.dp), tint = muted)
-                    Text(
-                        if (available) name else stringResource(R.string.harness_not_yet, name),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(stringResource(R.string.harness_works_here), style = MaterialTheme.typography.labelMedium, color = muted)
+                rows.forEach { (item, available) ->
+                    val name = itemName(item, terminal)
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 40.dp).semantics(mergeDescendants = true) {},
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Shape and words carry the difference, never colour: both icons are muted.
+                        Icon(if (available) Icons.Filled.Check else ClockIcon, null, Modifier.size(18.dp), tint = muted)
+                        Text(
+                            if (available) name else stringResource(R.string.harness_not_yet, name),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
+                Text(stringResource(R.string.harness_checked_only), style = MaterialTheme.typography.bodySmall, color = muted)
             }
-            Text(stringResource(R.string.harness_checked_only), style = MaterialTheme.typography.bodySmall, color = muted)
         }
     }
 }
