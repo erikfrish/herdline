@@ -464,8 +464,10 @@ private fun NodeCard(
                     ) {
                         when (state) {
                             is Connection.State.Connected -> {
-                                Pill(stringResource(R.string.host_workspace_count, view?.workspaces?.size ?: 0), MaterialTheme.colorScheme.tertiary, dot = true)
-                                Pill(stringResource(R.string.host_agent_count, view?.agents?.size ?: 0), MaterialTheme.colorScheme.tertiary)
+                                val workspaces = view?.workspaces?.size ?: 0
+                                val agents = view?.agents?.size ?: 0
+                                Pill(pluralStringResource(R.plurals.host_workspace_count, workspaces, workspaces), MaterialTheme.colorScheme.tertiary, dot = true)
+                                Pill(pluralStringResource(R.plurals.host_agent_count, agents, agents), MaterialTheme.colorScheme.tertiary)
                             }
                             is Connection.State.Connecting -> Pill(stringResource(R.string.connecting), MaterialTheme.colorScheme.secondary, dot = true)
                             is Connection.State.SettingUp -> Pill(stringResource(R.string.herdr_setup_pill), MaterialTheme.colorScheme.secondary, dot = true)

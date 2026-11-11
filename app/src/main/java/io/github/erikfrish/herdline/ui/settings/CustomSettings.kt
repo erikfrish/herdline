@@ -442,7 +442,7 @@ private fun LauncherIconChoice(variant: IconVariant, selected: Boolean, onClick:
     val label = stringResource(variant.labelRes)
     val context = LocalContext.current
     val drawable = remember(context, variant) { context.getDrawable(variant.drawableRes) }
-    val outlineColor = MaterialTheme.colorScheme.outlineVariant.toArgb()
+    val outlineColor = MaterialTheme.colorScheme.outline.toArgb()
     Column(
         Modifier.width(88.dp)
             .clip(MaterialTheme.shapes.medium)

@@ -1,0 +1,5 @@
+Herdline 0.5.2 — final visual audit corrections
+
+Host workspace and agent chips now use localized singular/plural quantities, including 1 workspace and 1 agent. Launcher icon previews use the stronger Material outline role, keeping dark artwork distinguishable in Material You dark as well as High Contrast.
+
+The preceding multi-theme screenshot and designer cycle verified the main visual refinements: form answer deduplication without losing choices, clearer validation and selected dropdown state, readable agent statuses, shorter header attention, aligned growable theme cards and the Preview separator. This update only corrects the two residual issues identified on 0.5.1; its changed-screen verification is recorded separately. No OMP, delivery, privacy or Samsung system-setting changes are included. Stock Samsung Now Bar placement is still not confirmed.

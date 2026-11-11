@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="host_workspace_count">%1$d workspaces</string>
-    <string name="host_agent_count">%1$d agents</string>
+    <plurals name="host_workspace_count">
+        <item quantity="one">%1$d workspace</item>
+        <item quantity="other">%1$d workspaces</item>
+    </plurals>
+    <plurals name="host_agent_count">
+        <item quantity="one">%1$d agent</item>
+        <item quantity="other">%1$d agents</item>
+    </plurals>
     <string name="form_fix_fields_named">Check before submitting: %1$s</string>
 </resources>
