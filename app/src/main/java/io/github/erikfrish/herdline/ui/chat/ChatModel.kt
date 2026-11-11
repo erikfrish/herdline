@@ -49,23 +49,28 @@ data class ChatHistory(
     }
 }
 
-/** One row of the chat list; [key] stays the same across reads. */
+/**
+ * One row of the chat list; [key] stays the same across reads. [timestamp]
+ * is the entry's own time (epoch ms) when the transcript records one.
+ */
 sealed interface ChatItem {
     val key: String
+    val timestamp: Long?
 
-    data class User(override val key: String, val text: String) : ChatItem
-    data class Assistant(override val key: String, val text: String, val truncated: Boolean) : ChatItem
-    data class Thinking(override val key: String, val text: String) : ChatItem
-    /** A tool call and, once it arrived, its result; either may be outside what is loaded. */
+    data class User(override val key: String, val text: String, override val timestamp: Long? = null) : ChatItem
+    data class Assistant(override val key: String, val text: String, val truncated: Boolean, override val timestamp: Long? = null) : ChatItem
+    data class Thinking(override val key: String, val text: String, override val timestamp: Long? = null) : ChatItem
+    /** A tool call and, once it arrived, its result; either may be outside what is loaded. [timestamp] is the call's. */
     data class Tool(
         override val key: String,
         val call: TranscriptBlock.ToolCall?,
         val result: TranscriptBlock.ToolResult?,
+        override val timestamp: Long? = null,
     ) : ChatItem
     /** Text the agent's harness added, such as a developer or extension message. */
-    data class Note(override val key: String, val role: String, val text: String) : ChatItem
-    data class Compaction(override val key: String, val summary: String) : ChatItem
-    data class Image(override val key: String) : ChatItem
+    data class Note(override val key: String, val role: String, val text: String, override val timestamp: Long? = null) : ChatItem
+    data class Compaction(override val key: String, val summary: String, override val timestamp: Long? = null) : ChatItem
+    data class Image(override val key: String, override val timestamp: Long? = null) : ChatItem
 }
 
 /**
@@ -97,28 +102,29 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
     val calls = HashMap<String, Int>()
     for (entry in currentBranch(entries)) {
         val base = entry.id ?: "@${entry.offset}"
+        val at = entry.timestamp
         when (entry.kind) {
             TranscriptKind.Other -> Unit
-            TranscriptKind.Compaction -> items += ChatItem.Compaction("$base:c", entry.blocks.text())
+            TranscriptKind.Compaction -> items += ChatItem.Compaction("$base:c", entry.blocks.text(), at)
             TranscriptKind.Message -> entry.blocks.forEachIndexed { index, block ->
                 val key = "$base:$index"
                 when (block) {
                     is TranscriptBlock.Text -> items += when (entry.role) {
-                        "user" -> ChatItem.User(key, block.text)
-                        "assistant" -> ChatItem.Assistant(key, block.text, block.truncated)
-                        else -> ChatItem.Note(key, entry.role.orEmpty(), block.text)
+                        "user" -> ChatItem.User(key, block.text, at)
+                        "assistant" -> ChatItem.Assistant(key, block.text, block.truncated, at)
+                        else -> ChatItem.Note(key, entry.role.orEmpty(), block.text, at)
                     }
-                    is TranscriptBlock.Thinking -> if (block.text.isNotBlank()) items += ChatItem.Thinking(key, block.text)
+                    is TranscriptBlock.Thinking -> if (block.text.isNotBlank()) items += ChatItem.Thinking(key, block.text, at)
                     is TranscriptBlock.ToolCall -> {
                         calls[block.callId] = items.size
-                        items += ChatItem.Tool(key, block, null)
+                        items += ChatItem.Tool(key, block, null, at)
                     }
                     is TranscriptBlock.ToolResult -> {
-                        val at = calls[block.callId]
-                        val tool = at?.let { items[it] as? ChatItem.Tool }
-                        if (at != null && tool != null) items[at] = tool.copy(result = block) else items += ChatItem.Tool(key, null, block)
+                        val call = calls[block.callId]
+                        val tool = call?.let { items[it] as? ChatItem.Tool }
+                        if (call != null && tool != null) items[call] = tool.copy(result = block) else items += ChatItem.Tool(key, null, block, at)
                     }
-                    TranscriptBlock.Image -> items += ChatItem.Image(key)
+                    TranscriptBlock.Image -> items += ChatItem.Image(key, at)
                 }
             }
         }

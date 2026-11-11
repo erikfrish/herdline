@@ -97,6 +97,8 @@ object ChatType {
     val toolArg = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp)
     val toolOutput = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp)
     val aside = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp)
+    /** A completed run's "Worked · N tool calls" line. */
+    val fold = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
     val button = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
 }
 

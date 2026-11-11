@@ -427,4 +427,18 @@
     <string name="focus_reading_shared">显示 %1$s（会移动桌面焦点）</string>
     <string name="chat_pane_closed">%1$s 已关闭。草稿已保留。</string>
     <string name="reason_target_unchecked">未发送：发送会输入到 %1$s 的终端，目前无法在此检查该终端。文字已保留。</string>
+    <plurals name="chat_thought_lines">
+        <item quantity="other">思考 · %d 行</item>
+    </plurals>
+    <plurals name="chat_fold_tools">
+        <item quantity="other">已完成 · %d 次工具调用</item>
+    </plurals>
+    <plurals name="chat_fold_tools_timed">
+        <item quantity="other">已完成 %1$d 秒 · %2$d 次工具调用</item>
+    </plurals>
+    <plurals name="chat_fold_thoughts">
+        <item quantity="other">%d 段思考</item>
+    </plurals>
+    <string name="chat_state_collapsed">已折叠</string>
+    <string name="chat_state_expanded">已展开</string>
 </resources>
