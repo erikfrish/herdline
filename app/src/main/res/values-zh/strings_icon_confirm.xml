@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="icon_change_title">更换应用图标？</string>
+    <string name="icon_change_text">Herdline 会关闭以应用新图标。请从新图标重新打开。</string>
+    <string name="icon_change_confirm">更换图标</string>
+    <string name="icon_closes_help">Herdline 会关闭以应用图标；请从新图标打开。</string>
+</resources>
