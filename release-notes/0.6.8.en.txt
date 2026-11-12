@@ -1,0 +1,3 @@
+Herdline 0.6.8 — Kimi Code history in Chat
+
+Chat can now show the history of a Kimi Code session, read only. It reads the main agent's session journal that Kimi Code itself writes for the pane, and only inside your home folder on the host, and only for a session bound to the folder the running Kimi Code works in. When Herdline can't tell for certain which session that is, Chat says it can't read the session instead of showing another one. Sub-agent activity isn't shown, and sending to Kimi Code from Chat isn't supported.
