@@ -62,6 +62,7 @@
     <string name="stop_refused_no_stop_key">未停止：此程序的屏幕上没有显示停止键。请在终端中停止。未按任何键。</string>
     <string name="stop_refused_screen">未停止：代理的空输入框没有完整显示在此屏幕上（有草稿、面板，或窗格按另一个屏幕调整了大小）。请在终端中查看。未按任何键。</string>
     <string name="stop_refused_unsettled">未停止：上一次发送到此窗格的内容尚未确认。未按任何键。</string>
+    <string name="stop_refused_screen_unread">未停止：Herdr 读取此窗格屏幕失败，无法在此检查。未按任何键。</string>
     <string name="stop_refused_other">未停止。未按任何键。请查看终端。</string>
     <string name="chat_blocked_title">正在终端中等你</string>
     <string name="chat_blocked_tool">%1$s 正在等待回答。聊天无法回答对话框，请在终端中回答。</string>

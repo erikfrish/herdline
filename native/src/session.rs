@@ -469,13 +469,28 @@ impl Session {
             }
         };
         let before = if confirms { read(transcript::Read::Tail).map(|page| page.end) } else { None };
+        // Chat reads a pane apart from the desktop's tab: off Herdr's shared
+        // surface, its own visible screen is read for it, and the instance
+        // fenced again past that read. Nothing is focused or resized.
+        let screen = if self.with_surface(|_, surface| pty::on_surface(surface, pane)) {
+            None
+        } else {
+            match pty::read_screen(exec, &self.shared.session, pane) {
+                Ok(rows) => Some(rows),
+                Err(reason) => return refused(reason),
+            }
+        };
+        if screen.is_some() && !fenced(self.read_instance(pane).as_ref()) {
+            return refused(pty::Refusal::AgentChanged);
+        }
         let holds = hold::holds();
         let mut steers = steer::steers();
         if holds.is_held(&target) || steers.takes(&target, self.shared.link) {
             return refused(pty::Refusal::Unsettled);
         }
-        // The frame at the tap decides, under the same locks as a delivery.
-        let decided = self.with_surface(|registry, surface| pty::admit(registry, surface, &request.boot, pane, &instance.agent));
+        // The frame at the tap decides, under the same locks as a delivery;
+        // the pane's read screen only when the frame does not hold it.
+        let decided = self.with_surface(|registry, surface| pty::admit(registry, surface, &request.boot, pane, &instance.agent, screen.as_deref()));
         let key = match decided {
             Ok(key) => key,
             Err(reason) => return refused(reason),

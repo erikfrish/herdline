@@ -3,7 +3,8 @@
 //! No blind Ctrl-C or Esc. A key goes only where a pinned source names it
 //! as that runtime's cancel while it works, or where the runtime's own
 //! frame shows its hint for it right now (Herdr's detection manifests name
-//! those hints). The frame is the one on the surface at the tap; the
+//! those hints). The frame is the one on the surface at the tap, or, for a
+//! pane off it, Herdr's own `pane.read` of that pane's visible screen; the
 //! instance is fenced by the caller before and checked again after.
 //!
 //! The key is pressed at most once. It is never a receipt: Stop counts as
@@ -13,9 +14,14 @@
 //! unconfirmed, never as stopped.
 
 use crate::composer::{Editor, Registry, Surface, claude_blocker, claude_editor, omp_editor, pane_rows, pi_editor};
+use crate::ssh::Exec;
 use crate::transcript::Entry;
-use herdr_client::protocol::AgentStatus;
+use herdr_client::{HERDR_CANDIDATES, protocol::AgentStatus, shell_quote};
 use serde::Serialize;
+use std::time::Duration;
+
+/// One short host command: the CLI's own request to the local server.
+const SCREEN_WAIT: Duration = Duration::from_secs(10);
 
 /// How far up from the pane's last drawn row a hint may stand: Herdr's
 /// claude working rule reads `bottom_non_empty_lines(12)`.
@@ -50,6 +56,9 @@ pub enum Refusal {
     ScreenNotStoppable,
     /// A delivery or steer to this pane is unsettled.
     Unsettled,
+    /// The pane is off the surface and Herdr's own read of its screen
+    /// failed or could not be read as one.
+    ScreenUnread,
 }
 
 #[derive(Clone, Copy)]
@@ -126,11 +135,12 @@ pub fn decide(agent: &str, status: Option<AgentStatus>, rows: &[String]) -> Resu
     }
 }
 
-/// The key a stop of `agent` in `pane` presses on the surface the phone
-/// holds now, under the delivery locks. That surface is Herdr's shared view
-/// (the tab the desktop shows), not the pane Chat reads: a pane on another
-/// tab is not in it, and is `NotVisible` rather than pressed blind.
-pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str, agent: &str) -> Result<Key, Refusal> {
+/// The key a stop of `agent` in `pane` presses, under the delivery locks.
+/// The rows are the pane's on the surface the phone holds now, Herdr's
+/// shared view (the tab the desktop shows); for a pane not on it (Chat reads
+/// a pane apart from the desktop's tab), `read`, its own visible screen from
+/// [`read_screen`]. Neither is `NotVisible`, never pressed blind.
+pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str, agent: &str, read: Option<&[String]>) -> Result<Key, Refusal> {
     if registry.boot.as_deref() != Some(boot) {
         return Err(Refusal::BootChanged);
     }
@@ -141,11 +151,61 @@ pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str,
     if surface.popup_open {
         return Err(Refusal::PopupOpen);
     }
-    let rows = surface.frame.and_then(|frame| pane_rows(frame, pane)).ok_or(Refusal::NotVisible)?;
+    let shown = surface.frame.and_then(|frame| pane_rows(frame, pane));
+    let rows = shown.as_deref().or(read).ok_or(Refusal::NotVisible)?;
     if surface.scroll.and_then(|scroll| scroll.get(pane)).is_some_and(|scroll| scroll.scrolled) {
         return Err(Refusal::Scrolled);
     }
-    decide(agent, facts.status, &rows)
+    decide(agent, facts.status, rows)
+}
+
+/// Whether `pane` is drawn on Herdr's shared surface the phone holds.
+pub fn on_surface(surface: &Surface<'_>, pane: &str) -> bool {
+    surface.frame.is_some_and(|frame| frame.panes.iter().any(|area| area.id == pane))
+}
+
+/// Longest screen a read takes: a phone-sized or desktop pane is far less.
+const SCREEN_ROOM: usize = 64 * 1024;
+
+/// `pane`'s own visible screen, read from Herdr by `pane.read` (source
+/// `visible`, plain text) for exactly that pane, whatever tab it is on.
+/// Its `revision` is always 0, so it fences nothing: the caller still checks
+/// boot, instance, status, holds and steers. Nothing is focused or resized.
+pub fn read_screen(exec: &Exec, session: &str, pane: &str) -> Result<Vec<String>, Refusal> {
+    let script = format!(
+        r#"exec 2>/dev/null
+herdr=
+{HERDR_CANDIDATES}
+    if [ -n "$path" ] && [ -x "$path" ]; then herdr=$path; break; fi
+done
+[ -n "$herdr" ] || exit 4
+exec "$herdr" --session {session} pane read {pane} --source visible --format text </dev/null"#,
+        session = shell_quote(session),
+        pane = shell_quote(pane),
+    );
+    let output = exec
+        .run(format!("/bin/sh -c {}", shell_quote(&script)), SCREEN_WAIT, SCREEN_ROOM + 1)
+        .map_err(|error| {
+            tracing::warn!(%error, "pane screen not read for stop");
+            Refusal::ScreenUnread
+        })?;
+    if output.exit_status != Some(0) {
+        return Err(Refusal::ScreenUnread);
+    }
+    screen_rows(&output.tail).ok_or(Refusal::ScreenUnread)
+}
+
+/// The rows of `herdr pane read`'s output (the reply's `read.text`, printed
+/// as is): one per line, trailing blanks dropped as the frame's rows are
+/// read. Empty, cut at [`SCREEN_ROOM`], or not UTF-8 is no
+/// screen.
+pub fn screen_rows(text: &[u8]) -> Option<Vec<String>> {
+    if text.is_empty() || text.len() > SCREEN_ROOM {
+        return None;
+    }
+    let text = std::str::from_utf8(text).ok()?;
+    let text = text.strip_suffix('\n').unwrap_or(text);
+    Some(text.split('\n').map(|row| row.trim_end().to_owned()).collect())
 }
 
 /// The pane's last [`HINT_ROWS`] drawn rows.
