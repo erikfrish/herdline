@@ -40,7 +40,8 @@
     <string name="tabs_view">Tabs view</string>
     <string name="tabs_view_list">List</string>
     <string name="tabs_view_columns">Two columns</string>
-    <string name="tabs_view_help">The Tabs sheet opens as the list, or as a compact two-column list. Two columns falls back to one when large fonts would make them unreadable.</string>
+    <string name="tabs_view_rails">Workspace rails</string>
+    <string name="tabs_view_help">The Tabs sheet opens as the list, as a compact two-column list, or as one row of tabs per workspace that scrolls sideways. Two columns falls back to one when large fonts would make them unreadable.</string>
     <string name="hide_shells">Hide shell tabs</string>
     <string name="hide_idle_done">Hide idle and done agents</string>
     <string name="hide_help">Only the Tabs sheet and sidebar hide rows, and a line under the list shows how many, with Show. Search still finds them. A tab that needs you is never hidden. The phone tab row, Tabs n/N, Agents and notifications always count every tab.</string>

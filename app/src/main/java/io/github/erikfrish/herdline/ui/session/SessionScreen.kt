@@ -247,7 +247,8 @@ private val PlaceNarrow: Dp = 96.dp
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
-    data class NewTab(val workspaceId: String) : Prompt
+    /** [focus] false (a Rails New tab tile) creates the tab without moving Herdr's focus. */
+    data class NewTab(val workspaceId: String, val focus: Boolean = true) : Prompt
     data class RenameTab(val id: String, val label: String) : Prompt
     data class RenameWorkspace(val id: String, val label: String) : Prompt
     data class CloseTab(val id: String, val label: String) : Prompt
@@ -361,6 +362,8 @@ fun SessionScreen(
     val node = connection.node
     // The Tabs overview's chosen workspace (TB1 §4): kept across closing the sheet, Grid ⇄ List and rotation.
     var tabsScope by rememberSaveable(node.id, node.session) { mutableStateOf<String?>(null) }
+    // Rails' two scroll axes (F2 §5), the same way: never keyed by the view, a status or the view mode.
+    val railsScroll = rememberSaveable(node.id, node.session, saver = RailsScroll.Saver) { RailsScroll() }
     // The node's colour label marks this session: the bar under the tabs, the
     // selected tab, and the terminal cursor. A chosen app accent overrides it.
     val accent = sessionAccent(settings.accent, node.color)
@@ -1520,7 +1523,7 @@ fun SessionScreen(
                 // TB1: the overview, or today's list; either one's header switches to the other.
                 val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
                 when (settings.tabsView) {
-                    TabsView.TwoColumns -> TabsOverview(
+                    TabsView.TwoColumns, TabsView.Rails -> TabsOverview(
                         node = node,
                         host = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title,
                         view = view,
@@ -1540,6 +1543,8 @@ fun SessionScreen(
                         here = focusedPane,
                         reading = chatMode,
                         onClose = closeSwitcher,
+                        rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
+                        onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
                     )
                     TabsView.List -> Switcher(
                         node = node,

@@ -11,7 +11,8 @@
     <string name="tabs_view">标签页视图</string>
     <string name="tabs_view_list">列表</string>
     <string name="tabs_view_columns">双列</string>
-    <string name="tabs_view_help">标签页面板以列表打开，或以紧凑的双列列表打开。字号过大、双列难以阅读时，会退回单列。</string>
+    <string name="tabs_view_rails">工作区横排</string>
+    <string name="tabs_view_help">标签页面板以列表、紧凑的双列列表，或每个工作区一行可横向滚动的标签页打开。字号过大、双列难以阅读时，会退回单列。</string>
     <string name="terminal_suggestions_help">关闭时，终端只向键盘请求普通按键。开启时，键盘会提供词语和更正；选中的更正会替换窗格中对应的词。</string>
     <string name="settings_back_returns">返回键回到 %1$s</string>
     <string name="section_composer">输入框</string>

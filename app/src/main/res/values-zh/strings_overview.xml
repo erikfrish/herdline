@@ -28,4 +28,7 @@
     <string name="picker_matches">匹配项</string>
     <string name="picker_focused">已聚焦</string>
     <string name="picker_shell">Shell</string>
+    <string name="overview_current_ws_spoken">当前工作区</string>
+    <string name="rails_position">第 %1$d 个，共 %2$d 个</string>
+    <string name="rails_no_tabs">没有标签页</string>
 </resources>

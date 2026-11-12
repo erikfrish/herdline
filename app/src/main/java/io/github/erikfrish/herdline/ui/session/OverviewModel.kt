@@ -1,10 +1,12 @@
 package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.core.Agent
+import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 
@@ -150,6 +152,63 @@ internal fun overviewIndexOf(sections: List<OverviewSection>, tab: String?, head
             if (card.tab.id == tab) return index
             index++
         }
+    }
+    return null
+}
+
+/**
+ * One rail of the Rails view (F2): a workspace of the scoped topology, in
+ * Herdr's order, with the [cards] the query and filter kept for it, in
+ * Herdr's tab order. A workspace narrowing emptied keeps its rail; [tabs],
+ * [needsYou] and [current] always come from its full topology, never the
+ * narrowed cards. [tabs] is 0 for a workspace Herdr reports with no tabs.
+ */
+internal data class Rail(
+    val workspace: Workspace,
+    val suffix: Int?,
+    val cards: List<OverviewCard>,
+    val tabs: Int,
+    val needsYou: Int,
+    val current: Boolean,
+)
+
+/** The rails of [all] (the scoped, unnarrowed topology), each with its cards from [sections] ([overviewSections] of it). */
+internal fun overviewRails(all: List<WorkspaceGroup>, sections: List<OverviewSection>, view: ShellView, currentTab: String?): List<Rail> {
+    val suffixes = workspaceSuffixes(view.workspaces)
+    val kept = sections.associateBy { it.workspace.id }
+    return all.map { group ->
+        val id = group.workspace.id
+        val tabs = group.rows.filterIsInstance<SwitchTarget.TabRow>()
+        Rail(
+            workspace = group.workspace,
+            suffix = suffixes[id],
+            cards = kept[id]?.cards.orEmpty(),
+            tabs = tabs.size,
+            // §2 "when any tab needs you": tabs with a blocked agent, not agents, over the full topology.
+            needsYou = tabs.count { row -> row.agents.any { it.status == AgentStatus.Blocked } },
+            current = currentTab != null && tabs.any { it.tab.id == currentTab },
+        )
+    }
+}
+
+/**
+ * A rail tile's width (SPEC-TABS-RAILS §3) in a sheet whose content is
+ * [contentDp] wide (the sheet less [OVERVIEW_PADDING_DP] each side): the
+ * compact row's [MIN_ROW_DP] grown with [fontScale], never under 168 dp,
+ * and always 40 dp short of the content so the next tile peeks.
+ */
+internal fun railTileWidth(contentDp: Float, fontScale: Float): Float =
+    minOf(ceil(max(168f, MIN_ROW_DP * fontScale + 16f)), contentDp - 40f).coerceAtLeast(48f)
+
+/** A rail tile's least height (§3): two title lines, the pill, status and where lines; a longer tile grows, never clips. */
+internal fun railTileHeight(fontScale: Float): Float = ceil(22f + 100f * fontScale)
+
+/** Where [tab] sits in [rails]: its rail's index and its card's within that rail. */
+internal fun railIndexOf(rails: List<Rail>, tab: String?): Pair<Int, Int>? {
+    if (tab == null) return null
+    rails.forEachIndexed { row, rail ->
+        val column = rail.cards.indexOfFirst { it.tab.id == tab }
+        if (column >= 0) return row to column
     }
     return null
 }

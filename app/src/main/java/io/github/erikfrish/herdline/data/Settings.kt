@@ -52,8 +52,8 @@ enum class IconVariant { Default, Mono, Contrast, Ember, Signal, Pasture, Meadow
  */
 enum class StartFilter { All, NeedsYou, Working, Ready }
 
-/** How the phone Tabs sheet opens: the Switcher list, or compact two-column list rows. */
-enum class TabsView { List, TwoColumns }
+/** How the phone Tabs sheet opens: the Switcher list, compact two-column list rows, or one sideways rail per workspace. */
+enum class TabsView { List, TwoColumns, Rails }
 
 /** A settings page that can go back to its defaults on its own. */
 enum class ResetScope { Appearance, Terminal, Composer, Layout, Notifications }

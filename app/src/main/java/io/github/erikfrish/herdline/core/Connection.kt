@@ -664,10 +664,10 @@ class Connection(val node: Node) {
     fun focusWorkspace(id: String) = request("workspace.focus", JSONObject().put("workspace_id", id))
     fun focusTab(id: String) = request("tab.focus", JSONObject().put("tab_id", id))
     fun focusPane(id: String) = request("pane.focus", JSONObject().put("pane_id", id))
-    /** A blank [label] leaves the name to Herdr, which numbers the tab. */
-    fun newTab(workspace: String, label: String = "") = request(
+    /** A blank [label] leaves the name to Herdr, which numbers the tab; [focus] false keeps Herdr's focus where it is. */
+    fun newTab(workspace: String, label: String = "", focus: Boolean = true) = request(
         "tab.create",
-        JSONObject().put("workspace_id", workspace).put("focus", true).apply {
+        JSONObject().put("workspace_id", workspace).put("focus", focus).apply {
             label.trim().takeIf { it.isNotEmpty() }?.let { put("label", it) }
         },
     )

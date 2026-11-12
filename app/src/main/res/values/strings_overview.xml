@@ -30,4 +30,7 @@
     <string name="picker_matches">Matches</string>
     <string name="picker_focused">Focused</string>
     <string name="picker_shell">Shell</string>
+    <string name="overview_current_ws_spoken">current workspace</string>
+    <string name="rails_position">%1$d of %2$d</string>
+    <string name="rails_no_tabs">No tabs</string>
 </resources>

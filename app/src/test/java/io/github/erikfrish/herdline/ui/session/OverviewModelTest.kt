@@ -167,4 +167,24 @@ class OverviewModelTest {
         // Outside Chat, Herdr's focus.
         assertEquals("t2", overviewCurrentTab(view, here = "p5", reading = false))
     }
+
+    @Test
+    fun aRailNarrowingEmptiedStaysAndCountsItsFullTabsAndTabsThatNeedYou() {
+        // t1 has two blocked agents: one tab needs you, not two.
+        val both = view.copy(agents = view.agents.map { if (it.pane == "p2") it.copy(status = AgentStatus.Blocked) else it })
+        val all = topology(both)
+        val shown = all.narrowed("", SwitcherFilter.Working)
+        val rails = overviewRails(all, overviewSections(all, shown, narrowing = true, both, currentTab = "t2"), both, currentTab = "t2")
+        assertEquals(listOf("w1", "w2", "w3"), rails.map { it.workspace.id })
+        val w1 = rails[0]
+        assertTrue(w1.cards.isEmpty())
+        assertEquals(3, w1.tabs)
+        assertEquals(1, w1.needsYou)
+        // The current tab is filtered out, but its workspace is still the current one.
+        assertTrue(w1.current)
+        assertEquals(listOf("t3"), rails[1].cards.map { it.tab.id })
+        assertEquals(0, rails[1].needsYou)
+        assertEquals(1, rails[2].tabs)
+        assertTrue(rails[2].cards.isEmpty())
+    }
 }

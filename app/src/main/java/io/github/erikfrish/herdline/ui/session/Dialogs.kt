@@ -28,7 +28,7 @@ import io.github.erikfrish.herdline.ui.glass.GlassField
 @Composable
 internal fun PromptDialog(prompt: Prompt, connection: Connection, onDisconnect: () -> Unit, onDone: () -> Unit) {
     when (prompt) {
-        is Prompt.NewTab -> NewTabDialog(onDone) { connection.newTab(prompt.workspaceId, it) }
+        is Prompt.NewTab -> NewTabDialog(onDone) { connection.newTab(prompt.workspaceId, it, prompt.focus) }
         is Prompt.RenameTab -> RenameDialog(stringResource(R.string.rename_tab), prompt.label, onDone) {
             connection.renameTab(prompt.id, it)
         }

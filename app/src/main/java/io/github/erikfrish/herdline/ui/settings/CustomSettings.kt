@@ -199,7 +199,7 @@ internal fun LazyListScope.layoutSettings(store: SettingsStore, settings: Settin
             GlassDivider()
             Choice(
                 stringResource(R.string.tabs_view),
-                listOf(stringResource(R.string.tabs_view_list), stringResource(R.string.tabs_view_columns)),
+                listOf(stringResource(R.string.tabs_view_list), stringResource(R.string.tabs_view_columns), stringResource(R.string.tabs_view_rails)),
                 TabsView.entries.indexOf(settings.tabsView),
                 help = stringResource(R.string.tabs_view_help),
             ) { index -> store.update { it.copy(tabsView = TabsView.entries[index]) } }
