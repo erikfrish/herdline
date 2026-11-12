@@ -989,7 +989,8 @@ private fun Editor(
     val uploads = remember(key) { mutableStateMapOf<String, Job>() }
     val progress = remember(key) { mutableStateMapOf<String, Float?>() }
     DisposableEffect(key) { onDispose { uploads.values.forEach { it.cancel() } } }
-    val draftBusy = sending || pending != null || steer.active || draft.unsettled
+    // A withdraw on its way holds the draft too: its request comes back into it.
+    val draftBusy = sending || pending != null || steer.active || draft.unsettled || withdrawing != null
     val attachState = attachmentsState(draft.attachments, uploads.keys.toSet(), composerTarget())
     // Nothing goes to a host before the user agreed for that
     // host. The question comes before the picker, so a Cancel picks and
@@ -1214,7 +1215,7 @@ private fun Editor(
     /** The draft typed into the pane, with Enter when [submit]: Terminal, Insert, and Chat with no endpoint. */
     fun typeIn(submit: Boolean) {
         // The buttons say the same; this holds against a tap that raced them.
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         // Every file uploaded for exactly this target, or nothing goes.
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
         val staged = draft.attachments.mapNotNull { it.staged }
@@ -1260,7 +1261,7 @@ private fun Editor(
     }
 
     fun deliver(submit: Boolean) {
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
         if (endpointRoute(reading, draft.instance, submit)) endpointSend("auto") { typeIn(submit) } else typeIn(submit)
     }
@@ -1274,7 +1275,7 @@ private fun Editor(
             refusal = "attachment_steer"
             return
         }
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         val target = composerTarget() ?: return
         val text = value.text
         val via = connection
@@ -1352,9 +1353,16 @@ private fun Editor(
         }
     }
 
-    /** Takes [entry] back out of OMP's queue, then reads the queue again. */
+    /**
+     * Takes [entry] back out of OMP's queue, then reads the queue again.
+     * Refused before the call when the editor could not take it back.
+     */
     fun withdraw(entry: IngressQueued) {
         val requestId = entry.requestId ?: return
+        if (!withdrawRestorable(value.text, draftBusy)) {
+            withdrawNote = R.string.ingress_withdraw_editor
+            return
+        }
         val target = composerTarget() ?: return
         val instance = target.instance ?: return
         val via = connection
@@ -1366,9 +1374,11 @@ private fun Editor(
             withdrawing = null
             probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
             withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
-            // Withdrawn is taken back, not lost: its text and files into an empty, free editor.
-            if (done.getOrNull() == true && value.text.isEmpty() && !sending && !draft.unsettled) {
-                val back = draft.withdrawn(requestId, entry.text)
+            // Withdrawn is taken back, not lost: its text and files into the
+            // editor, after anything typed while the withdraw was on its way.
+            // Send and Steer stayed off meanwhile (draftBusy).
+            if (done.getOrNull() == true) {
+                val back = draft.withdrawn(requestId, withdrawnText(value.text, entry.text))
                 value = TextFieldValue(back.text, TextRange(back.text.length))
                 save(back)
             }

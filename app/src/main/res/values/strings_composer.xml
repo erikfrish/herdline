@@ -166,6 +166,7 @@
     <string name="ingress_withdraw">Withdraw</string>
     <string name="ingress_withdraw_gone">It had already left the queue.</string>
     <string name="ingress_withdraw_failed">Couldn\'t withdraw it: it may still be queued.</string>
+    <string name="ingress_withdraw_editor">Not withdrawn: clear the editor first, so the request can come back into it. It stays queued.</string>
     <string name="ingress_unsupported">The Herdline extension runs here, but this OMP lacks the hooks it needs (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
     <string name="ingress_unusable">Chat\'s line to OMP is there but unusable (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
 </resources>

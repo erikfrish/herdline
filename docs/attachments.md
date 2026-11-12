@@ -125,8 +125,12 @@ instance was read, or the draft already holds its 10 files
   refused or uncertain one keeps them, and the hold applies as for text.
 - **Withdrawn, not lost.** The draft remembers the files of each send OMP
   accepted, by request id (the newest 16, across restarts). Withdrawing that
-  send from OMP's queue puts its text and the same staged files back into an
-  empty, free editor: nothing is uploaded or sent again.
+  send from OMP's queue puts its text and the same staged files back into
+  the editor: nothing is uploaded or sent again. A withdraw starts only when
+  the editor is empty, with nothing on its way. Otherwise it is refused
+  before the queue is touched ("clear the editor first"), and the request
+  stays queued. Send and Steer stay off while it runs, and text typed
+  meanwhile stays first, with the withdrawn text after it.
 - **Remove** cancels an upload under way and deletes a staged copy from the
   host.
 

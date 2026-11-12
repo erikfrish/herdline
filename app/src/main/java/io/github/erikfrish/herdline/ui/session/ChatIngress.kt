@@ -125,6 +125,23 @@ internal fun withdrawEnabled(entry: IngressQueued, withdrawing: String?): Boolea
     entry.requestId != null && withdrawing == null
 
 /**
+ * Whether a withdraw may start: the request comes back into the editor, so
+ * the editor must be empty, with nothing on its way. Otherwise it is
+ * refused before the queue is touched, and the request stays queued.
+ */
+internal fun withdrawRestorable(editor: String, busy: Boolean): Boolean = editor.isEmpty() && !busy
+
+/**
+ * The editor's text once a withdrawn request's [withdrawn] text comes back.
+ * Text typed while the withdraw was on its way stays first; nothing is lost.
+ */
+internal fun withdrawnText(editor: String, withdrawn: String): String = when {
+    editor.isEmpty() -> withdrawn
+    withdrawn.isEmpty() -> editor
+    else -> editor + "\n\n" + withdrawn
+}
+
+/**
  * OMP's queue for the instance Chat reads, its own block above the
  * composer's notice. The persisted "Steering" label on a sent message is
  * history; this is what is waiting now.
