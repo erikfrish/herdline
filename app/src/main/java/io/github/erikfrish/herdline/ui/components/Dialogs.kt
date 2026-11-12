@@ -6,8 +6,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +31,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -125,12 +128,13 @@ fun HelpDialog(onDismiss: () -> Unit) {
  * Asks for the password of every node on a route that signs in with one and
  * has none saved, jump hosts included. [onConnect] receives the passwords and
  * whether to save them. [reason], when given, says why it opened on its own
- * (a rejected device key), above the fields.
+ * (a rejected device key), above the fields; then saving starts off, since
+ * the user never asked to sign in with a password and must choose to keep one.
  */
 @Composable
 fun PasswordsDialog(hops: List<Node>, onConnect: (Map<String, String>, Boolean) -> Unit, onDismiss: () -> Unit, reason: String? = null) {
     val secrets = remember { mutableStateMapOf<String, String>() }
-    var remember by remember { mutableStateOf(true) }
+    var remember by remember { mutableStateOf(reason == null) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     GlassAlertDialog(
@@ -149,8 +153,15 @@ fun PasswordsDialog(hops: List<Node>, onConnect: (Map<String, String>, Boolean) 
                         modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(focus) else Modifier),
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(remember, { remember = it })
+                // One 48 dp target and one TalkBack node: the label toggles too.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .toggleable(remember, role = Role.Checkbox) { remember = it },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(remember, null)
                     Text(stringResource(R.string.remember_password))
                 }
                 Text(
