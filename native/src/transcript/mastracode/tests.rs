@@ -61,7 +61,7 @@ impl Host {
         let herdr = bin.join("herdr");
         fs::write(
             &herdr,
-            "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n",
+            "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\"; [ ! -f \"$HOME/proc.next\" ] || mv \"$HOME/proc.next\" \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n",
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
@@ -73,6 +73,13 @@ impl Host {
     fn process(&self, process: Value) {
         let info = json!({"result": {"process_info": {"foreground_processes": [process], "pane_id": "w1:p1", "shell_pid": 7}}});
         fs::write(self.home.path().join("proc.json"), info.to_string()).unwrap();
+    }
+
+    /// The pane's process becomes `process` once the first report is read,
+    /// as when the agent is replaced mid-read.
+    fn process_then(&self, process: Value) {
+        let info = json!({"result": {"process_info": {"foreground_processes": [process], "pane_id": "w1:p1", "shell_pid": 7}}});
+        fs::write(self.home.path().join("proc.next"), info.to_string()).unwrap();
     }
 
     /// The agent's environment: its HOME, these variables, and one secret.
@@ -355,6 +362,20 @@ fn a_remote_store_is_refused_wherever_it_is_chosen() {
     assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE);
     host.environ(&[("MASTRA_DB_URL", ":memory:")]);
     assert_eq!(refused(host.page(TID, Read::Tail)), IN_MEMORY);
+}
+
+#[test]
+fn a_process_replaced_mid_read_gives_no_answer_not_even_a_refusal() {
+    let host = Host::new(TID, "mastracode");
+    host.default_store(json!({"threads": [TID], "messages": [said(TID, "m-1", "user", "2026-01-01T00:00:01.000Z", "hi")]}));
+    let replaced = json!({"name": "mastracode", "pid": 43});
+    host.process_then(replaced.clone());
+    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
+    host.process(json!({"name": "mastracode", "pid": 42}));
+    host.environ(&[("MASTRA_STORAGE_BACKEND", "pg")]);
+    assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE);
+    host.process_then(replaced);
+    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
 }
 
 #[test]

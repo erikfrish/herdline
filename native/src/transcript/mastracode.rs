@@ -625,13 +625,16 @@ def main():
     end=rows[-1]['id']+1 if rows else (size if reset else cursor)
     older=rows[0]['id']//KEY>0 if rows else False
     conn.close()
-    after,_=identity()
-    if after!=expect: return {'changed':True}
     return {'status':status,'reset':reset,'size':size,'start':start,'end':end,'has_older':older,'rows':rows}
+def answer():
+    try: out=main()
+    except Refused as refusal: out={'format':str(refusal)}
+    # Every answer, a refusal or a missing thread too, must describe the
+    # process still in the pane: one that changed mid-read gives no answer.
+    if not out.get('changed') and identity()[0]!=expect: return {'changed':True}
+    return out
 try:
-    sys.stdout.buffer.write(dump(main()).encode())
-except Refused as refusal:
-    print(json.dumps({'format':str(refusal)}))
+    sys.stdout.buffer.write(dump(answer()).encode())
 except Exception:
     sys.exit(1)
 "#;
