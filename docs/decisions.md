@@ -598,8 +598,10 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   every refusal show an explicit error; nothing is typed. Once a request may
   have reached the socket, doubt is `uncertain`, and nothing is resent.
 - **Discovery.** Over the link's exec: the pane report gives the OMP pid;
-  `$XDG_RUNTIME_DIR/herdline-ingress/<sessionId>-<pid>.json` from that
-  process's environment, the directory 0700 and the sidecar 0600, both this
+  `<runtime>/herdline-ingress/<sessionId>-<pid>.json`, where `<runtime>` is
+  the exec shell's own `$XDG_RUNTIME_DIR`, else `/run/user/<uid>`; no other
+  process's environment is read (10062), so an extension that published
+  elsewhere is absent. The directory 0700 and the sidecar 0600, both this
   user's and no links, and its `sessionFile` exactly the instance's. The
   exchange re-checks the sidecar bytes and the 0600 socket, then talks
   through `socat` (20 s idle) without half-closing before the answer.

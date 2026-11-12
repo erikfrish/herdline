@@ -1,0 +1,5 @@
+Herdline 0.6.27 — Finding OMP's Chat line without reading its environment
+
+To find an OMP agent's direct Chat line, Herdline now looks only in your own runtime directory on the host, and no longer reads the agent process's environment. If OMP publishes its line somewhere else, Chat's Send types into the pane as before, and a Steer with a photo is refused with the draft kept.
+
+Not yet verified by QA.
