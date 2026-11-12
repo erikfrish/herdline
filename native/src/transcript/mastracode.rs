@@ -339,7 +339,7 @@ def small(path):
 
 # A config file Mastra Code reads to pick the store: absent is None, as its
 # loaders treat it; unparseable is {} (settings.ts falls back to defaults,
-# project.ts:401-417 loadDatabaseConfig to null). Anything this cannot read
+# project.ts:401-421 loadDatabaseConfig to null). Anything this cannot read
 # the way the agent did is refused, never skipped.
 def config(path):
     if not path.startswith('/'): raise Refused('mastracode_store_outside_home')
@@ -350,7 +350,7 @@ def config(path):
     except ValueError: return {}
     return value if isinstance(value,dict) else {}
 
-# project.ts:186-217 getAppDataDir on Linux: MASTRA_APP_DATA_DIR as given,
+# project.ts:187-216 getAppDataDir on Linux: MASTRA_APP_DATA_DIR as given,
 # else (XDG_DATA_HOME or HOME/.local/share)/mastracode, never resolved.
 def app_data(env):
     if env.get('MASTRA_APP_DATA_DIR'): return env['MASTRA_APP_DATA_DIR']
@@ -397,9 +397,10 @@ def project_root(cwd,env):
             # Another owner's repository git refuses as dubious (safe.directory).
             if own.st_uid!=os.getuid(): raise Refused('mastracode_store_unknown')
             if stat.S_ISDIR(own.st_mode) and os.path.isfile(os.path.join(dot,'HEAD')):
-                body=small(os.path.join(dot,'config')) or b''
-                # core.worktree or core.bare move or drop the work tree.
-                if b'worktree' in body.lower() or re.search(rb'(?im)^\s*bare\s*=\s*true',body): raise Refused('mastracode_store_unknown')
+                # core.worktree or core.bare move or drop the work tree; with
+                # extensions.worktreeConfig, config.worktree may set them too.
+                body=b'\n'.join(small(os.path.join(dot,name)) or b'' for name in ('config','config.worktree'))
+                if re.search(rb'(?im)^\s*worktree\s*=',body) or re.search(rb'(?im)^\s*bare\s*=\s*true',body): raise Refused('mastracode_store_unknown')
                 return here
             if stat.S_ISREG(own.st_mode):
                 head=small(dot) or b''
@@ -421,7 +422,7 @@ def store(base,env):
         if not env.get('MASTRA_DB_URL'): raise Refused('mastracode_store_unknown')
         return from_url(env['MASTRA_DB_URL'])
     data=app_data(env)
-    # settings.ts:790-791 getSettingsPath; :1232-1234 merges storage over
+    # settings.ts:790-791 getSettingsPath; :1231-1236 merges storage over
     # STORAGE_DEFAULTS {backend:'libsql', libsql:{}, pg:{}} (:481-485).
     settings=config(os.path.join(data,'settings.json'))
     storage=settings.get('storage') if isinstance(settings,dict) and isinstance(settings.get('storage'),dict) else {}
@@ -451,7 +452,7 @@ def store(base,env):
         if found: return found
     found=legacy(os.path.join(env['HOME'],'.mastracode','database.json'))
     if found: return found
-    # project.ts:213-218 MASTRA_DB_PATH, else getAppDataDir()/mastra.db.
+    # project.ts:218-223 MASTRA_DB_PATH, else getAppDataDir()/mastra.db.
     return from_url('file:'+(env.get('MASTRA_DB_PATH') or os.path.join(data,'mastra.db')))
 
 # mode=ro, never immutable: Mastra Code is a live writer in WAL mode

@@ -415,6 +415,13 @@ fn the_project_database_json_is_found_from_the_agents_own_cwd_and_git_root() {
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
+    // extensions.worktreeConfig alone keeps the work tree where it is; a
+    // core.worktree in config.worktree moves it.
+    fs::write(repo.join(".git/config"), "[extensions]\n\tworktreeConfig = true\n").unwrap();
+    assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
+    fs::write(repo.join(".git/config.worktree"), "[core]\n\tworktree = /elsewhere\n").unwrap();
+    assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
+    fs::remove_file(repo.join(".git/config.worktree")).unwrap();
     // Git env can move the work tree anywhere: refused, never guessed.
     host.environ(&[("GIT_DIR", "/elsewhere")]);
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
