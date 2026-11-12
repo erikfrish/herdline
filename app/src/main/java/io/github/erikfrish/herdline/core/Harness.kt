@@ -268,7 +268,7 @@ private val KNOWN: Map<String, Harness> = (
         // state and the session's children (by title) through its v1 server (kilo_ctl.py + opencode_media.py,
         // pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer, queue,
         // withdraw or promote.
-        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, V, V, V, V, NB)),
+        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, V, V, V, V, no(Reason.StaleId))),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.
