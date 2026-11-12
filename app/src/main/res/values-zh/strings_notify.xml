@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_attention">代理需要输入</string>
+    <string name="channel_done">代理已完成及其他 Herdr 消息</string>
+    <string name="lock_agents_summary">代理通知</string>
+    <string name="live_title_one">%1$s · %2$s</string>
+    <plurals name="live_title_many">
+        <item quantity="other">%d 个实时任务</item>
+    </plurals>
+    <string name="live_unlock">解锁以查看详情</string>
+    <string name="live_hidden_spoken">Herdline 实时任务</string>
+    <string name="live_not_connected">未连接</string>
+    <string name="live_place">%1$s › %2$s</string>
+    <plurals name="live_minutes">
+        <item quantity="other">%d 分钟</item>
+    </plurals>
+    <plurals name="live_minutes_spoken">
+        <item quantity="other">%d 分钟</item>
+    </plurals>
+    <string name="live_total">共 %1$s</string>
+    <string name="live_metric_elapsed">已用时间</string>
+    <string name="live_unpin">取消固定</string>
+    <string name="live_row">%1$s — %2$s</string>
+    <string name="live_row_titled">%1$s — %2$s · %3$s</string>
+    <string name="live_stale">未连接 · 截至 %1$s</string>
+    <string name="status_unknown">未知</string>
+    <string name="lock_agent_attention">有代理需要你</string>
+    <string name="lock_agent_done">有代理已完成</string>
+    <string name="lock_connection_lost">有连接已断开</string>
+    <string name="connection_lost_title">与 %1$s 的连接已断开</string>
+    <string name="connection_lost_text">代理仍在主机上运行。打开 Herdline 重新连接。</string>
+    <string name="monitor_agent">固定实时更新</string>
+    <string name="monitor_stop">取消固定</string>
+    <string name="monitor_badge">实时</string>
+    <string name="pin_title">固定实时更新</string>
+    <string name="pin_level_hidden">隐藏</string>
+    <string name="pin_level_hidden_help">仅显示 Herdline 图标：没有状态、时间或名称</string>
+    <string name="pin_level_state">仅状态</string>
+    <string name="pin_level_state_help">状态图标及运行时长；没有名称</string>
+    <string name="pin_level_names">名称</string>
+    <string name="pin_level_names_help">代理名称和状态；没有时间或计数</string>
+    <string name="pin_level_full">完整</string>
+    <string name="pin_level_full_help">名称、状态、时间和计数；从不显示提示词或命令</string>
+    <string name="pin_suggested">推荐</string>
+    <string name="pin_preview">锁屏时，工作期间</string>
+    <string name="pin_disclosure">在任务之间保持此代理固定。完成状态 10 秒后隐藏，但不会移除固定。取消固定或滑掉即停止监视。Samsung 控制 Now Bar 的位置。提醒和完成通知的隐私设置保持不变。</string>
+    <string name="pin_confirm">固定</string>
+</resources>

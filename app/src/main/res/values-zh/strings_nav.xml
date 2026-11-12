@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dest_hosts">主机</string>
+    <string name="return_to_session">返回会话</string>
+    <string name="needs_you_across_hosts">需要你 · 所有主机</string>
+</resources>
