@@ -36,6 +36,20 @@ fn rows_px(rows: u16) -> f32 {
     f32::from(rows) * CELL_H
 }
 
+/// What TerminalView reports for `frame` in a view `height_px` tall without
+/// output focus, its shown cursor kept in the window (A-27P).
+fn cursor_view(frame: &RenderFrame, height_px: f32) -> Viewport {
+    let cursor = shown_cursor_row(frame);
+    let offset = view_offset_at(height_px, 0.0, 0, CELL_H, frame.rows, cursor);
+    let drawn = drawn_rows(height_px, offset, CELL_H, frame.rows);
+    Viewport {
+        first: drawn.as_ref().map_or(1, |rows| *rows.start()),
+        last: drawn.as_ref().map_or(0, |rows| *rows.end()),
+        offset_y_px: offset,
+        ..view(frame, height_px, 0, 0)
+    }
+}
+
 /// The composer's check of w1:p1 for `agent`, the frame shown live and
 /// tall enough for Send, with the grid `grid` and the phone's `viewport`.
 fn checked(
@@ -121,6 +135,59 @@ fn the_offset_is_terminal_views() {
     assert_eq!(view_offset(rows_px(10), 0.0, 2, CELL_H, 10), 2.0 * CELL_H);
     // A strip over the bottom row's space, nothing hidden: one row up.
     assert_eq!(view_offset(rows_px(10), CELL_H, 0, CELL_H, 10), -CELL_H);
+}
+
+/// `view_offset_at` for ten rows without output focus, `CELL_H` cells.
+fn at(height_px: f32, cursor: Option<u16>) -> f32 {
+    view_offset_at(height_px, 0.0, 0, CELL_H, 10, cursor)
+}
+
+#[test]
+fn a_shown_cursor_above_the_window_is_its_top_row() {
+    // A held grid two rows taller than the view, the prompt on its top row.
+    assert_eq!(at(rows_px(8), Some(0)), 0.0);
+    assert_eq!(drawn_rows(rows_px(8), 0.0, CELL_H, 10), Some(0..=7));
+    assert_eq!(at(rows_px(8), Some(1)), -CELL_H);
+    // Cut by half a row under the anchor: brought whole, by whole rows.
+    assert_eq!(at(rows_px(8) + CELL_H / 2.0, Some(1)), -CELL_H);
+}
+
+#[test]
+fn a_cursor_in_the_window_hidden_or_under_output_focus_keeps_the_offset() {
+    // Already whole under the bottom anchor: the anchor stays.
+    assert_eq!(at(rows_px(8), Some(2)), -2.0 * CELL_H);
+    assert_eq!(at(rows_px(8), Some(9)), -2.0 * CELL_H);
+    assert_eq!(at(rows_px(8) + CELL_H / 2.0, Some(2)), -1.5 * CELL_H);
+    // No cursor shown: the anchor.
+    assert_eq!(at(rows_px(8), None), -2.0 * CELL_H);
+    // A frame no taller than the view: from the top, wherever the cursor.
+    assert_eq!(at(rows_px(12), Some(0)), 0.0);
+    assert_eq!(at(rows_px(10), Some(9)), 0.0);
+    // Output focus scrolled the cursor's row away: never pulled back.
+    let focus = |hidden, clip| view_offset_at(rows_px(10), clip, hidden, CELL_H, 10, Some(9));
+    assert_eq!(focus(2, 0.0), 2.0 * CELL_H);
+    assert_eq!(focus(0, CELL_H), -CELL_H);
+}
+
+#[test]
+fn a_prompt_on_a_held_grids_top_row_is_drawn_and_takes_text() {
+    let mut prompt = frame("w1:p1", "$ ls\nfile\n$");
+    prompt.cursor.y = 0;
+    // One row tall: TerminalView draws the cursor's row, and the gate agrees.
+    let kept = cursor_view(&prompt, rows_px(1));
+    assert_eq!((kept.first, kept.last), (0, 0));
+    assert!(shell(&prompt, Some(&kept)).insert.ok);
+    // The bottom anchor is no longer what the view draws for this frame.
+    let anchored = view(&prompt, rows_px(1), 0, 0);
+    assert_eq!(
+        shell(&prompt, Some(&anchored)).insert.reason,
+        Some(Refusal::TargetNotVisible)
+    );
+    // A hidden cursor keeps the anchor: nothing to keep in view.
+    let mut hidden = prompt.clone();
+    hidden.cursor.visible = false;
+    assert_eq!(shown_cursor_row(&hidden), None);
+    assert_eq!(cursor_view(&hidden, rows_px(1)), view(&hidden, rows_px(1), 0, 0));
 }
 
 #[test]

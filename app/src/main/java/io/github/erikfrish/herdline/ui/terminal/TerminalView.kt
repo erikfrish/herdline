@@ -249,12 +249,16 @@ class TerminalView(context: Context) : View(context) {
     /**
      * How far the grid is drawn above the view's top: while a held grid is
      * taller than the view, or by whole rows while output focus shows a
-     * window over it, so the top visible row is never cut.
+     * window over it, so the top visible row is never cut. A cursor drawCursor
+     * draws is passed so the window keeps it (A-27P); the native core takes
+     * the same row from the same frame.
      */
     private val offsetY: Float
         get() {
             val frame = frame ?: return 0f
-            return viewOffset(height, clipBottomPx, hiddenRows, cellHeight, frame.rows)
+            val cursor = frame.cursor
+            val cursorRow = if (cursor.visible && cursor.x < frame.cols && cursor.y < frame.rows) cursor.y else null
+            return viewOffset(height, clipBottomPx, hiddenRows, cellHeight, frame.rows, cursorRow)
         }
 
     /** What [onDraw] last drew, as the native core checks it (HG-VIS). */

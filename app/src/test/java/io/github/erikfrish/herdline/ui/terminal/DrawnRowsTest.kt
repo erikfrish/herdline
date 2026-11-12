@@ -38,4 +38,31 @@ class DrawnRowsTest {
         // A strip over the bottom row's space, nothing hidden: one row up.
         assertEquals(-cell, viewOffset(10 * cell.toInt(), cell.toInt(), 0, cell, 10))
     }
+
+    @Test
+    fun aShownCursorAboveTheWindowIsItsTopRow() {
+        // A held grid two rows taller than the view, the prompt on its top row
+        // (a fresh shell): drawn from row 0, the prompt's row whole.
+        assertEquals(0f, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = 0))
+        assertEquals(0..7, drawnRows(8 * cell, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = 0), cell, 10))
+        assertEquals(-cell, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = 1))
+        // Cut by half a row under the anchor: brought whole, by whole rows.
+        assertEquals(-cell, viewOffset((8.5f * cell).toInt(), 0, 0, cell, 10, cursorRow = 1))
+    }
+
+    @Test
+    fun aCursorInTheWindowHiddenOrUnderOutputFocusKeepsTheOffset() {
+        // Already whole under the bottom anchor: the anchor stays.
+        assertEquals(-2f * cell, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = 2))
+        assertEquals(-2f * cell, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = 9))
+        assertEquals(-1.5f * cell, viewOffset((8.5f * cell).toInt(), 0, 0, cell, 10, cursorRow = 2))
+        // No cursor shown: the anchor.
+        assertEquals(-2f * cell, viewOffset(8 * cell.toInt(), 0, 0, cell, 10, cursorRow = null))
+        // A frame no taller than the view: from the top, wherever the cursor.
+        assertEquals(0f, viewOffset(12 * cell.toInt(), 0, 0, cell, 10, cursorRow = 0))
+        assertEquals(0f, viewOffset(10 * cell.toInt(), 0, 0, cell, 10, cursorRow = 9))
+        // Output focus scrolled the cursor's row away: never pulled back.
+        assertEquals(2f * cell, viewOffset(10 * cell.toInt(), 0, 2, cell, 10, cursorRow = 9))
+        assertEquals(-cell, viewOffset(10 * cell.toInt(), cell.toInt(), 0, cell, 10, cursorRow = 0))
+    }
 }
