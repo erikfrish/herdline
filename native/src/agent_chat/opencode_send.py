@@ -1,4 +1,10 @@
-"""One prompt to a discovered, already-running local OpenCode service."""
+"""One prompt to a discovered, already-running local OpenCode service.
+
+Discovery reads only this user's default state directory,
+$HOME/.local/state/opencode, never another process's environment. A
+service registered elsewhere (a custom XDG_STATE_HOME) is not found, and
+the send goes no further ('local').
+"""
 import base64
 import glob
 import json
@@ -9,7 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-pid, session, body = int(sys.argv[1]), sys.argv[2], sys.argv[3].encode()
+session, body = sys.argv[1], sys.argv[2].encode()
 
 class BoundRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, target):
@@ -18,16 +24,9 @@ class BoundRedirect(urllib.request.HTTPRedirectHandler):
 transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), BoundRedirect())
 
 def main():
-    env = {}
-    for field in open('/proc/%d/environ' % pid, 'rb').read(262144).split(b'\0'):
-        key, sep, value = field.partition(b'=')
-        if sep:
-            env[key.decode(errors='replace')] = value.decode(errors='replace')
     home = os.path.realpath(os.environ['HOME'])
-    if os.path.realpath(env.get('HOME') or home) != home:
-        return 'local'
-    root = os.path.realpath(os.path.join(env.get('XDG_STATE_HOME') or os.path.join(home, '.local', 'state'), 'opencode'))
-    if os.path.commonpath([home, root]) != home:
+    root = os.path.join(home, '.local', 'state', 'opencode')
+    if os.path.realpath(root) != root:
         return 'local'
     files = glob.glob(os.path.join(root, 'service*.json'))
     if len(files) != 1:

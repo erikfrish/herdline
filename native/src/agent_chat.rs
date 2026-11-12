@@ -18,8 +18,9 @@
 //! (`agent_chat/codex_ctl.py`). The proxy connects to the daemon's control
 //! socket and never starts one, and a thread the daemon has not loaded is
 //! never acted on, so nothing here resumes a session or runs a second agent.
-//! Send starts a turn on an idle thread and joins the daemon's queue on a
-//! working one. Steer goes into the running turn, named by its id. The
+//! Send starts a turn on an idle thread and steers a working one, as OMP's
+//! endpoint does; nothing is queued behind the user's back. Steer goes into
+//! the running turn, named by its id. The
 //! queue reads and withdraws by the app's request id, which travels as
 //! `clientUserMessageId`, and Status finds that id in the queue or the turns.
 //!
@@ -300,14 +301,14 @@ HERDLINE_CODEX_CTL"#,
     )
 }
 
-/// Send only to the already-running service registered by this pane's
-/// OpenCode process. The CLI's default api path can autostart a service,
-/// so discovery and HTTP admission stay explicit here.
+/// Send only to the already-running service registered under this user's
+/// default OpenCode state directory, which must know this exact session.
+/// No process environment is read. The CLI's default api path can autostart
+/// a service, so discovery and HTTP admission stay explicit here.
 fn opencode_step(instance: &Identity, text: &str, id: &str) -> String {
     let body = json!({"id": format!("msg_{id}"), "text": text}).to_string();
     format!(
-        "python3 - {} {} {} <<'HERDLINE_OPENCODE_SEND'\n{}\nHERDLINE_OPENCODE_SEND",
-        instance.pid.unwrap_or(0),
+        "python3 - {} {} <<'HERDLINE_OPENCODE_SEND'\n{}\nHERDLINE_OPENCODE_SEND",
         shell_quote(&instance.path),
         shell_quote(&body),
         include_str!("agent_chat/opencode_send.py"),

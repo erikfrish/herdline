@@ -55,14 +55,14 @@ class SenderTransport(unittest.TestCase):
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 threads.append(thread)
-            env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'XDG_STATE_HOME': str(root / '.local/state')}
-            pane = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], env=env)
+            # No XDG_STATE_HOME: discovery uses the default under HOME only.
+            env = {'HOME': home, 'PATH': '/usr/bin:/bin'}
             registration = state / 'service.json'
             registration.write_text(json.dumps({'url': 'http://127.0.0.1:%d' % service.server_port, 'pid': os.getpid(), 'password': 'test-only'}))
             registration.chmod(0o600)
             script = Path(__file__).with_name('opencode_send.py')
             def send():
-                return subprocess.check_output([sys.executable, str(script), str(pane.pid), 'ses_test', json.dumps({'id': 'msg_test', 'text': 'isolated'})], env=env, text=True, timeout=10).strip()
+                return subprocess.check_output([sys.executable, '-B', str(script), 'ses_test', json.dumps({'id': 'msg_test', 'text': 'isolated'})], env=env, text=True, timeout=10).strip()
             try:
                 self.assertEqual(send(), 'queued')
                 self.assertEqual(seen, [('service', 'GET'), ('service', 'POST')])
@@ -75,8 +75,6 @@ class SenderTransport(unittest.TestCase):
                 self.assertEqual(send(), 'local', 'redirected discovery must never authorize a prompt')
                 self.assertEqual(seen, [('service', 'GET')], 'no request may escape the explicitly registered endpoint')
             finally:
-                pane.terminate()
-                pane.wait(timeout=5)
                 for server in (target, service):
                     server.shutdown()
                     server.server_close()
