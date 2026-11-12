@@ -17,4 +17,10 @@ fun Context.refusalText(refusal: TranscriptRefusal, agent: String): String? = wh
         "managed_session_journal" -> getString(R.string.chat_refused_qwen_managed)
         else -> null
     }
+    // A format Chat can't name is said without a number, never as "unknown".
+    is TranscriptRefusal.UnsupportedVersion -> when (refusal.agent) {
+        "hermes" -> refusal.found?.let { getString(R.string.chat_refused_hermes_version, it, refusal.supported) }
+            ?: getString(R.string.chat_refused_hermes_format_unknown, refusal.supported)
+        else -> null
+    }
 }

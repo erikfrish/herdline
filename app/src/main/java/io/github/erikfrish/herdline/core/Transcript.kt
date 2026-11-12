@@ -306,12 +306,26 @@ sealed interface TranscriptRefusal {
     data class UnsupportedFormat(val format: String) : TranscriptRefusal
     /** The agent keeps its sessions outside the SSH user's home folder. */
     data object OutsideHome : TranscriptRefusal
+    /**
+     * [agent]'s store is in a schema format the reader was not written for:
+     * [found] is that format, or null when the store names no single one;
+     * [supported] is the one the reader reads.
+     */
+    data class UnsupportedVersion(val agent: String, val found: Int?, val supported: Int) : TranscriptRefusal
 
     companion object {
         /** Null for a kind from a newer core: the read then fails as any other. */
         fun parse(json: JSONObject): TranscriptRefusal? = when (json.optString("kind")) {
             "unsupported_format" -> UnsupportedFormat(json.optString("format"))
             "outside_home" -> OutsideHome
+            // Without a supported format there is nothing true to say: the general text.
+            "unsupported_version" -> json.optInt("supported", -1).takeIf { it >= 0 }?.let { supported ->
+                UnsupportedVersion(
+                    json.optString("agent"),
+                    json.optInt("found", -1).takeIf { !json.isNull("found") && it >= 0 },
+                    supported,
+                )
+            }
             else -> null
         }
     }

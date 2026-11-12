@@ -185,4 +185,18 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // hermes: transcript/hermes.rs fixture tests only (state.db schema 33,
+    // pinned v0.23.1); no run against a real Hermes, nothing sends.
+    Harness(
+        "hermes",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }

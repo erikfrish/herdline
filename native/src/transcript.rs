@@ -186,6 +186,9 @@ pub enum Refused {
     UnsupportedFormat { format: &'static str },
     /// The agent keeps its sessions outside the SSH user's home folder.
     OutsideHome,
+    /// The agent's store is in a schema format the reader was not written
+    /// for; `found` is null when the store names no single format.
+    UnsupportedVersion { agent: &'static str, found: Option<u32>, supported: u32 },
 }
 
 #[derive(Debug, Serialize)]
@@ -407,6 +410,9 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
         }),
         Err(Error::SessionRootOutsideHome) => Ok(Answer::Refused {
             refused: Refused::OutsideHome,
+        }),
+        Err(Error::UnsupportedHermes { found, supported }) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedVersion { agent: "hermes", found, supported },
         }),
         Err(error) => Err(error),
     }
