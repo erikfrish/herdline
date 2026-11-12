@@ -213,6 +213,7 @@ import io.github.erikfrish.herdline.ui.theme.color
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import java.util.Locale
@@ -220,6 +221,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
 import io.github.erikfrish.herdline.ui.terminal.TAP_HINT_SETTLE_MS
+import io.github.erikfrish.herdline.ui.terminal.sameLook
+import io.github.erikfrish.herdline.ui.terminal.tapHintSpanPx
 import io.github.erikfrish.herdline.ui.terminal.tapHintTop
 import io.github.erikfrish.herdline.ui.terminal.terminalDescription
 
@@ -1114,16 +1117,21 @@ fun SessionScreen(
                         if (hintWanted) {
                             // QF-9b: any change to the frame, the view or the pill hides it at once, so output
                             // never runs under it; it is placed again only after TAP_HINT_SETTLE_MS still, over
-                            // enough blank rows to hold it, and moved without animation.
+                            // enough blank rows to hold it, and moved without animation. A change is a change in
+                            // what is drawn: Herdr resends unchanged surfaces as new frames (QF9-R).
                             LaunchedEffect(Unit) {
-                                snapshotFlow { Triple(frame, drawnViewport, pillPx) }.collectLatest { (shown, drawn, pill) ->
-                                    hintTop = null
-                                    if (shown == null || drawn == null) return@collectLatest
-                                    delay(TAP_HINT_SETTLE_MS)
-                                    hintTop = tapHintTop(shown, drawn, pill, TAP_HINT_SETTLE_MS)
-                                }
+                                snapshotFlow { Triple(frame, drawnViewport, pillPx) }
+                                    .distinctUntilChanged { a, b -> sameLook(a.first, b.first) && a.second == b.second && a.third == b.third }
+                                    .collectLatest { (shown, drawn, pill) ->
+                                        hintTop = null
+                                        if (shown == null || drawn == null) return@collectLatest
+                                        delay(TAP_HINT_SETTLE_MS)
+                                        hintTop = tapHintTop(shown, drawn, pill, TAP_HINT_SETTLE_MS)
+                                    }
                             }
                             val top = hintTop
+                            // Across the focused pane's columns only, so it never sits over its border.
+                            val span = frame?.let { shown -> drawnViewport?.let { tapHintSpanPx(shown, it) } }
                             // An overlay, so it never changes the terminal's height: the extra keys have no room to
                             // spare. Opaque, as OutputFocusStrip is: a translucent pill let glyphs through and lost
                             // contrast. No input: a tap falls through to the terminal, which opens the keyboard.
@@ -1136,11 +1144,13 @@ fun SessionScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .align(Alignment.TopCenter)
+                                    .align(Alignment.TopStart)
                                     .onSizeChanged { pillPx = it.height }
                                     .layout { measurable, constraints ->
-                                        val pill = measurable.measure(constraints)
-                                        layout(pill.width, pill.height) { pill.place(0, top ?: 0) }
+                                        val width = span?.let { (it.last - it.first + 1).coerceIn(0, constraints.maxWidth) } ?: constraints.maxWidth
+                                        val pill = measurable.measure(constraints.copy(minWidth = 0, maxWidth = width))
+                                        val x = (span?.first ?: 0) + (width - pill.width) / 2
+                                        layout(pill.width, pill.height) { pill.place(x, top ?: 0) }
                                     }
                                     .then(if (top == null) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier)
                                     .clip(CircleShape)
