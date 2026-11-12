@@ -20,8 +20,8 @@ android {
         // loader supports from API 29; older releases refuse the library.
         minSdk = 29
         targetSdk = 36
-        versionCode = 10067
-        versionName = "0.6.32"
+        versionCode = 10068
+        versionName = "0.6.33"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
