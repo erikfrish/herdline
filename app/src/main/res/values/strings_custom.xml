@@ -74,7 +74,7 @@
     <string name="promotion_off">Live updates are off.</string>
     <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
     <string name="promotion_stale">Not connected: not shown as live</string>
-    <string name="promotion_unsupported">Android 16 QPR1 (36.1) or newer is required; this version shows an ordinary notification instead.</string>
+    <string name="promotion_unsupported">Android 16 or newer is required; this version shows an ordinary notification instead.</string>
     <string name="promotion_not_allowed">Live Updates are off for Herdline</string>
     <string name="promotion_not_promotable">Ordinary ongoing notification: Android reports it does not qualify as a Live Update.</string>
     <string name="promotion_requested">Requested; Android or Samsung hasn\'t promoted it</string>

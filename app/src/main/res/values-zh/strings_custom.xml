@@ -67,7 +67,7 @@
     <string name="promotion_off">实时更新已关闭。</string>
     <string name="promotion_no_card">现在没有实时更新：没有已固定的代理在工作。</string>
     <string name="promotion_stale">未连接：不显示为实时</string>
-    <string name="promotion_unsupported">需要 Android 16 QPR1（36.1）或更新版本；此版本改为显示普通通知。</string>
+    <string name="promotion_unsupported">需要 Android 16 或更新版本；此版本改为显示普通通知。</string>
     <string name="promotion_not_allowed">Herdline 的实时更新已关闭</string>
     <string name="promotion_not_promotable">普通持续通知：Android 报告它不符合实时更新条件。</string>
     <string name="promotion_requested">已请求；Android 或 Samsung 尚未提升它</string>

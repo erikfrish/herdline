@@ -113,7 +113,7 @@ object AgentNotifications {
 
     internal fun promotionDetails(context: Context): PromotionDetails {
         val requested = promotionRequested
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA || Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1) return PromotionDetails(requested, null, null, null)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return PromotionDetails(requested, null, null, null)
         val manager = context.getSystemService(NotificationManager::class.java)
         val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification
         return PromotionDetails(requested, manager.canPostPromotedNotifications(), posted?.hasPromotableCharacteristics(), posted?.let { it.flags and Notification.FLAG_PROMOTED_ONGOING != 0 } ?: false)
@@ -324,9 +324,7 @@ object AgentNotifications {
         if (!liveActivity) return Promotion.Off
         val state = card
         if (state != Promotion.Requested) return state
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA ||
-            Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1
-        ) return Promotion.Unsupported
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return Promotion.Unsupported
         val manager = context.getSystemService(NotificationManager::class.java)
         if (!manager.canPostPromotedNotifications()) return Promotion.NotAllowed
         val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification
