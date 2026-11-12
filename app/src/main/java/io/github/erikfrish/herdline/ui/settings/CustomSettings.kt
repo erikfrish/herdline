@@ -1,6 +1,5 @@
 package io.github.erikfrish.herdline.ui.settings
 
-import android.content.ActivityNotFoundException
 import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.view.View
@@ -885,13 +884,7 @@ private fun PromotionRows() {
     ItemRow(
         title = stringResource(R.string.live_promotion_settings),
         chevron = true,
-        onClick = {
-            try {
-                context.startActivity(AgentNotifications.settingsIntent(context))
-            } catch (e: ActivityNotFoundException) {
-                // No such settings page on this build of Android; the state above still stands.
-            }
-        },
+        onClick = { AgentNotifications.openSettings(context) },
     )
 }
 

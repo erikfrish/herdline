@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.widget.Toast
 import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -333,14 +334,25 @@ object AgentNotifications {
         return if (posted.hasPromotableCharacteristics()) Promotion.Requested else Promotion.NotPromotable
     }
 
-    /** The system page where the user allows or stops Herdline's promoted notifications. */
-    fun settingsIntent(context: Context): Intent = Intent(
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            android.provider.Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS
-        } else {
-            android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS
-        },
-    ).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    /**
+     * Opens the system page where the user allows or stops Herdline's
+     * promoted notifications. Where this Android has no such page (API 36.0
+     * answers -91, not resolved, without throwing: QA m43 C5), the app's
+     * notification settings open instead; where neither opens, a message
+     * says so. Never a silent no-op.
+     */
+    fun openSettings(context: Context) {
+        val pages = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) add(android.provider.Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
+            add(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        }
+        val opened = pages.any { action ->
+            val intent = Intent(action).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.resolveActivity(context.packageManager) != null &&
+                runCatching { context.startActivity(intent) }.isSuccess
+        }
+        if (!opened) Toast.makeText(context, R.string.live_promotion_settings_missing, Toast.LENGTH_LONG).show()
+    }
 
     internal fun statusText(context: Context, status: AgentStatus): String = context.getString(
         when (status) {

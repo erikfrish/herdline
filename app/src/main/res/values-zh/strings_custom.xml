@@ -64,6 +64,7 @@
     <string name="lock_state_only">仅状态</string>
     <string name="live_promotion">实时更新状态</string>
     <string name="live_promotion_settings">打开 Android 设置</string>
+    <string name="live_promotion_settings_missing">此 Android 没有 Herdline 通知的设置页面。请打开“设置 › 应用 › Herdline › 通知”。</string>
     <string name="promotion_off">实时更新已关闭。</string>
     <string name="promotion_no_card">现在没有实时更新：没有已固定的代理在工作。</string>
     <string name="promotion_stale">未连接：不显示为实时</string>

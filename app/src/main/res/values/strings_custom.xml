@@ -71,6 +71,7 @@
     <string name="lock_state_only">State only</string>
     <string name="live_promotion">Live Update status</string>
     <string name="live_promotion_settings">Open Android settings</string>
+    <string name="live_promotion_settings_missing">This Android has no settings page for Herdline\'s notifications. Open Settings › Apps › Herdline › Notifications.</string>
     <string name="promotion_off">Live updates are off.</string>
     <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
     <string name="promotion_stale">Not connected: not shown as live</string>

@@ -11,6 +11,17 @@
     <!-- Hands a verified update to Android's installer; the user confirms there. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Lets Settings › Live Update ask whether this Android has the promoted-
+         notifications page before opening it (API 36.0 has none: QA m43 C5). -->
+    <queries>
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+        </intent>
+    </queries>
+
     <!-- Static package identity: Settings › App info and the notification
          header tile (Samsung's system-drawn left icon) draw this. It is fixed
          at install and can only ship one variant, so it is the Dusk tile the
