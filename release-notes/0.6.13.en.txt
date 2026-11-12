@@ -1,0 +1,7 @@
+Herdline 0.6.13 — headers and the To-line keep what matters
+
+The session header no longer cuts the tab count. When room is short, Desktop is shortened first, then the host name, so the number of tabs always stays readable. TalkBack reads the line in one go.
+
+The "Tap the terminal to type" hint no longer shows under a message over the terminal, such as a snackbar or the "no room" notice. It comes back once the screen is still again.
+
+When the composer's "To" line is narrow, it now leaves out the workspace, which the header already shows, so the tab gets the room. The state is never cut, and TalkBack still names the workspace.
