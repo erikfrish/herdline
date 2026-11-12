@@ -124,6 +124,35 @@ impl Exec {
     }
 }
 
+#[cfg(test)]
+impl Exec {
+    /// Runs each command on this machine with `/bin/sh -c` in exactly `env`,
+    /// so a test can drive the host scripts through the callers that use them.
+    /// The tail is stdout only, cut to `limit` like the bridge's.
+    pub(crate) fn local(env: Vec<(String, String)>) -> Self {
+        let (jobs, mut queue) = tokio::sync::mpsc::channel::<Job>(4);
+        thread::spawn(move || {
+            while let Some(job) = queue.blocking_recv() {
+                let output = std::process::Command::new("/bin/sh")
+                    .arg("-c")
+                    .arg(&job.command)
+                    .env_clear()
+                    .envs(env.iter().cloned())
+                    .stdin(std::process::Stdio::null())
+                    .output()
+                    .map_err(Error::Io)
+                    .map(|output| {
+                        let mut tail = output.stdout;
+                        let tail = tail.split_off(tail.len().saturating_sub(job.limit));
+                        Output { exit_status: output.status.code().and_then(|code| u32::try_from(code).ok()), tail }
+                    });
+                let _ = job.reply.send(output);
+            }
+        });
+        Self { jobs }
+    }
+}
+
 /// A command started by [`Exec::upload`], its stdin still open.
 #[derive(Debug)]
 pub struct Upload {
