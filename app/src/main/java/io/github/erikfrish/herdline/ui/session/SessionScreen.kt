@@ -177,6 +177,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
@@ -296,6 +297,9 @@ fun SessionScreen(
     val modes = remember { PaneModes.get(context) }
     val modeChoices by modes.choices.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
+    // Once the keyboard has opened here, the user knows the way in; the hint never comes back (D3-2).
+    var typedOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(imeVisible) { if (imeVisible) typedOnce = true }
     val monitored by app.monitor.monitored.collectAsState()
     val node = connection.node
     // The Tabs overview's chosen workspace (TB1 §4): kept across closing the sheet, Grid ⇄ List and rotation.
@@ -980,6 +984,26 @@ fun SessionScreen(
                         }
                         if (focusApplies) {
                             OutputFocusStrip(hiddenRows, onOff = { setOutputFocus(false) }, modifier = Modifier.align(Alignment.BottomCenter))
+                        }
+                        if (!chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected) {
+                            // An overlay, so it never changes the terminal's height: the extra keys have no room to
+                            // spare. It sits over the bottom row, often the prompt, so it lasts only until the first
+                            // keyboard. No input: a tap falls through to the terminal, which opens the keyboard.
+                            Text(
+                                stringResource(R.string.terminal_tap_to_type),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 6.dp)
+                                    .clip(CircleShape)
+                                    .background(chromeColor.copy(alpha = 0.85f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .clearAndSetSemantics {}
+                                    .testTag("session:tap_to_type"),
+                            )
                         }
                         if (chatMode && closed) {
                             // S5: the pane read here closed; Chat says so and never falls back to the desktop.

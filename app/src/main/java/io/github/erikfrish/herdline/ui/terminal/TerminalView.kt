@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
 import android.text.Selection
@@ -20,8 +21,10 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.OverScroller
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.ui.theme.TerminalScheme
@@ -713,6 +716,20 @@ class TerminalView(context: Context) : View(context) {
     }
 
     override fun onCheckIsTextEditor() = true
+
+    // TalkBack's double-tap is a click: name it and open the keyboard, as a tap does. No click
+    // listener, so touch handling and focus stay the gesture detector's.
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, context.getString(R.string.terminal_show_keyboard)))
+        info.isClickable = true
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        if (action != AccessibilityNodeInfo.ACTION_CLICK) return super.performAccessibilityAction(action, arguments)
+        showKeyboard()
+        return true
+    }
 
     private val line = LineMirror()
 
