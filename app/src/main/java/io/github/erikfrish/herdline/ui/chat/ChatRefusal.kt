@@ -44,9 +44,15 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
 /** Grok's store holds no one session Chat can stand behind: Chat refuses, and the card says so. */
 private const val GROK_SESSION_AMBIGUOUS = "grok_session_ambiguous"
 
-/** Whether [refusal] is the one [refusalWords] words as an ambiguous session. */
+/**
+ * The Grok refusals where no one session for the pane can be stood behind:
+ * two candidates, or Grok's own open-session list naming another or none.
+ */
+private val GROK_NO_ONE_SESSION = setOf(GROK_SESSION_AMBIGUOUS, "grok_session_stale", "grok_session_unregistered")
+
+/** Whether [refusal] leaves the card's Grok session rows NotYet AmbiguousSession. */
 internal fun ambiguousSession(refusal: TranscriptRefusal?): Boolean =
-    (refusal as? TranscriptRefusal.UnsupportedFormat)?.format == GROK_SESSION_AMBIGUOUS
+    (refusal as? TranscriptRefusal.UnsupportedFormat)?.format in GROK_NO_ONE_SESSION
 
 /**
  * What Chat says for a typed refusal, used whole in place of

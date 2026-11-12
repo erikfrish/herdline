@@ -57,13 +57,15 @@ class ChatRefusalTest {
     }
 
     @Test
-    fun the_card_says_ambiguous_exactly_when_chat_words_the_refusal_so() {
+    fun the_card_says_ambiguous_exactly_when_chat_words_no_one_grok_session() {
+        val noOne = setOf(R.string.chat_refused_ambiguous, R.string.chat_refused_stale, R.string.chat_refused_unregistered)
         val refusals = listOf(
-            TranscriptRefusal.UnsupportedFormat("grok_session_ambiguous"), TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"),
+            TranscriptRefusal.UnsupportedFormat("grok_session_ambiguous"), TranscriptRefusal.UnsupportedFormat("grok_session_stale"),
+            TranscriptRefusal.UnsupportedFormat("grok_session_unregistered"), TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"),
             TranscriptRefusal.UnsupportedFormat("grok_session_too_large"), TranscriptRefusal.OutsideHome, null,
         )
         for (refusal in refusals) {
-            val worded = refusal?.let { refusalWords(it, "Grok").res == R.string.chat_refused_ambiguous } ?: false
+            val worded = refusal?.let { refusalWords(it, "Grok").res in noOne } ?: false
             assertEquals(refusal.toString(), worded, ambiguousSession(refusal))
         }
     }

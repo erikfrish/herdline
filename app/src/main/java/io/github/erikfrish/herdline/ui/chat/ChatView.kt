@@ -252,7 +252,7 @@ fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: Str
         value = withContext(Dispatchers.IO) { connection.ingressNeedsServer(target) }
             .fold({ missing -> if (missing) ServerProbe.Missing else ServerProbe.Present }, { ServerProbe.Unknown })
     }
-    // The same typed refusal Chat words as ambiguous (ChatRefusal.refusalWords): the card says it too.
+    // The typed Grok refusals where Chat stands behind no one session (ChatRefusal.ambiguousSession): the card says it too.
     return HarnessRuntime(server = probe, ambiguousSession = ambiguousSession(pane?.let { memory.of(it).read.refusal }))
 }
 
