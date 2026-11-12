@@ -608,7 +608,8 @@ fn media_outcome(
     let file_refusal = match exit_status {
         Some(EXIT_NO_MEDIA | EXIT_NO_FILE) => Some(Refusal::Missing),
         Some(EXIT_TOO_LARGE) => Some(Refusal::TooLarge),
-        Some(EXIT_UNCONFINED) => Some(Refusal::Unconfined),
+        // Media keeps its own vocabulary: outside home is unconfined there.
+        Some(EXIT_UNCONFINED | EXIT_OUTSIDE_HOME) => Some(Refusal::Unconfined),
         Some(EXIT_NO_STORE) => Some(Refusal::UnknownStore),
         Some(EXIT_MOVED) => Some(Refusal::Moved),
         _ => None,
@@ -859,6 +860,9 @@ const EXIT_NO_MEDIA: u32 = 7;
 const EXIT_TOO_LARGE: u32 = 8;
 const EXIT_NO_STORE: u32 = 9;
 const EXIT_MOVED: u32 = 10;
+/// The resolver found the agent's HOME, a root or the file outside this
+/// user's home: a lasting refusal with its own words, not a missing file.
+const EXIT_OUTSIDE_HOME: u32 = 11;
 
 /// Report the pane and its processes, then, given what to fetch, those
 /// bytes of the session file once it resolves inside OMP's session folder.
@@ -918,7 +922,7 @@ printf '@@pane\n'
 real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
 {resolver}
 HERDLINE_RESOLVE
-) || exit {EXIT_UNCONFINED}
+) || {{ status=$?; [ "$status" -eq {EXIT_OUTSIDE_HOME} ] && exit {EXIT_OUTSIDE_HOME}; exit {EXIT_UNCONFINED}; }}
 [ -f "$real" ] || exit {EXIT_NO_FILE}
 size=$(wc -c < "$real") || exit {EXIT_NO_FILE}
 size=$((size))
@@ -1016,6 +1020,7 @@ fn parse_reply(exit_status: Option<u32>, bytes: &[u8]) -> Result<Reply<'_>> {
     match exit_status {
         Some(0) => {}
         Some(EXIT_UNCONFINED) => return Err(Error::TranscriptUnconfined),
+        Some(EXIT_OUTSIDE_HOME) => return Err(Error::SessionRootOutsideHome),
         Some(EXIT_NO_HERDR) => return Err(Error::HerdrNotFound),
         Some(EXIT_NO_PANE) => return Err(Error::PaneGone),
         Some(EXIT_NO_FILE) => return Err(Error::NoTranscript),

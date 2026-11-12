@@ -354,6 +354,18 @@ Switcher:
   file must canonically stay below the SSH account's HOME, and ID resolution
   must match exactly one file. A reported path alone never authorizes an
   arbitrary folder; configured roots require that exact process's environment.
+  - The profile is the one omp 18.18.8 takes itself (`extractProfileFlags`):
+    a string flag's value, an argument after `--` or after a first-token
+    subcommand is never `--profile`. `~` is never expanded, as in OMP.
+  - Only the environment the process started with is seen. A root OMP picks
+    up later (a project `.env` via `refreshDirsFromEnv`, `setProfile`) is
+    not authorized and refuses, never guessed.
+  - The default `~/.omp/agent/sessions` stays authorized for every OMP
+    process, named profile or XDG included: it is HOME-bounded, and Herdr
+    must still report the exact file.
+  - An agent whose HOME is not the SSH account's (`sudo`, `su -c`, another
+    exported HOME), or a root or file outside HOME, is refused as
+    `outside_home`; other confinement failures are `unconfined`.
 - **Incremental and bounded.** Chat reads byte ranges by offset: the newest
   256 KiB, then appends from the last complete line (a partial line waits),
   and older pages on request.

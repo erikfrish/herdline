@@ -1056,3 +1056,137 @@ fn an_invalid_session_root_override_refuses_only_itself() {
         }
     }
 }
+
+/// An OMP pane process run as `omp <args>`, or with `bun` as `bun <script>
+/// <args>` (the cmdline of a script launch), with HOME and `variables`.
+fn launch(host: &Host, bun: bool, args: &[&str], variables: &[(&str, String)]) -> Omp {
+    use std::os::unix::process::CommandExt;
+    let mut command = Command::new("/bin/sh");
+    if bun {
+        let script = host.home.path().join("omp.js");
+        fs::write(&script, "read -r line\n").unwrap();
+        command.arg0("bun").arg(script);
+    } else {
+        command.args(["-c", "read -r line", "omp"]);
+    }
+    let child = command
+        .args(args)
+        .env_clear()
+        .env("HOME", host.home.path())
+        .envs(variables.iter().map(|(key, value)| (*key, value)))
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    fs::write(
+        host.home.path().join("proc.json"),
+        PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", child.id())),
+    )
+    .unwrap();
+    Omp(child)
+}
+
+/// Herdr reports the session file at `relative` under HOME; the read's result.
+fn read_reported(host: &Host, relative: &str) -> (Vec<u8>, Result<Vec<u8>>) {
+    let file = host.home.path().join(relative);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, format!("{{\"type\":\"session\",\"id\":\"{relative}\"}}\n")).unwrap();
+    let path = file.to_str().unwrap();
+    fs::write(host.home.path().join("pane.json"), pane_json(path)).unwrap();
+    let (status, bytes) = host.run(tail(path));
+    let read = parse_reply(status, &bytes).map(|reply| reply.file.unwrap().data.to_vec());
+    (fs::read(&file).unwrap(), read)
+}
+
+#[test]
+fn the_profile_is_the_one_omp_itself_takes_from_its_arguments() {
+    const DEFAULT: &str = ".omp/agent/sessions/p/s.jsonl";
+    let profile = |name: &str| format!(".omp/profiles/{name}/agent/sessions/p/s.jsonl");
+    // (bun script launch, arguments, a session that reads, one that is refused)
+    let cases: &[(bool, &[&str], String, Option<String>)] = &[
+        (false, &["--profile", "x"], profile("x"), None),
+        // A string flag takes the next token whatever it looks like: the
+        // system prompt is literally `--profile`, and `foo` is the message.
+        (false, &["--system-prompt", "--profile", "foo"], DEFAULT.into(), Some(profile("foo"))),
+        // From a first-token subcommand on, its flags are its own.
+        (true, &["grep", "--profile", "x"], DEFAULT.into(), Some(profile("x"))),
+        // An optional value is never flag-looking, so the profile still applies.
+        (true, &["--resume", "--profile", "x"], profile("x"), None),
+        // The plain launches keep the default root.
+        (false, &[], DEFAULT.into(), None),
+        (true, &[], DEFAULT.into(), None),
+        (false, &["--continue"], DEFAULT.into(), None),
+        (false, &["--resume", "0a1b2c3d"], DEFAULT.into(), None),
+        (false, &["--model", "sonnet"], DEFAULT.into(), None),
+    ];
+    for (bun, args, allowed, refused) in cases {
+        let host = Host::new("unused");
+        let _omp = launch(&host, *bun, args, &[]);
+        let (data, read) = read_reported(&host, allowed);
+        assert_eq!(read.unwrap(), data, "{args:?}");
+        if let Some(refused) = refused {
+            let (_, read) = read_reported(&host, refused);
+            assert!(matches!(read, Err(Error::TranscriptUnconfined)), "{args:?}");
+        }
+    }
+}
+
+#[test]
+fn a_tilde_or_a_symlinked_config_never_widens_the_roots() {
+    let host = Host::new("unused");
+    // `~` is never expanded by OMP: a relative override, refused alone.
+    let _omp = launch(&host, false, &[], &[("PI_CODING_AGENT_DIR", "~/custom".into())]);
+    assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
+    assert!(matches!(read_reported(&host, "custom/sessions/p/s.jsonl").1, Err(Error::TranscriptUnconfined)));
+    // OMP compares a PI_CODING_AGENT_DIR its parent derived from PI_PROFILE
+    // to the raw join, so a symlinked ~/.omp still drops it.
+    let host = Host::new("unused");
+    let home = host.home.path().to_str().unwrap().to_owned();
+    fs::create_dir_all(host.home.path().join("real-omp")).unwrap();
+    std::os::unix::fs::symlink(host.home.path().join("real-omp"), host.home.path().join(".omp")).unwrap();
+    let variables = [
+        ("OMP_PROFILE", String::new()),
+        ("PI_PROFILE", "work".to_owned()),
+        ("PI_CODING_AGENT_DIR", format!("{home}/.omp/profiles/work/agent")),
+    ];
+    let _omp = launch(&host, false, &[], &variables);
+    assert!(read_reported(&host, "real-omp/agent/sessions/p/s.jsonl").1.is_ok());
+    assert!(matches!(
+        read_reported(&host, "real-omp/profiles/work/agent/sessions/p/s.jsonl").1,
+        Err(Error::TranscriptUnconfined)
+    ));
+}
+
+#[test]
+fn another_home_or_a_file_outside_home_is_refused_as_outside_home() {
+    let host = Host::new("unused");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let _omp = {
+        use std::os::unix::process::CommandExt;
+        let child = Command::new("/bin/sh")
+            .arg0("omp")
+            .args(["-c", "read -r line"])
+            .env_clear()
+            .env("HOME", elsewhere.path())
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", child.id())),
+        )
+        .unwrap();
+        Omp(child)
+    };
+    assert!(matches!(
+        read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1,
+        Err(Error::SessionRootOutsideHome)
+    ));
+    // A session file that links out of HOME, with no process environment.
+    let host = Host::new("unused");
+    let secret = elsewhere.path().join("secret.jsonl");
+    fs::write(&secret, "{}\n").unwrap();
+    let link = host.sessions().join("evil.jsonl");
+    std::os::unix::fs::symlink(&secret, &link).unwrap();
+    let (status, out) = host.run(tail(link.to_str().unwrap()));
+    assert!(matches!(parse_reply(status, &out), Err(Error::SessionRootOutsideHome)));
+}
