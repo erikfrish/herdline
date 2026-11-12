@@ -199,6 +199,19 @@ class ChatModelTest {
     }
 
     @Test
+    fun the_agents_own_server_decides_working_and_the_panes_blocked_stays() {
+        val opencode = Agent("w1:p1", "w1", "t1", null, "opencode", null, AgentStatus.Idle, false)
+        fun with(status: AgentStatus, running: Boolean?) = chatStatus(true, "w1:p1", opencode.copy(status = status), running)
+        assertEquals(AgentStatus.Working, with(AgentStatus.Idle, running = true))
+        assertEquals("a new turn after Done", AgentStatus.Working, with(AgentStatus.Done, running = true))
+        assertEquals("its drain ended", AgentStatus.Idle, with(AgentStatus.Working, running = false))
+        assertEquals(AgentStatus.Done, with(AgentStatus.Done, running = false))
+        assertEquals("waiting on the user", AgentStatus.Blocked, with(AgentStatus.Blocked, running = true))
+        assertEquals("no server answer: the pane's", AgentStatus.Working, with(AgentStatus.Working, running = null))
+        assertEquals("never past a lost link", AgentStatus.Unknown, chatStatus(false, "w1:p1", opencode, running = true))
+    }
+
+    @Test
     fun an_unclosed_code_fence_still_renders_as_code() {
         val blocks = markdownBlocks("Run:\n```sh\nls -la\n")
         assertEquals(listOf(MdBlock.Paragraph("Run:"), MdBlock.Code("sh", "ls -la\n")), blocks)

@@ -88,9 +88,16 @@ internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, b
  * What chat says the supported agent in [pane] is doing, only while the
  * same pane is live on this connection. A lost link or unknown program is
  * [AgentStatus.Unknown]; stale history never claims a Working status.
+ *
+ * [running] is the agent's own server answer for this exact instance (OpenCode
+ * `GET /api/session/active`), null when none was read: a session it runs is
+ * Working, one it doesn't run is not, and the pane's Blocked stays Blocked.
  */
-fun chatStatus(connected: Boolean, pane: String, agent: Agent?): AgentStatus = when {
+fun chatStatus(connected: Boolean, pane: String, agent: Agent?, running: Boolean? = null): AgentStatus = when {
     !connected || agent == null || agent.pane != pane || !isChatAgent(agent.agent) -> AgentStatus.Unknown
+    running == null || agent.status == AgentStatus.Blocked -> agent.status
+    running -> AgentStatus.Working
+    agent.status == AgentStatus.Working -> AgentStatus.Idle
     else -> agent.status
 }
 

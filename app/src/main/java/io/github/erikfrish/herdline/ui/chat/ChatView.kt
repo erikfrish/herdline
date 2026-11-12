@@ -345,10 +345,12 @@ private fun ChatContent(
     // Retry cuts the wait before the next read short.
     val wake = remember { Channel<Unit>(Channel.CONFLATED) }
     val colors = chatColors(accent)
-    // What the agent does now: the live view's agent in this pane, never the last poll's answer.
+    // What the agent does now: the live view's agent in this pane, never the last poll's answer,
+    // and the agent's own server where it has one, for exactly the instance shown.
     val linkLive = connection.state.collectAsState().value is Connection.State.Connected
     val view by connection.view.collectAsState()
-    val status = chatStatus(linkLive, pane, view?.agentIn(pane))
+    var serverRunning by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, Boolean>?>(null) }
+    val status = chatStatus(linkLive, pane, view?.agentIn(pane), serverRunning?.takeIf { it.first == history?.identity }?.second)
     val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
     LaunchedEffect(Unit) {
@@ -386,6 +388,25 @@ private fun ChatContent(
     val stopTarget = remember(connection, view?.boot, identity, pane) {
         val boot = view?.boot
         if (boot == null || identity == null || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    // OpenCode's server says which of its sessions it runs (GET /api/session/active); a read that
+    // fails or isn't Live says nothing, so the pane's own status stands.
+    val stateTarget = remember(connection, view?.boot, identity, pane) {
+        val boot = view?.boot
+        if (boot == null || identity == null || !serverAgent) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    LaunchedEffect(stateTarget, linkLive) {
+        serverRunning = null
+        val target = stateTarget ?: return@LaunchedEffect
+        val instance = target.instance ?: return@LaunchedEffect
+        if (!linkLive) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val probe = withContext(Dispatchers.IO) { connection.ingressState(target) }.getOrNull()
+                serverRunning = (probe as? IngressProbe.Live)?.let { instance to !it.state.idle }
+                delay(if (busy) BUSY_POLL_MS else IDLE_POLL_MS)
+            }
+        }
     }
     var stopping by remember(stopTarget) { mutableStateOf(false) }
     // Why the last Stop did nothing: a refusal's code (no key went), or [STOP_UNCONFIRMED].

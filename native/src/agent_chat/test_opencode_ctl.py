@@ -162,6 +162,14 @@ class OpenCode(unittest.TestCase):
                     {'requestId': mine[4:], 'text': 'next', 'queue': 'followUp'},
                     {'requestId': None, 'text': 'from desktop', 'queue': 'steering'},
                 ]})
+                # Status is the server's own: only this session counts as running,
+                # and an entry not shaped as SessionActive is no answer at all.
+                active = ('GET', '/api/session/active')
+                service.routes[active] = (200, {'data': {'ses_other': {'type': 'running'}}})
+                self.assertIs(json.loads(run(home, 'opencode', 'state').partition('\t')[2])['idle'], True)
+                service.routes[active] = (200, {'data': {'ses_test': {'type': 'idle'}}})
+                self.assertNotEqual(run(home, 'opencode', 'state').partition('\t')[0], 'state')
+                service.routes[active] = (200, {'data': {'ses_test': {'type': 'running'}}})
                 self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'accepted')
                 # Pinned fedc6f2: PATCH delivery steer is one atomic queue->steer
                 # move (core/session/inbox.ts:378-402 projectDelivery updates only

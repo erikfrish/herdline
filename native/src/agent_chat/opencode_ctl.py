@@ -500,9 +500,12 @@ def question_answers(entry, data):
 
 
 def active(base, headers):
+    """Whether the server runs this session: protocol groups/session.ts
+    SessionActive {type: 'running'} (:43-45), absent = inactive (:222-229).
+    Any other shape is unreadable, never taken as idle."""
     found = call(base, headers, 'GET', '/api/session/active')['data']
-    if not isinstance(found, dict):
-        raise ValueError('not a map')
+    if not isinstance(found, dict) or not all(entry == {'type': 'running'} for entry in found.values()):
+        raise ValueError('not SessionActive')
     return session in found
 
 
