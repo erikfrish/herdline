@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -82,19 +81,19 @@ internal fun BoxScope.HarnessCardSlot(
             .align(Alignment.TopCenter)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            .atMostOf(0.6f)
             .semantics { paneTitle = title },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         // Title and actions stay at the top; body, list and footnote are the one
-        // scroll region under them, so the cap shortens the body, never the
-        // buttons (QA N1-g: landscape at font 1.3). Where title and actions alone
-        // leave less than [MinScrollRegion] under the cap, the whole column
-        // scrolls instead: chosen from the measured heights, not orientation.
+        // scroll region under them, so the cap (CardCap of the slot) shortens the
+        // body, never the buttons (QA N1-g: landscape at font 1.3). Where title and
+        // actions alone leave less than [MinScrollRegion] under that cap, the cap
+        // goes and the whole column scrolls in the full slot instead, so both
+        // buttons fit whole: chosen from the measured heights, not orientation.
         BoxWithConstraints {
-            val cap = constraints.maxHeight
+            val slot = constraints.maxHeight
             Layout(
                 content = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,14 +136,15 @@ internal fun BoxScope.HarnessCardSlot(
                     }
                 },
                 // The outer scroll only ever has range in the fallback: when the
-                // split fits, the column is no taller than the cap.
+                // split fits, the column is no taller than the cap. In the fallback
+                // it is bounded by the full slot.
                 modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
             ) { (headPart, restPart), outer ->
                 val loose = outer.copy(minHeight = 0)
                 val head = headPart.measure(loose)
                 val gap = 8.dp.roundToPx()
                 // What the split leaves the scroll region: the cap less padding, head and gap.
-                val budget = if (cap == Constraints.Infinity) -1 else cap - 2 * 16.dp.roundToPx() - head.height - gap
+                val budget = if (slot == Constraints.Infinity) -1 else (slot * CardCap).toInt() - 2 * 16.dp.roundToPx() - head.height - gap
                 val rest = if (budget >= MinScrollRegion.roundToPx()) {
                     restPart.measure(loose.copy(maxHeight = budget))
                 } else {
@@ -177,16 +177,8 @@ private fun itemName(item: HarnessItem, terminal: String): String = when (item) 
 /** The least a split scroll region may get under the fixed head: one list row and its gap. */
 private val MinScrollRegion = 48.dp
 
-/** Caps the height at [fraction] of the box's own, so a long body and list scroll inside the card. */
-private fun Modifier.atMostOf(fraction: Float) = layout { measurable, constraints ->
-    val capped = if (constraints.hasBoundedHeight) {
-        constraints.copy(maxHeight = (constraints.maxHeight * fraction).toInt().coerceAtLeast(constraints.minHeight))
-    } else {
-        constraints
-    }
-    val placeable = measurable.measure(capped)
-    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-}
+/** The card's height while the split fits, as a share of its slot, so the terminal stays in view. */
+private const val CardCap = 0.6f
 
 /*
  * Material Symbols `schedule` (outlined), path data copied from
