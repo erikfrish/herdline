@@ -1565,8 +1565,9 @@ private fun Editor(
             NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled },
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
         )
+        // The endpoint queues text and images; the PTY wording (paste, then Enter) is not its.
         endpointSteer && steerEnabled && holdsDraft -> Notice(
-            stringResource(R.string.steer_help),
+            stringResource(R.string.steer_help_endpoint),
             NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
         )
         blocked != null -> when (val code = blocked) {
@@ -1576,7 +1577,13 @@ private fun Editor(
                 // Steer is its own labelled action; Send stays disabled.
                 val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
                 Notice(
-                    stringResource(if (steerAction != null) R.string.steer_help else R.string.reason_agent_working),
+                    stringResource(
+                        when {
+                            steerAction == null -> R.string.reason_agent_working
+                            endpointSteer -> R.string.steer_help_endpoint
+                            else -> R.string.steer_help
+                        },
+                    ),
                     insert ?: steerAction,
                     steerAction?.takeIf { insert != null },
                 )
