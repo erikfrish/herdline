@@ -59,7 +59,7 @@ fun showsChat(stored: Map<ModeKey, ModeChoice>, key: ModeKey, boot: String?, age
  * restarts. Writes go through [SharedPreferences.Editor.apply], so the UI
  * thread never waits on disk.
  */
-class PaneModes private constructor(private val prefs: SharedPreferences) {
+class PaneModes internal constructor(private val prefs: SharedPreferences) {
     private val _choices = MutableStateFlow(load())
     val choices: StateFlow<Map<ModeKey, ModeChoice>> = _choices.asStateFlow()
 

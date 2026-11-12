@@ -503,11 +503,14 @@ fun SessionScreen(
     // ...and its own loaded transcript, for this connection and daemon boot (C9: a new boot may reuse pane ids).
     val chatMemory = remember(connection) { ChatMemories() }.at(view?.boot)
     val closed = readingClosed(reading, view)
-    /** Whether the selected supported agent's saved mode is Chat. */
-    fun chatFor(pane: String?): Boolean {
+    /**
+     * Whether the selected supported agent's saved mode is Chat, in [stored]. The screen draws from the
+     * collected choices; a choice made on it passes [modes]' current ones, so a mode set just before counts.
+     */
+    fun chatFor(pane: String?, stored: Map<ModeKey, ModeChoice> = modeChoices): Boolean {
         val shown = view ?: return false
         val agent = pane?.let { shown.agentIn(it)?.agent }
-        return pane != null && showsChat(modeChoices, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
+        return pane != null && showsChat(stored, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
     }
     val chatPane = reading?.pane?.takeIf { isChatAgent(view?.agentIn(it)?.agent) }
     // A choice holds for one daemon run and program: a restarted daemon or a new
@@ -598,13 +601,19 @@ fun SessionScreen(
         terminal?.keepRows = composerText && !composerHidden && !(rawKeys && !chatMode)
     }
 
+    /** Whether Chat is on screen as a choice made now finds it: [modes]' current choices, not the last collected ones. */
+    fun chatNow(): Boolean = if (closed) chatShown else chatFor(chatPane, modes.choices.value)
+
+    /** Whether a choice of [pane] made now moves the desktop: [choiceMovesDesktop] on the modes as they stand. */
+    fun movesDesktop(pane: String, fromChat: Boolean = chatNow()): Boolean = choiceMovesDesktop(fromChat, chatFor(pane, modes.choices.value))
+
     /**
      * A choice of [pane] on this phone: it is read here. From Terminal it also moves the desktop to it;
      * from Chat ([fromChat]) only a pane that shows Terminal does ([choiceMovesDesktop]).
      */
-    fun choosePane(pane: String, fromChat: Boolean = chatMode) {
+    fun choosePane(pane: String, fromChat: Boolean = chatNow()) {
         readHere(pane)
-        if (choiceMovesDesktop(fromChat, chatFor(pane))) connection.focusPane(pane)
+        if (movesDesktop(pane, fromChat)) connection.focusPane(pane)
     }
 
     /** A choice of [tab]: from Chat, a pane read in Chat is read here only; otherwise Herdr focuses the tab and picks its pane. */
@@ -612,7 +621,7 @@ fun SessionScreen(
         choices++
         val shown = view ?: return
         val pane = paneForTab(shown, tab, lastRead)
-        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
+        if (pane != null && !movesDesktop(pane)) {
             readHere(pane)
         } else {
             pendingTab = tab
@@ -625,7 +634,7 @@ fun SessionScreen(
         choices++
         val shown = view ?: return
         val pane = paneForWorkspace(shown, workspace, lastRead)
-        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
+        if (pane != null && !movesDesktop(pane)) {
             readHere(pane)
         } else {
             pendingTab = shown.workspaces.firstOrNull { it.id == workspace }?.activeTab

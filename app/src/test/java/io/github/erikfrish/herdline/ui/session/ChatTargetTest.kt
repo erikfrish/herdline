@@ -6,6 +6,11 @@ import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
+import io.github.erikfrish.herdline.data.MemoryPrefs
+import io.github.erikfrish.herdline.data.ModeChoice
+import io.github.erikfrish.herdline.data.ModeKey
+import io.github.erikfrish.herdline.data.PaneModes
+import io.github.erikfrish.herdline.data.showsChat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -88,5 +93,26 @@ class ChatTargetTest {
         // CT-1: from Chat, a pane read in Chat stays local; one shown in Terminal is focused.
         assertFalse(choiceMovesDesktop(chatShown = true, chosenShowsChat = true))
         assertTrue(choiceMovesDesktop(chatShown = true, chosenShowsChat = false))
+    }
+
+    @Test
+    fun aModeSetJustBeforeAChoiceDecidesItAndIsTheModeDrawn() {
+        val modes = PaneModes(MemoryPrefs())
+        val p5 = ModeKey("n1", "s1", "w1:p5")
+        val p6 = ModeKey("n1", "s1", "w1:p6")
+        fun chat(key: ModeKey) = showsChat(modes.choices.value, key, "b1", "omp", chatAvailable = true)
+        fun moves() = choiceMovesDesktop(chatShown = chat(p5), chosenShowsChat = chat(p6))
+        // Chat on p5, p6 opens in its default Chat: read here only.
+        assertFalse(moves())
+        // Terminal lands for p5 (its mode saved Terminal) and p6 is picked before the screen redraws: from Terminal it moves.
+        modes.set(p5, ModeChoice("b1", "omp", chat = false))
+        assertTrue(moves())
+        // Chat chosen again for p5 just before the pick: p6, shown in Chat, stays local.
+        modes.set(p5, ModeChoice("b1", "omp", chat = true))
+        assertFalse(moves())
+        // p6 saved Terminal: the pick moves the desktop, and Terminal is what p6 then shows.
+        modes.set(p6, ModeChoice("b1", "omp", chat = false))
+        assertTrue(moves())
+        assertFalse(chat(p6))
     }
 }
