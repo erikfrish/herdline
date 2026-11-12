@@ -12,9 +12,13 @@
 //!   `hl_gemini_pid`;
 //! - (c) that process is `node <dir>/gemini` in Herdr's own argv;
 //! - (d) the pane's sidecar is this uid's, 0600 in a 0700 dir, no link, at
-//!   most 256 bytes, and names that pid with the nonce `hl_gemini_gen`; the
-//!   runtime dir holding it is a private dir of this uid and its own
-//!   realpath, so no ancestor is a link (`sidecar.js` holds the same rule);
+//!   most 256 bytes, and names that pid with the nonce `hl_gemini_gen`, and
+//!   that launch's published `<pane>.<nonce>.session` is exactly
+//!   `hl_gemini_id` (tokens Herdr kept past a SessionStart it did not take
+//!   are refused); the runtime dir holding them is a private dir of this uid
+//!   and its own realpath, so no ancestor is a link (`sidecar.js` holds the
+//!   same rule). The sidecar is named by the pane id, so a pane Herdr
+//!   renumbered finds another pane's sidecar or none, and is refused;
 //! - (e) exactly one `session-*-<id8>.jsonl` under Gemini's project dirs has
 //!   that uuid as its header, and the folded file has it too;
 //! - (f) that file is under `$GEMINI_CLI_HOME` or `$HOME`, inside home, with
@@ -272,7 +276,16 @@ def private(path):
     except FileNotFoundError: raise Refuse('gemini_binding_stale')
     if not stat.S_ISDIR(st.st_mode) or st.st_uid!=os.getuid() or st.st_mode&0o077: raise Refuse('gemini_sidecar_unsafe')
 
-def sidecar(pane, pid, gen):
+def owned_text(path):
+    try: fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    except FileNotFoundError: raise Refuse('gemini_binding_stale')
+    except OSError: raise Refuse('gemini_sidecar_unsafe')
+    with os.fdopen(fd,'rb') as handle:
+        st=os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or st.st_mode&0o077 or st.st_nlink!=1 or st.st_size>MAX_SIDECAR: raise Refuse('gemini_sidecar_unsafe')
+        return handle.read(MAX_SIDECAR+1)
+
+def sidecar(pane, pid, gen, sid):
     # sidecar.js's rule: a plain absolute runtime dir that is its own
     # realpath, and it and herdline-gemini private dirs of this uid.
     if not isinstance(pane,str) or not PANE.fullmatch(pane): raise Refuse('gemini_sidecar_unsafe')
@@ -281,22 +294,19 @@ def sidecar(pane, pid, gen):
     private(base)
     folder=os.path.join(base,'herdline-gemini')
     private(folder)
-    try: fd=os.open(os.path.join(folder,pane+'.json'),os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
-    except FileNotFoundError: raise Refuse('gemini_binding_stale')
-    except OSError: raise Refuse('gemini_sidecar_unsafe')
-    with os.fdopen(fd,'rb') as handle:
-        st=os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or st.st_mode&0o077 or st.st_nlink!=1 or st.st_size>MAX_SIDECAR: raise Refuse('gemini_sidecar_unsafe')
-        raw=handle.read(MAX_SIDECAR+1)
+    raw=owned_text(os.path.join(folder,pane+'.json'))
     try: value=json.loads(raw)
     except ValueError: raise Refuse('gemini_sidecar_unsafe')
     if not isinstance(value,dict) or set(value)!={'pid','nonce'} or type(value['pid']) is not int or not isinstance(value['nonce'],str): raise Refuse('gemini_sidecar_unsafe')
     if value['pid']!=pid or value['nonce']!=gen: raise Refuse('gemini_binding_stale')
+    # The session this launch's hook last published: tokens Herdr kept from
+    # before a SessionStart it did not take name another one.
+    if owned_text(os.path.join(folder,pane+'.'+gen+'.session'))!=sid.encode(): raise Refuse('gemini_binding_stale')
 
 def bind():
     got,gen,status=identity()
     if got!=expect: raise Changed()
-    sidecar(got['pane_id'],got['pid'],gen)
+    sidecar(got['pane_id'],got['pid'],gen,got['path'])
     return gen,status
 
 def regular(path, limit):

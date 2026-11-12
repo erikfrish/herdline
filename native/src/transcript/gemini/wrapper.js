@@ -15,15 +15,14 @@
 // beside this file, holds the dir rule): a 0600 file of this uid, written by
 // an O_EXCL temp file and a rename. On
 // exit, and on SIGINT/SIGTERM/SIGHUP when Gemini has no handler of its own,
-// the sidecar is removed only while it still holds this nonce. A SIGKILL
-// leaves it behind; the reader refuses it until a new SessionStart reports.
+// this launch's published session file is removed, and the sidecar too
+// while it still holds this nonce. A SIGKILL leaves both behind; the reader
+// refuses them until a new SessionStart reports.
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PANE, folder, read } from './sidecar.js';
-
-const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+import { PANE, folder, read, replace, session_file } from './sidecar.js';
 
 const bundle = process.env.GEMINI_CLI_HERDLINE_BUNDLE;
 if (!bundle || !path.isAbsolute(bundle)) {
@@ -58,17 +57,8 @@ if (pane && PANE.test(pane)) {
 }
 
 function write(pane) {
-  const dir = folder(true);
-  const file = path.join(dir, `${pane}.json`);
-  const temp = path.join(dir, `.${pane}.${nonce}.tmp`);
-  const fd = fs.openSync(temp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
-  try {
-    fs.writeSync(fd, JSON.stringify({ pid: process.pid, nonce }));
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(temp, file);
+  const file = path.join(folder(true), `${pane}.json`);
+  replace(file, JSON.stringify({ pid: process.pid, nonce }));
   return file;
 }
 
@@ -76,6 +66,11 @@ function clear() {
   const file = sidecar;
   sidecar = null;
   if (!file) return;
+  try {
+    fs.unlinkSync(session_file(pane, nonce));
+  } catch {
+    // Never published, or already retracted.
+  }
   try {
     if (read(pane)?.nonce === nonce) fs.unlinkSync(file);
   } catch {

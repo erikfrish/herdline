@@ -10,15 +10,21 @@
 // The hook runs with Gemini's environment (hookRunner.ts:348-356), so the
 // pane, pid and nonce come only from the owned launcher, never from the
 // input; transcript_path is never read. Nothing is reported unless the pane's
-// private sidecar (sidecar.js) still holds this launcher's pid and nonce: a
-// hook of an older run in the pane reports nothing.
+// private sidecar (sidecar.js) still holds this launcher's pid and nonce (a
+// hook of an older run in the pane reports nothing), and unless Herdr shows
+// this launcher's pid in that pane now (after a pane renumbering the
+// launch-time pane id may name another pane: nothing is reported there).
 //
-// SessionStart reports the strict lowercase session uuid with that pid and
-// nonce as the pane's hl_gemini_id / hl_gemini_pid / hl_gemini_gen tokens
-// (Herdr keys allow only letters, digits, `_` and `-`, api_helpers.rs:244-275).
-// SessionEnd clears them only while the pane's tokens are still exactly this
+// SessionStart first publishes the session uuid in this launch's private
+// session file, then reports it with that pid and nonce as the pane's
+// hl_gemini_id / hl_gemini_pid / hl_gemini_gen tokens (Herdr keys allow only
+// letters, digits, `_` and `-`, api_helpers.rs:244-275). The reader requires
+// the tokens' uuid to equal the published one, so a SessionStart Herdr did
+// not take leaves the pane refused, never on the session before it.
+// SessionEnd clears the tokens only while they are still exactly this
 // session, pid and nonce, so a late SessionEnd of a session `/clear` or
-// `/new` replaced never clears the new one.
+// `/new` replaced never clears the new one; then it retracts the published
+// session if it is still this one.
 //
 // Each report is `--agent gemini`, so Herdr drops it once it has seen this
 // Gemini exit (terminal/metadata.rs:79-94), and its seq is the event's own
@@ -33,7 +39,7 @@
 // Anything missing or malformed reports nothing. stdout is only the final
 // `{}` (docs/hooks/reference.md:16-17).
 import { spawnSync } from 'node:child_process';
-import { PANE, read } from './sidecar.js';
+import { PANE, publish, read, retract } from './sidecar.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PID = /^[1-9][0-9]{0,9}$/;
@@ -55,6 +61,18 @@ function tokens(env, pane) {
     return value && typeof value === 'object' ? value : {};
   } catch {
     return null;
+  }
+}
+
+/// Whether Herdr shows `pid` among the pane's foreground processes.
+function here(env, pane, pid) {
+  const result = herdr(env, ['pane', 'process-info', '--pane', pane]);
+  if (result.status !== 0) return false;
+  try {
+    const found = JSON.parse(result.stdout)?.result?.process_info?.foreground_processes;
+    return Array.isArray(found) && found.some((entry) => entry?.pid === Number(pid));
+  } catch {
+    return false;
   }
 }
 
@@ -86,11 +104,17 @@ function main(input) {
   if (process.env.GEMINI_CLI_HERDLINE_SOCKET) env.HERDR_SOCKET_PATH = process.env.GEMINI_CLI_HERDLINE_SOCKET;
   const start = event.hook_event_name === 'SessionStart';
   if (!start && event.hook_event_name !== 'SessionEnd') return;
+  if (!here(env, pane, pid)) return;
   const seq = String(at * 2 + (start ? 1 : 0));
   const args = ['pane', 'report-metadata', pane, '--agent', 'gemini', '--source', 'user:gemini-session', '--seq', seq];
   const mine = (now) =>
     now?.hl_gemini_id === event.session_id && now.hl_gemini_pid === pid && now.hl_gemini_gen === gen;
   if (start) {
+    try {
+      publish(pane, gen, event.session_id);
+    } catch {
+      return;
+    }
     args.push(
       '--token', `hl_gemini_id=${event.session_id}`,
       '--token', `hl_gemini_pid=${pid}`,
@@ -106,6 +130,11 @@ function main(input) {
   if (!mine(tokens(env, pane))) return;
   args.push('--clear-token', 'hl_gemini_id', '--clear-token', 'hl_gemini_pid', '--clear-token', 'hl_gemini_gen');
   herdr(env, args);
+  try {
+    retract(pane, gen, event.session_id);
+  } catch {
+    // Unreadable: the reader refuses it.
+  }
 }
 
 let input = '';

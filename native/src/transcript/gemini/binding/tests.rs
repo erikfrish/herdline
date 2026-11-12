@@ -90,10 +90,19 @@ echo
     }
 
     /// A launched Gemini whose SessionStart reported: tokens, the launcher
-    /// in the foreground, and its sidecar.
+    /// in the foreground, its sidecar and its published session.
     fn bind(&self, pane: &str, sid: &str, pid: u32, generation: &str) {
         self.report(pane, Some("gemini"), tokens(sid, pid, generation), pid, &LAUNCHER);
         self.sidecar(pane, &json!({"pid": pid, "nonce": generation}).to_string());
+        self.publish(pane, generation, sid);
+    }
+
+    /// `<pane>.<nonce>.session`, as the hook publishes it.
+    fn publish(&self, pane: &str, generation: &str, sid: &str) {
+        let file = self.sidecars().join(format!("{pane}.{generation}.session"));
+        let _ = fs::remove_file(&file);
+        fs::write(&file, sid).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
     }
 
     fn sidecars(&self) -> PathBuf {
@@ -252,7 +261,7 @@ fn a_stale_sidecar_and_a_reused_pid_are_refused_until_the_new_session_start() {
     assert_eq!(host.identity().unwrap().as_ref(), Some(&old));
     assert_eq!(refused(host.read("w1:p1", &old, 0)), STALE);
 
-    host.report("w1:p1", Some("gemini"), tokens(OTHER, 42, NEW_GEN), 42, &LAUNCHER);
+    host.bind("w1:p1", OTHER, 42, NEW_GEN);
     let new = host.identity().unwrap().unwrap();
     assert_eq!(shown(&host.read("w1:p1", &new, 0).unwrap()), ["new"]);
 }
@@ -293,6 +302,19 @@ fn a_missing_or_unsafe_sidecar_is_refused() {
 
     fs::remove_file(&file).unwrap();
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), STALE);
+
+    // The published session: missing, another one, or loose.
+    host.sidecar("w1:p1", &body);
+    let published = host.sidecars().join(format!("w1:p1.{GEN}.session"));
+    fs::remove_file(&published).unwrap();
+    assert_eq!(refused(host.read("w1:p1", &expect, 0)), STALE);
+    host.publish("w1:p1", GEN, OTHER);
+    assert_eq!(refused(host.read("w1:p1", &expect, 0)), STALE);
+    host.publish("w1:p1", GEN, SID);
+    fs::set_permissions(&published, fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(refused(host.read("w1:p1", &expect, 0)), SIDECAR);
+    host.publish("w1:p1", GEN, SID);
+    fs::remove_file(&file).unwrap();
 
     let real = host.path("elsewhere.json");
     fs::write(&real, &body).unwrap();
@@ -513,18 +535,25 @@ fn unsafe_kill(pid: u32, signal: &str) {
     assert!(Command::new("kill").arg(format!("-{signal}")).arg(pid.to_string()).status().unwrap().success());
 }
 
-/// A stand-in Herdr holding one pane's tokens, with Herdr's own rules for a
+/// A stand-in Herdr for one launcher's panes, with Herdr's own rules for a
 /// metadata report: a seq only above the source's last one is taken
 /// (metadata_tokens.rs:17-23), and a report Herdr blocks after an agent's
 /// exit is dropped without an error (api/panes.rs:1796-1802), here the next
-/// `block` reports.
+/// `block` reports. It answers the reader's `pane get` and `process-info`
+/// too, so the hook and the reader meet the same Herdr.
 const FAKE_HERDR: &str = r#"#!/usr/bin/env node
 const fs = require('fs');
 const file = process.env.HOME + '/herdr.state';
 const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-const a = process.argv.slice(2);
+let a = process.argv.slice(2);
+if (a[0] === '--session') a = a.slice(2);
 if (a[0] === 'pane' && a[1] === 'get') {
-  process.stdout.write(JSON.stringify({ result: { pane: { pane_id: a[2], tokens: s.tokens } } }));
+  process.stdout.write(JSON.stringify({ result: { type: 'pane_info', pane: {
+    agent: 'gemini', agent_status: 'idle', pane_id: a[2], terminal_id: 'term_' + a[2], tokens: s.tokens } } }));
+  process.exit(0);
+}
+if (a[0] === 'pane' && a[1] === 'process-info') {
+  process.stdout.write(JSON.stringify({ result: { process_info: { pane_id: a[3], foreground_processes: s.fg[a[3]] || [] } } }));
   process.exit(0);
 }
 s.reports.push([process.env.HERDR_SOCKET_PATH, ...a]);
@@ -544,27 +573,55 @@ fn at(ms: u32) -> String {
     format!("2026-11-12T10:00:{:02}.{:03}Z", ms / 1000, ms % 1000)
 }
 
-#[test]
-fn a_late_session_end_never_clears_the_session_that_replaced_it() {
-    let host = Host::new();
-    let dir = launcher_dir(host.home.path());
-    fs::write(host.path(".local/bin/herdr"), FAKE_HERDR).unwrap();
-    let state = host.path("herdr.state");
-    let set = |block: u32| {
-        let mut value: Value = fs::read(&state).map_or(json!({"tokens": {}, "seq": null, "reports": []}), |raw| {
-            serde_json::from_slice(&raw).unwrap()
-        });
-        value["block"] = json!(block);
-        fs::write(&state, value.to_string()).unwrap();
-    };
-    let now = || serde_json::from_slice::<Value>(&fs::read(&state).unwrap()).unwrap();
-    let hook = |event: &str, sid: &str, ms: u32| {
+/// The tokens of launcher pid 42, nonce [`GEN`], on `sid`.
+fn bound(sid: Option<&str>) -> Value {
+    sid.map_or(json!({}), |sid| json!({TOKEN_ID: sid, TOKEN_PID: "42", TOKEN_GEN: GEN}))
+}
+
+/// The shipped hook of launcher pid 42, nonce [`GEN`], started in pane
+/// `w1:p1`, against [`FAKE_HERDR`], where Herdr shows it in that pane.
+struct Fake {
+    host: Host,
+    dir: PathBuf,
+}
+
+impl Fake {
+    fn new() -> Self {
+        let host = Host::new();
+        let dir = launcher_dir(host.home.path());
+        fs::write(host.path(".local/bin/herdr"), FAKE_HERDR).unwrap();
+        let fg = json!({"w1:p1": [{"name": "node", "pid": 42, "argv": LAUNCHER}]});
+        let state = json!({"tokens": {}, "seq": null, "reports": [], "block": 0, "fg": fg});
+        fs::write(host.path("herdr.state"), state.to_string()).unwrap();
+        host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
+        Self { host, dir }
+    }
+
+    fn state(&self) -> Value {
+        serde_json::from_slice(&fs::read(self.host.path("herdr.state")).unwrap()).unwrap()
+    }
+
+    fn set(&self, key: &str, value: Value) {
+        let mut state = self.state();
+        state[key] = value;
+        fs::write(self.host.path("herdr.state"), state.to_string()).unwrap();
+    }
+
+    fn tokens(&self) -> Value {
+        self.state()["tokens"].clone()
+    }
+
+    fn reports(&self) -> usize {
+        self.state()["reports"].as_array().unwrap().len()
+    }
+
+    fn hook(&self, event: &str, sid: &str, ms: u32) {
         let mut child = Command::new("node")
-            .arg(dir.join("hook.js"))
+            .arg(self.dir.join("hook.js"))
             .env_clear()
-            .env("HOME", host.home.path())
-            .env("XDG_RUNTIME_DIR", host.path("run"))
-            .env("PATH", format!("{}:/usr/bin:/bin", host.path(".local/bin").display()))
+            .env("HOME", self.host.home.path())
+            .env("XDG_RUNTIME_DIR", self.host.path("run"))
+            .env("PATH", format!("{}:/usr/bin:/bin", self.host.path(".local/bin").display()))
             .env("GEMINI_CLI_HERDLINE_PANE", "w1:p1")
             .env("GEMINI_CLI_HERDLINE_PID", "42")
             .env("GEMINI_CLI_HERDLINE_GEN", GEN)
@@ -577,18 +634,30 @@ fn a_late_session_end_never_clears_the_session_that_replaced_it() {
             "transcript_path": "/somewhere/else.jsonl", "cwd": PROJECT});
         std::io::Write::write_all(&mut child.stdin.take().unwrap(), input.to_string().as_bytes()).unwrap();
         assert_eq!(child.wait_with_output().unwrap().stdout, b"{}");
-    };
-    let bound = |sid: Option<&str>| match sid {
-        Some(sid) => json!({TOKEN_ID: sid, TOKEN_PID: "42", TOKEN_GEN: GEN}),
-        None => json!({}),
-    };
-    let reports = || now()["reports"].as_array().unwrap().len();
-    set(0);
-    host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
+    }
 
-    hook("SessionStart", SID, 1000);
-    assert_eq!(now()["tokens"], bound(Some(SID)));
-    let first = now()["reports"][0].clone();
+    /// The identity transcript.rs derives from this Herdr's reports.
+    fn identity(&self) -> Result<Option<Identity>> {
+        let herdr = |args: &[&str]| {
+            let output = Command::new(self.host.path(".local/bin/herdr"))
+                .args(args)
+                .env_clear()
+                .env("HOME", self.host.home.path())
+                .env("PATH", "/usr/bin:/bin")
+                .output()
+                .unwrap();
+            serde_json::from_slice::<Value>(&output.stdout).unwrap()
+        };
+        identity(&herdr(&["pane", "get", "w1:p1"]), &herdr(&["pane", "process-info", "--pane", "w1:p1"]))
+    }
+}
+
+#[test]
+fn a_late_session_end_never_clears_the_session_that_replaced_it() {
+    let fake = Fake::new();
+    fake.hook("SessionStart", SID, 1000);
+    assert_eq!(fake.tokens(), bound(Some(SID)));
+    let first = fake.state()["reports"][0].clone();
     assert_eq!(
         first.as_array().unwrap()[..8],
         ["/tmp/herdr.sock", "pane", "report-metadata", "w1:p1", "--agent", "gemini", "--source", SOURCE]
@@ -596,47 +665,104 @@ fn a_late_session_end_never_clears_the_session_that_replaced_it() {
 
     // `/new`: Gemini ends the old session, then starts the new one in the
     // same millisecond; the start is still the later report.
-    hook("SessionEnd", SID, 2000);
-    assert_eq!(now()["tokens"], bound(None));
-    hook("SessionStart", OTHER, 2000);
-    assert_eq!(now()["tokens"], bound(Some(OTHER)));
+    fake.hook("SessionEnd", SID, 2000);
+    assert_eq!(fake.tokens(), bound(None));
+    fake.hook("SessionStart", OTHER, 2000);
+    assert_eq!(fake.tokens(), bound(Some(OTHER)));
 
     // The old session's end, run late by the scheduler: whatever its time,
     // it is not the pane's session now.
-    hook("SessionEnd", SID, 1500);
-    hook("SessionEnd", SID, 9000);
-    assert_eq!(now()["tokens"], bound(Some(OTHER)));
+    fake.hook("SessionEnd", SID, 1500);
+    fake.hook("SessionEnd", SID, 9000);
+    assert_eq!(fake.tokens(), bound(Some(OTHER)));
     // An end of the current session from before its start, run late: Herdr
     // refuses it by the event's own seq.
-    hook("SessionEnd", OTHER, 1900);
-    assert_eq!(now()["tokens"], bound(Some(OTHER)));
+    fake.hook("SessionEnd", OTHER, 1900);
+    assert_eq!(fake.tokens(), bound(Some(OTHER)));
 
     // A newer launch took the pane's sidecar: this run's hooks report
     // nothing at all, start or end.
-    let before = reports();
-    host.sidecar("w1:p1", &json!({"pid": 43, "nonce": NEW_GEN}).to_string());
-    hook("SessionEnd", OTHER, 10000);
-    hook("SessionStart", SID, 10000);
+    let before = fake.reports();
+    fake.host.sidecar("w1:p1", &json!({"pid": 43, "nonce": NEW_GEN}).to_string());
+    fake.hook("SessionEnd", OTHER, 10000);
+    fake.hook("SessionStart", SID, 10000);
     // A runtime dir reached through a link is not trusted either.
-    host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
-    fs::rename(host.path("run"), host.path("run-real")).unwrap();
-    symlink(host.path("run-real"), host.path("run")).unwrap();
-    hook("SessionEnd", OTHER, 10000);
-    fs::remove_file(host.path("run")).unwrap();
-    fs::rename(host.path("run-real"), host.path("run")).unwrap();
+    fake.host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
+    fs::rename(fake.host.path("run"), fake.host.path("run-real")).unwrap();
+    symlink(fake.host.path("run-real"), fake.host.path("run")).unwrap();
+    fake.hook("SessionEnd", OTHER, 10000);
+    fs::remove_file(fake.host.path("run")).unwrap();
+    fs::rename(fake.host.path("run-real"), fake.host.path("run")).unwrap();
     // Not the strict lowercase uuid.
-    hook("SessionStart", &SID.to_uppercase(), 10000);
-    assert_eq!((reports(), now()["tokens"].clone()), (before, bound(Some(OTHER))));
+    fake.hook("SessionStart", &SID.to_uppercase(), 10000);
+    assert_eq!((fake.reports(), fake.tokens()), (before, bound(Some(OTHER))));
 
     // The current session's own end clears it.
-    hook("SessionEnd", OTHER, 11000);
-    assert_eq!(now()["tokens"], bound(None));
+    fake.hook("SessionEnd", OTHER, 11000);
+    assert_eq!(fake.tokens(), bound(None));
 
     // Herdr drops the first starts it sees after an earlier Gemini's exit;
     // the hook reports again until the tokens show the session.
-    set(2);
-    let before = reports();
-    hook("SessionStart", SID, 12000);
-    assert_eq!(now()["tokens"], bound(Some(SID)));
-    assert_eq!(reports(), before + 3);
+    fake.set("block", json!(2));
+    let before = fake.reports();
+    fake.hook("SessionStart", SID, 12000);
+    assert_eq!(fake.tokens(), bound(Some(SID)));
+    assert_eq!(fake.reports(), before + 3);
+}
+
+#[test]
+fn a_start_herdr_did_not_take_leaves_the_pane_refused_never_on_the_old_session() {
+    let fake = Fake::new();
+    fake.host.session("app", &name(SID), &chat(SID, "old"));
+    fake.host.session("app", &name(OTHER), &chat(OTHER, "new"));
+    fake.hook("SessionStart", SID, 5000);
+    let old = fake.identity().unwrap().unwrap();
+    assert_eq!(shown(&fake.host.read("w1:p1", &old, 0).unwrap()), ["old"]);
+
+    // The clock steps back three seconds, then `/new`: both reports carry a
+    // seq below the last one, and Herdr takes neither.
+    fake.hook("SessionEnd", SID, 2000);
+    fake.hook("SessionStart", OTHER, 2000);
+    assert_eq!(fake.tokens(), bound(Some(SID)));
+    // Herdr's tokens still fit the launcher and name the old session; the
+    // launch published the new one, so the old is refused.
+    assert_eq!(fake.identity().unwrap().as_ref(), Some(&old));
+    assert_eq!(refused(fake.host.read("w1:p1", &old, 0)), STALE);
+
+    // Once a start lands, the pane reads its session.
+    fake.hook("SessionStart", OTHER, 6000);
+    let new = fake.identity().unwrap().unwrap();
+    assert_eq!(new.path, OTHER);
+    assert_eq!(shown(&fake.host.read("w1:p1", &new, 0).unwrap()), ["new"]);
+}
+
+#[test]
+fn a_renumbered_pane_is_refused_and_never_reported_into() {
+    // Launcher 42 started in w1:p2, launcher 43 in w1:p1; then Herdr
+    // renumbered the panes, so 42's pane is w1:p1 now.
+    let host = Host::new();
+    host.session("app", &name(SID), &chat(SID, "of 42"));
+    host.session("app", &name(OTHER), &chat(OTHER, "of 43"));
+    host.sidecar("w1:p2", &json!({"pid": 42, "nonce": GEN}).to_string());
+    host.publish("w1:p2", GEN, SID);
+    host.sidecar("w1:p1", &json!({"pid": 43, "nonce": NEW_GEN}).to_string());
+    host.publish("w1:p1", NEW_GEN, OTHER);
+
+    // 42's tokens moved with its terminal: they fit its process, but the
+    // sidecar under the pane's id now is 43's.
+    host.report("w1:p1", Some("gemini"), tokens(SID, 42, GEN), 42, &LAUNCHER);
+    let moved = host.identity().unwrap().unwrap();
+    assert_eq!(refused(host.read("w1:p1", &moved, 0)), STALE);
+    // 43's tokens on the pane 42 now runs in: not its process.
+    host.report("w1:p1", Some("gemini"), tokens(OTHER, 43, NEW_GEN), 42, &LAUNCHER);
+    assert_eq!(unbound(host.identity()), STALE);
+
+    // 42's hook still holds the launch-time id, now another launcher's pane:
+    // it reports nothing there.
+    let fake = Fake::new();
+    fake.set("tokens", tokens(OTHER, 43, NEW_GEN));
+    fake.set("fg", json!({"w1:p1": [{"name": "node", "pid": 43, "argv": LAUNCHER}]}));
+    fake.hook("SessionStart", SID, 1000);
+    fake.hook("SessionEnd", OTHER, 2000);
+    assert_eq!((fake.reports(), fake.tokens()), (0, tokens(OTHER, 43, NEW_GEN)));
 }
