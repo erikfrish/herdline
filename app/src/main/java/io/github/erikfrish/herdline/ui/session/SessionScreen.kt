@@ -92,6 +92,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -493,6 +494,9 @@ fun SessionScreen(
     var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
     // Why, when the core refused the session by type: these never clear by themselves.
     var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
+    // F-OBS1: a Chat tap on an unreadable pane waits here for its one re-check. Not keyed: the
+    // terminal's listener, made once, clears it on input, and the switch checks the pane itself.
+    var pendingChatTap by remember { mutableStateOf<PendingChatTap?>(null) }
     // S5: the pane read in Chat closed. Chat says so and keeps the draft; it never falls back to the desktop.
     var chatShown by remember { mutableStateOf(false) }
     LaunchedEffect(chatWanted, chatUnreadable, closed) { if (!closed) chatShown = chatWanted && !chatUnreadable }
@@ -644,6 +648,8 @@ fun SessionScreen(
         if (linked != null && focusPane != null) choosePane(focusPane, fromChat = true)
     }
     fun showChat(on: Boolean, pane: String? = chatPane) {
+        // A Terminal choice answers a Chat tap still waiting for its re-check.
+        if (!on) pendingChatTap = null
         pane ?: return
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
@@ -667,11 +673,57 @@ fun SessionScreen(
         }
     }
 
+    val chatPaneNow by rememberUpdatedState(chatPane)
+    val tabNow by rememberUpdatedState(tab?.id)
+    /**
+     * Reads unreadable [pane] once while Chat does not poll it. Only a good
+     * read clears the fallback, and only a tap still pending switches.
+     */
+    suspend fun recheckChat(pane: String, tap: Boolean) {
+        val kept = chatMemory.of(pane)
+        when (kept.recheck(connection, pane)) {
+            true -> {
+                chatUnreadable = false
+                chatRefusal = null
+                if (switchesToChat(pendingChatTap, chatPaneNow, tabNow)) showChat(true, pane)
+                pendingChatTap = null
+            }
+            false -> {
+                chatRefusal = kept.read.refusal
+                if (tap) {
+                    pendingChatTap = null
+                    sayChatUnreadable(chatRefusal, SnackbarDuration.Short)
+                }
+            }
+            // A re-check is in flight already: its answer serves this ask too.
+            null -> Unit
+        }
+    }
+    // A new agent in the pane (its kind or Herdr name), never a status tick, asks for one re-check.
+    val chatAgentKey = chatPane?.let { view?.agentIn(it) }?.let { it.agent to it.name }
+    var seenAgentKey by remember(connection, chatPane) { mutableStateOf(chatAgentKey) }
+    LaunchedEffect(chatAgentKey) {
+        val changed = chatAgentKey != seenAgentKey
+        seenAgentKey = chatAgentKey
+        val pane = chatPane ?: return@LaunchedEffect
+        if (chatRecheck(tap = false, agentChanged = changed, unreadable = chatUnreadable, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
+            recheckChat(pane, tap = false)
+        }
+    }
+
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
-            chat && chatUnreadable -> scope.launch { sayChatUnreadable(chatRefusal, SnackbarDuration.Short) }
+            chat && chatUnreadable -> {
+                val pane = chatPane
+                if (pane != null && chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
+                    pendingChatTap = PendingChatTap(pane, tab?.id)
+                    scope.launch { recheckChat(pane, tap = true) }
+                } else {
+                    scope.launch { sayChatUnreadable(chatRefusal, SnackbarDuration.Short) }
+                }
+            }
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
@@ -1038,7 +1090,7 @@ fun SessionScreen(
                                             onLatchCleared = { latched = it },
                                             // A tap on a pane in the mirror is a choice on this phone: read there, as Terminal focuses it.
                                             onPaneTapped = { readHere(it) },
-                                            onUsed = { typedOnce = true },
+                                            onUsed = { typedOnce = true; pendingChatTap = null },
                                         )
                                         terminal = view
                                     }
@@ -1271,8 +1323,8 @@ fun SessionScreen(
                                     accent = accent,
                                     background = chromeColor,
                                     onLatch = { latched = it; terminal?.latchedMeta = it },
-                                    onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
-                                    onText = { typedOnce = true; connection.text(focusedPane, it) },
+                                    onKey = { code, repeat -> pendingChatTap = null; terminal?.sendKey(code, 0, 0, repeat) },
+                                    onText = { typedOnce = true; pendingChatTap = null; connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
                                     rowsOf = extraKeyRowCount(
                                         landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
