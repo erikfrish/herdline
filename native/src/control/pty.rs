@@ -233,7 +233,12 @@ exec "$herdr" --session {session} pane send-keys {pane} esc </dev/null"#,
 pub fn press(exec: &Exec, session: &str, pane: &str, key: Key) -> Press {
     let script = press_script(session, pane, key);
     match exec.run(format!("/bin/sh -c {}", shell_quote(&script)), SCREEN_WAIT, 4096) {
-        Ok(output) => press_outcome(output.exit_status),
+        Ok(output) => {
+            let pressed = press_outcome(output.exit_status);
+            // The phone's own record of the send-keys answer (QA saw no Herdr log line for a press that worked).
+            tracing::info!(?pressed, status = ?output.exit_status, "stop key send-keys answered");
+            pressed
+        }
         Err(error) => {
             tracing::warn!(%error, "stop key not sent to pane");
             Press::Unknown

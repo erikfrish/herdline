@@ -55,6 +55,8 @@
     <string name="chat_dialogs_more">等待中的权限请求或问题多于聊天一次能显示的数量。请先回答这些，或使用终端。</string>
     <string name="chat_stop">停止</string>
     <string name="chat_stop_failed">未确认停止，请查看终端。</string>
+    <string name="chat_stopping">正在停止…</string>
+    <string name="chat_stop_none_running">未停止：代理的服务器没有正在运行的轮次。</string>
     <string name="stop_refused_boot_changed">未停止：Herdr 已重启。未按任何键。</string>
     <string name="stop_refused_pane_missing">未停止：该窗格已不存在。未按任何键。</string>
     <string name="stop_refused_agent_changed">未停止：窗格中现在运行的是另一个程序或会话。未按任何键。</string>

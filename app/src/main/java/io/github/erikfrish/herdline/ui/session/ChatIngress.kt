@@ -160,8 +160,10 @@ internal fun IngressQueuePanel(
 ) {
     val error = MaterialTheme.colorScheme.error
     val noteText: @Composable () -> Unit = {
-        note?.let {
-            Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = error, modifier = Modifier.testTag("ingress:note"))
+        when {
+            note != null -> Text(stringResource(note), style = MaterialTheme.typography.bodySmall, color = error, modifier = Modifier.testTag("ingress:note"))
+            // A Withdraw or Steer under way: greyed buttons alone would read as a tap that did nothing.
+            withdrawing != null -> Text(stringResource(R.string.ingress_queue_asking), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("ingress:asking"))
         }
     }
     when (panel) {

@@ -85,6 +85,10 @@
     <string name="chat_dialogs_more">More permissions or questions are waiting than Chat can show at once. Answer these first, or use Terminal.</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
+    <!-- A Stop tap on its way to the host: the tap was taken, its answer follows. -->
+    <string name="chat_stopping">Stopping…</string>
+    <!-- The agent's own server (OpenCode, Kilo) found no turn running to stop. -->
+    <string name="chat_stop_none_running">Not stopped: the agent\'s server has no turn running.</string>
     <!-- X1: why a terminal Stop pressed no key; nothing reached the pane. -->
     <string name="stop_refused_boot_changed">Not stopped: Herdr restarted. Nothing was pressed.</string>
     <string name="stop_refused_pane_missing">Not stopped: that pane no longer exists. Nothing was pressed.</string>

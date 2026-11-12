@@ -142,6 +142,8 @@ import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -416,19 +418,19 @@ private fun ChatContent(
             }
         }
     }
-    var stopping by remember(stopTarget) { mutableStateOf(false) }
-    // Why the last Stop did nothing: a refusal's code (no key went), or [STOP_UNCONFIRMED].
-    var stopProblem by remember(stopTarget) { mutableStateOf<String?>(null) }
+    // Kept per pane, not per target: a re-read identity mid-call must not drop the tap's answer.
+    var stopping by remember(pane) { mutableStateOf(false) }
+    // Why the last Stop did nothing: a refusal's code (no key went), [STOP_NONE_RUNNING] or [STOP_UNCONFIRMED].
+    var stopProblem by remember(pane) { mutableStateOf<String?>(null) }
     fun stop() {
         val target = stopTarget ?: return
-        // One call at a time: a second tap while the first runs does nothing.
+        // One call at a time: a second tap while the first runs does nothing (Stop is greyed, "Stopping…").
         if (!linkLive || stopping) return
         stopping = true
         stopProblem = null
         scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) { connection.ingressAbort(target) }
-                stopProblem = result.exceptionOrNull()?.let { (it as? StopRefused)?.reason ?: STOP_UNCONFIRMED }
+                val result = stopOutcome(STOP_ANSWER_MS, { withContext(Dispatchers.IO) { connection.ingressAbort(target) } }) { stopProblem = it }
                 if (result.getOrNull() == true) wake.trySend(Unit)
             } finally {
                 stopping = false
@@ -1594,10 +1596,16 @@ private fun WorkingRow(
         if (onStop == null && stopReason != null) Text(stopReason, style = ChatType.meta.copy(color = colors.muted))
         if (stopProblem != null) {
             Text(
-                if (stopProblem == STOP_UNCONFIRMED) stringResource(R.string.chat_stop_failed) else stringResource(stopRefusalRes(stopProblem)),
+                when (stopProblem) {
+                    STOP_UNCONFIRMED -> stringResource(R.string.chat_stop_failed)
+                    STOP_NONE_RUNNING -> stringResource(R.string.chat_stop_none_running)
+                    else -> stringResource(stopRefusalRes(stopProblem))
+                },
                 style = ChatType.meta.copy(color = colors.muted),
                 modifier = Modifier.testTag("chat:stop:problem"),
             )
+        } else if (stopping) {
+            Text(stringResource(R.string.chat_stopping), style = ChatType.meta.copy(color = colors.muted), modifier = Modifier.testTag("chat:stopping"))
         }
     }
 }
@@ -1635,6 +1643,31 @@ private fun DialogsMoreRow(colors: ChatColors) {
 
 /** A Stop that may have pressed its key without a confirmation. */
 private const val STOP_UNCONFIRMED = "unconfirmed"
+
+/** A server Stop whose server had no turn running for the instance. */
+private const val STOP_NONE_RUNNING = "none_running"
+
+/** How long a Stop tap waits for the host before it says "not confirmed"; the host's own answer still replaces it. */
+internal const val STOP_ANSWER_MS = 20_000L
+
+/**
+ * The words a finished Stop call leaves: none once stopped (the turn's end shows it), else the
+ * refusal's code, [STOP_NONE_RUNNING] when the server found nothing running, or [STOP_UNCONFIRMED].
+ */
+internal fun stopProblemOf(result: Result<Boolean>): String? = result.fold(
+    { stopped -> if (stopped) null else STOP_NONE_RUNNING },
+    { (it as? StopRefused)?.reason ?: STOP_UNCONFIRMED },
+)
+
+/**
+ * One Stop tap's words, said through [say]: [STOP_UNCONFIRMED] once [waitMs] passes with no answer,
+ * then always the answer's own ([stopProblemOf]) when [call] returns, so no tap ends in silence.
+ */
+internal suspend fun stopOutcome(waitMs: Long, call: suspend () -> Result<Boolean>, say: (String?) -> Unit): Result<Boolean> = coroutineScope {
+    val answer = async { call() }
+    if (withTimeoutOrNull(waitMs) { answer.await() } == null) say(STOP_UNCONFIRMED)
+    answer.await().also { say(stopProblemOf(it)) }
+}
 
 /** A PTY stop's refusal (`control/pty.rs` `Refusal`) in words; each means no key reached the pane. */
 @StringRes
