@@ -503,23 +503,30 @@ private fun ChatContent(
     // The terminal stays laid out underneath so its pane keeps its size; touches stop here.
     Column(modifier.fillMaxSize().background(colors.bg).pointerInput(Unit) {}.testTag("chat")) {
         val since = outage.since
+        // R-F1c: the cause More opened, held outside the strip so a good read never
+        // closes it or changes its words; keyed to the pane and agent, so a switch
+        // never shows one pane's cause over another's.
+        var moreCause by rememberSaveable(pane, identity?.agent) { mutableStateOf<String?>(null) }
         // R-F1b: fixed lines for both kinds, so the list never jumps; no close, since
         // cached history must stay marked; it leaves at once on a good read (no motion).
         if (shown != null && linkLive && outage.shown && since != null) {
             val lasting = refusal
+            val cause = if (lasting != null) {
+                LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
+            } else {
+                stringResource(R.string.chat_not_refreshed)
+            }
             StaleStrip(
                 savedAt = outageTime(since),
-                cause = if (lasting != null) {
-                    LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
-                } else {
-                    stringResource(R.string.chat_not_refreshed)
-                },
+                cause = cause,
                 shortCause = stringResource(if (lasting != null) R.string.chat_strip_cannot_read else R.string.chat_strip_not_refreshed),
                 lasting = lasting != null,
                 dense = dense,
                 onRetry = { wake.trySend(Unit) },
+                onMore = { moreCause = cause },
             )
         }
+        moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
                 shown == null && problem != null -> Column(
