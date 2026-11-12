@@ -148,26 +148,32 @@ class PaneRowsTest {
     @Test
     fun aPaneHerdrGaveNoRowShowsTheNoticeAndOneRowHidesIt() {
         // QA m18: 2 grid rows, the border on both, the content rect 0 rows tall.
-        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 1, 78, 0)), rawInput = true))
+        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 1, 78, 0)), composerTyping = false))
         // A content rect that starts at or past the frame's last row has none of it on screen.
-        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 2, 78, 2)), rawInput = true))
+        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 2, 78, 2)), composerTyping = false))
         // One content row inside the frame: the pane is drawn, no notice.
-        assertFalse(paneHasNoRoom(frame(3, RenderFrame.CellRect(1, 1, 78, 1)), rawInput = true))
+        assertFalse(paneHasNoRoom(frame(3, RenderFrame.CellRect(1, 1, 78, 1)), composerTyping = false))
         // A rect taller than the frame still has its first row drawn.
-        assertFalse(paneHasNoRoom(frame(2, RenderFrame.CellRect(0, 1, 80, 4)), rawInput = true))
+        assertFalse(paneHasNoRoom(frame(2, RenderFrame.CellRect(0, 1, 80, 4)), composerTyping = false))
     }
 
     @Test
     fun withoutAFocusedRectTheGridRowsDecide() {
-        assertTrue(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS - 1, inner = null), rawInput = true))
-        assertFalse(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS, inner = null), rawInput = true))
+        assertTrue(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS - 1, inner = null), composerTyping = false))
+        assertFalse(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS, inner = null), composerTyping = false))
     }
 
     @Test
-    fun noNoticeOutsideRawInputOrUnderAPopup() {
+    fun noNoticeWhileTypingInTheComposerOrUnderAPopup() {
         val empty = RenderFrame.CellRect(1, 1, 78, 0)
-        assertFalse(paneHasNoRoom(frame(2, empty), rawInput = false))
-        assertFalse(paneHasNoRoom(frame(2, empty, popup = RenderFrame.CellRect(0, 0, 40, 2)), rawInput = true))
-        assertFalse(paneHasNoRoom(null, rawInput = true))
+        assertFalse(paneHasNoRoom(frame(2, empty), composerTyping = true))
+        assertFalse(paneHasNoRoom(frame(2, empty, popup = RenderFrame.CellRect(0, 0, 40, 2)), composerTyping = false))
+        assertFalse(paneHasNoRoom(null, composerTyping = false))
+    }
+
+    @Test
+    fun qaM26AnUnzoomedSplitPaneWithOnlyItsBorderShowsTheNoticeWithTheKeyboardDown() {
+        // QA m26: an 18-row grid, the focused pane's content rect 0 rows tall at the top; no keyboard.
+        assertTrue(paneHasNoRoom(frame(18, RenderFrame.CellRect(1, 0, 13, 0)), composerTyping = false))
     }
 }

@@ -102,15 +102,17 @@ internal fun shortPaneReach(
 internal const val NO_ROOM_FALLBACK_ROWS = 3
 
 /**
- * Whether raw input shows the focused pane with no row of its own (QF-6c):
- * the content area Herdr gave it ([RenderFrame.PaneArea.rect], its inner
- * rect) has no row inside the frame, so only Herdr's chrome is drawn. A frame
- * that names no focused pane falls back to fewer than
- * [NO_ROOM_FALLBACK_ROWS] grid rows. An open popup takes the input, so it is
- * never this case.
+ * Whether the focused pane has no row of its own (QF-6c, QF9-N): the content
+ * area Herdr gave it ([RenderFrame.PaneArea.rect], its inner rect) has no row
+ * inside the frame, so only Herdr's chrome is drawn. That holds with the
+ * keyboard up or down: the 2-row landscape grid, or an unzoomed split that
+ * leaves the pane only its border (QA m26). A frame that names no focused
+ * pane falls back to fewer than [NO_ROOM_FALLBACK_ROWS] grid rows. An open
+ * popup takes the input, so it is never this case, and neither is typing in
+ * the composer's own field ([composerTyping]).
  */
-internal fun paneHasNoRoom(frame: RenderFrame?, rawInput: Boolean): Boolean {
-    if (!rawInput || frame == null || frame.rows <= 0 || frame.popup != null) return false
+internal fun paneHasNoRoom(frame: RenderFrame?, composerTyping: Boolean): Boolean {
+    if (composerTyping || frame == null || frame.rows <= 0 || frame.popup != null) return false
     val rect = frame.panes.firstOrNull { it.focused }?.rect ?: return frame.rows < NO_ROOM_FALLBACK_ROWS
     return min(frame.rows, rect.y + rect.height) - max(0, rect.y) <= 0
 }

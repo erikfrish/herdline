@@ -1056,9 +1056,9 @@ fun SessionScreen(
                     // tab row and its accent line: overscroll stretch and bubble
                     // shadows would otherwise spill up (lab.7 L3).
                     Box(Modifier.layoutId(ContentSlot).fillMaxSize().clipToBounds().onSizeChanged { contentPx = it.height }) {
-                        // QF-6c: raw input on a pane Herdr leaves no row of its own; its notice covers the terminal.
-                        // Raw input: the keyboard is up for the terminal, not for the composer's field.
-                        val noRoom = !chatMode && paneHasNoRoom(frame, rawInput = imeVisible && !composerField)
+                        // QF-6c, QF9-N: Terminal on a pane Herdr leaves no row of its own, keyboard up or down;
+                        // its notice covers the terminal. Not while the keyboard is up for the composer's field.
+                        val noRoom = !chatMode && paneHasNoRoom(frame, composerTyping = imeVisible && composerField)
                         // QF-9: the tap-to-type hint, until the user first opens the keyboard, sends a key or scrolls.
                         // A-26: never under a notice over the terminal (a snackbar, as Chat's refusal, or no-room).
                         val hintWanted = tapHintWanted(
@@ -1183,19 +1183,22 @@ fun SessionScreen(
                                 modifier = Modifier.align(Alignment.Center).padding(24.dp).testTag("chat:pane_closed"),
                             )
                         }
-                        // QF-6c: raw input on a pane Herdr leaves no row of its own (the 2-row landscape grid,
-                        // its border on both): say so over the terminal, which shows only the border. Gone with
-                        // the first frame that gives the pane a row: keyboard down, portrait or a font change.
+                        // QF-6c, QF9-N: a pane Herdr leaves no row of its own (the 2-row landscape grid, or an
+                        // unzoomed split that leaves it only its border): say so over the terminal, which shows
+                        // only the border. Gone with the first frame that gives the pane a row: zoom, keyboard
+                        // down, portrait or a font change.
                         if (noRoom) {
                             PaneNoRoomNotice(
                                 offers = shortPaneOffers(
-                                    tabZoomed = null,
+                                    tabZoomed = tab?.zoomed,
                                     landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
                                     imeVisible = imeVisible,
                                     hideKeyboardReachesSend = true,
                                     portraitReachesSend = true,
                                 ),
                                 accent = accent,
+                                // Zoom is shared with the desktop: only ever turn it on here, as the composer's.
+                                onZoom = { if (tab?.zoomed == false) focusedPane?.let(connection::toggleZoom) },
                                 onHideKeyboard = { terminal?.hideKeyboard() },
                                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
                             )
