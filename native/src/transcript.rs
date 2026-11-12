@@ -22,7 +22,7 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot` own their line/row formats; the
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`kimi` own their line/row formats; the
 /// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
@@ -30,6 +30,7 @@ mod copilot;
 mod grok;
 mod hermes;
 mod kilo;
+mod kimi;
 mod opencode;
 mod pi;
 mod qwen;
@@ -131,7 +132,7 @@ pub struct Identity {
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
     /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
-    /// `qwen`, `hermes`, `kilo`, `copilot`.
+    /// `qwen`, `hermes`, `kilo`, `copilot`, `kimi`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -428,15 +429,16 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             // OpenCode pages its own `seq` sequence, Qwen its whole active
             // chain (a tree, not a byte range), Hermes its SQLite `messages`
             // ids, Kilo its `message` rowids, Grok its rewind-filtered update
-            // rows and Copilot its checked event log, read only, each via its
-            // module.
-            Some(identity) if matches!(identity.agent.as_str(), "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot") => {
+            // rows, Copilot its checked event log and Kimi its whole active
+            // wire chain, read only, each via its module.
+            Some(identity) if matches!(identity.agent.as_str(), "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "kimi") => {
                 let page = match identity.agent.as_str() {
                     "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
                     "hermes" => hermes::page(exec, session, &request.pane, identity, read, reset),
                     "kilo" => kilo::page(exec, session, &request.pane, identity, read, reset),
                     "grok" => grok::page(exec, session, &request.pane, identity, read, reset),
                     "copilot" => copilot::page(exec, session, &request.pane, identity, read, reset),
+                    "kimi" => kimi::page(exec, session, &request.pane, identity, read, reset),
                     _ => opencode::page(exec, session, &request.pane, identity, read, reset),
                 };
                 match page {
@@ -550,10 +552,10 @@ fn image(
     if expect.agent == "opencode" {
         return opencode::image(exec, session, pane, expect, media);
     }
-    // Qwen's images are shown as references only, and Hermes, Kilo, Grok and
-    // Copilot history is read without its media: chat never fetches any, so
-    // every image is Unreadable.
-    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot") {
+    // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
+    // Copilot and Kimi history is read without its media: chat never fetches
+    // any, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "kimi") {
         return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
@@ -1060,7 +1062,7 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let session = &pane["agent_session"];
     let agent = session["agent"]
         .as_str()
-        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot"))
+        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "kimi"))
         .ok_or(Error::NoTranscript)?;
     // The agent's own reported reference, held exactly as Herdr gives it:
     // the session file for `path` (OMP, Pi), the session id for `id` (the
@@ -1071,7 +1073,8 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
             if session_id(value)
                 && (agent != "qwen" || qwen::session_id(value))
                 && (agent != "kilo" || kilo::session_id(value))
-                && (agent != "copilot" || copilot::session_id(value)) =>
+                && (agent != "copilot" || copilot::session_id(value))
+                && (agent != "kimi" || kimi::session_id(value)) =>
         {
             ("id", value)
         }
