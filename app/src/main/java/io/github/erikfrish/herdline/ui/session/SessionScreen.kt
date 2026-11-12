@@ -214,13 +214,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.max
-import kotlin.math.roundToInt
 import java.util.Locale
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
-import io.github.erikfrish.herdline.ui.terminal.rowCentrePx
-import io.github.erikfrish.herdline.ui.terminal.tapHintRow
+import io.github.erikfrish.herdline.ui.terminal.TAP_HINT_SETTLE_MS
+import io.github.erikfrish.herdline.ui.terminal.tapHintTop
+import io.github.erikfrish.herdline.ui.terminal.terminalDescription
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
 private val MergedHeaderHeight: Dp = 480.dp
@@ -1003,6 +1003,12 @@ fun SessionScreen(
                     // tab row and its accent line: overscroll stretch and bubble
                     // shadows would otherwise spill up (lab.7 L3).
                     Box(Modifier.layoutId(ContentSlot).fillMaxSize().clipToBounds().onSizeChanged { contentPx = it.height }) {
+                        // QF-9: the tap-to-type hint, until the user first opens the keyboard, sends a key or scrolls.
+                        val hintWanted = !chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected
+                        // Its top in the view, null while hidden; reset whenever it is wanted anew.
+                        var hintTop by remember(hintWanted) { mutableStateOf<Int?>(null) }
+                        var pillPx by remember { mutableIntStateOf(0) }
+                        val tapToType = stringResource(R.string.terminal_tap_to_type)
                         // A reconnect is a new Connection: rebuild the view so its
                         // listener never feeds a closed one.
                         key(connection) {
@@ -1045,46 +1051,46 @@ fun SessionScreen(
                                     view.scheme = scheme
                                     view.frame = frame
                                     view.showWindow(hiddenRows, if (focusApplies) stripPx else 0)
-                                    view.contentDescription = windowDescription
+                                    // While the hint is hidden, TalkBack hears it on the terminal instead (QF-9b S2).
+                                    view.contentDescription = terminalDescription(windowDescription, hintWanted, hintTop, tapToType)
                                 },
                             )
                         }
                         if (focusApplies) {
                             OutputFocusStrip(hiddenRows, onOff = { setOutputFocus(false) }, modifier = Modifier.align(Alignment.BottomCenter))
                         }
-                        if (!chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected) {
-                            // QF-9: over the lowest blank row the view drew wholly, so it covers no output
-                            // and no prompt. Placed only once the frame has settled, never per keystroke or
-                            // output byte, and moved without animation. Null before that and while no row is
-                            // blank: then not drawn, though TalkBack still reads it.
-                            var hintCentre by remember { mutableStateOf<Float?>(null) }
+                        if (hintWanted) {
+                            // QF-9b: any change to the frame, the view or the pill hides it at once, so output
+                            // never runs under it; it is placed again only after TAP_HINT_SETTLE_MS still, over
+                            // enough blank rows to hold it, and moved without animation.
                             LaunchedEffect(Unit) {
-                                snapshotFlow { frame to drawnViewport }.collectLatest { (shown, drawn) ->
+                                snapshotFlow { Triple(frame, drawnViewport, pillPx) }.collectLatest { (shown, drawn, pill) ->
+                                    hintTop = null
+                                    if (shown == null || drawn == null) return@collectLatest
                                     delay(TAP_HINT_SETTLE_MS)
-                                    hintCentre = if (shown == null || drawn == null) null else tapHintRow(shown, drawn)?.let { rowCentrePx(drawn, it) }
+                                    hintTop = tapHintTop(shown, drawn, pill, TAP_HINT_SETTLE_MS)
                                 }
                             }
-                            val centre = hintCentre
+                            val top = hintTop
                             // An overlay, so it never changes the terminal's height: the extra keys have no room to
-                            // spare. It lasts only until the user first opens the keyboard, sends a key or scrolls.
-                            // Opaque, as OutputFocusStrip is: a translucent pill let glyphs through and lost
+                            // spare. Opaque, as OutputFocusStrip is: a translucent pill let glyphs through and lost
                             // contrast. No input: a tap falls through to the terminal, which opens the keyboard.
-                            // Plain text, so TalkBack reads it and tests find the tag; no role, so it is no button.
+                            // Shown, it is plain text, so TalkBack reads it and tests find the tag; no role, so it
+                            // is no button. Hidden, it leaves the semantics tree and the terminal says it.
                             Text(
-                                stringResource(R.string.terminal_tap_to_type),
+                                tapToType,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .align(if (centre == null) Alignment.BottomCenter else Alignment.TopCenter)
+                                    .align(Alignment.TopCenter)
+                                    .onSizeChanged { pillPx = it.height }
                                     .layout { measurable, constraints ->
                                         val pill = measurable.measure(constraints)
-                                        // Centred on the row, kept inside the terminal.
-                                        val y = centre?.let { (it - pill.height / 2f).roundToInt().coerceIn(0, max(0, contentPx - pill.height)) } ?: 0
-                                        layout(pill.width, pill.height) { pill.place(0, y) }
+                                        layout(pill.width, pill.height) { pill.place(0, top ?: 0) }
                                     }
-                                    .alpha(if (centre == null) 0f else 1f)
+                                    .then(if (top == null) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .padding(horizontal = 12.dp, vertical = 2.dp)
@@ -1468,9 +1474,6 @@ fun SessionScreen(
 
 /** How much of a failed install or update the state card shows. */
 private const val SETUP_OUTPUT_LINES = 40
-
-/** How long the frame must stay unchanged before the tap-to-type hint moves (QF-9). */
-private const val TAP_HINT_SETTLE_MS = 300L
 
 /** REJECT, the closest haptic to a bell, exists from API 30; older devices get a long press. */
 private val BellHaptic =

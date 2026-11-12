@@ -6,7 +6,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** QF-9: the tap-to-type hint moves over the lowest wholly drawn blank row, never over output. */
+/**
+ * QF-9 / QF-9b: the tap-to-type hint sits over enough wholly drawn blank rows to
+ * hold it, never over output, and only once nothing has changed for a while.
+ */
 class TapHintTest {
     private val cell = 20f
 
@@ -43,36 +46,73 @@ class TapHintTest {
     @Test
     fun blankRowsAtTheBottomTakeTheLowest() {
         // Output on 0-2, the cursor on 2; 3-5 blank (5 holds only spaces).
-        assertEquals(5, tapHintRow(frame(2, 0, 1, 2), viewport()))
-        assertEquals(110f, rowCentrePx(viewport(), 5))
+        assertEquals(5..5, tapHintRun(frame(2, 0, 1, 2), viewport(), 1))
+        // A one-row pill 16 px tall, centred on row 5 (100..120).
+        assertEquals(102, tapHintTop(frame(2, 0, 1, 2), viewport(), 16, TAP_HINT_SETTLE_MS))
     }
 
     @Test
     fun aBlankRowOnlyInTheMiddleIsTheOne() {
-        assertEquals(2, tapHintRow(frame(5, 0, 1, 3, 4, 5), viewport()))
+        assertEquals(2..2, tapHintRun(frame(5, 0, 1, 3, 4, 5), viewport(), 1))
     }
 
     @Test
     fun noBlankRowShowsNoRow() {
-        assertNull(tapHintRow(frame(5, 0, 1, 2, 3, 4, 5), viewport()))
+        assertNull(tapHintRun(frame(5, 0, 1, 2, 3, 4, 5), viewport(), 1))
+        assertNull(tapHintTop(frame(5, 0, 1, 2, 3, 4, 5), viewport(), 16, TAP_HINT_SETTLE_MS))
     }
 
     @Test
     fun theCursorsBlankRowIsNotBlank() {
         // The prompt's cursor on blank row 5: the hint goes one up, never over where typing lands.
-        assertEquals(4, tapHintRow(frame(5, 0, 1), viewport()))
-        assertNull(tapHintRow(frame(2, 0, 1, 3, 4, 5), viewport()))
+        assertEquals(4..4, tapHintRun(frame(5, 0, 1), viewport(), 1))
+        assertNull(tapHintRun(frame(2, 0, 1, 3, 4, 5), viewport(), 1))
+    }
+
+    @Test
+    fun aPillTallerThanARowNeedsThatManyBlankRowsInARow() {
+        // 21 px needs two 20 px rows. Rows 2 and 4 blank, 3 written: no two in a row.
+        assertNull(tapHintRun(frame(5, 0, 1, 3, 5), viewport(), 2))
+        assertNull(tapHintTop(frame(5, 0, 1, 3, 5), viewport(), 21, TAP_HINT_SETTLE_MS))
+        // 2 and 3 blank: the run is 2..3 (40..80), the 21 px pill centred inside it.
+        assertEquals(2..3, tapHintRun(frame(5, 0, 1, 4, 5), viewport(), 2))
+        assertEquals(50, tapHintTop(frame(5, 0, 1, 4, 5), viewport(), 21, TAP_HINT_SETTLE_MS))
+        // Exactly two rows tall still fits two rows; one pixel more needs a third.
+        assertEquals(40, tapHintTop(frame(5, 0, 1, 4, 5), viewport(), 40, TAP_HINT_SETTLE_MS))
+        assertNull(tapHintTop(frame(5, 0, 1, 4, 5), viewport(), 41, TAP_HINT_SETTLE_MS))
+    }
+
+    @Test
+    fun anyChangeHidesItUntilItHasBeenStill() {
+        val frame = frame(2, 0, 1, 2)
+        // Just changed (a frame, the view, the pill): hidden at once, wherever it was.
+        assertNull(tapHintTop(frame, viewport(), 16, 0))
+        assertNull(tapHintTop(frame, viewport(), 16, TAP_HINT_SETTLE_MS - 1))
+        assertEquals(102, tapHintTop(frame, viewport(), 16, TAP_HINT_SETTLE_MS))
+    }
+
+    @Test
+    fun theTerminalSaysTheHintOnlyWhileThePillIsHidden() {
+        val sentence = "Tap to type"
+        // Hidden: the terminal carries it, after what output focus hides.
+        assertEquals(sentence, terminalDescription(null, wanted = true, top = null, sentence = sentence))
+        assertEquals("2 rows hidden $sentence", terminalDescription("2 rows hidden", wanted = true, top = null, sentence = sentence))
+        // Shown: the pill is its own node, the terminal has no copy.
+        assertNull(terminalDescription(null, wanted = true, top = 102, sentence = sentence))
+        // Not wanted at all: nothing.
+        assertNull(terminalDescription(null, wanted = false, top = null, sentence = sentence))
     }
 
     @Test
     fun onlyRowsDrawnWhollyAndUnpaintedCount() {
         // Row 5 cut off the bottom: row 4 is the lowest whole one.
-        assertEquals(4, tapHintRow(frame(0, 0), viewport(last = 4)))
-        assertEquals(70f, rowCentrePx(viewport(offset = -20f), 4))
+        assertEquals(4..4, tapHintRun(frame(0, 0), viewport(last = 4), 1))
+        // Drawn 20 px up: row 4 spans 60..80.
+        assertEquals(62, tapHintTop(frame(0, 0), viewport(last = 4, offset = -20f), 16, TAP_HINT_SETTLE_MS))
         // A coloured bar, an underline on spaces: painted. Invisible text: not.
         val painted = listOf(run(5, "   ", RenderFrame.BACKGROUND), run(4, "  ", RenderFrame.UNDERLINE), run(3, "hidden", RenderFrame.INVISIBLE))
-        assertEquals(3, tapHintRow(frame(0, 0, extra = painted), viewport()))
+        assertEquals(3..3, tapHintRun(frame(0, 0, extra = painted), viewport(), 1))
         // A viewport drawn from a frame of another height says nothing about this one.
-        assertNull(tapHintRow(frame(0, 0), viewport(rows = 7)))
+        assertNull(tapHintRun(frame(0, 0), viewport(rows = 7), 1))
     }
 }
