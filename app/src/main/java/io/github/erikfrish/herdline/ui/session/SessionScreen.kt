@@ -1066,6 +1066,8 @@ fun SessionScreen(
                         )
                         // Its top in the view, null while hidden; reset whenever it is wanted anew.
                         var hintTop by remember(hintWanted) { mutableStateOf<Int?>(null) }
+                        // QF9-F: set once a change hid a shown pill, so streamed output never blinks it.
+                        var hintHidden by remember(hintWanted) { mutableStateOf(false) }
                         var pillPx by remember { mutableIntStateOf(0) }
                         val tapToType = stringResource(R.string.terminal_tap_to_type)
                         // A reconnect is a new Connection: rebuild the view so its
@@ -1120,17 +1122,20 @@ fun SessionScreen(
                         }
                         if (hintWanted) {
                             // QF-9b: any change to the frame, the view or the pill hides it at once, so output
-                            // never runs under it; it is placed again only after TAP_HINT_SETTLE_MS still, over
-                            // enough blank rows to hold it, and moved without animation. A change is a change in
-                            // what is drawn: Herdr resends unchanged surfaces as new frames (QF9-R).
+                            // never runs under it; it is placed again only after tapHintSettleMs still (QF9-F:
+                            // longer once a change has hidden it), over enough blank rows to hold it, and moved
+                            // without animation. A change is a change in what is drawn: Herdr resends unchanged
+                            // surfaces as new frames (QF9-R).
                             LaunchedEffect(Unit) {
                                 snapshotFlow { Triple(frame, drawnViewport, pillPx) }
                                     .distinctUntilChanged { a, b -> sameLook(a.first, b.first) && a.second == b.second && a.third == b.third }
                                     .collectLatest { (shown, drawn, pill) ->
+                                        if (hintTop != null) hintHidden = true
                                         hintTop = null
                                         if (shown == null || drawn == null) return@collectLatest
-                                        delay(TAP_HINT_SETTLE_MS)
-                                        hintTop = tapHintTop(shown, drawn, pill, TAP_HINT_SETTLE_MS)
+                                        val settle = tapHintSettleMs(hintHidden)
+                                        delay(settle)
+                                        hintTop = tapHintTop(shown, drawn, pill, settle)
                                     }
                             }
                             val top = hintTop
