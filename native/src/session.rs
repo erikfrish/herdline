@@ -442,7 +442,11 @@ impl Session {
     /// record is `uncertain`, never stopped.
     fn stop_pty(&self, exec: &ssh::Exec, request: &ingress::Request) -> String {
         use control::pty;
-        let refused = |reason: pty::Refusal| json!({"route": "pty", "outcome": "refused", "reason": reason}).to_string();
+        let refused = |reason: pty::Refusal| {
+            // The one record of why no key went: the app shows it in words.
+            tracing::info!(?reason, "stop refused");
+            json!({"route": "pty", "outcome": "refused", "reason": reason}).to_string()
+        };
         let uncertain = json!({"route": "pty", "outcome": "uncertain", "reason": Refusal::Unconfirmed}).to_string();
         let pane = request.pane.as_str();
         let instance = &request.instance;
@@ -471,26 +475,7 @@ impl Session {
             return refused(pty::Refusal::Unsettled);
         }
         // The frame at the tap decides, under the same locks as a delivery.
-        let decided = self.with_surface(|registry, surface| {
-            if registry.boot.as_deref() != Some(request.boot.as_str()) {
-                return Err(pty::Refusal::BootChanged);
-            }
-            let facts = registry.panes.get(pane).ok_or(pty::Refusal::PaneMissing)?;
-            if !facts.agent.as_deref().is_some_and(|agent| agent.eq_ignore_ascii_case(&instance.agent)) {
-                return Err(pty::Refusal::AgentChanged);
-            }
-            if surface.popup_open {
-                return Err(pty::Refusal::PopupOpen);
-            }
-            let rows = surface
-                .frame
-                .and_then(|frame| composer::pane_rows(frame, pane))
-                .ok_or(pty::Refusal::NotVisible)?;
-            if surface.scroll.and_then(|scroll| scroll.get(pane)).is_some_and(|scroll| scroll.scrolled) {
-                return Err(pty::Refusal::Scrolled);
-            }
-            pty::decide(&instance.agent, facts.status, &rows)
-        });
+        let decided = self.with_surface(|registry, surface| pty::admit(registry, surface, &request.boot, pane, &instance.agent));
         let key = match decided {
             Ok(key) => key,
             Err(reason) => return refused(reason),

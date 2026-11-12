@@ -12,7 +12,7 @@
 //! runtime whose history this core cannot read for a stop is answered as
 //! unconfirmed, never as stopped.
 
-use crate::composer::{Editor, claude_blocker, claude_editor, omp_editor, pi_editor};
+use crate::composer::{Editor, Registry, Surface, claude_blocker, claude_editor, omp_editor, pane_rows, pi_editor};
 use crate::transcript::Entry;
 use herdr_client::protocol::AgentStatus;
 use serde::Serialize;
@@ -124,6 +124,28 @@ pub fn decide(agent: &str, status: Option<AgentStatus>, rows: &[String]) -> Resu
         Rule::Hint(shown) if shown(rows) => Ok(Key::Esc),
         Rule::Hint(_) => Err(Refusal::NoStopKey),
     }
+}
+
+/// The key a stop of `agent` in `pane` presses on the surface the phone
+/// holds now, under the delivery locks. That surface is Herdr's shared view
+/// (the tab the desktop shows), not the pane Chat reads: a pane on another
+/// tab is not in it, and is `NotVisible` rather than pressed blind.
+pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str, agent: &str) -> Result<Key, Refusal> {
+    if registry.boot.as_deref() != Some(boot) {
+        return Err(Refusal::BootChanged);
+    }
+    let facts = registry.panes.get(pane).ok_or(Refusal::PaneMissing)?;
+    if !facts.agent.as_deref().is_some_and(|now| now.eq_ignore_ascii_case(agent)) {
+        return Err(Refusal::AgentChanged);
+    }
+    if surface.popup_open {
+        return Err(Refusal::PopupOpen);
+    }
+    let rows = surface.frame.and_then(|frame| pane_rows(frame, pane)).ok_or(Refusal::NotVisible)?;
+    if surface.scroll.and_then(|scroll| scroll.get(pane)).is_some_and(|scroll| scroll.scrolled) {
+        return Err(Refusal::Scrolled);
+    }
+    decide(agent, facts.status, &rows)
 }
 
 /// The pane's last [`HINT_ROWS`] drawn rows.

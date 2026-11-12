@@ -182,4 +182,21 @@ class IngressTest {
         assertTrue(ingressCancelOutcome("frm_1") { """{"endpoint":"live","dialogId":"frm_2","result":"cancelled"}""" }.isFailure)
         assertTrue(ingressCancelOutcome("frm_1") { """{"endpoint":"unsupported","dialogId":"frm_1","result":"cancelled"}""" }.isFailure)
     }
+
+    @Test
+    fun aPtyStopThatPressedNoKeySaysWhyAndAnUnconfirmedOneNeverDoes() {
+        val refused = ingressAbortOutcome { """{"route":"pty","outcome":"refused","reason":"not_visible"}""" }.exceptionOrNull()
+        assertEquals("not_visible", (refused as StopRefused).reason)
+        assertEquals(true, ingressAbortOutcome { """{"route":"pty","outcome":"stopped"}""" }.getOrThrow())
+        // A key that may have gone, a refusal without its reason, a server's unknown answer: unconfirmed.
+        for (reply in listOf(
+            """{"route":"pty","outcome":"uncertain","reason":"unconfirmed"}""",
+            """{"route":"pty","outcome":"refused"}""",
+            """{"endpoint":"down","reason":"not_visible"}""",
+            """{"refused":true,"reason":"boot_changed"}""",
+        )) {
+            val failure = ingressAbortOutcome { reply }.exceptionOrNull()
+            assertTrue(reply, failure != null && failure !is StopRefused)
+        }
+    }
 }

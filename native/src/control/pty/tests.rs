@@ -114,3 +114,29 @@ fn only_an_aborted_assistant_turn_records_the_stop() {
     assert!(confirms("omp") && confirms("pi"));
     assert!(!confirms("claude") && !confirms("codex"));
 }
+
+// QA X1 case 2: Chat reads OMP in w1:p1 while Herdr's shared surface (the
+// desktop's tab) holds another pane; the stop must name why, never press.
+#[test]
+fn a_chat_stop_presses_only_on_the_pane_herdr_shows_and_names_why_not() {
+    use crate::composer::Surface;
+    use crate::composer::tests::{frame, registry, scroll};
+    let working = registry(Some("omp"), W);
+    let live = scroll(false, 40);
+    let elsewhere = frame("w1:p2", OMP_WORKING);
+    let off_tab = Surface { frame: Some(&elsewhere), scroll: Some(&live), ..Surface::default() };
+    assert_eq!(admit(&working, &off_tab, "boot-1", "w1:p1", "omp"), Err(Refusal::NotVisible));
+    assert_eq!(admit(&working, &Surface::default(), "boot-1", "w1:p1", "omp"), Err(Refusal::NotVisible));
+    // A crop of a pane sized for another client: OMP's box is off it.
+    let crop = frame("w1:p1", &"output one\noutput two\n".repeat(6));
+    let cropped = Surface { frame: Some(&crop), scroll: Some(&live), ..Surface::default() };
+    assert_eq!(admit(&working, &cropped, "boot-1", "w1:p1", "omp"), Err(Refusal::ScreenNotStoppable));
+    // The same pane on the surface, its empty box drawn: one Esc.
+    let shown = frame("w1:p1", OMP_WORKING);
+    let here = || Surface { frame: Some(&shown), scroll: Some(&live), ..Surface::default() };
+    assert_eq!(admit(&working, &here(), "boot-1", "w1:p1", "omp"), Ok(Key::Esc));
+    assert_eq!(admit(&working, &here(), "boot-2", "w1:p1", "omp"), Err(Refusal::BootChanged));
+    assert_eq!(admit(&working, &Surface { popup_open: true, ..here() }, "boot-1", "w1:p1", "omp"), Err(Refusal::PopupOpen));
+    let back = scroll(true, 40);
+    assert_eq!(admit(&working, &Surface { scroll: Some(&back), ..here() }, "boot-1", "w1:p1", "omp"), Err(Refusal::Scrolled));
+}

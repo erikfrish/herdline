@@ -120,6 +120,8 @@ import io.github.erikfrish.herdline.core.HarnessRuntime
 import io.github.erikfrish.herdline.core.ServerProbe
 import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.StopRoute
+import io.github.erikfrish.herdline.core.StopRefused
+import androidx.annotation.StringRes
 import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.DIALOG_ANSWERED_ELSEWHERE
@@ -386,16 +388,18 @@ private fun ChatContent(
         if (boot == null || identity == null || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
     var stopping by remember(stopTarget) { mutableStateOf(false) }
-    var stopProblem by remember(stopTarget) { mutableStateOf(false) }
+    // Why the last Stop did nothing: a refusal's code (no key went), or [STOP_UNCONFIRMED].
+    var stopProblem by remember(stopTarget) { mutableStateOf<String?>(null) }
     fun stop() {
         val target = stopTarget ?: return
+        // One call at a time: a second tap while the first runs does nothing.
         if (!linkLive || stopping) return
         stopping = true
-        stopProblem = false
+        stopProblem = null
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) { connection.ingressAbort(target) }
-                stopProblem = result.isFailure
+                stopProblem = result.exceptionOrNull()?.let { (it as? StopRefused)?.reason ?: STOP_UNCONFIRMED }
                 if (result.getOrNull() == true) wake.trySend(Unit)
             } finally {
                 stopping = false
@@ -1520,7 +1524,7 @@ private fun WorkingRow(
     colors: ChatColors,
     onStop: (() -> Unit)? = null,
     stopping: Boolean = false,
-    stopProblem: Boolean = false,
+    stopProblem: String? = null,
     stopReason: String? = null,
 ) {
     StateRow(colors.working, colors.border, Color.Transparent, "chat:working") {
@@ -1548,9 +1552,35 @@ private fun WorkingRow(
             }
         }
         if (onStop == null && stopReason != null) Text(stopReason, style = ChatType.meta.copy(color = colors.muted))
-        if (stopProblem) Text(stringResource(R.string.chat_stop_failed), style = ChatType.meta.copy(color = colors.muted))
+        if (stopProblem != null) {
+            Text(
+                if (stopProblem == STOP_UNCONFIRMED) stringResource(R.string.chat_stop_failed) else stringResource(stopRefusalRes(stopProblem)),
+                style = ChatType.meta.copy(color = colors.muted),
+                modifier = Modifier.testTag("chat:stop:problem"),
+            )
+        }
     }
 }
+
+/** A Stop that may have pressed its key without a confirmation. */
+private const val STOP_UNCONFIRMED = "unconfirmed"
+
+/** A PTY stop's refusal (`control/pty.rs` `Refusal`) in words; each means no key reached the pane. */
+@StringRes
+internal fun stopRefusalRes(reason: String): Int =
+    when (reason) {
+        "boot_changed" -> R.string.stop_refused_boot_changed
+        "pane_missing" -> R.string.stop_refused_pane_missing
+        "agent_changed" -> R.string.stop_refused_agent_changed
+        "popup_open" -> R.string.stop_refused_popup_open
+        "not_working" -> R.string.stop_refused_not_working
+        "not_visible" -> R.string.stop_refused_not_visible
+        "scrolled" -> R.string.stop_refused_scrolled
+        "no_stop_key" -> R.string.stop_refused_no_stop_key
+        "screen_not_stoppable" -> R.string.stop_refused_screen
+        "unsettled" -> R.string.stop_refused_unsettled
+        else -> R.string.stop_refused_other
+    }
 
 /** A blocked agent without a usable structured dialog snapshot: keep the terminal route explicit. */
 @Composable

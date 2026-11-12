@@ -186,17 +186,23 @@ private fun dialogOutcome(dialogId: String, results: Set<String>, call: () -> St
     return Result.success(result)
 }
 
+/** A PTY stop that pressed no key, for [reason] (`control/pty.rs` `Refusal`): nothing reached the pane. */
+class StopRefused(val reason: String) : IOException("refused: $reason")
+
 /**
  * Stop's answer: whether a running turn was stopped. Anything less fails.
  * A PTY stop (`route: pty`) is `stopped` only once the history recorded it;
- * `uncertain` and `refused` fail with their reason.
+ * `refused` with its reason fails as [StopRefused], since no key went; an
+ * `uncertain` key, or any other answer, fails unconfirmed.
  */
 internal fun ingressAbortOutcome(call: () -> String): Result<Boolean> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     if (reply.optString("route") == "pty") {
+        val reason = reply.optString("reason")
         return when (val outcome = reply.optString("outcome")) {
             "stopped" -> Result.success(true)
-            else -> Result.failure(IOException("${outcome.ifEmpty { "unknown" }}: ${reply.optString("reason").ifEmpty { "unknown" }}"))
+            "refused" if reason.isNotEmpty() -> Result.failure(StopRefused(reason))
+            else -> Result.failure(IOException("${outcome.ifEmpty { "unknown" }}: ${reason.ifEmpty { "unknown" }}"))
         }
     }
     val aborted = reply.opt("aborted")
