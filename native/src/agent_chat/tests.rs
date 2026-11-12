@@ -107,6 +107,18 @@ fn only_proved_words_say_a_definite_verdict() {
     assert_eq!(refused(composer::Refusal::InstanceUnknown), control_reply("refused_unknown", Op::Send, ID, "").unwrap());
     assert_eq!(unavailable("instance_unknown"), control_reply("refused_unknown", Op::State, ID, "").unwrap());
     assert_eq!(Some(refused(composer::Refusal::AgentRestarted)), gate_reply("refused_changed", Op::Send));
+    // opencode_media refused the staged files before the prompt went: each
+    // code its own words; an unknown one keeps the send uncertain.
+    for (code, reason) in [
+        ("attachment_target", composer::Refusal::AttachmentTarget),
+        ("attachment_missing", composer::Refusal::AttachmentMissing),
+        ("attachment_needs_agent", composer::Refusal::AttachmentNeedsAgent),
+        ("unsupported_type", composer::Refusal::AttachmentUnsupported),
+        ("too_large", composer::Refusal::AttachmentTooLarge),
+    ] {
+        assert_eq!(refused(reason), control_reply(&format!("media\t{code}"), Op::Send, ID, "").unwrap(), "{code}");
+    }
+    assert_eq!(uncertain(ID), control_reply("media\tother", Op::Send, ID, "").unwrap());
     // Unknown words, and any answer after an invocation whose fate is
     // unreadable, keep a send uncertain: never a refusal, never an unusable
     // endpoint Kotlin could read as nothing left. A check fails.

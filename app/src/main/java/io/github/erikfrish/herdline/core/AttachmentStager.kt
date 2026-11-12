@@ -79,7 +79,10 @@ class AttachmentStager(private val connection: Connection, private val resolver:
         val mime = resolver.getType(uri)
         val kind = attachmentKind(mime)
         val name = safeAttachmentName(display, kind, mime)
-        if (declared != null && declared > kind.limit) return@withContext Staging.Refused("too_large")
+        val limit = kind.limitFor(target.agent)
+        // Past OpenCode's own cap but within ours: said as OpenCode's.
+        val tooLarge = if (limit < kind.limit) "opencode_too_large" else "too_large"
+        if (declared != null && declared > limit) return@withContext Staging.Refused(tooLarge)
         val request = bindingJson(target)
             .put("name", name)
             .put("kind", kind.wire)
@@ -109,7 +112,7 @@ class AttachmentStager(private val connection: Connection, private val resolver:
                         val read = it.read(buffer)
                         if (read < 0) break
                         sent += read
-                        if (sent > kind.limit) throw TooLarge()
+                        if (sent > limit) throw TooLarge()
                         digest.update(buffer, 0, read)
                         Native.attachmentWrite(upload, buffer, read)
                         onProgress(sent, declared)
@@ -122,7 +125,7 @@ class AttachmentStager(private val connection: Connection, private val resolver:
                 staged(finished, target) ?: refused(finished)
             } catch (e: TooLarge) {
                 cancel(upload, settled)
-                Staging.Refused("too_large")
+                Staging.Refused(tooLarge)
             } catch (e: IOException) {
                 cancel(upload, settled)
                 Staging.Refused("unreadable")
@@ -174,6 +177,13 @@ val AttachmentKind.limit: Long
         AttachmentKind.IMAGE -> 20L * 1024 * 1024
         AttachmentKind.FILE -> 64L * 1024 * 1024
     }
+
+/** OpenCode 2.2.7's own cap on any one prompt file, image or not (`MAX_ATTACHMENT_BYTES`). */
+const val OPENCODE_FILE_LIMIT = 20L * 1024 * 1024
+
+/** The most a file may be for [agent]: the kind's [limit], or less where that agent's server takes less. */
+fun AttachmentKind.limitFor(agent: String?): Long =
+    if (agent.equals("opencode", ignoreCase = true)) minOf(limit, OPENCODE_FILE_LIMIT) else limit
 
 /** The image types OMP turns into `[Image #N]`, with the extension its path check needs. */
 private val IMAGE_EXTENSIONS = mapOf(

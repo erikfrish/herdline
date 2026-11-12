@@ -135,9 +135,10 @@
     <string name="attachment_reason_not_connected">Not connected. Not uploaded.</string>
     <string name="attachment_reason_no_exec">This host doesn\'t allow commands over SSH. Not uploaded.</string>
     <string name="attachment_reason_too_large">Too large: images up to 20 MiB, files up to 64 MiB.</string>
+    <string name="attachment_reason_opencode_too_large">Too large for OpenCode: it takes files up to 20 MiB each. Not uploaded.</string>
     <string name="attachment_reason_bad_name">The file name can\'t be used. Not uploaded.</string>
     <string name="attachment_reason_target_changed">The connection changed while uploading. Not uploaded.</string>
-    <string name="attachment_reason_needs_agent">Files go only to an OMP agent. Not uploaded.</string>
+    <string name="attachment_reason_needs_agent">Files go only to an OMP or OpenCode agent. Not uploaded.</string>
     <string name="attachment_reason_staging_unsafe">The host\'s upload folder isn\'t private. Not uploaded.</string>
     <string name="attachment_reason_mismatch">The upload arrived damaged and was removed.</string>
     <string name="attachment_reason_no_tools">The host lacks the tools to receive files.</string>
@@ -145,9 +146,12 @@
     <string name="attachment_reason_unreadable">Can\'t read the file on this phone. Pick it again.</string>
     <string name="attachment_reason_failed">Upload failed. Tap to try again.</string>
     <string name="reason_attachment_target">An attachment was uploaded for another pane. Nothing sent.</string>
-    <string name="reason_attachment_needs_agent">Files can be sent only to an OMP agent. Nothing sent.</string>
+    <string name="reason_attachment_needs_agent">Files can be sent only to an OMP or OpenCode agent. Nothing sent.</string>
     <string name="reason_attachment_steer">A steer can\'t carry files. Nothing sent.</string>
     <string name="reason_attachment_missing">An uploaded file is gone from the host. Upload it again.</string>
+    <string name="reason_attachment_too_many">OpenCode takes at most 10 files in one message. Remove some. Nothing sent.</string>
+    <string name="reason_attachment_too_large">A file is over OpenCode\'s 20 MiB limit for one file. Remove it. Nothing sent.</string>
+    <string name="reason_attachment_unsupported">An image isn\'t a PNG, JPEG, GIF or WebP, so OpenCode can\'t take it as an image. Nothing sent.</string>
     <!-- Chat's Send through the OMP endpoint (ChatIngress.kt). -->
     <string name="reason_dialog_open">OMP has a question or dialog open. Answer it in Chat if available, or in Terminal. Nothing sent.</string>
     <string name="reason_collab">OMP is in a collab session, which Chat can\'t send into. Nothing sent.</string>

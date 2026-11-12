@@ -1,4 +1,6 @@
 """Consumer transport proof: the actual control script against isolated HTTP servers."""
+import base64
+import hashlib
 import http.server
 import json
 import os
@@ -224,6 +226,61 @@ class OpenCode(unittest.TestCase):
             # A registration whose server is gone is no server either.
             register(Path(home) / '.local/state/opencode/service.json', {'url': 'http://127.0.0.1:9', 'pid': 2 ** 22 + 7})
             self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server')
+
+    def test_staged_files_go_on_the_prompt_or_the_whole_send_is_refused(self):
+        # As agent_chat.rs control_step composes it: the media helper, then
+        # this script, with {records, target} on fd 3.
+        source = Path(__file__).with_name('opencode_media.py').read_text() + '\n' + SCRIPT.read_text()
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            folder = Path(home) / '.cache/herdline/attachments/ABCDEFGHIJ'
+            folder.mkdir(parents=True)
+            folder.parent.chmod(0o700)
+            folder.chmod(0o700)
+            png = b'\x89PNG\r\n\x1a\nfixture-pixels'
+            staged = folder / 'shot.png'
+            staged.write_bytes(png)
+            staged.chmod(0o600)
+            instance = {'pane_id': 'w1:p1', 'terminal_id': 't1', 'pid': os.getpid(), 'path': 'ses_test',
+                        'agent': 'opencode', 'source': 'herdr:opencode', 'kind': 'id'}
+            target = {'node': 'n', 'session': 'qa', 'boot': 'b1', 'pane': 'w1:p1', 'instance': instance}
+            record = {**target, 'kind': 'image', 'name': 'shot.png', 'path': str(staged), 'size': len(png),
+                      'sha256': hashlib.sha256(png).hexdigest()}
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/active'): (200, {'data': {}}),
+                ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_test'}}),
+            })
+
+            def send(records):
+                # The command's stdin carries the records; the script is fd 0.
+                script = Path(home) / 'ctl.py'
+                script.write_text(source)
+                body = json.dumps({'id': 'msg_test', 'text': 'look'})
+                return subprocess.check_output(
+                    ['/bin/sh', '-c', '"$0" -B - opencode send ses_test "$1" media 3<&0 < "$2"', sys.executable, body, str(script)],
+                    input=json.dumps({'records': records, 'target': target}), env={'HOME': home, 'PATH': '/usr/bin:/bin'},
+                    text=True, timeout=10).strip()
+
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid()})
+                self.assertEqual(send([record]), 'queued')
+                # The session is asked again after the files are read, just before the prompt.
+                self.assertEqual([(m, p) for m, p, _, _ in service.seen],
+                                 [('GET', '/api/session/ses_test'), ('GET', '/api/session/active'),
+                                  ('GET', '/api/session/ses_test'), ('POST', '/api/session/ses_test/prompt')])
+                files = service.seen[-1][2]['files']
+                self.assertEqual([(f['name'], f['source']) for f in files], [('shot.png', {'type': 'inline'})])
+                self.assertEqual(base64.b64decode(files[0]['uri'].split(',', 1)[1]), png)
+                # A file changed since it was staged refuses the whole send: no prompt at all.
+                service.seen.clear()
+                staged.write_bytes(b'\x89PNG\r\n\x1a\nother--pixels')
+                self.assertEqual(send([record]), 'media\tattachment_missing')
+                self.assertNotIn('POST', [m for m, _, _, _ in service.seen])
+                # A record bound to another pane is never read.
+                self.assertEqual(send([{**record, 'pane': 'w1:p2'}]), 'media\tattachment_target')
+                self.assertNotIn('POST', [m for m, _, _, _ in service.seen])
+            finally:
+                service.close()
 
 
 FORM = 'frm_test'

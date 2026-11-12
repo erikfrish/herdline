@@ -1,9 +1,12 @@
 """One call to a discovered, already-running local OpenCode or Kilo server.
 
 argv: flavor (opencode | kilo), op (send | state | status | withdraw |
-promote | dialogs | submit | abort), session id, payload JSON. Prints one
-line: a word, or a word, a tab and a JSON payload. Kilo takes only
-dialogs, submit and abort; the rest are OpenCode's own inbox.
+promote | dialogs | submit | abort), session id, payload JSON, and `media`
+for an OpenCode send with staged files: then opencode_media.py is part of
+this script and {records, target} come on fd 3; prepare() turns them into
+the prompt's files or a MediaRefusal ('media\t<code>') before anything is
+sent. Prints one line: a word, or a word, a tab and a JSON payload. Kilo
+takes only dialogs, submit and abort; the rest are OpenCode's own inbox.
 
 Discovery reads only this user's default state directories under $HOME,
 never another process's environment:
@@ -18,7 +21,8 @@ bare TUI registers nothing: its worker has no port (kilo cli/cmd/tui.ts:
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:
   GET /api/session/:id (session.ts:234); POST /api/session/:id/prompt
-  {id, text, delivery?} -> {data: Inbox.User} (session.ts:339);
+  {id, text, delivery?, files?} -> {data: Inbox.User} (session.ts:339;
+  files are PromptInput {uri, name?, source?}, schema/prompt-input.ts:9-18);
   GET /api/session/active -> {data: {id: {type}}}, absent = inactive
   (session.ts:222); GET /api/session/:id/inbox -> {data: [Inbox.Info]} in
   enqueue order (session.ts:542); DELETE /api/session/:id/inbox/:inboxID,
@@ -46,6 +50,9 @@ import urllib.parse
 import urllib.request
 
 flavor, op, session, payload = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+# A send whose staged files come on fd 3; opencode_media.py is then
+# prepended to this script by the native caller.
+MEDIA = sys.argv[5:] == ['media']
 LIMIT = 65536
 # Five full requests stay well inside the 64 KiB reply the host reads.
 MAX_DIALOGS = 5
@@ -583,6 +590,29 @@ def main():
             # takes only the verb the user chose, never one guessed here.
             if 'delivery' not in sent and active(base, headers):
                 return 'busy'
+            if MEDIA:
+                if flavor != 'opencode':
+                    return 'local'
+                # The staged records and their target, on the command's own
+                # stdin (fd 3): read, checked and encoded here, in the
+                # process that sends them.
+                with os.fdopen(3, 'rb') as handle:
+                    raw = handle.read(LIMIT + 1)
+                if len(raw) > LIMIT:
+                    return 'local'
+                given = json.loads(raw)
+                target = given['target']
+                try:
+                    sent['files'] = prepare(given['records'], target)
+                except MediaRefusal as refusal:
+                    return 'media\t' + refusal.code
+                # Reading the files took time: the session and the agent
+                # process are asked again just before the prompt goes.
+                verified(base, headers)
+                try:
+                    os.kill(target['instance']['pid'], 0)
+                except ProcessLookupError:
+                    return 'gone'
         if op == 'dialogs':
             entries = [dialog(entry) for entry in open_requests(base, headers, directory)]
             asked = forms(base, headers) if flavor == 'opencode' else questions(base, headers, directory)

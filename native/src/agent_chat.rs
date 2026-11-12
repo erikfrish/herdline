@@ -52,7 +52,14 @@
 //! refusals or unusable endpoints. An admission is accepted only on the
 //! engine's own answer. Every other answer follows a call that may have
 //! been admitted, so a send reads it as [`uncertain`]: kept by the caller,
-//! never sent again. OpenCode file parts and children are not served here.
+//! never sent again. OpenCode children are not served here.
+//!
+//! OpenCode files: the staged records and their target go on the command's
+//! stdin to `agent_chat/opencode_media.py`, embedded in the control script,
+//! which reads, checks and encodes each one on the host and sends them as
+//! the prompt's `files` in the same process. Any refusal of it refuses the
+//! whole send in words before the prompt: nothing dropped, nothing typed.
+//! At most [`attach::MAX_FILES`], each at most [`attach::OPENCODE_LIMIT`].
 
 use crate::{
     Error, Result, attach, composer,
@@ -152,19 +159,31 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             return Ok(refused(reason).to_string());
         }
         // Codex takes a staged image as its own `localImage` input, so a
-        // photo alone is a message; nothing else carries files.
+        // photo alone is a message. OpenCode takes any staged file as a
+        // prompt file next to the text, read and sent on the host
+        // ([`control_step`]); a prompt of files alone is not pinned, so
+        // its text stays required.
         let images = engine == Engine::Codex && request.attachments.iter().all(|a| a.kind == attach::Kind::Image);
+        let files = engine == Engine::OpenCode;
         if text.trim().is_empty() && !(images && !request.attachments.is_empty()) {
             return Ok(refused(composer::Refusal::EmptyText).to_string());
         }
         if text.len() > MAX_TEXT_BYTES {
             return Ok(refused(composer::Refusal::TooLarge).to_string());
         }
-        if !request.attachments.is_empty() && !images {
-            // OpenCode, and files for Codex, have no verified payload here.
-            // Drop nothing silently: once one has real confirmed support it
-            // becomes the send body, not a text-only fallback.
+        if !request.attachments.is_empty() && !images && !files {
+            // Files for Codex have no verified payload here. Drop nothing
+            // silently: once one has real confirmed support it becomes the
+            // send body, not a text-only fallback.
             return Ok(unsupported_type().to_string());
+        }
+        if files {
+            if request.attachments.len() > attach::MAX_FILES {
+                return Ok(refused(composer::Refusal::AttachmentTooMany).to_string());
+            }
+            if request.attachments.iter().any(|a| a.size > attach::OPENCODE_LIMIT) {
+                return Ok(refused(composer::Refusal::AttachmentTooLarge).to_string());
+            }
         }
     }
     if !sendable_session(&request.instance) {
@@ -174,6 +193,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     // One command: the pane report, the exact-instance verifier, and only
     // past it the engine step (or `bound` when there is no step to run).
+    let mut media = None;
     let step = match engine {
         Engine::Codex => codex_step(&request, &text),
         Engine::OpenCode | Engine::Kilo => {
@@ -186,6 +206,9 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
                         Some(DeliverAs::Queue) => body["delivery"] = json!("queue"),
                         Some(DeliverAs::Auto) | None => {}
                     }
+                    if !request.attachments.is_empty() {
+                        media = Some(media_input(&request)?);
+                    }
                     ("send", body.to_string())
                 }
                 Op::Status => ("status", json!({"id": message}).to_string()),
@@ -197,11 +220,11 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
                 Op::DialogCancel => ("cancel", submitted.unwrap_or_else(|| String::from("{}"))),
                 Op::Abort => ("abort", String::from("{}")),
             };
-            control_step(engine, op, &request.instance, &payload)
+            control_step(engine, op, &request.instance, &payload, media.is_some())
         }
         Engine::Pty => unreachable!("routed to the PTY above"),
     };
-    let word = match host_gate(exec, herdr_session, &request.instance, &step) {
+    let word = match host_gate(exec, herdr_session, &request.instance, &step, media) {
         Ok(word) => word,
         Err(error) => {
             tracing::warn!(%error, "agent chat call not confirmed");
@@ -322,6 +345,16 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         // A send with no verb while the session runs: nothing was queued,
         // and nothing is turned into a steer or a queue behind the user.
         ("busy", Op::Send) => refused(composer::Refusal::AgentWorking),
+        // opencode_media.prepare refused the staged files before the prompt
+        // was sent: the whole send, nothing dropped, nothing typed instead.
+        ("media", Op::Send) => match payload {
+            "attachment_target" => refused(composer::Refusal::AttachmentTarget),
+            "attachment_missing" => refused(composer::Refusal::AttachmentMissing),
+            "attachment_needs_agent" => refused(composer::Refusal::AttachmentNeedsAgent),
+            "unsupported_type" => refused(composer::Refusal::AttachmentUnsupported),
+            "too_large" => refused(composer::Refusal::AttachmentTooLarge),
+            _ => return unreadable(op, id),
+        },
         ("queued", Op::Send) => accepted(id),
         ("state", Op::State) => {
             let state = serde_json::from_str(payload).ok().and_then(|state| crate::ingress::state(&state));
@@ -444,14 +477,41 @@ HERDLINE_CODEX_CTL"#,
 /// state directory, which must know the session. No process environment is
 /// read. The CLI's default api path can autostart a service, so discovery
 /// and HTTP stay explicit here.
-fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str) -> String {
+///
+/// With `media`, the script also holds `opencode_media.py` in the same
+/// namespace and reads [`media_input`] from the command's stdin on fd 3 (the
+/// script itself is fd 0): the files are read, checked and encoded on the
+/// host, in the process that sends them, never in an argument or a reply.
+fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str, media: bool) -> String {
     let flavor = if engine == Engine::Kilo { "kilo" } else { "opencode" };
+    let (helper, fd) = if media {
+        (concat!(include_str!("agent_chat/opencode_media.py"), "\n"), " media 3<&0")
+    } else {
+        ("", "")
+    };
     format!(
-        "python3 - {flavor} {op} {} {} <<'HERDLINE_OPENCODE_CTL'\n{}\nHERDLINE_OPENCODE_CTL",
+        "python3 - {flavor} {op} {} {}{fd} <<'HERDLINE_OPENCODE_CTL'\n{helper}{}\nHERDLINE_OPENCODE_CTL",
         shell_quote(&instance.path),
         shell_quote(payload),
         include_str!("agent_chat/opencode_ctl.py"),
     )
+}
+
+/// What an OpenCode send with files writes to the host command's stdin: the
+/// staged records whole and the target they must all be bound to, as
+/// `opencode_media.prepare` takes them. Paths alone authorize nothing.
+fn media_input(request: &Request) -> Result<Vec<u8>> {
+    let input = json!({
+        "records": request.attachments,
+        "target": {
+            "node": request.node,
+            "session": request.session,
+            "boot": request.boot,
+            "pane": request.pane,
+            "instance": request.instance,
+        },
+    });
+    serde_json::to_vec(&input).map_err(|_| Error::BadReply)
 }
 
 /// One command, bounded to `expect`: the transcript's own pane report for
@@ -460,14 +520,14 @@ fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str) ->
 /// pid under the report's own agent name, session id and session ref), and
 /// only after it passes, `step`'s own single word. A report the verifier
 /// rejects prints its own refusal word and `step` never runs.
-fn host_gate(exec: &Exec, herdr_session: &str, expect: &Identity, step: &str) -> Result<String> {
+fn host_gate(exec: &Exec, herdr_session: &str, expect: &Identity, step: &str, input: Option<Vec<u8>>) -> Result<String> {
     let pane = expect.pane_id.as_str();
     let mut report = transcript::instance_script(herdr_session, pane);
     report.push('\n');
     let script = format!(
         r#"exec 2>/dev/null
 t=$(mktemp -d) || {{ printf 'local\n'; exit 0; }}
-( {report} ) > "$t/report"
+( {report} ) < /dev/null > "$t/report"
 command -v python3 >/dev/null || {{ rm -rf "$t"; printf 'refused_unknown\n'; exit 0; }}
 python3 - "$t/report" {pane_id} {terminal_id} {pid} {path} {agent} {source} {kind} <<'PY'
 import json, sys
@@ -539,8 +599,17 @@ fi"#,
         source = shell_quote(&expect.source),
         kind = shell_quote(&expect.kind),
     );
-    let output =
-        String::from_utf8_lossy(&exec.run(sh(&script), CALL_TIMEOUT, ROOM)?.tail).into_owned();
+    let output = match input {
+        // Only the step reads stdin (fd 3); the report and the verifier
+        // never do. One write, then stdin closes.
+        Some(input) => {
+            let upload = exec.upload(sh(&script), CALL_TIMEOUT, ROOM)?;
+            upload.writer().ok_or(Error::SshClosed)?.write(input)?;
+            upload.finish()?
+        }
+        None => exec.run(sh(&script), CALL_TIMEOUT, ROOM)?,
+    };
+    let output = String::from_utf8_lossy(&output.tail).into_owned();
     let word = output.trim();
     if word.is_empty() || word.contains('\n') {
         return Err(Error::BadReply);

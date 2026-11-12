@@ -213,7 +213,7 @@ fn an_upload_lands_in_a_private_directory_and_reports_what_it_wrote() {
     assert_eq!(mode(Path::new(&dir)), 0o700);
     assert_eq!(mode(&Path::new(&dir).join("shot.png.part")), 0o600);
     assert_eq!(
-        verdict(Kind::Image, 5, HELLO_SHA, &(5, HELLO_SHA.to_owned())),
+        verdict(IMAGE_LIMIT, 5, HELLO_SHA, &(5, HELLO_SHA.to_owned())),
         Ok(())
     );
 
@@ -249,7 +249,7 @@ fn an_upload_past_its_limit_or_unlike_what_the_phone_sent_is_not_kept() {
     assert_eq!(written.0, 5);
     assert_eq!(
         verdict(
-            Kind::File,
+            FILE_LIMIT,
             5,
             HELLO_SHA,
             &(FILE_LIMIT + 1, HELLO_SHA.into())
@@ -257,19 +257,19 @@ fn an_upload_past_its_limit_or_unlike_what_the_phone_sent_is_not_kept() {
         Err(Refusal::TooLarge)
     );
     assert_eq!(
-        verdict(Kind::Image, IMAGE_LIMIT + 1, HELLO_SHA, &written),
+        verdict(IMAGE_LIMIT, IMAGE_LIMIT + 1, HELLO_SHA, &written),
         Err(Refusal::TooLarge)
     );
     assert_eq!(
-        verdict(Kind::File, 4, HELLO_SHA, &written),
+        verdict(FILE_LIMIT, 4, HELLO_SHA, &written),
         Err(Refusal::Mismatch)
     );
     assert_eq!(
-        verdict(Kind::File, 5, &"0".repeat(64), &written),
+        verdict(FILE_LIMIT, 5, &"0".repeat(64), &written),
         Err(Refusal::Mismatch)
     );
     assert_eq!(
-        verdict(Kind::File, 5, "HELLO", &written),
+        verdict(FILE_LIMIT, 5, "HELLO", &written),
         Err(Refusal::Mismatch)
     );
 

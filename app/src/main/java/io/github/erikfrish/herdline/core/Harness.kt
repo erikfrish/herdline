@@ -248,9 +248,10 @@ private val KNOWN: Map<String, Harness> = (
         routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
         routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
         routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB)),
-        // opencode: Send (Auto, Steer, Queue), its inbox, withdraw and steer-a-queued-entry go to the
-        // already-running server (native agent_chat, opencode_ctl.py, pinned v2.2.7 fedc6f2); unit tests only.
-        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), queue = true),
+        // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw and steer-a-queued-entry
+        // go to the already-running server (native agent_chat, opencode_ctl.py + opencode_media.py, pinned
+        // v2.2.7 fedc6f2); unit tests only.
+        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, Vn(Note.PermissionsOnly), V, NB, NB), queue = true),
         routed("kilo", SendRoute.None, card(V, V, NB, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), readOnlyHistory = true),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),

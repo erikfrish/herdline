@@ -94,12 +94,19 @@ pub enum Refusal {
     /// An attachment was staged for another target, agent or daemon run,
     /// or names a path that is not safe to paste.
     AttachmentTarget,
-    /// Attachments go only to an OMP instance the draft was written for.
+    /// Attachments go only to an agent instance the draft was written for,
+    /// whose route carries files (OMP, Codex images, OpenCode).
     AttachmentNeedsAgent,
     /// A steer carries text only.
     AttachmentSteer,
     /// A staged file is no longer on the host as it was staged.
     AttachmentMissing,
+    /// More files than one OpenCode prompt takes ([`crate::attach::MAX_FILES`]).
+    AttachmentTooMany,
+    /// A file past OpenCode's own per-file limit ([`crate::attach::OPENCODE_LIMIT`]).
+    AttachmentTooLarge,
+    /// A staged image whose bytes are not a PNG, JPEG, GIF or WebP.
+    AttachmentUnsupported,
 }
 
 /// What the latest screen shows of a program's own input box.

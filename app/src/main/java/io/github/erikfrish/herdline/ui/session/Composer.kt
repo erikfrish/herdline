@@ -2811,6 +2811,9 @@ internal fun reasonRes(reason: String): Int =
         "attachment_needs_agent" -> R.string.reason_attachment_needs_agent
         "attachment_steer" -> R.string.reason_attachment_steer
         "attachment_missing" -> R.string.reason_attachment_missing
+        "attachment_too_many" -> R.string.reason_attachment_too_many
+        "attachment_too_large" -> R.string.reason_attachment_too_large
+        "attachment_unsupported" -> R.string.reason_attachment_unsupported
         "unconfirmed" -> R.string.composer_uncertain
         // Chat's OMP endpoint (ChatIngress.kt, host/omp/herdline-ingress.ts).
         "instance_changed" -> R.string.reason_agent_restarted

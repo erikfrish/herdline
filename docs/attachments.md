@@ -30,7 +30,9 @@ mentioned as `@"/abs/path"`.
   or a quote. The host repeats every check.
 - **Limits.** Images may be at most 20 MiB, OMP's `MAX_IMAGE_INPUT_BYTES`
   (`pi-tui/src/chat/image-loading.ts`). Other files may be at most 64 MiB.
-  The host enforces the limit with `head -c limit+1`.
+  For an OpenCode target every file may be at most 20 MiB, OpenCode
+  2.2.7's own `MAX_ATTACHMENT_BYTES`, refused before upload as
+  `opencode_too_large`. The host enforces the limit with `head -c limit+1`.
 - **Verified.** Staging succeeds only when the size and SHA-256 computed on the
   host equal the ones the phone computed while it streamed.
 - **Cancel cleans up.** A cancel or any failed check removes the upload's
@@ -84,7 +86,7 @@ The + menu leads with **Attach image** (the system Photo Picker, images
 only) and **Attach file** (`OpenMultipleDocuments`, any type), each with
 its limit as a help line. While the draft can't take files they stay,
 disabled, and the help line names why: not connected, the draft is held or
-sending, the pane must be confirmed again, the pane has no OMP whose
+sending, the pane must be confirmed again, the pane has no OMP or OpenCode whose
 instance was read, or the draft already holds its 10 files
 (`attachBlock`; null exactly where files may be attached).
 
@@ -198,6 +200,23 @@ queue receipt and uncertain-delivery safeguards as an ordinary Chat Send.
 Photo-only steering needs no caption. The explicit Steer action remains
 distinct from Send; no text-only fallback discards an attached photo.
 
+## OpenCode
+
+An OpenCode Send (Auto, Steer or Queue) carries the draft's staged files as
+the prompt's `files`, PromptInput `{uri, name, source: {type: "inline"}}`
+(pinned 2.2.7 fedc6f2 `schema/prompt-input.ts:9-18`). The native core writes
+the full staged records and their target to the host command's stdin, never
+an argument; `agent_chat/opencode_media.py`, embedded in the control script,
+reads each file under the staging root, checks its binding, size and SHA-256,
+encodes it as a data URI and sends the prompt in the same process. The
+session and the agent process are asked again after the files are read. Text
+is still required. At most 10 files, each at most 20 MiB; there is no total
+limit. Any refusal refuses the whole send in words, before the prompt, never
+dropping a file or falling back to the pane: `attachment_too_many`,
+`attachment_too_large`, `attachment_unsupported` (an image that is not PNG,
+JPEG, GIF or WebP), `attachment_target`, `attachment_missing`,
+`attachment_needs_agent`.
+
 ## JNI contract
 
 These are declared in `core/Native.kt` (under the app's Kotlin package in
@@ -230,8 +249,9 @@ Refusal reasons are:
 - `not_connected` (Kotlin only): no live link to stage on;
 - `no_exec`: the link has no SSH session for commands;
 - `target_changed`: the session or daemon run is not this link's;
-- `needs_agent`: the target names no OMP instance;
+- `needs_agent`: the target names no agent instance;
 - `too_large`;
+- `opencode_too_large` (Kotlin only): past OpenCode's 20 MiB per file;
 - `bad_name`;
 - `staging_unsafe`: the root or the directory fails a check;
 - `mismatch`: the size or the SHA-256;

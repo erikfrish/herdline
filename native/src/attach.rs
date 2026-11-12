@@ -34,6 +34,11 @@ use std::{
 /// OMP's own limit for a pasted image (`MAX_IMAGE_INPUT_BYTES`, 18.18.8).
 pub const IMAGE_LIMIT: u64 = 20 * 1024 * 1024;
 pub const FILE_LIMIT: u64 = 64 * 1024 * 1024;
+/// OpenCode 2.2.7's own cap on any one prompt file, image or not
+/// (`MAX_ATTACHMENT_BYTES`, packages/core/src/session/prompt.ts).
+pub const OPENCODE_LIMIT: u64 = 20 * 1024 * 1024;
+/// The files one delivery carries, as the composer offers them.
+pub const MAX_FILES: usize = 10;
 pub const NAME_MAX: usize = 80;
 
 /// Each wait of an upload, for a chunk or for the host, may last this long.
@@ -70,8 +75,10 @@ pub enum Refusal {
     NoExec,
     /// The target is not the one this link is connected to.
     TargetChanged,
-    /// Attachments go to an OMP instance the draft was written for.
+    /// Attachments go to an agent instance the draft was written for.
     NeedsAgent,
+    /// Past the kind's limit, or past [`OPENCODE_LIMIT`] for an OpenCode
+    /// target.
     TooLarge,
     BadName,
     /// The staging root is not a private directory of this user's.
@@ -98,6 +105,17 @@ pub struct Begin {
     /// What the content provider reported, when it did.
     #[serde(default)]
     pub size: Option<u64>,
+}
+
+impl Begin {
+    /// The most this upload may carry: its kind's limit, or less where the
+    /// target's own server takes less.
+    pub fn limit(&self) -> u64 {
+        match &self.instance {
+            Some(instance) if instance.agent == "opencode" => self.kind.limit().min(OPENCODE_LIMIT),
+            _ => self.kind.limit(),
+        }
+    }
 }
 
 /// A file staged on the host for exactly one composer target.
@@ -347,12 +365,12 @@ fn refusal(exit: Option<u32>) -> Refusal {
 
 /// What the phone sent against what the host wrote.
 fn verdict(
-    kind: Kind,
+    limit: u64,
     sent: u64,
     phone_sha: &str,
     written: &(u64, String),
 ) -> std::result::Result<(), Refusal> {
-    if written.0 > kind.limit() || sent > kind.limit() {
+    if written.0 > limit || sent > limit {
         return Err(Refusal::TooLarge);
     }
     if written.0 != sent || !is_sha256(phone_sha) || written.1 != phone_sha {
@@ -392,11 +410,11 @@ pub fn start(exec: Exec, begin: Begin) -> Result<String> {
     if !valid_name(&begin.name, begin.kind) {
         return Ok(refused(Refusal::BadName));
     }
-    if begin.size.is_some_and(|size| size > begin.kind.limit()) {
+    if begin.size.is_some_and(|size| size > begin.limit()) {
         return Ok(refused(Refusal::TooLarge));
     }
     let upload = exec.upload(
-        sh(&begin_script(&begin.name, begin.kind.limit())),
+        sh(&begin_script(&begin.name, begin.limit())),
         IDLE,
         OUTPUT,
     )?;
@@ -421,7 +439,7 @@ pub fn write(id: i64, chunk: Vec<u8>) -> Result<()> {
         .sent
         .fetch_add(length, Ordering::AcqRel)
         .saturating_add(length);
-    if sent > staging.begin.kind.limit() {
+    if sent > staging.begin.limit() {
         cancel(id);
         return Err(crate::Error::SshClosed);
     }
@@ -458,7 +476,7 @@ pub fn finish(id: i64, sha256: &str) -> Result<String> {
         return Ok(refused(Refusal::Failed));
     };
     let sent = staging.sent.load(Ordering::Acquire);
-    if let Err(reason) = verdict(begin.kind, sent, sha256, &written) {
+    if let Err(reason) = verdict(begin.limit(), sent, sha256, &written) {
         discard_dir(&staging.exec, &dir);
         return Ok(refused(reason));
     }
