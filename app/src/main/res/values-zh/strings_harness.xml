@@ -48,7 +48,6 @@
     <string name="harness_reason_unknown_program">Herdline 不认识此程序。</string>
     <string name="harness_note_typed">“已发送”表示已输入到窗格中，尚未读取代理的接收确认。</string>
     <string name="harness_note_queue_missing">仅支持引导，排队尚未实现。</string>
-    <string name="harness_note_permissions_only">仅支持权限，提问尚未实现。</string>
     <string name="control_send_unavailable">无法从聊天发送到 %1$s：%2$s 请使用终端。</string>
     <string name="control_stop_unavailable">无法在此停止 %1$s：%2$s 请使用终端。</string>
     <string name="control_steer_unavailable">无法在此引导或排队 %1$s：%2$s</string>

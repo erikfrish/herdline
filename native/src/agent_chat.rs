@@ -37,10 +37,12 @@
 //! user's defaults is `needs_server` for every op: an unusable route,
 //! never an absence that would let a send fall through to the pane.
 //!
-//! OpenCode and Kilo control: the session's open permission requests as
-//! dialogs, the user's reply to one, and Stop. Kilo (v1 server) takes only
-//! these; every other Kilo op answers unsupported by name. Kilo has no
-//! validated PTY route, so nothing of it is typed into the pane.
+//! OpenCode and Kilo control: the session's open permission requests and
+//! questions as dialogs, the user's reply to one, and Stop. Kilo's send,
+//! status and state go through its v1 server (`agent_chat/kilo_ctl.py`,
+//! pinned v7.8.27 03a6f07); steer, queue, withdraw, promote and files are
+//! unsupported by name. Kilo has no validated PTY route, so nothing of it
+//! is typed into the pane.
 //!
 //! Every call runs as one command. First the transcript's own pane report,
 //! then the tiny embedded verifier, which must read that report as exactly

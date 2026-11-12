@@ -53,7 +53,6 @@
     <string name="harness_reason_unknown_program">Herdline doesn\'t know this program.</string>
     <string name="harness_note_typed">Sent means typed into the pane; the agent\'s receipt isn\'t read yet.</string>
     <string name="harness_note_queue_missing">Steer only; queue not built yet.</string>
-    <string name="harness_note_permissions_only">Permissions only; questions not built yet.</string>
     <!-- Disabled controls (§3.5): %1$s the program as Herdr names it, %2$s a harness_reason_* or harness_cant_check_* line. -->
     <string name="control_send_unavailable">Can\'t send to %1$s from Chat: %2$s Use Terminal.</string>
     <string name="control_stop_unavailable">Can\'t stop %1$s from here: %2$s Use Terminal.</string>

@@ -182,9 +182,9 @@ internal inline fun <T> afterWriteAhead(writeAhead: () -> Boolean, refused: T, c
 /** The refusal of a delivery whose write-ahead record could not be stored. */
 internal const val WRITE_AHEAD_FAILED = "write_ahead_failed"
 
-/** Image steering needs a live, working endpoint (OMP's, Codex's daemon); the PTY route is text-only. */
+/** Image steering needs a live, working endpoint whose runtime takes a steer (OMP's, Codex's daemon, OpenCode's server); the PTY route is text-only. */
 internal fun endpointSteerReady(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
-    reading && agentNamed(instance?.agent, Harness.endpointAgents) && probe is IngressProbe.Live && !probe.state.idle
+    reading && agentNamed(instance?.agent, Harness.steerAgents) && probe is IngressProbe.Live && !probe.state.idle
 
 /**
  * Whether Chat's Send queues behind the running turn: a program whose

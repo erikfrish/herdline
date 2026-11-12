@@ -35,6 +35,11 @@ data class Harness(
      * be moved into the turn. Only rows with a pinned route set it.
      */
     val queue: Boolean = false,
+    /**
+     * While the program works, Chat offers Steer into the running turn by
+     * its endpoint. A send route alone never implies it.
+     */
+    val steer: Boolean = false,
     /** The card's claims, one per [HarnessKey] in key order. */
     private val claims: List<Cell>,
 ) {
@@ -63,6 +68,9 @@ data class Harness(
 
         /** Programs whose Send queues while they work, and whose queued entries can be steered. */
         val queueAgents: Set<String> by lazy { names { it.queue } }
+
+        /** Programs whose endpoint takes a Steer into the running turn. */
+        val steerAgents: Set<String> by lazy { names { it.steer } }
 
         private fun names(keep: (Harness) -> Boolean): Set<String> =
             KNOWN.values.filter(keep).mapTo(linkedSetOf()) { it.name }
@@ -140,7 +148,7 @@ enum class Reason {
 }
 
 /** The missing half of an Unverified two-verb cell (card §2.4, `harness_note_*`). */
-enum class Note { Typed, QueueMissing, PermissionsOnly }
+enum class Note { Typed, QueueMissing }
 
 /** What the route reports right now, for the card's runtime replacements (card §3.4). */
 data class HarnessRuntime(
@@ -236,23 +244,25 @@ private fun card(vararg cells: Cell) = cells.toList()
 
 private fun sessionless(all: Cell, stop: Cell, steer: Cell) = card(all, all, all, stop, steer, all, all, all, SS, all, all)
 
-private fun routed(name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false) =
-    Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue)
+private fun routed(name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false, steer: Boolean = false) =
+    Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue, steer = steer)
 
 private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = false, send = SendRoute.None, claims = claims)
 
 /** Keyed by lower-case Herdr name. Columns of each card(…): H L P X S T M Q U A R. */
 private val KNOWN: Map<String, Harness> = (
     listOf(
-        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, NB)),
+        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, NB), steer = true),
         routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
         routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
-        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB)),
+        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB), steer = true),
         // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw and steer-a-queued-entry
         // go to the already-running server (native agent_chat, opencode_ctl.py + opencode_media.py, pinned
         // v2.2.7 fedc6f2); unit tests only.
-        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, Vn(Note.PermissionsOnly), V, NB, NB), queue = true),
-        routed("kilo", SendRoute.None, card(V, V, NB, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), readOnlyHistory = true),
+        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, NB, NB), queue = true, steer = true),
+        // kilo: text Send, status and state through its v1 server (kilo_ctl.py, pinned v7.8.27 03a6f07);
+        // a send while it works is refused agent_working. No steer, queue, withdraw, promote or files.
+        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, NB, V, V, NB, NB)),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.

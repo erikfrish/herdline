@@ -293,7 +293,6 @@ private fun noteText(note: Note): String = stringResource(
     when (note) {
         Note.Typed -> R.string.harness_note_typed
         Note.QueueMissing -> R.string.harness_note_queue_missing
-        Note.PermissionsOnly -> R.string.harness_note_permissions_only
     },
 )
 

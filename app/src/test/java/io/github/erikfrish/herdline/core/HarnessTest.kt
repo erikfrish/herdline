@@ -15,6 +15,18 @@ class HarnessTest {
     }
 
     @Test
+    fun kilos_endpoint_takes_text_and_never_offers_steer_or_queue() {
+        val kilo = Harness.of("Kilo")
+        assertEquals(SendRoute.Endpoint, kilo.send)
+        assertFalse(kilo.readOnlyHistory)
+        assertTrue("kilo" in Harness.endpointAgents)
+        assertFalse("kilo" in Harness.queueAgents)
+        assertFalse("kilo" in Harness.steerAgents)
+        // The programs that do steer keep it.
+        for (name in listOf("omp", "codex", "opencode")) assertTrue(name, name in Harness.steerAgents)
+    }
+
+    @Test
     fun an_unread_or_unknown_agent_never_offers_chat_only_its_terminal() {
         for (name in listOf("agy", "Droid", "not-an-agent", "")) {
             val other = Harness.of(name)
