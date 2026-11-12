@@ -85,6 +85,16 @@ internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, b
 }
 
 /**
+ * The baseline [ptyTurnLanded] reads on from: where [instance]'s history
+ * ends, from a Tail read [page] taken before the text went, or null when
+ * none was read or it is another session. A Tail page always says reset
+ * (its entries replace whatever chat showed, native `transcript.rs`), so
+ * only the identity decides here.
+ */
+internal fun historyEnd(page: TranscriptPage?, instance: TranscriptIdentity): Long? =
+    page?.takeIf { it.identity == instance }?.end
+
+/**
  * What chat says the supported agent in [pane] is doing, only while the
  * same pane is live on this connection. A lost link or unknown program is
  * [AgentStatus.Unknown]; stale history never claims a Working status.

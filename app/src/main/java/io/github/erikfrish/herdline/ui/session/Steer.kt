@@ -123,6 +123,15 @@ internal fun steerEntered(text: String, receipt: String, historyFrom: Long?, now
 internal fun inPaneNotice(sent: SentRecord?): Int =
     if (sent?.steer == true) R.string.composer_steer_entered else R.string.composer_in_pane
 
+/**
+ * Until when the P1 watch looks for [sent] in the history, given the
+ * deadline so far. A typed send keeps [deadline]; an entered steer waits
+ * for OMP's next step, which may be minutes away, so while the agent is
+ * [working] its deadline stays [window] ahead of [now].
+ */
+internal fun ptyWatchDeadline(sent: SentRecord, deadline: Long, working: Boolean, now: Long, window: Long): Long =
+    if (sent.steer && working) maxOf(deadline, now + window) else deadline
+
 /** The receipt this phase waits on, if any. */
 internal val SteerPhase.awaiting: String?
     get() = when (this) {

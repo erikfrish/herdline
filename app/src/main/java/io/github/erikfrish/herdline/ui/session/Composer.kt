@@ -127,6 +127,7 @@ import io.github.erikfrish.herdline.ui.components.ConfirmDialog
 import io.github.erikfrish.herdline.ui.chat.ChatColors
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
+import io.github.erikfrish.herdline.ui.chat.historyEnd
 import io.github.erikfrish.herdline.ui.chat.ptyTurnLanded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -999,6 +1000,8 @@ private fun Editor(
     // again (once, past the deadline). Nothing is ever typed again.
     val inPane = draft.sent?.takeIf { it.state == SentState.InPane }
     var inPaneWatched by remember(key, inPane) { mutableStateOf(false) }
+    // An entered steer waits for OMP's next step: watched while the agent works.
+    val paneWorking by rememberUpdatedState(view?.agentIn(key.pane)?.status == AgentStatus.Working)
     LaunchedEffect(key, inPane, connection) {
         val sent = inPane ?: return@LaunchedEffect
         val from = sent.historyFrom
@@ -1008,6 +1011,7 @@ private fun Editor(
             return@LaunchedEffect
         }
         val via = connection
+        var until = sent.at + PTY_TURN_WATCH_MS
         do {
             val page = withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(from))) }.getOrNull()
             if (page != null && ptyTurnLanded(page, instance, from, sent.text)) {
@@ -1022,7 +1026,9 @@ private fun Editor(
             // Another session, or a history that started over: this turn can no longer be shown.
             if (page != null && (page.reset || page.identity != instance)) break
             delay(PTY_TURN_POLL_MS)
-        } while (System.currentTimeMillis() - sent.at < PTY_TURN_WATCH_MS)
+            val now = System.currentTimeMillis()
+            until = ptyWatchDeadline(sent, until, paneWorking, now, PTY_TURN_WATCH_MS)
+        } while (now < until)
         inPaneWatched = true
     }
 
@@ -1333,7 +1339,7 @@ private fun Editor(
             val watched = reading && submit && target.instance != null
             val historyFrom = target.instance?.takeIf { watched }?.let { instance ->
                 withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
-                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+                    .getOrNull().let { historyEnd(it, instance) }
             }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.Delivery.Refused(WRITE_AHEAD_FAILED)) {
@@ -1405,7 +1411,7 @@ private fun Editor(
             // the bound session's history can be this steer.
             steerFrom = target.instance?.let { instance ->
                 withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
-                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+                    .getOrNull().let { historyEnd(it, instance) }
             }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.SteerStart.Refused(WRITE_AHEAD_FAILED)) {
