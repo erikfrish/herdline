@@ -15,16 +15,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -53,8 +45,8 @@ internal fun staleStripShape(lasting: Boolean, dense: Boolean) =
  * time and [cause] the full sentence. Line 1 is the title with that time;
  * line 2 is [cause] cut to one line. Dense is one row: an icon, the time
  * with [shortCause], Retry for a transient loss, and More. TalkBack reads
- * the whole title and [cause]. More shows [cause] whole in a dialog with
- * one OK, then puts focus back on More. There is no motion.
+ * the whole title and [cause]. More calls [onMore]; the caller holds the
+ * dialog ([StaleCauseDialog]), so a good read never closes it. No motion.
  */
 @Composable
 internal fun StaleStrip(
@@ -64,21 +56,12 @@ internal fun StaleStrip(
     lasting: Boolean,
     dense: Boolean,
     onRetry: () -> Unit,
+    onMore: () -> Unit,
     modifier: Modifier = Modifier,
     tag: String = "chat:offline",
 ) {
     val shape = staleStripShape(lasting, dense)
     val title = stringResource(R.string.outage_saved_at, savedAt)
-    var open by rememberSaveable { mutableStateOf(false) }
-    val more = remember { FocusRequester() }
-    var opened by remember { mutableStateOf(false) }
-    LaunchedEffect(open) {
-        if (open) {
-            opened = true
-        } else if (opened) {
-            more.requestFocus()
-        }
-    }
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -114,22 +97,28 @@ internal fun StaleStrip(
                 }
             }
             TextButton(
-                onClick = { open = true },
-                modifier = Modifier.heightIn(min = 48.dp).focusRequester(more).testTag("$tag:more"),
+                onClick = onMore,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:more"),
             ) {
                 Text(stringResource(R.string.chat_strip_more))
             }
         }
     }
-    if (open) {
-        GlassAlertDialog(
-            onDismissRequest = { open = false },
-            text = { Text(cause, style = MaterialTheme.typography.bodyLarge) },
-            confirmButton = {
-                TextButton(onClick = { open = false }, modifier = Modifier.testTag("$tag:ok")) {
-                    Text(stringResource(android.R.string.ok))
-                }
-            },
-        )
-    }
+}
+
+/**
+ * [cause] whole, with one OK. Back or OK calls [onDismiss]; the dialog's own
+ * dismiss returns focus, so nothing is moved to another field (R-F1c).
+ */
+@Composable
+internal fun StaleCauseDialog(cause: String, onDismiss: () -> Unit, tag: String = "chat:offline") {
+    GlassAlertDialog(
+        onDismissRequest = onDismiss,
+        text = { Text(cause, style = MaterialTheme.typography.bodyLarge) },
+        confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("$tag:ok")) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+    )
 }
