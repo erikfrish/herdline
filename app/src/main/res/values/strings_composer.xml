@@ -70,11 +70,11 @@
     <string name="reason_popup_open">A Herdr popup is open: close it first</string>
     <string name="reason_agent_blocked">The agent is asking something: answer in the terminal</string>
     <string name="reason_agent_working">The agent is working: Send is off until it is idle</string>
-    <string name="reason_unsupported_program">Send is only for OMP at rest; use Insert without Enter, then Enter yourself</string>
+    <string name="reason_unsupported_program">Send is only for an agent at rest whose input box Herdline reads; use Insert without Enter, then Enter yourself</string>
     <string name="reason_not_visible">The pane\'s input box isn\'t on screen or can\'t be read yet. Open its tab, then send again. Nothing sent.</string>
     <string name="reason_scrolled">The pane is scrolled back. Scroll it to the bottom, then send again. Nothing sent.</string>
     <string name="reason_remote_draft">The input box already holds text</string>
-    <string name="composer_remote_draft">OMP\'s input box already has text. Append adds yours after it, without Enter.</string>
+    <string name="composer_remote_draft">The agent\'s input box already has text. Append adds yours after it, without Enter.</string>
     <string name="composer_clear_in_terminal">Clear in Terminal</string>
     <string name="composer_clear_in_terminal_description">Open Terminal to clear the input box</string>
     <string name="reason_editor_list_below">Something is drawn under the input box. Check it in Terminal, then send again.</string>
