@@ -1,0 +1,3 @@
+Herdline 0.6.15 — The prompt stays on screen
+
+When the terminal is taller than the space it has (for example while the keyboard is up, or while a draft keeps rows held), the view used to always show the bottom rows. A fresh shell with its prompt at the top could have the prompt hidden above the view. Now the view moves up so the line with the cursor stays visible. The check that allows typing into an agent's input box uses the same rule, so it stays in step with what you see.

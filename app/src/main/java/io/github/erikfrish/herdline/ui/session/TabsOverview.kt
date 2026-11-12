@@ -86,6 +86,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import io.github.erikfrish.herdline.ui.components.SheetCloseButton
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
@@ -131,6 +132,8 @@ fun TabsOverview(
     modifier: Modifier = Modifier,
     here: String? = view?.focusedPane,
     reading: Boolean = false,
+    /** The phone sheet's visible way out (U-1 #7); null where there is no sheet to close. */
+    onClose: (() -> Unit)? = null,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     val scoped = remember(groups, scope, view != null) { tabsScope(groups, scope, loaded = view != null) }
@@ -167,7 +170,7 @@ fun TabsOverview(
         }
         Column(Modifier.fillMaxWidth().testTag("overview")) {
             val newTabIn = view?.workspaces?.firstOrNull { it.id == (chosen ?: view.focusedWorkspace) }?.takeUnless { scoped.gone }
-            OverviewHeader(host, view, newTabIn, actions, onShowList)
+            OverviewHeader(host, view, newTabIn, actions, onShowList, onClose)
             Box(Modifier.padding(horizontal = 16.dp)) {
                 val fontScale = LocalDensity.current.fontScale
                 SearchField(query, onQuery, stringResource(R.string.overview_search), minHeight = maxOf(48f, 16f * fontScale + 24f).dp)
@@ -206,7 +209,7 @@ fun TabsOverview(
 }
 
 @Composable
-private fun OverviewHeader(host: String, view: ShellView?, newTabIn: Workspace?, actions: SwitcherActions, onShowList: () -> Unit) {
+private fun OverviewHeader(host: String, view: ShellView?, newTabIn: Workspace?, actions: SwitcherActions, onShowList: () -> Unit, onClose: (() -> Unit)?) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 8.dp).heightIn(min = 56.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -238,6 +241,7 @@ private fun OverviewHeader(host: String, view: ShellView?, newTabIn: Workspace?,
         IconButton(onClick = onShowList, modifier = Modifier.testTag("overview:as-list")) {
             Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list))
         }
+        if (onClose != null) SheetCloseButton(onClose, tag = "overview:close")
     }
 }
 

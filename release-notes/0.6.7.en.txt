@@ -1,0 +1,13 @@
+Herdline 0.6.7 — Mastra Code history in Chat, a visible prompt in landscape, forms that open empty
+
+Chat can now show the history of a Mastra Code session, read only. It reads the database Mastra Code itself uses for the pane, and only inside your home folder on the host. When Herdline can't tell for certain which database that is, for example when git environment variables move the project, Chat says it can't read the session instead of showing another one. Sending to Mastra Code from Chat isn't supported.
+
+Kilo history now follows Kilo's own message order, so imported or restored sessions read in the right order.
+
+In landscape with the keyboard up, the extra keys now take one row instead of two, so the line you type on stays visible. All your keys are still there, in your order; if they don't fit, the row scrolls sideways. The two rows come back when the keyboard closes and in portrait.
+
+After you leave the host editor or the import form, by saving or discarding, it opens empty the next time instead of showing the old values.
+
+At larger font sizes, the end of the host editor and of the Hosts list now scrolls fully clear of the Save bar and the Add node button.
+
+The Chinese translation now uses 代理 for "agent" everywhere.

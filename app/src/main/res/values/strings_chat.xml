@@ -7,6 +7,12 @@
     <string name="chat_unavailable">Chat cannot read this agent: %1$s</string>
     <!-- Under the saved-at title of the shared outage strip, while the link is up but a read failed. -->
     <string name="chat_not_refreshed">Chat could not read the transcript again; it keeps trying</string>
+    <!-- R-F1b: the stale-history strip over Chat. More opens the whole cause in a dialog. -->
+    <string name="chat_strip_more">More</string>
+    <!-- Dense strip, one row: saved time, then a short cause. -->
+    <string name="chat_strip_saved_short">Saved %1$s · %2$s</string>
+    <string name="chat_strip_cannot_read">Cannot read</string>
+    <string name="chat_strip_not_refreshed">Not refreshed</string>
     <string name="chat_open_terminal">Open Terminal</string>
     <plurals name="chat_latest_new">
         <item quantity="one">Latest · %d new</item>
@@ -31,6 +37,12 @@
     <string name="chat_show_steps">Show steps</string>
     <string name="chat_hide_steps">Hide steps</string>
     <string name="chat_tool_arguments">Arguments</string>
+    <!-- HH-4: a stop or a plan item, worded here; the agent's own text follows a plan item. -->
+    <string name="chat_marker_stopped_by_you">Stopped by you</string>
+    <string name="chat_marker_stopped">Stopped</string>
+    <string name="chat_marker_done">Done</string>
+    <string name="chat_marker_to_do">To do</string>
+    <string name="chat_marker_item_spoken">%1$s: %2$s</string>
     <plurals name="chat_tool_group">
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>

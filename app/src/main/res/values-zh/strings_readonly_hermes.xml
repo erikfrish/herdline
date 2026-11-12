@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_history_boundary">历史记录在另一个会话中继续，此处不显示。终端显示代理的当前状态。</string>
+    <string name="chat_refused_hermes_version">聊天只能读取 Hermes 历史格式 %2$d。此 Hermes 使用格式 %1$d，因此聊天无法显示。终端仍可使用：请在终端中阅读和输入。</string>
+    <string name="chat_refused_hermes_format_unknown">聊天只能读取 Hermes 历史格式 %1$d，且无法识别此 Hermes 使用的格式，因此聊天无法显示。终端仍可使用：请在终端中阅读和输入。</string>
+</resources>

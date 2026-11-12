@@ -8,5 +8,11 @@
         <item quantity="one">%1$d agent</item>
         <item quantity="other">%1$d agents</item>
     </plurals>
+    <!-- A-22: one host-card chip for several panes of one program in one state. -->
+    <string name="needs_input_named_count">%1$s needs input ×%2$d</string>
+    <plurals name="needs_input_named_spoken">
+        <item quantity="one">%1$s needs input, %2$d pane</item>
+        <item quantity="other">%1$s needs input, %2$d panes</item>
+    </plurals>
     <string name="form_fix_fields_named">Check before submitting: %1$s</string>
 </resources>

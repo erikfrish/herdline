@@ -1,0 +1,7 @@
+Herdline 0.6.4 — Kilo history in Chat, more forgiving session folders, banners clear of the connection notice
+
+Chat can now show the history of Kilo sessions, read only: where the message field would be, a line says to switch to Terminal to type.
+
+When an agent's environment names a session folder Herdline can't use, such as one outside your home folder on the host, Chat no longer refuses the agent's other folders too. Sessions in the default folder and in any valid custom folder still open.
+
+An agent's attention banner now sits under the "Not connected" notice instead of covering it, so Retry stays in reach. Once the notice goes away, the banner moves back to the top.

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The composer's To-line, spoken uncut (U1-1): %1$s the pane, %2$s its workspace, %3$s its state. -->
+    <string name="composer_destination_description">Sends to %1$s in %2$s, %3$s</string>
+    <string name="composer_destination_description_nostate">Sends to %1$s in %2$s</string>
+</resources>

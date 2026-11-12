@@ -30,9 +30,8 @@ data class TranscriptIdentity(
     }
 }
 
-/** Chat reads the existing session of these agent kinds; other terminals stay Terminal. */
-fun isChatAgent(agent: String?): Boolean = agent?.lowercase() in CHAT_AGENTS
-private val CHAT_AGENTS = setOf("omp", "pi", "opencode", "codex", "claude")
+/** Chat reads the existing session of these agent kinds ([Harness.chat]); other terminals stay Terminal. */
+fun isChatAgent(agent: String?): Boolean = agent != null && Harness.of(agent).chat
 
 /** Which bytes of the transcript to read next (see `transcript.rs`). */
 sealed interface TranscriptRead {
@@ -92,6 +91,8 @@ sealed interface TranscriptBlock {
     ) : TranscriptBlock
     /** An image at [part] of its message's content. */
     data class Image(val part: Int, val source: ImageSource) : TranscriptBlock
+    /** A turn's stop or one plan item; the app words [kind], [text] is the item's own (empty for a stop). */
+    data class Marker(val kind: MarkerKind, val text: String, val truncated: Boolean) : TranscriptBlock
 
     companion object {
         fun parse(json: JSONObject): TranscriptBlock? = when (json.optString("type")) {
@@ -117,11 +118,31 @@ sealed interface TranscriptBlock {
                 subagents = json.optJSONArray("subagents").objects().mapNotNull(TranscriptSubagent.Companion::parse).take(MAX_SUBAGENTS),
             )
             "image" -> image(json)
+            "marker" -> marker(json)
             else -> null
         }
 
         private fun image(json: JSONObject) = Image(json.optInt("part"), ImageSource.parse(json.optJSONObject("source")))
+
+        // A kind from a newer core keeps its words when it has any, so nothing is lost and nothing crashes.
+        private fun marker(json: JSONObject): TranscriptBlock? {
+            val text = json.optString("text")
+            val truncated = json.optBoolean("truncated")
+            val kind = MarkerKind.entries.firstOrNull { it.wire == json.optString("marker") }
+            return when {
+                kind != null -> Marker(kind, text, truncated)
+                text.isNotBlank() -> Text(text, truncated)
+                else -> null
+            }
+        }
     }
+}
+
+enum class MarkerKind(val wire: String) {
+    StoppedByYou("stopped_by_you"),
+    Stopped("stopped"),
+    Done("done"),
+    ToDo("to_do"),
 }
 
 /** How many children one call's snapshot and one entry's ends may carry (wire bounds). */
@@ -204,7 +225,8 @@ enum class TranscriptSteer {
     Live,
 }
 
-enum class TranscriptKind { Message, Compaction, Other }
+/** [Boundary]: the history shown stops here at another session's turns, which are not shown. */
+enum class TranscriptKind { Message, Compaction, Boundary, Other }
 
 /** An assistant message's tokens and OMP's own cost estimate in USD, null when OMP has no price. */
 data class TranscriptUsage(val input: Long, val output: Long, val totalTokens: Long, val cost: Double?) {
@@ -254,6 +276,7 @@ data class TranscriptEntry(
             kind = when (json.optString("kind")) {
                 "message" -> TranscriptKind.Message
                 "compaction" -> TranscriptKind.Compaction
+                "boundary" -> TranscriptKind.Boundary
                 else -> TranscriptKind.Other
             },
             role = json.optString("role").takeUnless { json.isNull("role") || it.isEmpty() },
@@ -282,8 +305,10 @@ data class TranscriptPage(
     val hasOlder: Boolean = start > 0,
 ) {
     companion object {
+        /** Fails with [TranscriptRefused] when the core refuses the session by type. */
         fun parse(text: String): TranscriptPage {
             val json = JSONObject(text)
+            json.optJSONObject("refused")?.let { refused -> TranscriptRefusal.parse(refused)?.let { throw TranscriptRefused(it) } }
             return TranscriptPage(
                 identity = TranscriptIdentity.parse(json.getJSONObject("identity")),
                 reset = json.optBoolean("reset"),
@@ -296,6 +321,40 @@ data class TranscriptPage(
         }
     }
 }
+
+/** Why Chat will never read this session (native `Refused`); it does not clear by itself. */
+sealed interface TranscriptRefusal {
+    /** The session is stored in a [format] Chat does not read, such as `managed_session_journal`. */
+    data class UnsupportedFormat(val format: String) : TranscriptRefusal
+    /** The agent keeps its sessions outside the SSH user's home folder. */
+    data object OutsideHome : TranscriptRefusal
+    /**
+     * [agent]'s store is in a schema format the reader was not written for:
+     * [found] is that format, or null when the store names no single one;
+     * [supported] is the one the reader reads.
+     */
+    data class UnsupportedVersion(val agent: String, val found: Int?, val supported: Int) : TranscriptRefusal
+
+    companion object {
+        /** Null for a kind from a newer core: the read then fails as any other. */
+        fun parse(json: JSONObject): TranscriptRefusal? = when (json.optString("kind")) {
+            "unsupported_format" -> UnsupportedFormat(json.optString("format"))
+            "outside_home" -> OutsideHome
+            // Without a supported format there is nothing true to say: the general text.
+            "unsupported_version" -> json.optInt("supported", -1).takeIf { it >= 0 }?.let { supported ->
+                UnsupportedVersion(
+                    json.optString("agent"),
+                    json.optInt("found", -1).takeIf { !json.isNull("found") && it >= 0 },
+                    supported,
+                )
+            }
+            else -> null
+        }
+    }
+}
+
+/** A read the core refused by type; Chat says [refusal] in its own words, not the message. */
+class TranscriptRefused(val refusal: TranscriptRefusal) : java.io.IOException("chat cannot read this session: $refusal")
 
 /** The most image bytes one media read decodes (native `MAX_IMAGE`). */
 const val MAX_IMAGE_BYTES = 20L * 1024 * 1024

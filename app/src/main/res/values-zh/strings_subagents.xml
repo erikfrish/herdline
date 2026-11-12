@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_subagents_pending">等待中</string>
+    <string name="chat_subagents_aborted">已停止</string>
+    <string name="chat_subagents_cancelled">已取消</string>
+    <string name="chat_subagents_failed_chip">失败</string>
+    <string name="chat_subagents_calls">%1$d 次调用 · %2$s</string>
+</resources>

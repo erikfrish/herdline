@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ctrl / Alt extra-key latch state for TalkBack (Simplified Chinese). -->
+<resources>
+    <string name="extra_key_latch_on">开启</string>
+    <string name="extra_key_latch_off">关闭</string>
+</resources>

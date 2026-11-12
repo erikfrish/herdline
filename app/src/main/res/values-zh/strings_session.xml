@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="session_up">主机</string>
+    <string name="session_back_to_composer">返回输入框</string>
+    <string name="session_unzoom_shared">取消缩放（共享）</string>
+    <string name="session_split_right_shared">向右分屏（共享）</string>
+    <string name="session_split_down_shared">向下分屏（共享）</string>
+    <string name="session_zoom_help">也会在桌面上缩放</string>
+    <string name="session_close_pane">关闭窗格…</string>
+    <string name="session_close_tab">关闭标签页…</string>
+    <string name="session_disconnect">断开连接…</string>
+    <string name="session_disconnect_title">要断开与 %1$s 的连接吗？</string>
+    <string name="session_disconnect_text">Herdr 会在主机上继续运行，所有代理和终端都保留。随时可以重新连接。</string>
+    <plurals name="session_tab_count">
+        <item quantity="other">%1$d 个标签页</item>
+    </plurals>
+    <string name="session_tab_previous">上一个标签页</string>
+    <string name="session_tab_next">下一个标签页</string>
+    <string name="session_tabs_position">%1$d/%2$d</string>
+    <string name="session_tabs_button">标签页，第 %1$d 个，共 %2$d 个</string>
+    <string name="session_panes">窗格</string>
+    <string name="outage_saved_at">显示的是 %1$s 保存的内容</string>
+    <string name="outage_reconnecting">正在重新连接…</string>
+    <string name="outage_last_live">最后在线于 %1$s</string>
+    <string name="outage_not_connected">未连接：%1$s</string>
+    <string name="outage_retry">重试</string>
+    <string name="outage_retrying">正在重试</string>
+    <string name="outage_dismiss">隐藏此提示</string>
+    <string name="session_reconnected">已重新连接</string>
+    <string name="sidebar_fold">折叠侧边栏</string>
+    <string name="sidebar_show">显示侧边栏</string>
+    <string name="rail_workspace">%1$s，%2$s</string>
+</resources>

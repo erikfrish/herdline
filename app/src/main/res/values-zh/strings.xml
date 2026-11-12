@@ -248,8 +248,8 @@
     </plurals>
     <string name="reason_editor_list_below">OMP 的输入框下方显示了其他内容。请在终端中查看，然后再次发送。</string>
     <string name="reason_editor_dialog_open">OMP 正在提问：请在终端中回答。未发送任何内容。</string>
-    <string name="reason_editor_covered">OMP 的输入框上覆盖了其他内容。未发送任何内容。</string>
-    <string name="reason_editor_top_missing">OMP 输入框的顶部不在屏幕上。未发送任何内容。</string>
+    <string name="reason_editor_covered">OMP 的输入框上覆盖了其他内容。请在终端中关闭它，然后再次发送。未发送任何内容。</string>
+    <string name="reason_editor_top_missing">OMP 输入框的顶部不在屏幕上。请收起键盘或使用更小的字号，然后再次发送。未发送任何内容。</string>
     <string name="reason_editor_resizing">窗格正在调整大小。请稍后再次发送。</string>
     <string name="reason_pane_sized_elsewhere">Herdr 按另一块屏幕调整了此窗格的大小，OMP 的输入框不在此视图中。未发送任何内容。</string>
     <string name="composer_fit_pane">适配此手机</string>
@@ -258,8 +258,8 @@
     <string name="composer_fit_pane_moves_spoken">让 %1$s 适配此手机。这会把桌面焦点移到 %1$s，并只显示其一部分。</string>
     <string name="fit_pane_crops_desktop">在此适配后，桌面上只显示它的一部分。</string>
     <string name="fit_pane_moves_desktop">在此适配还会把桌面焦点移到它，并只显示其一部分。</string>
-    <string name="reason_editor_none">此窗格中未绘制 OMP 的输入框。未发送任何内容。</string>
-    <string name="reason_editor_unrecognized">无法读取 OMP 的输入框。未发送任何内容。</string>
+    <string name="reason_editor_none">此窗格中未绘制 OMP 的输入框。请打开终端，确认 OMP 处于输入提示符下，然后再次发送。未发送任何内容。</string>
+    <string name="reason_editor_unrecognized">无法读取 OMP 的输入框。请在终端中查看，然后再次发送。未发送任何内容。</string>
     <string name="reason_editor_hidden">OMP 的输入框没有全部显示在屏幕上。请显示整个输入框（收起键盘、滚动到底部或使用更小的字号），然后再次发送。未发送任何内容。</string>
     <string name="reason_target_not_visible">窗格的光标行不在屏幕上。请让它显示出来（收起键盘、滚动到底部或使用更小的字号），然后再次插入。未发送任何内容。</string>
     <string name="composer_back_to_bottom">回到底部</string>
@@ -386,7 +386,7 @@
     <string name="attachment_reason_too_large">文件过大：图片最多 20 MiB，文件最多 64 MiB。</string>
     <string name="attachment_reason_bad_name">无法使用此文件名。未上传。</string>
     <string name="attachment_reason_target_changed">上传时连接已变化。未上传。</string>
-    <string name="attachment_reason_needs_agent">文件只能发送给 OMP 智能体。未上传。</string>
+    <string name="attachment_reason_needs_agent">文件只能发送给 OMP 代理。未上传。</string>
     <string name="attachment_reason_staging_unsafe">主机的上传文件夹不是私有的。未上传。</string>
     <string name="attachment_reason_mismatch">上传的内容已损坏，已被删除。</string>
     <string name="attachment_reason_no_tools">主机缺少接收文件所需的工具。</string>
@@ -394,7 +394,7 @@
     <string name="attachment_reason_unreadable">无法在此手机上读取文件。请重新选择。</string>
     <string name="attachment_reason_failed">上传失败。点按重试。</string>
     <string name="reason_attachment_target">有附件是为其他窗格上传的。未发送任何内容。</string>
-    <string name="reason_attachment_needs_agent">文件只能发送给 OMP 智能体。未发送任何内容。</string>
+    <string name="reason_attachment_needs_agent">文件只能发送给 OMP 代理。未发送任何内容。</string>
     <string name="reason_attachment_steer">引导消息不能携带文件。未发送任何内容。</string>
     <string name="reason_attachment_missing">已上传的文件已不在主机上。请重新上传。</string>
     <string name="reason_dialog_open">OMP 有问题或对话框未关闭。如果聊天中提供了回答控件，请在聊天中回答；否则请在终端中回答。未发送任何内容。</string>

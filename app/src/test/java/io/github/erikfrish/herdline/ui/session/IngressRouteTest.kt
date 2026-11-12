@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
 import io.github.erikfrish.herdline.core.IngressSend
@@ -39,16 +40,16 @@ class IngressRouteTest {
         // a case-strict compare dropped the live endpoint and left Send off
         // after images were staged.
         for (agent in listOf("omp", "OMP", "Omp")) {
-            assertTrue(agent, agentNamed(agent, ENDPOINT_AGENTS))
-            assertFalse(agent, agentNamed(agent, API_AGENTS))
+            assertTrue(agent, agentNamed(agent, Harness.endpointAgents))
+            assertFalse(agent, agentNamed(agent, Harness.apiAgents))
         }
-        assertFalse("OpenCode sends prompts but exposes no ingress queue", agentNamed("OpenCode", ENDPOINT_AGENTS))
-        assertTrue(agentNamed("OpenCode", API_AGENTS))
-        assertTrue(agentNamed("CODEX", API_AGENTS))
-        assertFalse(agentNamed("codex", ENDPOINT_AGENTS))
-        assertFalse(agentNamed("claude", ENDPOINT_AGENTS))
-        assertFalse(agentNamed(null, ENDPOINT_AGENTS))
-        assertFalse(agentNamed(null, API_AGENTS))
+        assertFalse("OpenCode sends prompts but exposes no ingress queue", agentNamed("OpenCode", Harness.endpointAgents))
+        assertTrue(agentNamed("OpenCode", Harness.apiAgents))
+        assertTrue(agentNamed("CODEX", Harness.apiAgents))
+        assertFalse(agentNamed("codex", Harness.endpointAgents))
+        assertFalse(agentNamed("claude", Harness.endpointAgents))
+        assertFalse(agentNamed(null, Harness.endpointAgents))
+        assertFalse(agentNamed(null, Harness.apiAgents))
     }
 
     @Test

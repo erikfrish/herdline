@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_readonly_footer">此处仅显示历史。如需输入，请切换到终端。</string>
+    <string name="chat_readonly_footer_spoken">%1$s 的历史记录，只读。如需输入，请切换到终端。</string>
+    <string name="chat_refused_outside_home">%1$s 把此会话存放在主机上你的主目录之外，而聊天只读取主目录内的内容。终端仍可使用：请在终端中阅读和输入。</string>
+    <string name="chat_refused_qwen_managed">此 Qwen Code 会话以托管会话方式存储，聊天无法读取。终端仍可使用：请在终端中阅读和输入。</string>
+    <string name="chat_refused_ambiguous">聊天为此窗格找到多个 %1$s 会话，因此都不显示。终端仍可使用：在那里阅读和输入。</string>
+    <string name="chat_refused_mismatch">此窗格的 %1$s 日志指向另一个会话，因此聊天不显示其内容。终端仍可使用：在那里阅读和输入。</string>
+    <string name="chat_refused_general">聊天无法读取 %1$s 以这种方式保存的会话。终端仍可使用：在那里阅读和输入。</string>
+    <!-- Shown in the same frame as the refusals above, so they read in one language. -->
+    <string name="chat_open_terminal">打开终端</string>
+    <string name="chat_unavailable">聊天无法读取此代理：%1$s</string>
+    <string name="session_chat_unreadable">聊天现在无法读取此代理，因此此标签页显示终端。点按“聊天”可重试。</string>
+    <string name="session_chat_unreadable_host">聊天无法在此主机上读取 %1$s。需要 Herdr 为它提供会话集成。</string>
+</resources>

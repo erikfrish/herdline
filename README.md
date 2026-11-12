@@ -7,11 +7,11 @@
 
 [Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D)
 
-> **Release status:** [0.6.0](https://github.com/erikfrish/herdline/releases/tag/v0.6.0)
-> is a developer-checked prerelease candidate: multi-agent Chat, direct terminal
-> input, image-only Chat and live OMP subagents. Independent all-provider QA and
-> Samsung post-install icon proof are incomplete. Stock Samsung Now Bar remains
-> broken; no stable release is claimed. Obtainium imports enable prereleases.
+> **Release status:** [0.6.22](https://github.com/erikfrish/herdline/releases/tag/v0.6.22)
+> is the latest experimental prerelease, with additional read-only agent history,
+> Chat recovery and terminal/visual improvements. Exact-APK emulator checks are
+> partial; all-harness operation, Terminal Send timing and Samsung verification
+> remain incomplete. Obtainium imports enable prereleases; no stable release is claimed.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
@@ -72,15 +72,16 @@ Herdline is distributed as a GitHub release APK; Android 10 (API 29) or newer,
 arm64 or x86_64. The release keystore is private, so updates install cleanly
 only over a version signed with the same key.
 
-**Public release status:** [**0.6.0**](https://github.com/erikfrish/herdline/releases/tag/v0.6.0)
-is a **prerelease candidate**, not a general stable release. Focused native and
-Kotlin checks, emulator components, real isolated SSH password fallback,
-direct Terminal input and image-only OMP Chat passed. Live OMP features require
-a compatible host ingress extension. Broader provider and all-harness QA are
-incomplete; stock Samsung Now Bar is not fixed. Samsung installation and its
-static notification header must be checked when the paired device is reachable.
-The in-app feed preserves these limits; nothing installs without a device tap.
-The older 0.2.0 failed Terminal navigation QA and is superseded.
+**Public release status:** [**0.6.22**](https://github.com/erikfrish/herdline/releases/tag/v0.6.22)
+is an **experimental prerelease candidate**, published with the exact signed APK
+from the nightly checks. It adds read-only history readers, Chat refusal/recovery
+improvements, functional status signals and terminal visibility/keyboard fixes.
+Small unzoomed split panes may still be invisible; Zoom is a workaround, not a fix.
+The emulator checks used synthetic fixtures. Complete all-harness operation,
+Terminal composer Send through the changed gate, TalkBack, Send timing and an
+upgrade from 0.5.3 remain unverified. Samsung Now Bar is not claimed fixed.
+The in-app candidate feed and Obtainium offer this release; neither installs it
+without an explicit action on the device.
 
 ### Obtainium (one-click add)
 

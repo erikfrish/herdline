@@ -51,6 +51,8 @@ pub enum Error {
     PaneGone,
     #[error("system random source failed: {0}")]
     Random(getrandom::Error),
+    #[error("the agent keeps this session outside the home folder")]
+    SessionRootOutsideHome,
     #[error(transparent)]
     Ssh(#[from] russh::Error),
     #[error("SSH closed before the bridge started")]
@@ -63,6 +65,13 @@ pub enum Error {
     TranscriptUnconfined,
     #[error("unknown endpoint method `{0}`")]
     UnknownMethod(String),
+    #[error("chat cannot read this session's format: {0}")]
+    UnsupportedFormat(&'static str),
+    /// A Hermes `state.db` in a schema format the reader was not written for;
+    /// `found` is None when the store names no single format. Chat shows its
+    /// own text per case, never this one.
+    #[error("unsupported Hermes history format (this reader reads {supported})")]
+    UnsupportedHermes { found: Option<u32>, supported: u32 },
     #[error("host key {fingerprint} of {host} is not trusted")]
     UntrustedHostKey {
         hop: usize,

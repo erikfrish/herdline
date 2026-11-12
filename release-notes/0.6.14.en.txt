@@ -1,0 +1,5 @@
+Herdline 0.6.14 — Chat stays where you left it
+
+Behaviour change: when a tab falls back to Terminal because Chat can't read the agent, it now stays in Terminal until you tap Chat. Before, it switched back to Chat by itself once Chat could read the agent again, which could happen while you were typing. The notice now says "Tap Chat to try again". A paste counts as Terminal input too, so it cancels a pending Chat tap.
+
+The Chinese Tabs overview subtitle now has a space before the tab count.

@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.ui.theme.LocalThemeTokens
@@ -128,6 +129,9 @@ private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
  * whether Open is offered: the note's pane still exists and is not on
  * screen. [onOpen] focuses exactly that pane and answers false when it has
  * closed meanwhile, which the banner then says instead of its location.
+ * [below] is the height of what sits at the top edge over it, such as the
+ * outage strip: the banner starts under that, never over it, and moves
+ * without motion when it changes.
  */
 @Composable
 internal fun BoxScope.AgentBannerSlot(
@@ -136,6 +140,7 @@ internal fun BoxScope.AgentBannerSlot(
     openLabel: String?,
     onOpen: (String) -> Boolean,
     onDismiss: (Long) -> Unit,
+    below: Dp = 0.dp,
 ) {
     if (note == null) return
     // A new note starts fresh: its own swipe state, time and slide in.
@@ -144,7 +149,7 @@ internal fun BoxScope.AgentBannerSlot(
         AnimatedVisibility(
             visibleState = visible,
             enter = slideInVertically(tween(200, easing = EmphasizedDecelerate)) { -it },
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = below),
         ) {
             AgentBanner(note, openable, openLabel, onOpen) { onDismiss(note.id) }
         }

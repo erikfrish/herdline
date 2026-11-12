@@ -15,12 +15,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -288,12 +288,15 @@ private fun SubagentRow(child: Subagent, colors: ChatColors, expanded: MutableMa
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SubagentGlyph(child, statusWord, colors)
-            Text(child.displayName, style = ChatType.toolName.copy(color = colors.text), maxLines = 1)
-            val headline = child.headline
-            if (headline != null) {
-                Text(headline, style = ChatType.toolArg.copy(color = colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            } else {
-                Box(Modifier.weight(1f))
+            // Name and headline share the one weighted slot, measured after the glyph, chip
+            // and arrow: a long name ellipsizes instead of pushing those out, and a short one
+            // leaves the headline all the rest. (A fill = false weight on the name beside the
+            // headline's would cap the headline at half, since a Row never hands back the unused share.)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(child.displayName, style = ChatType.toolName.copy(color = colors.text), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                child.headline?.let {
+                    Text(it, style = ChatType.toolArg.copy(color = colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                }
             }
             when (child.graphic) {
                 SubagentGraphic.Failed -> SubagentChip(stringResource(R.string.chat_subagents_failed_chip), colors.err)
@@ -301,9 +304,10 @@ private fun SubagentRow(child: Subagent, colors: ChatColors, expanded: MutableMa
                     stringResource(if (child.status == SubagentStatus.Cancelled) R.string.chat_subagents_cancelled else R.string.chat_subagents_aborted),
                     colors.blocked,
                 )
-                else -> Unit
+                // Pending in words, not by its glyph alone: the ring and the spinner are both small.
+                else -> if (child.status == SubagentStatus.Pending) SubagentChip(stringResource(R.string.chat_subagents_pending), colors.dim)
             }
-            Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(16.dp), tint = colors.dim)
+            DisclosureArrow(open, 16.dp, colors.dim)
         }
         if (open) {
             Column(Modifier.padding(start = SubagentBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -337,9 +341,10 @@ private val SubagentBodyIndent = 24.dp
 private fun SubagentGlyph(child: Subagent, statusWord: String, colors: ChatColors) {
     Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
         when (child.graphic) {
-            // A child not run yet moves nothing; its chip says pending.
+            // A child not run yet moves nothing: a still, hollow ring (never an arrow,
+            // which the row's disclosure already is), and its chip says pending.
             SubagentGraphic.Spinner -> if (child.status == SubagentStatus.Pending) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, statusWord, Modifier.size(14.dp), tint = colors.dim)
+                Box(Modifier.size(10.dp).border(1.5.dp, colors.dim, CircleShape))
             } else {
                 CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = colors.working)
             }

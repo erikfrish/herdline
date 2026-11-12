@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,12 +61,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
+import io.github.erikfrish.herdline.ui.components.bumps
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.glass.GlassMenuItem
@@ -90,6 +93,24 @@ internal fun ShellView.heldPaneOf(tab: String, held: Set<String>): String? =
     if (held.isEmpty()) null else panes.firstOrNull { it.tab == tab && it.id in held }?.id
 
 /**
+ * The tabs marked "changed since you looked" after the tabs went from the
+ * statuses [before] to [now]: a tab that was marked stays so, and a tab whose
+ * glyph [bumps] (a real change into Blocked or Done) is marked, until it is
+ * the [selectedId] tab, which never is. A tab with no earlier status is not
+ * marked: nothing was seen before, so nothing changed since.
+ */
+internal fun nextUnseen(before: Map<String, AgentStatus>, now: List<Tab>, selectedId: String?, unseen: Set<String>): Set<String> =
+    now.mapNotNullTo(HashSet()) { t ->
+        t.id.takeIf { it != selectedId && (it in unseen || bumps(before[it], t.status)) }
+    }
+
+/** What [TabRow] last applied: each tab's status and the marked tabs. */
+private class SeenTabs {
+    var statuses: Map<String, AgentStatus> = emptyMap()
+    var unseen: Set<String> = emptySet()
+}
+
+/**
  * The workspace's tabs in Herdr order, one dedicated 48 dp row: ‹ previous,
  * a scrolling strip that keeps the active tab centred and fades where tabs
  * are hidden, › next, and a labelled "Tabs n/N" button for the Tabs sheet.
@@ -99,6 +120,10 @@ internal fun ShellView.heldPaneOf(tab: String, held: Set<String>): String? =
  * [heldPane] names a tab's pane with an unconfirmed delivery, which marks
  * the tab with a lock and "delivery not confirmed" (AUDIT R7); no tap of its own.
  * [tabState] adds a spoken state of the caller's, such as Chat's "Reading here" (CT-1).
+ * A background tab whose agent turns Blocked or Done gets a dot on its
+ * glyph's corner and "changed" until it is selected ([nextUnseen]); the
+ * glyph's own bump is the one-off cue. [backdrop] is the colour the row is
+ * drawn on, so the dot's halo matches it exactly.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -111,6 +136,8 @@ internal fun TabRow(
     onTabs: (() -> Unit)?,
     onRename: (Tab) -> Unit,
     onClose: (Tab) -> Unit,
+    // Required: the row draws on the header's colour, not surface, and a default would hide a missed caller.
+    backdrop: Color,
     heldPane: (Tab) -> String? = { null },
     tabState: (Tab) -> String? = { null },
 ) {
@@ -128,6 +155,17 @@ internal fun TabRow(
     // Guarded to 3:1 on surface: a raw node colour can fall to 2.59.
     val indicator = MaterialTheme.colorScheme.indicatorAccent(accent)
     val heldState = stringResource(R.string.held_state)
+    val changedState = stringResource(R.string.tab_changed)
+    val markColor = MaterialTheme.colorScheme.onSurface
+    // The halo cuts the dot out of the glyph beneath it, in the row's own backdrop.
+    val haloColor = backdrop
+    // Plain fields, written after each applied composition, so a discarded one changes nothing.
+    val seen = remember { SeenTabs() }
+    val unseen = nextUnseen(seen.statuses, tabs, selectedId, seen.unseen)
+    SideEffect {
+        seen.statuses = tabs.associate { it.id to it.status }
+        seen.unseen = unseen
+    }
     Row(
         Modifier.fillMaxWidth().height(48.dp).testTag("session:tabrow"),
         verticalAlignment = Alignment.CenterVertically,
@@ -170,7 +208,8 @@ internal fun TabRow(
                     val text by animateColorAsState(if (chosen) MaterialTheme.colorScheme.onSurface else muted, label = "tabText")
                     var menu by remember { mutableStateOf(false) }
                     val held = heldPane(t)
-                    val state = listOfNotNull(tabState(t), statusSpoken(t.status), held?.let { heldState }).joinToString(", ")
+                    val mark = t.id in unseen
+                    val state = listOfNotNull(tabState(t), statusSpoken(t.status), changedState.takeIf { mark }, held?.let { heldState }).joinToString(", ")
                     Box(Modifier.fillMaxHeight()) {
                         Row(
                             Modifier
@@ -200,7 +239,22 @@ internal fun TabRow(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            if (t.status != AgentStatus.Unknown) StatusGlyph(t.status, 10.dp)
+                            if (t.status != AgentStatus.Unknown) {
+                                StatusGlyph(
+                                    t.status,
+                                    10.dp,
+                                    // Drawn over the glyph and outside the bump's layer, so it holds still and
+                                    // overflows into the gap and padding: the tab keeps its bounds.
+                                    Modifier.drawWithContent {
+                                        drawContent()
+                                        if (mark) {
+                                            val corner = Offset(if (layoutDirection == LayoutDirection.Ltr) size.width else 0f, 0f)
+                                            drawCircle(haloColor, radius = 4.dp.toPx(), center = corner)
+                                            drawCircle(markColor, radius = 2.5.dp.toPx(), center = corner)
+                                        }
+                                    },
+                                )
+                            }
                             Text(
                                 tabRowTitle(title(t)),
                                 color = text,

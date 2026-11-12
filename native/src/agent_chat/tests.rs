@@ -60,6 +60,11 @@ fn only_session_id_refs_are_speakable() {
     let mut odd = codex();
     odd.path = "ses_a/b".to_owned();
     assert!(!sendable_session(&odd));
+    let mut background = codex();
+    background.pid = None;
+    assert!(!sendable_session(&background));
+    background.pid = Some(0);
+    assert!(!sendable_session(&background));
 }
 
 #[test]

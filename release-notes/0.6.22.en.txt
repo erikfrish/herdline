@@ -1,0 +1,16 @@
+Herdline 0.6.22 — experimental nightly update
+
+This is the latest signed APK, versionCode 10057, published at the maintainer's request. It includes the changes developed after 0.6.0. It is a prerelease candidate, not a stable release or a complete all-harness QA pass.
+
+Changes since 0.6.0:
+- Additional read-only Chat history readers for Kimi Code, Kilo, Grok, Copilot, Qwen legacy journals, Hermes and Mastra Code. Each reader follows its own session format; supported versions and host integrations are required. Several paths have only synthetic fixture or native-test proof. Terminal remains the control path for read-only agents.
+- Chat recovery and refusal handling: successful background reads do not unexpectedly switch away from Terminal; lasting refusals offer Open Terminal, transient ones offer Retry. Repeated Chat-tap recovery received further code fixes.
+- Functional status shapes and transitions, unseen-tab signals, connection/failure reasons, image-viewer transitions and clearer host editing.
+- Terminal keyboard and tap-to-type improvements, cursor/first-row visibility fixes, compact destination/header wording and Chinese translations.
+- When a small split pane has no drawable row, a notice offers Zoom (shared with the desktop). In landscape with the keyboard down it no longer incorrectly suggests portrait.
+
+Verification: 582 Kotlin tests passed for this build; focused exact-APK emulator checks passed for the no-room notice and selected refusal/control paths. These checks used isolated synthetic fixtures, not real provider sessions. Required scenarios remain incomplete: composer typing under the no-room notice, dense landscape refusal actions, TalkBack, timing of Send, and upgrade from 0.5.3. Native Terminal Send/insert gate changes have no device-level Send proof.
+
+Known limitations: a small unzoomed split pane can still be invisible; Zoom is a workaround, not a layout fix. The previously observed Chat dead end has a code fix but its original state was not reproduced for verification. Stock Samsung Now Bar and complete all-harness operation are not claimed fixed. This APK was not installed on Samsung before publication.
+
+Android 10 or newer; arm64 and x86_64. Package and signing certificate match previous Herdline releases. Install as an upgrade only. Android normally refuses a later downgrade without uninstalling, which removes app data; do not uninstall merely to update. No automatic installation or external announcement is performed.

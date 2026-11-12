@@ -165,9 +165,10 @@ pub fn drawn_rows(
     Some(first as u16..=last as u16)
 }
 
-/// Where TerminalView draws row 0 (its `offsetY`): the frame's bottom on
-/// the view's bottom when it is taller than the view; under output focus,
-/// `hidden_rows` scrolled past the bottom of the area above the clip.
+/// Where TerminalView draws row 0 (its `offsetY`) for no cursor: the
+/// frame's bottom on the view's bottom when it is taller than the view;
+/// under output focus, `hidden_rows` scrolled past the bottom of the area
+/// above the clip.
 pub fn view_offset(
     view_height_px: f32,
     clip_bottom_px: f32,
@@ -175,13 +176,83 @@ pub fn view_offset(
     cell_px: f32,
     frame_rows: u16,
 ) -> f32 {
+    view_offset_at(
+        view_height_px,
+        clip_bottom_px,
+        hidden_rows,
+        cell_px,
+        frame_rows,
+        None,
+    )
+}
+
+/// [`view_offset`] for a frame whose cursor is shown on `cursor_row`
+/// (visible, inside the frame), Kotlin's `viewOffset` with its cursor row.
+/// Without output focus, a cursor the bottom anchor would leave above the
+/// view is put on its top row instead (A-27P), by whole rows, never past
+/// row 0 nor below the anchor.
+pub fn view_offset_at(
+    view_height_px: f32,
+    clip_bottom_px: f32,
+    hidden_rows: u16,
+    cell_px: f32,
+    frame_rows: u16,
+    cursor_row: Option<u16>,
+) -> f32 {
     let rows = f32::from(frame_rows);
     if hidden_rows == 0 && clip_bottom_px <= 0.0 {
-        return (view_height_px - rows * cell_px).min(0.0);
+        let anchor = (view_height_px - rows * cell_px).min(0.0);
+        return cursor_row.map_or(anchor, |row| anchor.max(-f32::from(row) * cell_px));
     }
     let fits = ((view_height_px - clip_bottom_px) / cell_px).floor();
     let hidden = f32::from(hidden_rows.min(frame_rows.saturating_sub(1)));
     (fits - (rows - hidden)) * cell_px
+}
+
+/// The row TerminalView keeps in view for `frame`'s cursor: one it draws.
+pub fn shown_cursor_row(frame: &RenderFrame) -> Option<u16> {
+    let cursor = frame.cursor;
+    (cursor.visible && cursor.x < frame.cols && cursor.y < frame.rows).then_some(cursor.y)
+}
+
+/// The row TerminalView keeps in view for `frame` in a view `view_height_px`
+/// tall (QF9-U2), Kotlin's `shownAnchorRow`: the shown cursor's row when it
+/// is inside the focused pane's inner rect; else, when the window that row
+/// gives draws no row of the focused pane, that pane's top inner row; else
+/// [`shown_cursor_row`]. A focused pane already drawn, or none, keeps it.
+pub fn shown_anchor_row(
+    frame: &RenderFrame,
+    view_height_px: f32,
+    clip_bottom_px: f32,
+    hidden_rows: u16,
+    cell_px: f32,
+) -> Option<u16> {
+    let shown = shown_cursor_row(frame);
+    let Some(pane) = frame.panes.iter().find(|pane| pane.focused) else {
+        return shown;
+    };
+    let rect = pane.rect;
+    let top = rect.y;
+    let end = (u32::from(rect.y) + u32::from(rect.height)).min(u32::from(frame.rows));
+    if end <= u32::from(top) {
+        return shown;
+    }
+    if shown.is_some() && inside(rect, frame.cursor.x, frame.cursor.y) {
+        return shown;
+    }
+    let offset = view_offset_at(
+        view_height_px,
+        clip_bottom_px,
+        hidden_rows,
+        cell_px,
+        frame.rows,
+        shown,
+    );
+    let drawn = drawn_rows(view_height_px - clip_bottom_px, offset, cell_px, frame.rows);
+    match drawn {
+        Some(rows) if u32::from(*rows.start()) < end && *rows.end() >= top => shown,
+        _ => Some(top),
+    }
 }
 
 /// The phone gate for one target, after every host check has passed.
@@ -271,7 +342,14 @@ fn consistent(viewport: &Viewport, frame: &RenderFrame) -> Option<RangeInclusive
     if f32::from(frame.cols) * viewport.cell_width_px > width + EDGE_SLACK_PX {
         return None;
     }
-    let offset = view_offset(height + clip, clip, viewport.hidden_rows, cell, frame.rows);
+    let offset = view_offset_at(
+        height + clip,
+        clip,
+        viewport.hidden_rows,
+        cell,
+        frame.rows,
+        shown_anchor_row(frame, height + clip, clip, viewport.hidden_rows, cell),
+    );
     if (offset - viewport.offset_y_px).abs() > EDGE_SLACK_PX {
         return None;
     }

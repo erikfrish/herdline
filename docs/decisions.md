@@ -342,13 +342,32 @@ Switcher:
   `pane.get` or process info. So each read runs `herdr --session S pane get P`
   and `pane process-info --pane P` on the host, over an exec channel of the
   live connection's SSH session (no new login per poll). The identity is
-  (pane, terminal, OMP PID, `agent_session` path). Any change restarts the
-  history from the new file's end. A reconnect is a new connection and starts
-  over too.
-- **Confinement.** The path is checked on the phone: absolute, `.jsonl`,
-  under `/.omp/agent/sessions/`, no `.`/`..`, no control characters. It is
-  checked again on the host after `realpath`, so a symlink cannot point chat
-  elsewhere.
+  (pane, terminal, agent, foreground PID and the exact `agent_session` reference).
+  Any change restarts history from the new session's tail. A resolver refusal
+  for an obsolete reference first checks the emitted current identity; a
+  replacement resets the bounded read, while the same identity retains the
+  original refusal. OpenCode sequence reads recover the same way. A reconnect
+  is a new connection and starts over too.
+- **Confinement.** Absolute session-file syntax is admitted on the phone;
+  the host resolves default or foreground-process-configured OMP/Pi roots,
+  OMP profile/XDG paths, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Every root and
+  file must canonically stay below the SSH account's HOME, and ID resolution
+  must match exactly one file. A reported path alone never authorizes an
+  arbitrary folder; configured roots require that exact process's environment.
+  - The profile is the one omp 18.18.8 takes itself (`extractProfileFlags`):
+    a string flag's value, an argument after `--` or after a first-token
+    subcommand is never `--profile`. `~` is never expanded, as in OMP.
+    Under `bun run <script>`, a subcommand right after the script is not
+    seen as one; harmless, as it can only name a HOME-bounded profile root.
+  - Only the environment the process started with is seen. A root OMP picks
+    up later (a project `.env` via `refreshDirsFromEnv`, `setProfile`) is
+    not authorized and refuses, never guessed.
+  - The default `~/.omp/agent/sessions` stays authorized for every OMP
+    process, named profile or XDG included: it is HOME-bounded, and Herdr
+    must still report the exact file.
+  - An agent whose HOME is not the SSH account's (`sudo`, `su -c`, another
+    exported HOME), or a root or file outside HOME, is refused as
+    `outside_home`; other confinement failures are `unconfined`.
 - **Incremental and bounded.** Chat reads byte ranges by offset: the newest
   256 KiB, then appends from the last complete line (a partial line waits),
   and older pages on request.
@@ -434,6 +453,13 @@ Switcher:
   validated PTY fallback reads the whole host editor, not the hidden phone
   crop, and still refuses a remote draft, popup, blocked agent or short OMP
   editor. Terminal delivery retains its own viewport gate unchanged.
+- **Unreadable Chat re-checks once** (F-OBS1, `ui/session/ChatRecheck.kt`).
+  A Chat tap on a pane Chat fell back from, for a transient reason, reads
+  it once and switches to Chat on success while the tap is still pending:
+  same pane and tab, no Terminal choice or input since. A new agent in the
+  pane (its kind or Herdr name, never a status change) reads it once while
+  no Chat polls it; that success only ends the fallback. A typed refusal
+  never reads. Reads conflate, one in flight; there is no timer.
 - **Chat or Terminal is remembered per pane** (`data/PaneModes.kt`).
   - It is keyed by node, Herdr session and pane, and stored with the daemon
     run (`boot`) and the program it was chosen for.
@@ -513,14 +539,16 @@ User, assistant and tool-result images are read through the existing
   are read in one exec. Both reports must name the instance the request was
   made for (pane, terminal, OMP pid, session file), else `instance_changed`.
 - **The blob store is the OMP process's own.** It is resolved from that
-  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does: the
-  last `--profile` before `--`, else `OMP_PROFILE` when set, else
-  `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a profile
-  `PI_CODING_AGENT_DIR`, else `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a
-  profile `…/profiles/<name>`) takes its place when it exists. What cannot be
-  pinned down is refused as `unknown_store`, never guessed: no `/proc` (e.g.
-  macOS hosts), another `HOME`, `PI_CONFIG_DIR`, relative paths, unusual
-  profile names. The store must resolve inside `$HOME`, and a blob that
+  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does, by the
+  same resolver and profile rules as the session roots (Confinement, above):
+  the `--profile` omp's `extractProfileFlags` takes, else `OMP_PROFILE` when
+  set, else `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a
+  profile `PI_CODING_AGENT_DIR` (unless derived from the environment's profile), else
+  `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`)
+  takes its place when it exists. What cannot be pinned down is refused as
+  `unknown_store`, never guessed: no `/proc` (e.g. macOS hosts), another
+  `HOME`, `PI_CONFIG_DIR`, relative paths, profile names OMP rejects. The
+  store must resolve inside `$HOME`, and a blob that
   links out of it is refused (`unconfined`). XDG existence is checked at read
   time, not when OMP started.
 - **Bounds.** At most 20 MiB of decoded image; a larger blob or inline image
@@ -621,6 +649,18 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   desktop". It never infers a pending entry from history or the terminal.
 - **Recovery.** An endpoint send writes ahead a Queued record with receipt
   `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
+
+### Codex and OpenCode input binding
+
+Control-API input requires a positive foreground PID as well as the exact
+pane, terminal and session reference. A retained session identity without
+its foreground process does not authorize a send. OpenCode connects only
+to its private, already-running loopback service registration: no automatic
+service start, HTTP redirects or environment proxy routing. An unknown
+acknowledgement after POST remains uncertain; discovery failure before POST
+is a refusal. The real loopback transport boundary is exercised with
+`python native/src/agent_chat/test_opencode_send.py`.
+
 
 ### Questions and submitted answers
 

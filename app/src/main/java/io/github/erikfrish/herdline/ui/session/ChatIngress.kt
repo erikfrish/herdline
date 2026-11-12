@@ -60,12 +60,6 @@ internal fun endpointRoute(reading: Boolean, instance: TranscriptIdentity?, subm
 internal fun agentNamed(agent: String?, names: Set<String>): Boolean =
     names.any { agent.equals(it, ignoreCase = true) }
 
-/** Programs whose live queue can actually be read and withdrawn through ingress. */
-internal val ENDPOINT_AGENTS = setOf("omp")
-
-/** Programs whose API Chat asks directly instead of typing into the pane at all. */
-internal val API_AGENTS = setOf("codex", "opencode")
-
 /**
  * The draft's sent record once the endpoint answered [outcome]. A refusal,
  * or no endpoint (the pane route then records its own), gives [before]

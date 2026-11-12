@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="host_state_key_unknown">Unknown host key</string>
+    <string name="host_state_no_herdr">Herdr not found</string>
+    <string name="host_state_setup_failed">Setup failed</string>
+    <string name="host_state_cannot_connect">Cannot connect</string>
+    <string name="host_state_lost">Connection lost</string>
+</resources>

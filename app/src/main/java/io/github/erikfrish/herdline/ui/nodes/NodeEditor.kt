@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -44,6 +50,7 @@ import io.github.erikfrish.herdline.ui.components.ColorPicker
 import io.github.erikfrish.herdline.ui.components.Group
 import io.github.erikfrish.herdline.ui.components.NodeAvatar
 import io.github.erikfrish.herdline.ui.components.SectionHeader
+import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassField
 import io.github.erikfrish.herdline.ui.glass.GlassScreen
@@ -68,7 +75,9 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
     var identityId by rememberSaveable { mutableStateOf(initial?.identityId) }
     var jumpId by rememberSaveable { mutableStateOf(initial?.jumpId) }
     var group by rememberSaveable { mutableStateOf(initial?.group ?: "") }
-    var color by rememberSaveable { mutableStateOf(initial?.color ?: nodes.size % 8) }
+    // The colour a new node starts with, fixed so a node added elsewhere does not make this one dirty.
+    val startColor = rememberSaveable { initial?.color ?: nodes.size % 8 }
+    var color by rememberSaveable { mutableStateOf(startColor) }
     var keepAlive by rememberSaveable { mutableStateOf((initial?.keepAlive ?: 15).toString()) }
     // Blank keeps whatever is saved; the saved password itself is never shown.
     var password by rememberSaveable { mutableStateOf("") }
@@ -77,9 +86,34 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
 
     val portValue = port.toIntOrNull()?.takeIf { it in 1..65535 }
     val keepAliveValue = keepAlive.toIntOrNull()?.takeIf { it in 0..3600 }
-    val valid = Node.validAddress(address) && Node.validUser(user) && portValue != null &&
+    val addressIssue = addressProblem(address, saved = initial?.address)
+    val valid = addressIssue == null && Node.validUser(user) && portValue != null &&
         Node.validSession(session) && keepAliveValue != null
     val candidates = app.nodes.jumpCandidates(initial)
+    // Anything Back would lose: what the fields say against what was opened.
+    val dirty = name != (initial?.name ?: "") || address != (initial?.address ?: "") ||
+        port != (initial?.port ?: 22).toString() || user != (initial?.user ?: "") ||
+        session != (initial?.session ?: "default") || auth != (initial?.auth ?: AuthMethod.Key) ||
+        identityId != initial?.identityId || jumpId != initial?.jumpId || group != (initial?.group ?: "") ||
+        color != startColor || keepAlive != (initial?.keepAlive ?: 15).toString() ||
+        password.isNotEmpty() || forgetPassword
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    val leave: () -> Unit = {
+        if (dirty) {
+            confirmDiscard = true
+        } else {
+            onDone()
+        }
+    }
+    // Why Save is off, so a disabled button is never the only answer.
+    val blocked = listOfNotNull(
+        stringResource(R.string.host_address).takeIf { addressIssue != null },
+        stringResource(R.string.host_user).takeUnless { Node.validUser(user) },
+        stringResource(R.string.host_port).takeIf { portValue == null },
+        stringResource(R.string.host_session).takeUnless { Node.validSession(session) },
+        stringResource(R.string.keepalive).takeIf { keepAliveValue == null },
+    )
+    val blockedText = if (blocked.isEmpty()) null else stringResource(R.string.editor_save_needs, blocked.joinToString(", "))
 
     fun save() {
         val saved = (initial ?: Node(name = "", address = "", user = "")).copy(
@@ -107,10 +141,25 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
         onDone()
     }
 
-    BackHandler(onBack = onDone)
+    if (confirmDiscard) {
+        GlassAlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text(stringResource(R.string.editor_discard_title)) },
+            text = { Text(stringResource(R.string.editor_discard_text)) },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onDone() }) {
+                    Text(stringResource(R.string.editor_discard), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.editor_keep_editing)) }
+            },
+        )
+    }
+    BackHandler(onBack = leave)
     GlassScreen(
         title = stringResource(if (initial == null) R.string.add_node else R.string.edit_node),
-        onBack = onDone,
+        onBack = leave,
         actions = {
             GlassButton(
                 stringResource(R.string.save),
@@ -118,19 +167,34 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                 primary = true,
                 enabled = valid,
                 icon = Icons.Default.Check,
-                modifier = Modifier.testTag("save"),
+                // The bottom reason hides under the keyboard; TalkBack hears it on this one too.
+                modifier = Modifier
+                    .testTag("save")
+                    .then(if (blockedText != null) Modifier.semantics { stateDescription = blockedText } else Modifier),
             )
         },
         // Save again within thumb reach (M8); the keyboard covers it, the header's stays.
         bottomBar = {
-            GlassButton(
-                stringResource(R.string.save),
-                onClick = ::save,
-                primary = true,
-                enabled = valid,
-                icon = Icons.Default.Check,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("save:bottom"),
-            )
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (blockedText != null) {
+                    Text(
+                        blockedText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .testTag("save:blocked")
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                GlassButton(
+                    stringResource(R.string.save),
+                    onClick = ::save,
+                    primary = true,
+                    enabled = valid,
+                    icon = Icons.Default.Check,
+                    modifier = Modifier.fillMaxWidth().testTag("save:bottom"),
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -138,7 +202,10 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                 .fillMaxSize()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
+                // Scaffold's bottom padding is the Save bar's measured height,
+                // nav bar inset included; 16 dp more so the last field ends
+                // fully above it at scroll end, not flush under its edge.
+                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 16.dp),
         ) {
             Group {
                 Row(
@@ -158,22 +225,56 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
             Fields {
                 GlassField(name, { name = it }, label = { Text(stringResource(R.string.node_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("field:name"))
                 GlassField(
-                    address, { address = it.trim() },
+                    address,
+                    { typed ->
+                        // Only a paste splits: typing `host:2` on the way to `host:22` must not move the 2.
+                        val pasted = splitPastedAddress(typed).takeIf { typed.length > address.length + 1 }
+                        if (pasted == null) {
+                            address = typed.trim()
+                        } else {
+                            address = pasted.address
+                            pasted.user?.let { user = it }
+                            pasted.port?.let { port = it }
+                        }
+                    },
                     label = { Text(stringResource(R.string.host_address)) },
+                    supportingText = when (addressIssue.takeIf { address.isNotEmpty() }) {
+                        AddressProblem.Invalid -> { { Text(stringResource(R.string.editor_address_invalid)) } }
+                        AddressProblem.PortInAddress -> { { Text(stringResource(R.string.editor_address_port)) } }
+                        else -> null
+                    },
                     singleLine = true,
-                    isError = address.isNotEmpty() && !Node.validAddress(address),
+                    isError = address.isNotEmpty() && addressIssue != null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth().testTag("field:address"),
                 )
+                portInAddress(address)?.let { split ->
+                    // One tap fixes it, for a typed port and for a node saved this way before.
+                    TextButton(
+                        onClick = {
+                            address = split.address
+                            split.port?.let { port = it }
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("field:address:split"),
+                    ) {
+                        Text(stringResource(R.string.editor_move_port, split.port.orEmpty()))
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassField(
                         user, { user = it.trim() },
                         label = { Text(stringResource(R.string.host_user)) },
+                        supportingText = if (user.isNotEmpty() && !Node.validUser(user)) {
+                            { Text(stringResource(R.string.editor_user_invalid)) }
+                        } else {
+                            null
+                        },
                         singleLine = true,
                         isError = user.isNotEmpty() && !Node.validUser(user),
                         modifier = Modifier.weight(2f).testTag("field:user"),
                     )
                     GlassField(
+                        // Typed: digits only. A pasted bad port is kept as pasted, so it is named, not lost.
                         port, { port = it.filter(Char::isDigit).take(5) },
                         label = { Text(stringResource(R.string.host_port)) },
                         singleLine = true,

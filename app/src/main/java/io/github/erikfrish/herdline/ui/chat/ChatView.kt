@@ -1,6 +1,13 @@
 package io.github.erikfrish.herdline.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,7 +48,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,8 +78,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -95,6 +105,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -106,14 +117,17 @@ import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressSubagent
+import io.github.erikfrish.herdline.core.MarkerKind
 import io.github.erikfrish.herdline.core.visibleDialogs
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
 import io.github.erikfrish.herdline.core.TranscriptSteer
 import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
+import io.github.erikfrish.herdline.core.TranscriptRefusal
+import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
-import io.github.erikfrish.herdline.ui.session.OutageStrip
+import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +139,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 
 /** How often chat rereads the transcript while the agent is busy or waiting, and otherwise. */
 private const val BUSY_POLL_MS = 1_500L
@@ -146,6 +161,10 @@ private val PillHeight = 36.dp
 
 /** Under and over the Latest pill in a [dense][ChatView] list. */
 private val DensePillGap = 2.dp
+
+/** The dense pill: one touch target, at the list's end edge. */
+private val CompactPillSize = 48.dp
+private val DensePillEnd = 4.dp
 
 /**
  * The OMP agent in [pane] as a conversation, read from the session file
@@ -170,7 +189,8 @@ fun ChatView(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    onUnavailable: ((Boolean) -> Unit)? = null,
+    /** Hears whether Chat has nothing to show, and the core's typed refusal when that is why. */
+    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)? = null,
     tabTitle: String? = null,
     dense: Boolean = false,
     /** The caller's per-connection memory, so each pane read here comes back as it was (CT-1). */
@@ -191,11 +211,68 @@ class ChatMemory {
 
 internal class ChatKept {
     var history by mutableStateOf<ChatHistory?>(null)
-    var problem by mutableStateOf<String?>(null)
+    val read = ChatReadState()
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
     val media = ChatMedia()
+    private val rechecking = Mutex()
+
+    /** One read of [pane]'s next page, the poll's and a re-check's alike; it records how it went. */
+    suspend fun readNext(connection: Connection, pane: String): Boolean {
+        val known = history
+        val at = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
+        val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, at)) }
+        page.onSuccess { read ->
+            // Merged into whatever is current now: a load of older entries may have finished meanwhile.
+            history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
+            this.read.succeeded()
+        }.onFailure { read.failed(it) }
+        return page.isSuccess
+    }
+
+    /**
+     * One read while Chat is not composed to poll (F-OBS1); null when one is
+     * already in flight, so repeated asks never stack reads.
+     */
+    suspend fun recheck(connection: Connection, pane: String): Boolean? {
+        if (!rechecking.tryLock()) return null
+        try {
+            return readNext(connection, pane)
+        } finally {
+            rechecking.unlock()
+        }
+    }
 }
+
+/**
+ * How this pane's last reads went, kept with its history rather than
+ * remembered, so leaving Chat for Terminal and coming back keeps the strip
+ * (or its dismissal) until a good read ends it (HH-2).
+ */
+internal class ChatReadState {
+    var problem by mutableStateOf<String?>(null)
+    /** Set with [problem] when the core refused the session by type; it never clears by itself. */
+    var refusal by mutableStateOf<TranscriptRefusal?>(null)
+    /** The failed refresh the cached history shows under. */
+    val outage = mutableStateOf(Outage())
+
+    fun succeeded() {
+        problem = null
+        refusal = null
+    }
+
+    fun failed(error: Throwable) {
+        problem = error.message ?: error.javaClass.simpleName
+        refusal = lastingRefusal(error)
+    }
+}
+
+/**
+ * The refusal [error] carries when no retry ends it: any typed refusal, the
+ * same kind on every poll. Null is a transient failure (I/O, a timeout, an
+ * untyped core error), which the next poll may end.
+ */
+internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? TranscriptRefused)?.refusal
 
 @Composable
 private fun ChatContent(
@@ -205,12 +282,13 @@ private fun ChatContent(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier,
-    onUnavailable: ((Boolean) -> Unit)?,
+    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)?,
     tabTitle: String?,
     dense: Boolean,
 ) {
     var history by kept::history
-    var problem by kept::problem
+    var problem by kept.read::problem
+    val refusal by kept.read::refusal
     var loadingOlder by remember { mutableStateOf(false) }
     // The item at the top of the screen when older ones were requested, and how far it was scrolled.
     var anchor by remember { mutableStateOf<Pair<String, Int>?>(null) }
@@ -230,17 +308,10 @@ private fun ChatContent(
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                val known = history
-                val read = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
-                val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, read)) }
-                page.onSuccess { read ->
-                    // Merged into whatever is current now: a load of older entries may have finished meanwhile.
-                    history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
-                    problem = null
-                }.onFailure { problem = it.message ?: it.javaClass.simpleName }
+                val ok = kept.readNext(connection, pane)
                 withTimeoutOrNull(
                     when {
-                        page.isFailure -> ERROR_POLL_MS
+                        !ok -> ERROR_POLL_MS
                         busy -> BUSY_POLL_MS
                         else -> IDLE_POLL_MS
                     },
@@ -251,7 +322,7 @@ private fun ChatContent(
 
     val shown = history
     // A refresh that fails after a transcript loaded. A lost link is the session's strip, not this one.
-    var outage by rememberOutage(if (shown == null) null else problem == null)
+    val outage by rememberOutage(if (shown == null) null else problem == null, state = kept.read.outage)
     val persistedItems = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
     val identity = shown?.identity
     val images = remember(identity) {
@@ -330,8 +401,9 @@ private fun ChatContent(
     val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
     val unavailable = shown == null && problem != null
+    val refused = refusal.takeIf { unavailable }
     val report by rememberUpdatedState(onUnavailable)
-    LaunchedEffect(unavailable) { report?.invoke(unavailable) }
+    LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
     val header = if (shown?.hasOlder == true) 1 else 0
 
     fun loadOlder() {
@@ -431,16 +503,31 @@ private fun ChatContent(
     // The terminal stays laid out underneath so its pane keeps its size; touches stop here.
     Column(modifier.fillMaxSize().background(colors.bg).pointerInput(Unit) {}.testTag("chat")) {
         val since = outage.since
-        if (shown != null && linkLive && outage.strip && since != null) {
-            OutageStrip(
-                title = stringResource(R.string.outage_saved_at, outageTime(since)),
-                detail = stringResource(R.string.chat_not_refreshed),
-                retrying = false,
+        // R-F1c: the cause More opened, held outside the strip so a good read never
+        // closes it or changes its words; keyed to the pane and agent, so a switch
+        // never shows one pane's cause over another's.
+        var moreCause by rememberSaveable(pane, identity?.agent) { mutableStateOf<String?>(null) }
+        // R-F1b: fixed lines for both kinds, so the list never jumps; no close, since
+        // cached history must stay marked; it leaves at once on a good read (no motion).
+        if (shown != null && linkLive && outage.shown && since != null) {
+            val lasting = refusal
+            val cause = if (lasting != null) {
+                LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
+            } else {
+                stringResource(R.string.chat_not_refreshed)
+            }
+            StaleStrip(
+                savedAt = outageTime(since),
+                cause = cause,
+                shortCause = stringResource(if (lasting != null) R.string.chat_strip_cannot_read else R.string.chat_strip_not_refreshed),
+                lasting = lasting != null,
+                dense = dense,
                 onRetry = { wake.trySend(Unit) },
-                onDismiss = { outage = outage.dismiss() },
-                tag = "chat:offline",
+                onTerminal = onTerminal,
+                onMore = { moreCause = cause },
             )
         }
+        moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
                 shown == null && problem != null -> Column(
@@ -448,7 +535,9 @@ private fun ChatContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
+                    val context = LocalContext.current
+                    val said = refused?.let { context.refusalText(it, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty()) }
+                    Text(said ?: stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
                     GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
                 }
                 shown == null -> Row(
@@ -475,7 +564,7 @@ private fun ChatContent(
                         end = 16.dp,
                         top = if (dense) 0.dp else 8.dp,
                         bottom = when {
-                            pill && dense -> PillHeight + DensePillGap * 2
+                            pill && dense -> CompactPillSize + DensePillGap * 2
                             pill -> 56.dp
                             dense -> 2.dp
                             else -> 12.dp
@@ -520,7 +609,14 @@ private fun ChatContent(
                 }
             }
             if (pill) {
-                LatestPill(fresh, colors, Modifier.align(Alignment.BottomCenter).padding(bottom = if (dense) DensePillGap else 12.dp)) {
+                // Dense: the reader is mid-list, so no padding keeps the lines read clear of a centred pill.
+                // It moves to the end gutter instead, where it covers at most a long line's trailing end.
+                val place = if (dense) {
+                    Modifier.align(Alignment.BottomEnd).padding(end = DensePillEnd, bottom = DensePillGap)
+                } else {
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+                }
+                LatestPill(fresh, colors, place, compact = dense) {
                     follow = true
                     scope.launch { list.animateScrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
                 }
@@ -593,22 +689,39 @@ private fun LoadOlder(loading: Boolean, colors: ChatColors, onLoad: () -> Unit) 
     }
 }
 
+/** [compact]: arrow over the bare count in one 48 dp square; the full plural is still what TalkBack reads. */
 @Composable
-private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, onClick: () -> Unit) {
-    Row(
-        modifier
-            .height(PillHeight)
-            .clip(CircleShape)
-            .background(colors.surf)
-            .border(1.dp, colors.border, CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp)
-            .testTag("chat:latest"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
-        Text(pluralStringResource(R.plurals.chat_latest_new, count, count), style = ChatType.button.copy(color = colors.accentText))
+private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, compact: Boolean, onClick: () -> Unit) {
+    val spoken = pluralStringResource(R.plurals.chat_latest_new, count, count)
+    val shape = if (compact) MaterialTheme.shapes.medium else CircleShape
+    val frame = modifier
+        // A floor, not a size: at large font scales the count needs more than 48 dp and must not clip.
+        .then(if (compact) Modifier.sizeIn(minWidth = CompactPillSize, minHeight = CompactPillSize) else Modifier.height(PillHeight))
+        .clip(shape)
+        .background(colors.surf)
+        .border(1.dp, colors.border, shape)
+        .clickable(role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = spoken }
+        .testTag("chat:latest")
+    if (compact) {
+        Column(frame, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
+            Text(
+                if (count > 99) "99+" else count.toString(),
+                style = ChatType.button.copy(color = colors.accentText),
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+    } else {
+        Row(
+            frame.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
+            Text(spoken, style = ChatType.button.copy(color = colors.accentText), modifier = Modifier.clearAndSetSemantics {})
+        }
     }
 }
 
@@ -661,6 +774,8 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         is ChatItem.Compaction -> CompactionDivider(colors, open, toggle) {
             Markdown(item.summary, colors, color = colors.muted, dense = dense)
         }
+        is ChatItem.Boundary -> HistoryBoundary(colors)
+        is ChatItem.Marker -> MarkerRow(item, colors)
         is ChatItem.Image -> Box(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = if (item.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
             ChatImageThumb(item.image, colors)
         }
@@ -684,7 +799,7 @@ private fun Aside(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(16.dp), tint = colors.dim)
+            DisclosureArrow(open, 16.dp, colors.dim)
             val style = (if (italic) ChatType.aside.copy(fontStyle = FontStyle.Italic) else ChatType.meta).copy(color = colors.dim)
             Text(title, style = style, maxLines = 1)
             if (!open && hint != null) {
@@ -717,6 +832,71 @@ private fun CompactionDivider(colors: ChatColors, open: Boolean, onToggle: () ->
             Box(Modifier.weight(1f).height(1.dp).background(colors.border))
         }
         if (open) Barred(colors.rule, 2.dp) { content() }
+    }
+}
+
+/**
+ * A stop or one plan item in the app's own words. The glyph is decoration:
+ * TalkBack hears the word, then the item, as one line.
+ */
+@Composable
+private fun MarkerRow(item: ChatItem.Marker, colors: ChatColors) {
+    val word = stringResource(
+        when (item.kind) {
+            MarkerKind.StoppedByYou -> R.string.chat_marker_stopped_by_you
+            MarkerKind.Stopped -> R.string.chat_marker_stopped
+            MarkerKind.Done -> R.string.chat_marker_done
+            MarkerKind.ToDo -> R.string.chat_marker_to_do
+        },
+    )
+    val glyph = when (item.kind) {
+        MarkerKind.Done -> "✓"
+        MarkerKind.ToDo -> "○"
+        MarkerKind.StoppedByYou, MarkerKind.Stopped -> null
+    }
+    val spoken = if (item.text.isBlank()) word else stringResource(R.string.chat_marker_item_spoken, word, item.text)
+    Row(
+        Modifier
+            .widthIn(max = ProseMaxWidth)
+            .fillMaxWidth()
+            .clearAndSetSemantics { contentDescription = spoken }
+            .testTag("chat:marker"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (glyph != null) Text(glyph, style = ChatType.meta.copy(color = colors.dim))
+        Text(
+            buildAnnotatedString {
+                withStyle(ChatType.meta.toSpanStyle().copy(color = colors.muted)) { append(word) }
+                if (item.text.isNotBlank()) {
+                    append("  ")
+                    append(item.text)
+                }
+            },
+            style = ChatType.aside.copy(color = colors.text),
+        )
+    }
+}
+
+/**
+ * The compaction divider's look with the boundary's own words in its place.
+ * Nothing opens: it has no body, and the text itself says what it is, so it
+ * wraps instead of being cut.
+ */
+@Composable
+private fun HistoryBoundary(colors: ChatColors) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat:history_boundary"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+        Text(
+            stringResource(R.string.chat_history_boundary),
+            style = ChatType.meta.copy(color = colors.dim),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
     }
 }
 
@@ -774,8 +954,8 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
     val toggle = { expanded[item.key] = !open }
     val summary = item.summary()
     val spoken = listOfNotNull(
-        item.name,
-        summary.takeIf { it.isNotBlank() },
+        // The name and what it worked on read as one phrase: "run_terminal_cmd: ls".
+        if (summary.isBlank()) item.name else "${item.name}: $summary",
         stringResource(
             when (state) {
                 ToolState.Running -> R.string.chat_tool_running
@@ -787,7 +967,7 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
         exit?.takeIf { state == ToolState.Failed }?.let { stringResource(R.string.chat_tool_exit_spoken, it) },
     ).joinToString(", ")
     val stateText = stringResource(if (open) R.string.chat_state_expanded else R.string.chat_state_collapsed)
-    Column(Modifier.fillMaxWidth().animateContentSize().testTag("chat:tool")) {
+    Column(Modifier.fillMaxWidth().testTag("chat:tool")) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -816,14 +996,24 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
                 state == ToolState.Denied -> StatusChip(stringResource(R.string.chat_tool_denied), colors.blocked)
                 else -> Unit
             }
-            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.dim)
+            // One glyph turned, not two swapped: the turn shows the change and the
+            // spoken state carries it, never the motion alone.
+            val turn by animateFloatAsState(if (open) 180f else 0f, tween(250), label = "toolChevron")
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp).graphicsLayer { rotationZ = turn }, tint = colors.dim)
         }
         // Under the tail: every child when the row is open; else the ones still
         // running, so spawned children show even while the tool row is collapsed.
         if (item.subagents.isNotEmpty()) {
-            SubagentSection(if (open) item.subagents else item.subagents.filter { it.alive }, colors, expanded, item.key)
+            // Only the children's list resizes as they come and go; the body below has its own motion.
+            Box(Modifier.fillMaxWidth().animateContentSize()) {
+                SubagentSection(if (open) item.subagents else item.subagents.filter { it.alive }, colors, expanded, item.key)
+            }
         }
-        if (open) {
+        AnimatedVisibility(
+            open,
+            enter = fadeIn(tween(150, delayMillis = 50)) + expandVertically(),
+            exit = fadeOut(tween(100)) + shrinkVertically(),
+        ) {
             Column(Modifier.padding(start = ToolBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (result != null && result.answers.isNotEmpty()) {
                     ChatFormAnswers(result.answers, result.timedOut, colors)
@@ -929,10 +1119,23 @@ private fun Disclosure(label: String, colors: ChatColors, open: Boolean? = null,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (open != null) {
-            Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(14.dp), tint = colors.accentText)
+            DisclosureArrow(open, 14.dp, colors.accentText)
         }
         Text(label, style = ChatType.action.copy(color = colors.accentText))
     }
+}
+
+/**
+ * The disclosure arrow: one end-pointing glyph that turns to point down when
+ * [open] (clockwise in LTR, anticlockwise in RTL, where it starts mirrored).
+ * Drawn turned only, so the row never reflows; the row's text or spoken
+ * state says open or closed, never the turn alone.
+ */
+@Composable
+internal fun DisclosureArrow(open: Boolean, size: Dp, tint: Color, description: String? = null) {
+    val down = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 90f else -90f
+    val turn by animateFloatAsState(if (open) down else 0f, tween(250), label = "disclosure")
+    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, description, Modifier.size(size).graphicsLayer { rotationZ = turn }, tint = tint)
 }
 
 /**
@@ -965,11 +1168,11 @@ private fun RunRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(
-            if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        DisclosureArrow(
+            open,
+            16.dp,
+            colors.dim,
             if (spoken != null) null else stringResource(if (open) R.string.chat_hide_steps else R.string.chat_show_steps),
-            Modifier.size(16.dp),
-            tint = colors.dim,
         )
         content()
     }

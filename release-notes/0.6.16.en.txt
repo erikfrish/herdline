@@ -1,0 +1,9 @@
+Herdline 0.6.16 — Calmer notices
+
+If Chat can't read an agent and you tap Chat, you now always get an answer. Before, a tap made while Chat was already checking again could go unanswered, and Chat could then open by itself later. A tap now only counts for the pane and tab you made it on: move away and it is dropped.
+
+The "tap to type" pill no longer flickers while a program prints steadily. Once output hides it, it comes back only after the screen has been still for 1.5 seconds.
+
+When Chat shows saved history it couldn't refresh, the notice above it is now always the same size: the time it was saved, then the reason on one line. Tap More to read the whole reason. In landscape with the keyboard up it is a single row. The notice can no longer be hidden, so saved history always stays marked; Retry is still there while a retry can help.
+
+When the pane bar appears or goes away (for example when a tab is split), the terminal now resizes once to fit. Before, the bar could cover the terminal's top row.

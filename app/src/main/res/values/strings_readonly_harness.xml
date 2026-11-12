@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Where the composer is for a program whose history Chat only shows (design NIGHT-READONLY-HARNESS section 1). -->
+    <string name="chat_readonly_footer">History only. To type, switch to Terminal.</string>
+    <!-- TalkBack for the footer; %1$s is the agent's display name. -->
+    <string name="chat_readonly_footer_spoken">%1$s history, read only. To type, switch to Terminal.</string>
+    <!-- Typed refusals, used whole in place of chat_unavailable and session_chat_unreadable (section 3). -->
+    <string name="chat_refused_outside_home">%1$s keeps this session outside your home folder on the host, and Chat reads only inside it. Terminal still works: read and type there.</string>
+    <string name="chat_refused_qwen_managed">This Qwen Code session is stored as a managed session, which Chat can\'t read. Terminal still works: read and type there.</string>
+    <!-- Grok has more than one session file with this id, and the id does not say which one it resumes. -->
+    <string name="chat_refused_ambiguous">Chat found more than one %1$s session for this pane and shows none of them. Terminal still works: read and type there.</string>
+    <!-- The Copilot log's first record names another session than the one Herdr reports. -->
+    <string name="chat_refused_mismatch">The %1$s log for this pane names a different session, so Chat shows none of it. Terminal still works: read and type there.</string>
+    <!-- Any other typed refusal, said as one: %1$s is the agent's display name. -->
+    <string name="chat_refused_general">%1$s keeps this session in a form Chat can\'t read. Terminal still works: read and type there.</string>
+</resources>

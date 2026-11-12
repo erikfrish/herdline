@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat">聊天</string>
+    <string name="chat_terminal">终端</string>
+    <string name="chat_tool_running">运行中</string>
+    <string name="chat_tool_done">已完成</string>
+    <string name="chat_tool_failed">失败</string>
+    <plurals name="chat_show_all_lines">
+        <item quantity="other">显示全部 %d 行</item>
+    </plurals>
+    <string name="chat_load_older">加载更早的消息</string>
+    <string name="chat_loading">正在读取对话记录…</string>
+    <string name="chat_not_refreshed">聊天无法再次读取对话记录，仍在重试</string>
+    <string name="chat_strip_more">更多</string>
+    <string name="chat_strip_saved_short">%1$s 保存 · %2$s</string>
+    <string name="chat_strip_cannot_read">无法读取</string>
+    <string name="chat_strip_not_refreshed">未刷新</string>
+    <plurals name="chat_latest_new">
+        <item quantity="other">最新 · %d 条新消息</item>
+    </plurals>
+    <string name="chat_agent_label">omp</string>
+    <string name="chat_thinking">思考</string>
+    <string name="chat_compacted">上下文已压缩</string>
+    <string name="chat_tool_denied">已拒绝</string>
+    <string name="chat_tool_exit">退出 %1$d</string>
+    <string name="chat_tool_exit_spoken">退出码 %1$d</string>
+    <string name="chat_show_output">显示输出</string>
+    <string name="chat_hide_output">隐藏输出</string>
+    <string name="chat_show_steps">显示步骤</string>
+    <string name="chat_hide_steps">隐藏步骤</string>
+    <string name="chat_tool_arguments">参数</string>
+    <string name="chat_marker_stopped_by_you">已由你停止</string>
+    <string name="chat_marker_stopped">已停止</string>
+    <string name="chat_marker_done">已完成</string>
+    <string name="chat_marker_to_do">待办</string>
+    <string name="chat_marker_item_spoken">%1$s：%2$s</string>
+    <plurals name="chat_tool_group">
+        <item quantity="other">%d 个工具</item>
+    </plurals>
+    <plurals name="chat_tool_group_failed">
+        <item quantity="other">%d 个失败</item>
+    </plurals>
+    <plurals name="chat_tool_group_denied">
+        <item quantity="other">%d 个被拒绝</item>
+    </plurals>
+    <plurals name="chat_run_earlier">
+        <item quantity="other">%d 个更早的步骤</item>
+    </plurals>
+    <string name="chat_copy">复制</string>
+    <string name="chat_truncated">已为聊天缩短；完整内容在终端中</string>
+    <string name="chat_working">工作中</string>
+    <string name="chat_working_on">工作中 · %1$s</string>
+    <string name="chat_blocked_title">正在终端中等你</string>
+    <string name="chat_blocked_tool">%1$s 正在等待回答。聊天无法回答对话框，请在终端中回答。</string>
+    <string name="chat_blocked_other">代理正在等待输入。聊天无法回答对话框，请在终端中回答。</string>
+    <string name="chat_blocked_question">此处仅供阅读。聊天无法回答，请在终端中选择。</string>
+    <string name="chat_answer_in_terminal">在终端中回答</string>
+    <string name="chat_answer_in_terminal_for">在终端中回答：%1$s</string>
+    <string name="chat_error_title">工具失败后已停止</string>
+    <string name="chat_empty">此会话中还没有消息。</string>
+    <string name="chat_you">你</string>
+</resources>

@@ -1,0 +1,5 @@
+Herdline 0.6.21 — Clearer next steps when a pane or Chat can't show
+
+On a split tab, a pane can get so small that nothing of it fits on the phone, only its border. With the keyboard down, Herdline used to show nothing about it. Now it says the pane has no room and offers Zoom, which shows that pane on its own.
+
+When Chat can't read an agent's history for a reason that lasts and shows what was saved earlier, the strip at the top now has Open Terminal, so you can read and type there in one tap.

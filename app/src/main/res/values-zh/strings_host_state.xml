@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="host_state_key_unknown">未知主机密钥</string>
+    <string name="host_state_no_herdr">未找到 Herdr</string>
+    <string name="host_state_setup_failed">安装失败</string>
+    <string name="host_state_cannot_connect">无法连接</string>
+    <string name="host_state_lost">连接已断开</string>
+</resources>

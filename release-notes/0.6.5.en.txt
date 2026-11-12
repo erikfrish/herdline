@@ -1,0 +1,9 @@
+Herdline 0.6.5 — Kilo history stays right after an undo, clearer words when Chat can't read a session
+
+After you undo in Kilo, Chat now drops the messages you undid and shows only the current conversation. Before, Chat could keep the undone messages and miss new ones.
+
+A Kilo message too large to show in full now appears with the part that fits and a note that it was cut, instead of leaving the whole conversation blank.
+
+Chat now reads Kilo's history only from an ordinary file. Anything else in its place is refused at once instead of leaving Chat waiting.
+
+When Chat can't read a session, it now says why. If this host has never given Chat a transcript for that agent, Chat says the host needs Herdr's session integration for it and offers Help. Chat no longer says it will switch back by itself when it won't.

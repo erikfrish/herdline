@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.core.RenderFrame
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Pane rows Herdr needs before Send is allowed. The native core enforces it
@@ -90,4 +92,27 @@ internal fun shortPaneReach(
     val portrait = landscape && base.windowWidthPx > base.windowHeightPx &&
         reaches(base.sharedPx + base.windowWidthPx - base.windowHeightPx - portraitExtraPx)
     return ShortPaneReach(hide, portrait)
+}
+
+/**
+ * Grid rows below which a frame with no focused pane rect is taken to leave
+ * the pane no content row: a bordered pane's top and bottom border lines.
+ * Only the fallback; [paneHasNoRoom] reads the rect when the frame has it.
+ */
+internal const val NO_ROOM_FALLBACK_ROWS = 3
+
+/**
+ * Whether the focused pane has no row of its own (QF-6c, QF9-N): the content
+ * area Herdr gave it ([RenderFrame.PaneArea.rect], its inner rect) has no row
+ * inside the frame, so only Herdr's chrome is drawn. That holds with the
+ * keyboard up or down: the 2-row landscape grid, or an unzoomed split that
+ * leaves the pane only its border (QA m26). A frame that names no focused
+ * pane falls back to fewer than [NO_ROOM_FALLBACK_ROWS] grid rows. An open
+ * popup takes the input, so it is never this case, and neither is typing in
+ * the composer's own field ([composerTyping]).
+ */
+internal fun paneHasNoRoom(frame: RenderFrame?, composerTyping: Boolean): Boolean {
+    if (composerTyping || frame == null || frame.rows <= 0 || frame.popup != null) return false
+    val rect = frame.panes.firstOrNull { it.focused }?.rect ?: return frame.rows < NO_ROOM_FALLBACK_ROWS
+    return min(frame.rows, rect.y + rect.height) - max(0, rect.y) <= 0
 }

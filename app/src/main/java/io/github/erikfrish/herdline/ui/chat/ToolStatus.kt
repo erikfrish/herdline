@@ -61,11 +61,40 @@ fun outputTail(text: String, limit: Int): Pair<String, Int> {
     return if (lines.size <= limit) lines.joinToString("\n") to 0 else lines.takeLast(limit).joinToString("\n") to lines.size - limit
 }
 
-/** Ask uses its intent or recorded question, never a raw JSON/HTML argument line. */
+/**
+ * What a tool worked on, for its row and TalkBack: the intent, an ask's
+ * recorded question, else the main argument. Never a raw JSON/HTML line:
+ * the full arguments stay behind their own disclosure.
+ */
 fun ChatItem.Tool.summary(): String {
     call?.intent?.takeIf(String::isNotBlank)?.let { return it }
     if (name == ASK_TOOL) return result?.answers?.firstOrNull()?.question.orEmpty()
-    return call?.args?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    return call?.args?.let(::mainArgument).orEmpty()
+}
+
+/** The argument a tool row names, in this order; else the first string the call has. */
+private val MAIN_ARGUMENTS = listOf("command", "cmd", "file_path", "path", "filePath", "pattern", "query", "url", "description", "prompt")
+
+/**
+ * [args] as one line a person reads. Every format's arguments arrive as the
+ * agent wrote them, mostly a JSON object, so one rule serves them all: an
+ * array names its first string. JSON that does not parse (cut for chat)
+ * says nothing rather than braces. A string is shown as it is, even one
+ * holding JSON of its own.
+ */
+internal fun mainArgument(args: String): String {
+    val text = args.trim()
+    val value = when {
+        text.startsWith("{") -> runCatching { org.json.JSONObject(text) }.getOrNull()?.let { json ->
+            MAIN_ARGUMENTS.firstNotNullOfOrNull { key -> (json.opt(key) as? String)?.takeIf(String::isNotBlank) }
+                ?: json.keys().asSequence().firstNotNullOfOrNull { key -> (json.opt(key) as? String)?.takeIf(String::isNotBlank) }
+        }
+        text.startsWith("[") -> runCatching { org.json.JSONArray(text) }.getOrNull()?.let { json ->
+            (0 until json.length()).firstNotNullOfOrNull { (json.opt(it) as? String)?.takeIf(String::isNotBlank) }
+        }
+        else -> text
+    }
+    return value?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
 }
 
 val ChatItem.Tool.name: String get() = call?.name ?: result?.name.orEmpty()

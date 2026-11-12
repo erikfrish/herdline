@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
 import android.text.Selection
@@ -20,8 +21,10 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.OverScroller
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.ui.theme.TerminalScheme
@@ -173,7 +176,7 @@ class TerminalView(context: Context) : View(context) {
      * it animates, and the orientation. Set in the Compose update pass, so a
      * change reaches this view before the layout it causes. While it stays
      * the same, a new view height comes only from transient chrome (a
-     * composer or receipt notice, the sent confirmation, the pane bar, the
+     * composer or receipt notice, the sent confirmation, the
      * short-window header), and the grid keeps its rows: each resize refuses
      * Send until Herdr draws it, and the chrome then comes or goes again.
      */
@@ -246,12 +249,16 @@ class TerminalView(context: Context) : View(context) {
     /**
      * How far the grid is drawn above the view's top: while a held grid is
      * taller than the view, or by whole rows while output focus shows a
-     * window over it, so the top visible row is never cut.
+     * window over it, so the top visible row is never cut. The row
+     * [shownAnchorRow] picks (the cursor drawCursor draws, or the focused
+     * pane's top) is passed so the window keeps it (A-27P, QF9-U2); the native
+     * core takes the same row from the same frame.
      */
     private val offsetY: Float
         get() {
             val frame = frame ?: return 0f
-            return viewOffset(height, clipBottomPx, hiddenRows, cellHeight, frame.rows)
+            val anchorRow = shownAnchorRow(frame, height, clipBottomPx, hiddenRows, cellHeight)
+            return viewOffset(height, clipBottomPx, hiddenRows, cellHeight, frame.rows, anchorRow)
         }
 
     /** What [onDraw] last drew, as the native core checks it (HG-VIS). */
@@ -713,6 +720,20 @@ class TerminalView(context: Context) : View(context) {
     }
 
     override fun onCheckIsTextEditor() = true
+
+    // TalkBack's double-tap is a click: name it and open the keyboard, as a tap does. No click
+    // listener, so touch handling and focus stay the gesture detector's.
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, context.getString(R.string.terminal_show_keyboard)))
+        info.isClickable = true
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        if (action != AccessibilityNodeInfo.ACTION_CLICK) return super.performAccessibilityAction(action, arguments)
+        showKeyboard()
+        return true
+    }
 
     private val line = LineMirror()
 

@@ -1,0 +1,10 @@
+Herdline 0.6.19 — Send says what to do next
+
+When Chat can't send to OMP because its input box isn't readable on the phone, the message now tells you what to do, then says nothing was sent:
+
+- If OMP's input box isn't drawn in the pane, open Terminal and check OMP is at its prompt.
+- If something is drawn over the box, close it in Terminal.
+- If the top of the box isn't on screen, hide the keyboard or use a smaller text size.
+- If the box can't be read, check it in Terminal.
+
+Then send again. Your text stays in the composer.

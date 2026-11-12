@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- %1$s Herdr name verbatim, %2$s R.string.chat, %3$s R.string.chat_terminal, %4$s tab title. -->
+    <string name="harness_card_title">%1$s: %2$s isn\'t connected yet</string>
+    <string name="harness_card_body">%3$s works fully. %4$s runs %1$s — type there as on the desktop.</string>
+    <!-- Shell: %1$s R.string.chat, %2$s tab title, %3$s R.string.chat_terminal. -->
+    <string name="harness_card_shell_title">%1$s needs an agent</string>
+    <string name="harness_card_shell_body">%2$s runs a shell. %3$s works fully.</string>
+    <string name="harness_open_terminal">Open %1$s</string>
+    <string name="harness_close">Close</string>
+    <string name="harness_works_here">What works here</string>
+    <string name="harness_item_terminal">%1$s</string>
+    <string name="harness_item_history">Chat history</string>
+    <string name="harness_item_send">Send from Chat</string>
+    <string name="harness_item_steer">Steer while working</string>
+    <string name="harness_item_status">Status</string>
+    <string name="harness_item_questions">Questions and forms</string>
+    <string name="harness_item_subagents">Subagents</string>
+    <string name="harness_item_media">Images and files</string>
+    <string name="harness_not_yet">%1$s — not connected yet</string>
+    <string name="harness_checked_only">Herdline shows only what\'s been checked for this program.</string>
+    <string name="harness_chat_state">Not connected for this program</string>
+</resources>

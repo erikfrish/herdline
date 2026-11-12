@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="icon_change_title">Change the app icon?</string>
+    <string name="icon_change_text">Herdline closes to apply it. Open it again from the new icon.</string>
+    <string name="icon_change_confirm">Change icon</string>
+    <string name="icon_closes_help">Herdline closes to apply the icon; open it from the new icon.</string>
+</resources>

@@ -21,7 +21,13 @@ class Connection(val node: Node) {
     sealed interface State {
         data object Connecting : State
         data class Connected(val serverVersion: String) : State
-        data class Disconnected(val reason: String) : State
+        /** [byUser]: the user disconnected ([close]), so this is no loss; [reason] is free native or server text. */
+        data class Disconnected(val reason: String, val byUser: Boolean = false) : State {
+            companion object {
+                /** The [reason] when nothing named one: it says no more than the state itself. */
+                const val UNNAMED = "Disconnected"
+            }
+        }
         /** [host] is `address:port` of the hop whose key is not trusted, [hop] its place in the route. */
         data class UntrustedHostKey(val hop: Int, val host: String, val fingerprint: String, val changed: Boolean) : State
         /** Hop number [hop] of the route, [host] as `address:port`, refused its key or password. */
@@ -222,7 +228,8 @@ class Connection(val node: Node) {
                 }
                 "disconnected", "closed" -> {
                     if (_state.value !is State.Incompatible) {
-                        _state.value = State.Disconnected(event.optString("reason").ifBlank { "Disconnected" })
+                        // The daemon's own "closed" can follow a close(); it stays the user's disconnect.
+                        _state.value = State.Disconnected(event.optString("reason").ifBlank { State.Disconnected.UNNAMED }, byUser = closed)
                     }
                     finish(session)
                     return
@@ -277,7 +284,7 @@ class Connection(val node: Node) {
         if (session != 0L) Native.disconnect(session)
         settleUncertain()
         if (_state.value is State.Connecting || _state.value is State.Connected) {
-            _state.value = State.Disconnected("Disconnected")
+            _state.value = State.Disconnected(State.Disconnected.UNNAMED, byUser = true)
         }
     }
 

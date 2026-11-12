@@ -91,11 +91,13 @@ import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TargetOrder
 import io.github.erikfrish.herdline.ui.components.NodeAvatar
+import io.github.erikfrish.herdline.ui.components.SheetCloseButton
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.glass.GlassMenuItem
+import io.github.erikfrish.herdline.ui.glass.menuColor
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.color
 import io.github.erikfrish.herdline.service.MonitorKey
@@ -165,6 +167,8 @@ fun Switcher(
      */
     scope: String? = null,
     onScope: ((String?) -> Unit)? = null,
+    /** The phone sheet's visible way out (U-1 #7); null in the sidebar, which has no sheet to close. */
+    onClose: (() -> Unit)? = null,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     val scoped = remember(groups, scope, onScope != null, view != null) {
@@ -270,14 +274,22 @@ fun Switcher(
             Modifier.fillMaxWidth().testTag("switcher"),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
-            item(key = "header") {
+            val header: @Composable () -> Unit = {
                 HostLine(node, view, state) {
                     if (onShowGrid != null) {
                         IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-columns")) {
                             Icon(GridIcon, stringResource(R.string.overview_as_columns), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    if (onClose != null) SheetCloseButton(onClose, tag = "switcher:close")
                 }
+            }
+            // In the sheet the header stays on top while the list scrolls, so Close is always in view
+            // (designer R2); it is opaque in the sheet's own colour so rows pass under it.
+            if (onClose != null) {
+                stickyHeader(key = "header") { Box(Modifier.fillMaxWidth().background(menuColor())) { header() } }
+            } else {
+                item(key = "header") { header() }
             }
             item(key = "search") { SearchField(query, onQuery, stringResource(R.string.switcher_search)) }
             if (onScope != null && view != null) {

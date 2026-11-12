@@ -218,8 +218,12 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             sidebarOpen = prefs.getBoolean("sidebar_open", d.sidebarOpen),
             targetOrder = enumOf("target_order", d.targetOrder),
             startFilter = enumOf("start_filter", d.startFilter),
-            // A stored "Grid" is the removed tile overview: the compact list takes over.
-            tabsView = if (prefs.getString("tabs_view", null) == "Grid") TabsView.List else enumOf("tabs_view", d.tabsView),
+            // A stored "Grid" is the removed tile overview: the compact list takes
+            // over, written back like the extra-key migration so this runs once.
+            tabsView = if (prefs.getString("tabs_view", null) == "Grid") {
+                prefs.edit().putString("tabs_view", TabsView.List.name).apply()
+                TabsView.List
+            } else enumOf("tabs_view", d.tabsView),
             hideShells = prefs.getBoolean("hide_shells", d.hideShells),
             hideIdleDone = prefs.getBoolean("hide_idle_done", d.hideIdleDone),
             composerMenu = ComposerMenu.repaired(savedControls(ids("composer_menu"), ids("composer_menu_known"), ComposerMenu.DEFAULT)),

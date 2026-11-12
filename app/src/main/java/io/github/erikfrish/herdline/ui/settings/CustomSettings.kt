@@ -422,6 +422,9 @@ private fun LiveLevelRow(store: SettingsStore, settings: Settings) {
 internal fun LazyListScope.iconSettings(store: SettingsStore, settings: Settings) {
     item { SectionHeader(stringResource(R.string.section_icon)) }
     item {
+        // Applying an icon disables the alias this task was opened through, and the
+        // launcher drops the task: the app closes, so the user is asked first.
+        var pending by remember { mutableStateOf<IconVariant?>(null) }
         Group {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FlowRow(
@@ -431,12 +434,25 @@ internal fun LazyListScope.iconSettings(store: SettingsStore, settings: Settings
                 ) {
                     IconVariant.entries.forEach { variant ->
                         LauncherIconChoice(variant, settings.iconVariant == variant) {
-                            store.update { it.copy(iconVariant = variant) }
+                            if (settings.iconVariant != variant) pending = variant
                         }
                     }
                 }
+                Help(stringResource(R.string.icon_closes_help))
                 Help(stringResource(R.string.icon_help))
             }
+        }
+        pending?.let { variant ->
+            ConfirmDialog(
+                title = stringResource(R.string.icon_change_title),
+                text = stringResource(R.string.icon_change_text),
+                confirm = stringResource(R.string.icon_change_confirm),
+                onConfirm = {
+                    pending = null
+                    store.update { it.copy(iconVariant = variant) }
+                },
+                onDismiss = { pending = null },
+            )
         }
     }
 }

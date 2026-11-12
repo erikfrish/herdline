@@ -1,0 +1,9 @@
+Herdline 0.6.10 — the tap hint gets out of the way, Chat re-checks on a tap, a too-short terminal says why
+
+The "Tap to type" hint now disappears the moment anything on the terminal changes, so new output never runs under it, and it comes back only once the screen has been still for a moment. It appears only where there is enough empty room for it.
+
+When Chat can't read a session, a tap on Chat, or a new agent starting in the pane, makes it check again once.
+
+Tool steps in Chat now name what they work on, such as the file or the command, instead of showing raw data.
+
+Held sideways with the keyboard up, a phone can be too short for Herdr to show any of the pane: its border takes every row. Herdline now says so over the terminal and offers Hide keyboard; turning to portrait gives the pane room as well.

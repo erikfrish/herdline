@@ -35,6 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -42,17 +45,23 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import io.github.erikfrish.herdline.R
+import kotlin.math.floor
 
 /** What one extra key does. */
 sealed interface ExtraKey {
@@ -127,6 +136,19 @@ private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
 
 /** Every row a hand can thumb without peeking, whatever the cap shrinks to. */
 private val KeyRowHeight = 48.dp
+
+/**
+ * The cap width, in dp, for a row that scrolls in a [viewport] dp wide: as
+ * many whole caps of at least [min] as fit, then the next one cut in half at
+ * the edge, so the row itself shows there is more (QF-6b). Never under [min].
+ */
+internal fun scrollingCapWidth(viewport: Float, gap: Float, min: Float = 48f): Float {
+    val whole = floor((viewport - min / 2) / (min + gap)).toInt()
+    // Too narrow for one cap and half of the next: the plain target, no cue claimed.
+    if (whole < 1) return min
+    return (viewport - whole * gap) / (whole + 0.5f)
+}
+
 /** The gaps and outer padding of the panel, in dp. */
 private val KeyGap = 5.dp
 private val KeyRowPad = 6.dp
@@ -138,11 +160,13 @@ private val Spoken: Map<String, String> = mapOf(
 )
 
 /**
- * The panel of keys a phone keyboard lacks, drawn as two compact rows —
- * Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
+ * The panel of keys a phone keyboard lacks, drawn as two compact rows (one
+ * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
  * Alt latch for the next key or character, as on Termux; arrows and paging
  * keys repeat while held and stop at the moment the cap is released. A latched
- * modifier fills with the session's [accent].
+ * modifier fills with the session's [accent] and carries a bar under its
+ * label, so the latch shows without colour; TalkBack reads it as a switch, On
+ * or Off, so the next key is never silently Ctrl+key.
  */
 @Composable
 fun ExtraKeysRow(
@@ -155,10 +179,21 @@ fun ExtraKeysRow(
     onText: (String) -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    /** Rows the keys split into: two, or one on a landscape phone typing (QF-6, `extraKeyRowCount`). */
+    rowsOf: Int = 2,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val latchOn = stringResource(R.string.extra_key_latch_on)
+    val latchOff = stringResource(R.string.extra_key_latch_off)
+    // On a latched cap: whichever of ink or white reads better on this accent (WCAG
+    // contrast, from luminance alone), so a mid-tone accent like brass never gets white.
+    val onAccent = remember(accent) {
+        val ink = Color(0xFF10151C)
+        val l = accent.luminance() + 0.05f
+        if (l / (ink.luminance() + 0.05f) >= 1.05f / l) ink else Color.White
+    }
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -168,13 +203,16 @@ fun ExtraKeysRow(
             .testTag("extra_keys"),
     ) {
         val panelWidth = maxWidth
-        val rows = remember(keys) { extraKeyRows(keys) }
+        val rows = remember(keys, rowsOf) { extraKeyRows(keys, rowsOf) }
         Column(Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp)) {
             for (row in rows) {
                 // Caps fill the row when it holds few keys; a row too wide for
-                // the screen (a long custom set) scrolls sideways, never taller.
-                val width = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
-                    .coerceAtLeast(if (compact) 40.dp else 44.dp)
+                // the screen (a long custom set) scrolls sideways, never taller,
+                // and no cap is ever narrower than a 48 dp target.
+                val fill = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
+                // A row that scrolls: a drag that starts on a cap scrolls it and sends nothing.
+                val scrolls = fill < 48.dp
+                val width = if (scrolls) scrollingCapWidth((panelWidth - KeyRowPad * 2).value, KeyGap.value).dp else fill
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -192,13 +230,20 @@ fun ExtraKeysRow(
                             },
                             label = "keyFill",
                         )
+                        val labelColor = if (active) onAccent else onSurface
                         val hit = Modifier
                             .width(width)
                             .height(KeyRowHeight)
                             .testTag("key:${key.label}")
                             .semantics {
                                 contentDescription = Spoken[key.label] ?: key.label
-                                role = Role.Button
+                                if (key is ExtraKey.Modifier) {
+                                    role = Role.Switch
+                                    toggleableState = ToggleableState(active)
+                                    stateDescription = if (active) latchOn else latchOff
+                                } else {
+                                    role = Role.Button
+                                }
                                 onClick {
                                     when (key) {
                                         is ExtraKey.Key -> onKey(key.keyCode, false)
@@ -211,26 +256,41 @@ fun ExtraKeysRow(
                             }
                         val gesture = when (key) {
                             is ExtraKey.Key -> if (key.repeats) {
-                                hit.pointerInput(key) {
+                                hit.pointerInput(key, scrolls) {
                                     awaitEachGesture {
                                         awaitFirstDown()
                                         down = true
                                         try {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onKey(key.keyCode, false)
+                                            // In a row that scrolls, the first send (and its buzz) waits
+                                            // for the release or the hold, so a drag only scrolls.
+                                            if (!scrolls) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onKey(key.keyCode, false)
+                                            }
+                                            var held = false
                                             val repeat = scope.launch {
                                                 delay(400)
+                                                held = true
+                                                if (scrolls) {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onKey(key.keyCode, false)
+                                                    delay(60)
+                                                }
                                                 while (true) {
                                                     onKey(key.keyCode, true)
                                                     delay(60)
                                                 }
                                             }
-                                            try {
+                                            val up = try {
                                                 waitForUpOrCancellation()
                                             } finally {
                                                 // Up, a scroll stealing the gesture, or this row
                                                 // leaving composition: the held job never outlives the hold.
                                                 repeat.cancel()
+                                            }
+                                            if (scrolls && !held && up != null) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onKey(key.keyCode, false)
                                             }
                                         } finally {
                                             down = false
@@ -255,7 +315,19 @@ fun ExtraKeysRow(
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .clip(KeyShape)
                                     .background(fill)
-                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape),
+                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape)
+                                    .drawBehind {
+                                        if (!active) return@drawBehind
+                                        // The latch's non-colour mark: a short bar under the label,
+                                        // drawn only, so the cap keeps its size.
+                                        val bar = Size(size.width * 0.4f, 2.dp.toPx())
+                                        drawRoundRect(
+                                            labelColor,
+                                            Offset((size.width - bar.width) / 2, size.height - bar.height - 4.dp.toPx()),
+                                            bar,
+                                            CornerRadius(bar.height / 2),
+                                        )
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -263,7 +335,7 @@ fun ExtraKeysRow(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 14.sp,
-                                    color = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface,
+                                    color = labelColor,
                                 )
                             }
                         }

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_rejected_fallback_text">%1$s rejected this device\'s key. Enter the password once, or add the key to ~/.ssh/authorized_keys on the host.</string>
+</resources>

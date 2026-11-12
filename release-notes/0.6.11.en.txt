@@ -1,0 +1,5 @@
+Herdline 0.6.11 — stops and plans read as words in Chat, and two more reasons Chat says plainly
+
+When you stop an agent, Chat now says "Stopped by you"; a stop for any other reason says "Stopped". A plan shows each item as Done or To do, instead of bracketed text.
+
+When Chat finds two matching sessions for a pane, or a log that names a different session, it now says exactly that instead of a general "can't read" message. The terminal still works as before.

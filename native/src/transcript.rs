@@ -22,12 +22,19 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode` own their line/row formats; the shared
-/// OMP record parser below handles `omp` and serves as the base for `pi`.
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`mastracode`/`kimi` own their line/row formats; the
+/// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
+mod copilot;
+mod grok;
+mod hermes;
+mod kilo;
+mod mastracode;
+mod kimi;
 mod opencode;
 mod pi;
+mod qwen;
 mod subagents;
 
 #[cfg(test)]
@@ -62,9 +69,6 @@ pub(super) const TEXT_LIMIT: usize = 64 * 1024;
 pub(super) const RESULT_LIMIT: usize = 16 * 1024;
 pub(super) const ARGS_LIMIT: usize = 8 * 1024;
 const PATH_LIMIT: usize = 4096;
-const SESSIONS_DIR: &str = "/.omp/agent/sessions/";
-/// Pi (pi-mono) writes the same layout under its own agent directory.
-const PI_SESSIONS_DIR: &str = "/.pi/agent/sessions/";
 pub(super) const BLOB_PREFIX: &str = "blob:sha256:";
 /// The most image bytes one media read decodes and hands to the app.
 pub const MAX_IMAGE: u64 = 20 * 1024 * 1024;
@@ -128,7 +132,8 @@ pub struct Identity {
     /// `path` refs (OMP, Pi), the session ID for `id` refs (the rest). Never
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
-    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`.
+    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
+    /// `qwen`, `hermes`, `kilo`, `copilot`, `mastracode`, `kimi`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -164,12 +169,28 @@ impl Default for Identity {
     }
 }
 
-/// What [`fetch`] answers: transcript lines, or the one image asked for.
+/// What [`fetch`] answers: transcript lines, the one image asked for, or a
+/// typed refusal that Chat says in its own words.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Answer {
     Page(Response),
     Media { media: MediaAnswer },
+    Refused { refused: Refused },
+}
+
+/// Why Chat will never read this session, as opposed to an error that may
+/// clear. Each one has its own text in the app; none is retried by itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Refused {
+    /// The session is stored in a format Chat does not read.
+    UnsupportedFormat { format: &'static str },
+    /// The agent keeps its sessions outside the SSH user's home folder.
+    OutsideHome,
+    /// The agent's store is in a schema format the reader was not written
+    /// for; `found` is null when the store names no single format.
+    UnsupportedVersion { agent: &'static str, found: Option<u32>, supported: u32 },
 }
 
 #[derive(Debug, Serialize)]
@@ -290,6 +311,8 @@ pub struct Usage {
 pub enum Kind {
     Message,
     Compaction,
+    /// Where the history shown stops at another session's turns; no content.
+    Boundary,
     /// Kept without content so the branch can be walked through it.
     Other,
 }
@@ -330,6 +353,24 @@ pub enum Block {
         subagents: Vec<subagents::Subagent>,
     },
     Image(Image),
+    /// A turn's stop, or one plan item, which the app words in its own language.
+    Marker {
+        marker: Marker,
+        /// The plan item's text; empty for a stop.
+        text: String,
+        truncated: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Marker {
+    /// The person stopped the turn.
+    StoppedByYou,
+    /// The turn was stopped, no one says by whom.
+    Stopped,
+    Done,
+    ToDo,
 }
 
 /// Display-only question answers emitted by OMP's form tool.
@@ -382,7 +423,19 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
             },
         });
     }
-    page(exec, session, request).map(Answer::Page)
+    match page(exec, session, request) {
+        Ok(page) => Ok(Answer::Page(page)),
+        Err(Error::UnsupportedFormat(format)) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedFormat { format },
+        }),
+        Err(Error::SessionRootOutsideHome) => Ok(Answer::Refused {
+            refused: Refused::OutsideHome,
+        }),
+        Err(Error::UnsupportedHermes { found, supported }) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedVersion { agent: "hermes", found, supported },
+        }),
+        Err(error) => Err(error),
+    }
 }
 
 fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
@@ -392,9 +445,44 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     let mut reset = false;
     for _ in 0..MAX_READS {
         let (script, limit) = match &expect {
-            // OpenCode pages its own `seq` sequence via its module.
-            Some(identity) if identity.agent == "opencode" => {
-                return opencode::page(exec, session, &request.pane, identity, read, reset);
+            // OpenCode pages its own `seq` sequence, Qwen its whole active
+            // chain (a tree, not a byte range), Hermes its SQLite `messages`
+            // ids, Kilo its messages' places in (time_created, id) order,
+            // Grok its rewind-filtered update rows, Copilot its checked event
+            // log, Mastra Code its thread's (createdAt, id) order and Kimi its
+            // whole active wire chain, read only, each via its module.
+            Some(identity)
+                if matches!(
+                    identity.agent.as_str(),
+                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi"
+                ) =>
+            {
+                let page = match identity.agent.as_str() {
+                    "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
+                    "hermes" => hermes::page(exec, session, &request.pane, identity, read, reset),
+                    "kilo" => kilo::page(exec, session, &request.pane, identity, read, reset),
+                    "grok" => grok::page(exec, session, &request.pane, identity, read, reset),
+                    "copilot" => copilot::page(exec, session, &request.pane, identity, read, reset),
+                    "mastracode" => mastracode::page(exec, session, &request.pane, identity, read, reset),
+                    "kimi" => kimi::page(exec, session, &request.pane, identity, read, reset),
+                    _ => opencode::page(exec, session, &request.pane, identity, read, reset),
+                };
+                match page {
+                    Ok(page) => return Ok(page),
+                    Err(error @ Error::NoTranscript) => {
+                        let current =
+                            instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
+                        if expect.as_ref() == Some(&current) {
+                            return Err(error);
+                        }
+                        expect = Some(current);
+                        read = Read::Tail;
+                        window = FIRST_WINDOW;
+                        reset = true;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             Some(identity) => (
                 script(
@@ -416,7 +504,24 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             read_timeout(window),
             limit,
         )?;
-        let reply = parse_reply(output.exit_status, &output.tail)?;
+        let reply = match parse_reply(output.exit_status, &output.tail) {
+            Ok(reply) => reply,
+            Err(error) => {
+                // File resolution can refuse the old reference after a fork or
+                // restart. The already-emitted pane report still identifies the
+                // replacement; adopt it rather than polling the old path forever.
+                if let Ok(Some(current)) = parse_instance(Some(0), &output.tail) {
+                    if expect.as_ref() != Some(&current) {
+                        expect = Some(current);
+                        read = Read::Tail;
+                        window = FIRST_WINDOW;
+                        reset = true;
+                        continue;
+                    }
+                }
+                return Err(error);
+            }
+        };
         let (identity, status) = identity(&reply.pane, &reply.process)?;
         if expect.as_ref() != Some(&identity) {
             expect = Some(identity);
@@ -473,6 +578,12 @@ fn image(
     if expect.agent == "opencode" {
         return opencode::image(exec, session, pane, expect, media);
     }
+    // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
+    // Copilot, Mastra Code and Kimi history is read without its media: chat
+    // never fetches any, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi") {
+        return refused(Refusal::Unsupported);
+    }
     let len = match media.end.checked_sub(media.offset) {
         Some(len) if len > 0 && len <= MAX_WINDOW => len,
         // A line that long holds more than chat reads at once.
@@ -525,7 +636,8 @@ fn media_outcome(
     let file_refusal = match exit_status {
         Some(EXIT_NO_MEDIA | EXIT_NO_FILE) => Some(Refusal::Missing),
         Some(EXIT_TOO_LARGE) => Some(Refusal::TooLarge),
-        Some(EXIT_UNCONFINED) => Some(Refusal::Unconfined),
+        // Media keeps its own vocabulary: outside home is unconfined there.
+        Some(EXIT_UNCONFINED | EXIT_OUTSIDE_HOME) => Some(Refusal::Unconfined),
         Some(EXIT_NO_STORE) => Some(Refusal::UnknownStore),
         Some(EXIT_MOVED) => Some(Refusal::Moved),
         _ => None,
@@ -776,6 +888,9 @@ const EXIT_NO_MEDIA: u32 = 7;
 const EXIT_TOO_LARGE: u32 = 8;
 const EXIT_NO_STORE: u32 = 9;
 const EXIT_MOVED: u32 = 10;
+/// The resolver found the agent's HOME, a root or the file outside this
+/// user's home: a lasting refusal with its own words, not a missing file.
+const EXIT_OUTSIDE_HOME: u32 = 11;
 
 /// Report the pane and its processes, then, given what to fetch, those
 /// bytes of the session file once it resolves inside OMP's session folder.
@@ -833,33 +948,9 @@ printf '@@pane\n'
     script.push_str(&format!(
         r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
 real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
-import glob, json, os, subprocess, sys
-herdr, session, pane, wanted, home = sys.argv[1:]
-reply = subprocess.run([herdr, '--session', session, 'pane', 'get', pane], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=20)
-if reply.returncode or len(reply.stdout) > 65536: sys.exit(3)
-ref = json.loads(reply.stdout)['result']['pane']['agent_session']
-agent, kind, value = ref['agent'], ref['kind'], ref['value']
-if value != wanted: sys.exit(3)
-if agent in ('omp', 'pi') and kind == 'path':
-    root = os.path.realpath(os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent', 'sessions'))
-    candidates = [value]
-elif agent == 'claude' and kind == 'id':
-    root = os.path.realpath(os.path.join(home, '.claude', 'projects'))
-    candidates = glob.glob(os.path.join(root, '*', glob.escape(value) + '.jsonl'))
-elif agent == 'codex' and kind == 'id':
-    root = os.path.realpath(os.path.join(home, '.codex', 'sessions'))
-    candidates = glob.glob(os.path.join(root, '**', 'rollout-*-' + glob.escape(value) + '.jsonl'), recursive=True)
-else: sys.exit(3)
-if os.path.commonpath([home, root]) != home: sys.exit(3)
-valid = []
-for candidate in candidates:
-    real = os.path.realpath(candidate)
-    if os.path.commonpath([root, real]) != root: sys.exit(3)
-    if os.path.isfile(real) and real.endswith('.jsonl'): valid.append(real)
-if len(valid) != 1: sys.exit(3)
-print(valid[0])
+{resolver}
 HERDLINE_RESOLVE
-) || exit {EXIT_UNCONFINED}
+) || {{ status=$?; [ "$status" -eq {EXIT_OUTSIDE_HOME} ] && exit {EXIT_OUTSIDE_HOME}; exit {EXIT_UNCONFINED}; }}
 [ -f "$real" ] || exit {EXIT_NO_FILE}
 size=$(wc -c < "$real") || exit {EXIT_NO_FILE}
 size=$((size))
@@ -868,6 +959,7 @@ printf '\n@@file %s %s\n@@data\n' "$size" "$start"
 tail -c +$((start + 1)) "$real" | head -c "$len"
 "#,
         path = shell_quote(path),
+        resolver = RESOLVER,
     ));
     let Some(blob) = blob else {
         return script;
@@ -894,46 +986,22 @@ head -c "$bytes" "$blob"
     script
 }
 
-/// Sets `$home` and `$store`: the blob store OMP process `pid` writes to,
-/// resolved as pi-utils `getBlobsDir()` does, `agentSubdir(undefined,
-/// "blobs", "data")` (18.18.8). The profile is the last `--profile` in its
-/// arguments before `--`, else `OMP_PROFILE` when set at all, else
-/// `PI_PROFILE`; its agent directory is `~/.omp/profiles/<name>/agent`, or
-/// without one `PI_CODING_AGENT_DIR`, else `~/.omp/agent`. Without an
-/// override, `$XDG_DATA_HOME/omp` (with a profile, `…/profiles/<name>`)
-/// takes its place when it exists. Whatever this cannot pin down exactly (no
-/// `/proc`, another `HOME`, `PI_CONFIG_DIR`, a relative or unusual value)
-/// is refused rather than guessed, and the store must resolve inside `$HOME`.
+/// The session resolver, run on the host. It also resolves the blob store,
+/// so a session root and the store follow the same profile rules.
+const RESOLVER: &str = include_str!("transcript/resolve_session.py");
+
+/// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
+/// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
+/// session roots. Exit 3 is a store outside `$HOME`; any other failure,
+/// python missing or nothing printed included, is an unknown store, never
+/// a guessed one.
 fn blob_store(pid: u32) -> String {
     format!(
-        r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
-env=/proc/{pid}/environ
-[ -r "$env" ] && [ -r /proc/{pid}/cmdline ] || exit {EXIT_NO_STORE}
-has() {{ tr '\0' '\n' < "$env" | grep -q "^$1="; }}
-val() {{ tr '\0' '\n' < "$env" | sed -n "s/^$1=//p" | head -n 1; }}
-own=$(realpath -- "$(val HOME)") || exit {EXIT_NO_STORE}
-[ "$own" = "$home" ] || exit {EXIT_NO_STORE}
-[ -z "$(val PI_CONFIG_DIR)" ] || exit {EXIT_NO_STORE}
-if has OMP_PROFILE; then profile=$(val OMP_PROFILE); else profile=$(val PI_PROFILE); fi
-flag=$(tr '\0' '\n' < /proc/{pid}/cmdline | awk '$0 == "--" {{ exit }} $0 == "--profile" {{ getline v; p = v; s = 1; next }} index($0, "--profile=") == 1 {{ p = substr($0, 11); s = 1 }} END {{ if (s) print "=" p }}')
-[ -n "$flag" ] && profile=${{flag#=}}
-profile=$(printf '%s' "$profile" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-case "$profile" in default) profile= ;; *[!A-Za-z0-9_-]* | -*) exit {EXIT_NO_STORE} ;; esac
-xdg=$(val XDG_DATA_HOME)
-case "$xdg" in '' | /*) ;; *) exit {EXIT_NO_STORE} ;; esac
-if [ -n "$profile" ]; then
-    root=$home/.omp/profiles/$profile/agent
-    [ -n "$xdg" ] && [ -e "$xdg/omp/profiles/$profile" ] && root=$xdg/omp/profiles/$profile
-else
-    root=$(val PI_CODING_AGENT_DIR)
-    case "$root" in
-        '' | "$home/.omp/agent") root=$home/.omp/agent; [ -n "$xdg" ] && [ -e "$xdg/omp" ] && root=$xdg/omp ;;
-        /*) ;;
-        *) exit {EXIT_NO_STORE} ;;
-    esac
-fi
-store=$(realpath -- "$root/blobs") || exit {EXIT_NO_MEDIA}
-case "$store" in "$home"/*) ;; *) exit {EXIT_UNCONFINED} ;; esac
+        r#"store=$(python3 - --blob-store {pid} "$home" <<'HERDLINE_RESOLVE'
+{RESOLVER}
+HERDLINE_RESOLVE
+) || {{ status=$?; [ "$status" -eq {EXIT_UNCONFINED} ] && exit {EXIT_UNCONFINED}; exit {EXIT_NO_STORE}; }}
+[ -n "$store" ] || exit {EXIT_NO_STORE}
 "#
     )
 }
@@ -956,6 +1024,7 @@ fn parse_reply(exit_status: Option<u32>, bytes: &[u8]) -> Result<Reply<'_>> {
     match exit_status {
         Some(0) => {}
         Some(EXIT_UNCONFINED) => return Err(Error::TranscriptUnconfined),
+        Some(EXIT_OUTSIDE_HOME) => return Err(Error::SessionRootOutsideHome),
         Some(EXIT_NO_HERDR) => return Err(Error::HerdrNotFound),
         Some(EXIT_NO_PANE) => return Err(Error::PaneGone),
         Some(EXIT_NO_FILE) => return Err(Error::NoTranscript),
@@ -1000,14 +1069,27 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let session = &pane["agent_session"];
     let agent = session["agent"]
         .as_str()
-        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode"))
+        .filter(|agent| {
+            matches!(
+                *agent,
+                "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi"
+            )
+        })
         .ok_or(Error::NoTranscript)?;
     // The agent's own reported reference, held exactly as Herdr gives it:
     // the session file for `path` (OMP, Pi), the session id for `id` (the
     // rest). Resolution stays in the host script, so identity cannot drift.
     let (kind, value) = match (session["kind"].as_str(), session["value"].as_str()) {
         (Some("path"), Some(value)) if agent == "omp" || agent == "pi" => ("path", value),
-        (Some("id"), Some(value)) if session_id(value) => ("id", value),
+        (Some("id"), Some(value))
+            if session_id(value)
+                && (agent != "qwen" || qwen::session_id(value))
+                && (agent != "kilo" || kilo::session_id(value))
+                && (agent != "copilot" || copilot::session_id(value))
+                && (agent != "kimi" || kimi::session_id(value)) =>
+        {
+            ("id", value)
+        }
         _ => return Err(Error::NoTranscript),
     };
     if kind == "path" && !confined(agent, value) {
@@ -1017,8 +1099,16 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let identity = Identity {
         pane_id: text(&pane["pane_id"])?,
         terminal_id: text(&pane["terminal_id"])?,
-        // The pane's foreground process must be that agent's own name.
-        pid: foreground_pid(process, agent),
+        // The pane's foreground process must be that agent's own name; Hermes
+        // and Kilo each run as either of two, Mastra Code usually as node,
+        // Kimi Code as either of two or as node running its npm entry.
+        pid: match agent {
+            "hermes" => hermes::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
+            "kilo" => kilo::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
+            "mastracode" => mastracode::pid(process),
+            "kimi" => kimi::foreground_pid(process),
+            _ => foreground_pid(process, agent),
+        },
         path: value.to_owned(),
         agent: agent.to_owned(),
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
@@ -1059,19 +1149,15 @@ fn foreground_pid(process: &Value, name: &str) -> Option<u32> {
         .and_then(|pid| u32::try_from(pid).ok())
 }
 
-/// An absolute session file path inside the agent's own session folder, as
-/// the host must also resolve it: OMP writes `~/.omp/agent/sessions/`, Pi
-/// writes `~/.pi/agent/sessions/`.
+/// Syntax admission only: the host resolves the actual process-configured
+/// session root and checks canonical containment before reading any bytes.
 fn confined(agent: &str, path: &str) -> bool {
-    let root = match agent {
-        "omp" => SESSIONS_DIR,
-        "pi" => PI_SESSIONS_DIR,
-        _ => return false,
-    };
+    if !matches!(agent, "omp" | "pi") {
+        return false;
+    }
     path.len() <= PATH_LIMIT
         && path.starts_with('/')
         && path.ends_with(".jsonl")
-        && path.contains(root)
         && !path.chars().any(char::is_control)
         && path
             .split('/')
