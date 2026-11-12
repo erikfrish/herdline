@@ -1049,6 +1049,7 @@ fun SessionScreen(
                             // spare. It sits over the bottom row, often the prompt, so it lasts only until the user
                             // first opens the keyboard, sends a key or scrolls. Opaque, as OutputFocusStrip is: a
                             // translucent pill let glyphs through and lost contrast. No input: a tap falls through.
+                            // Plain text, so TalkBack reads it and tests find the tag; no role, so it is no button.
                             Text(
                                 stringResource(R.string.terminal_tap_to_type),
                                 style = MaterialTheme.typography.bodySmall,
@@ -1061,7 +1062,6 @@ fun SessionScreen(
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    .clearAndSetSemantics {}
                                     .testTag("session:tap_to_type"),
                             )
                         }
@@ -1209,7 +1209,10 @@ fun SessionScreen(
                         // First in source order, so a banner draws over the card.
                         val cardTab = tab?.let { view?.tabTitle(it.id) }.orEmpty()
                         harnessCard?.let { card ->
-                            HarnessCardSlot(card.program, cardTab, onTerminal = { harnessCard = null; showChat(false) }, onClose = { harnessCard = null })
+                            // Keyed, so a new card is announced afresh and the one kept under the keyboard is not.
+                            key(card) {
+                                HarnessCardSlot(card.program, cardTab, keyboardUp = imeVisible, onTerminal = { harnessCard = null; showChat(false) }, onClose = { harnessCard = null })
+                            }
                         }
                         AgentBannerSlot(
                             note,

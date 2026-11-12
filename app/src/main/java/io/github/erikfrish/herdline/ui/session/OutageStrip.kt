@@ -46,6 +46,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
@@ -124,7 +126,7 @@ internal fun OutageStrip(
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
             contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }.testTag(tag),
+            modifier = Modifier.fillMaxWidth().testTag(tag),
         ) {
             Row(
                 Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
@@ -145,13 +147,20 @@ internal fun OutageStrip(
                     modifier = Modifier.weight(1f),
                 ) { (shownTitle, shownDetail) ->
                     // The words fading out are not read again: only the new ones are announced,
-                    // in full even where the strip cuts them, since the cause is at the end.
+                    // in full even where the strip cuts them, since the cause is at the end. Text
+                    // and the polite live region sit on this one node, not on the strip around the
+                    // buttons, which has no words of its own to announce (QA m14, QF-4).
                     val leaving = transition.targetState == EnterExitState.PostExit
                     val spoken = listOfNotNull(shownTitle, shownDetail?.takeIf { it.isNotBlank() }).joinToString("\n")
                     Column(
                         Modifier
                             .padding(vertical = 6.dp)
-                            .clearAndSetSemantics { if (!leaving) contentDescription = spoken },
+                            .clearAndSetSemantics {
+                                if (!leaving) {
+                                    text = AnnotatedString(spoken)
+                                    liveRegion = LiveRegionMode.Polite
+                                }
+                            },
                     ) {
                         Text(shownTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!shownDetail.isNullOrBlank()) {
