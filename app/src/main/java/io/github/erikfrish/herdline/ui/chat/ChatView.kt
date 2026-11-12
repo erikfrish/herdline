@@ -143,6 +143,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 
 /** How often chat rereads the transcript while the agent is busy or waiting, and otherwise. */
 private const val BUSY_POLL_MS = 1_500L
@@ -218,6 +219,33 @@ internal class ChatKept {
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
     val media = ChatMedia()
+    private val rechecking = Mutex()
+
+    /** One read of [pane]'s next page, the poll's and a re-check's alike; it records how it went. */
+    suspend fun readNext(connection: Connection, pane: String): Boolean {
+        val known = history
+        val at = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
+        val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, at)) }
+        page.onSuccess { read ->
+            // Merged into whatever is current now: a load of older entries may have finished meanwhile.
+            history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
+            this.read.succeeded()
+        }.onFailure { read.failed(it) }
+        return page.isSuccess
+    }
+
+    /**
+     * One read while Chat is not composed to poll (F-OBS1); null when one is
+     * already in flight, so repeated asks never stack reads.
+     */
+    suspend fun recheck(connection: Connection, pane: String): Boolean? {
+        if (!rechecking.tryLock()) return null
+        try {
+            return readNext(connection, pane)
+        } finally {
+            rechecking.unlock()
+        }
+    }
 }
 
 /**
@@ -287,17 +315,10 @@ private fun ChatContent(
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                val known = history
-                val read = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
-                val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, read)) }
-                page.onSuccess { read ->
-                    // Merged into whatever is current now: a load of older entries may have finished meanwhile.
-                    history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
-                    kept.read.succeeded()
-                }.onFailure { kept.read.failed(it) }
+                val ok = kept.readNext(connection, pane)
                 withTimeoutOrNull(
                     when {
-                        page.isFailure -> ERROR_POLL_MS
+                        !ok -> ERROR_POLL_MS
                         busy -> BUSY_POLL_MS
                         else -> IDLE_POLL_MS
                     },

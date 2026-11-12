@@ -439,6 +439,13 @@ Switcher:
   validated PTY fallback reads the whole host editor, not the hidden phone
   crop, and still refuses a remote draft, popup, blocked agent or short OMP
   editor. Terminal delivery retains its own viewport gate unchanged.
+- **Unreadable Chat re-checks once** (F-OBS1, `ui/session/ChatRecheck.kt`).
+  A Chat tap on a pane Chat fell back from, for a transient reason, reads
+  it once and switches to Chat on success while the tap is still pending:
+  same pane and tab, no Terminal choice or input since. A new agent in the
+  pane (its kind or Herdr name, never a status change) reads it once while
+  no Chat polls it; that success only ends the fallback. A typed refusal
+  never reads. Reads conflate, one in flight; there is no timer.
 - **Chat or Terminal is remembered per pane** (`data/PaneModes.kt`).
   - It is keyed by node, Herdr session and pane, and stored with the daemon
     run (`boot`) and the program it was chosen for.
