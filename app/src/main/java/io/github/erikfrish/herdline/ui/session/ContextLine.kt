@@ -133,7 +133,10 @@ internal fun PlaceLine(
         val placeables = measurables.mapIndexedNotNull { i, measurable ->
             if (slots[i] <= 0) null else measurable.measure(Constraints(maxWidth = slots[i]))
         }
-        val height = placeables.maxOfOrNull { it.height } ?: 0
+        // One text line tall whatever is drawn, the icon alone included, so
+        // the header keeps its height when every text span gives way.
+        val line = measurables[1].maxIntrinsicHeight(full[1])
+        val height = maxOf(line, placeables.maxOfOrNull { it.height } ?: 0)
         layout(placeables.sumOf { it.width }.coerceAtMost(available), height) {
             var x = 0
             for (placeable in placeables) {
