@@ -97,6 +97,12 @@ fn rule(agent: &str) -> Option<Rule> {
         // the user may remap; only the `(… • esc to interrupt)` timer, as
         // codex draws it while it works, presses Esc.
         "codex" => Some(Rule::Hint(|rows| footer(rows).any(|row| codex_hint(row)))),
+        // gemini 0.68.0 (bundle interactiveCli-ZJ2ZELJM.js): Esc cancels the
+        // turn while it responds, unless an embedded shell has focus
+        // (:28634-28645); the input box passes it on only with no search,
+        // suggestion list or shell mode open (:22012-22057); the
+        // `(esc to cancel, …)` timer is drawn only while it responds (:23274).
+        "gemini" => Some(Rule::Hint(gemini_stoppable)),
         // kimi pins Esc (editor-keyboard.ts:273-290), but this core reads no
         // kimi screen: a btw panel or a compaction would take it unseen.
         _ => None,
@@ -124,6 +130,52 @@ fn codex_hint(row: &str) -> bool {
         && timer
             .split(' ')
             .all(|part| part.len() > 1 && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit()) && part.ends_with(['h', 'm', 's']))
+}
+
+/// Gemini's empty input row: its prompt and the default placeholder, which
+/// vim and shell mode replace (interactiveCli-ZJ2ZELJM.js:24246).
+const GEMINI_EMPTY: &str = " >   Type your message or @path/to/file";
+
+/// Gemini's own empty box is the pane's last one, its working timer stands
+/// above it, no shell it may hand Esc to is focusable and no queue waits.
+fn gemini_stoppable(rows: &[String]) -> bool {
+    // A focused embedded shell always shows `(… to unfocus)` and takes Esc
+    // itself (chunk-UWDUE2FI.js:53637-53663). A waiting queue, headed
+    // whenever it holds a message (interactiveCli-ZJ2ZELJM.js:23893-23900),
+    // is sent as the next turn as soon as the cancel leaves it idle
+    // (:32131-32136): that Esc would start a turn, not stop one.
+    if rows.iter().any(|row| row.contains(" to unfocus)") || row.contains(" to focus)") || row.trim() == "Queued (press ↑ to edit):") {
+        return false;
+    }
+    let border = |row: &str, stroke: char| {
+        let row = row.trim_end();
+        !row.is_empty() && row.chars().all(|c| c == stroke)
+    };
+    let Some(bottom) = rows.iter().rposition(|row| border(row, '▀')) else {
+        return false;
+    };
+    let Some(top) = bottom.checked_sub(2) else {
+        return false;
+    };
+    border(&rows[top], '▄')
+        && rows[top + 1].trim_end() == GEMINI_EMPTY
+        && footer_rows(rows).any(|at| at < top && gemini_hint(&rows[at]))
+}
+
+/// `(esc to cancel, 4s)`, or past a minute `(esc to cancel, 1h 2m 3s)`
+/// with zero parts left out (chunk-UWDUE2FI.js:51945-51975).
+fn gemini_hint(row: &str) -> bool {
+    const OPEN: &str = "(esc to cancel, ";
+    row.match_indices(OPEN).any(|(at, _)| {
+        let rest = &row[at + OPEN.len()..];
+        rest.find(')').is_some_and(|end| {
+            let timer = &rest[..end];
+            !timer.is_empty()
+                && timer
+                    .split(' ')
+                    .all(|part| part.len() > 1 && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit()) && part.ends_with(['h', 'm', 's']))
+        })
+    })
 }
 
 /// The key to press for `agent` in `pane_rows`, while Herdr reports
