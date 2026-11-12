@@ -1000,26 +1000,16 @@ fun SessionScreen(
                                             )
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 ConnectionGlyph(state)
-                                                val place = listOfNotNull(
-                                                    node.title,
-                                                    tabs.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.session_tab_count, it, it) },
-                                                )
+                                                val count = tabs.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.session_tab_count, it, it) }
                                                 // S2: last, so it is what ellipsizes first.
-                                                val detail = place + listOfNotNull(desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) })
+                                                val desktop = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) }
+                                                val place = listOfNotNull(node.title, count).joinToString(" · ")
                                                 val spoken = desktopOther?.let {
-                                                    place.joinToString(" · ") + ". " +
+                                                    "$place. " +
                                                         stringResource(R.string.chat_desktop_elsewhere_spoken, focusedPane?.let { p -> view?.paneTitle(p) }.orEmpty(), view?.paneTitle(it).orEmpty())
-                                                }
-                                                Text(
-                                                    detail.joinToString(" · "),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier
-                                                        .then(if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier)
-                                                        .testTag("session:context"),
-                                                )
+                                                } ?: place
+                                                // A-24: the tab count stays whole while the host and Desktop names give way.
+                                                ContextLine(node.title, count, desktop, spoken, Modifier.testTag("session:context"))
                                             }
                                         }
                                         trailing()
