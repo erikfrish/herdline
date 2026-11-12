@@ -202,7 +202,10 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                 .fillMaxSize()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
+                // Scaffold's bottom padding is the Save bar's measured height,
+                // nav bar inset included; 16 dp more so the last field ends
+                // fully above it at scroll end, not flush under its edge.
+                .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 16.dp),
         ) {
             Group {
                 Row(
