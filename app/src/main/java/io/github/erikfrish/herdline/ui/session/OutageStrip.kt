@@ -66,8 +66,10 @@ internal fun rememberOutage(
     live: Boolean?,
     onDrop: () -> Unit = {},
     onReconnected: () -> Unit = {},
+    // A holder that outlives this composition keeps the outage across a re-entry.
+    state: MutableState<Outage> = remember { mutableStateOf(Outage()) },
 ): MutableState<Outage> {
-    val outage = remember { mutableStateOf(Outage()) }
+    val outage = state
     val drop by rememberUpdatedState(onDrop)
     val reconnected by rememberUpdatedState(onReconnected)
     LaunchedEffect(live) {
@@ -94,7 +96,9 @@ private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
  * The thin strip under the header while a surface shows what it saved
  * (Collie row 4). [title] says what the reader is looking at, [detail] what
  * is known about the loss; neither guesses a cause. Retry shows a spinner
- * while [retrying]; ✕ closes the strip for this outage.
+ * while [retrying]; without [onRetry] there is none, for a loss no retry
+ * ends. ✕ closes the strip for this outage; without [onDismiss] there is
+ * none, for a strip that must stay.
  *
  * It slides in from above the moment it is composed and crossfades a new
  * title or detail, so the loss and each change of it are seen. Both are
@@ -107,8 +111,8 @@ internal fun OutageStrip(
     title: String,
     detail: String?,
     retrying: Boolean,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit,
+    onRetry: (() -> Unit)?,
+    onDismiss: (() -> Unit)?,
     modifier: Modifier = Modifier,
     tag: String = "outage",
 ) {
@@ -129,7 +133,8 @@ internal fun OutageStrip(
             modifier = Modifier.fillMaxWidth().testTag(tag),
         ) {
             Row(
-                Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = 4.dp),
+                // Without buttons the words keep the start's 16 dp from the edge too.
+                Modifier.heightIn(min = 48.dp).padding(start = 16.dp, end = if (onRetry == null && onDismiss == null) 16.dp else 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -164,30 +169,40 @@ internal fun OutageStrip(
                     ) {
                         Text(shownTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!shownDetail.isNullOrBlank()) {
-                            // Two lines: a reason such as an SSH error reads to its end. The strip is an
-                            // overlay, so a taller one covers more and resizes nothing.
-                            Text(shownDetail, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            // Two lines: a reason such as an SSH error reads to its end; four
+                            // without Retry, where the words are a whole refusal sentence. The
+                            // strip is an overlay, so a taller one covers more and resizes nothing.
+                            Text(
+                                shownDetail,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = if (onRetry == null) 4 else 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
-                TextButton(
-                    onClick = onRetry,
-                    enabled = !retrying,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:retry"),
-                ) {
-                    if (retrying) {
-                        val label = stringResource(R.string.outage_retrying)
-                        CircularProgressIndicator(
-                            Modifier.size(16.dp).semantics { contentDescription = label },
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    } else {
-                        Text(stringResource(R.string.outage_retry))
+                if (onRetry != null) {
+                    TextButton(
+                        onClick = onRetry,
+                        enabled = !retrying,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:retry"),
+                    ) {
+                        if (retrying) {
+                            val label = stringResource(R.string.outage_retrying)
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp).semantics { contentDescription = label },
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        } else {
+                            Text(stringResource(R.string.outage_retry))
+                        }
                     }
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.testTag("$tag:dismiss")) {
-                    Icon(Icons.Default.Close, stringResource(R.string.outage_dismiss))
+                if (onDismiss != null) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("$tag:dismiss")) {
+                        Icon(Icons.Default.Close, stringResource(R.string.outage_dismiss))
+                    }
                 }
             }
         }
