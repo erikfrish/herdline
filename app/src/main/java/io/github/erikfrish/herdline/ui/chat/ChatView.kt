@@ -84,6 +84,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -604,7 +605,8 @@ private fun ChatContent(
         }
     }
 
-    LaunchedEffect(list, band) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(list, band, keyboard) {
         var dragged = false
         var draggedScroll = false
         launch {
@@ -619,7 +621,11 @@ private fun ChatContent(
         // One collector, so a settled drag is decided before any re-pin could undo it. A drag that has
         // not started scrolling yet counts as scrolling: nothing pins under the reader's finger.
         snapshotFlow { list.isScrollInProgress to list.layoutInfo }.collect { (scrolling, layout) ->
-            if (scrolling && dragged) draggedScroll = true
+            if (scrolling && dragged) {
+                // Only the reader's first scroll hides IME; follow/restore never clear focus or the draft.
+                if (!draggedScroll) keyboard?.hide()
+                draggedScroll = true
+            }
             val settled = !scrolling && draggedScroll
             val step = followStep(follow, scrolling || dragged && !draggedScroll, settled, atBand = layout.atEnd(band), atEnd = layout.atEnd(0))
             if (settled) {
