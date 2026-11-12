@@ -62,9 +62,6 @@ pub(super) const TEXT_LIMIT: usize = 64 * 1024;
 pub(super) const RESULT_LIMIT: usize = 16 * 1024;
 pub(super) const ARGS_LIMIT: usize = 8 * 1024;
 const PATH_LIMIT: usize = 4096;
-const SESSIONS_DIR: &str = "/.omp/agent/sessions/";
-/// Pi (pi-mono) writes the same layout under its own agent directory.
-const PI_SESSIONS_DIR: &str = "/.pi/agent/sessions/";
 pub(super) const BLOB_PREFIX: &str = "blob:sha256:";
 /// The most image bytes one media read decodes and hands to the app.
 pub const MAX_IMAGE: u64 = 20 * 1024 * 1024;
@@ -862,31 +859,7 @@ printf '@@pane\n'
     script.push_str(&format!(
         r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
 real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
-import glob, json, os, subprocess, sys
-herdr, session, pane, wanted, home = sys.argv[1:]
-reply = subprocess.run([herdr, '--session', session, 'pane', 'get', pane], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=20)
-if reply.returncode or len(reply.stdout) > 65536: sys.exit(3)
-ref = json.loads(reply.stdout)['result']['pane']['agent_session']
-agent, kind, value = ref['agent'], ref['kind'], ref['value']
-if value != wanted: sys.exit(3)
-if agent in ('omp', 'pi') and kind == 'path':
-    root = os.path.realpath(os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent', 'sessions'))
-    candidates = [value]
-elif agent == 'claude' and kind == 'id':
-    root = os.path.realpath(os.path.join(home, '.claude', 'projects'))
-    candidates = glob.glob(os.path.join(root, '*', glob.escape(value) + '.jsonl'))
-elif agent == 'codex' and kind == 'id':
-    root = os.path.realpath(os.path.join(home, '.codex', 'sessions'))
-    candidates = glob.glob(os.path.join(root, '**', 'rollout-*-' + glob.escape(value) + '.jsonl'), recursive=True)
-else: sys.exit(3)
-if os.path.commonpath([home, root]) != home: sys.exit(3)
-valid = []
-for candidate in candidates:
-    real = os.path.realpath(candidate)
-    if os.path.commonpath([root, real]) != root: sys.exit(3)
-    if os.path.isfile(real) and real.endswith('.jsonl'): valid.append(real)
-if len(valid) != 1: sys.exit(3)
-print(valid[0])
+{resolver}
 HERDLINE_RESOLVE
 ) || exit {EXIT_UNCONFINED}
 [ -f "$real" ] || exit {EXIT_NO_FILE}
@@ -897,6 +870,7 @@ printf '\n@@file %s %s\n@@data\n' "$size" "$start"
 tail -c +$((start + 1)) "$real" | head -c "$len"
 "#,
         path = shell_quote(path),
+        resolver = include_str!("transcript/resolve_session.py"),
     ));
     let Some(blob) = blob else {
         return script;
@@ -1088,19 +1062,13 @@ fn foreground_pid(process: &Value, name: &str) -> Option<u32> {
         .and_then(|pid| u32::try_from(pid).ok())
 }
 
-/// An absolute session file path inside the agent's own session folder, as
-/// the host must also resolve it: OMP writes `~/.omp/agent/sessions/`, Pi
-/// writes `~/.pi/agent/sessions/`.
+/// Syntax admission only: the host resolves the actual process-configured
+/// session root and checks canonical containment before reading any bytes.
 fn confined(agent: &str, path: &str) -> bool {
-    let root = match agent {
-        "omp" => SESSIONS_DIR,
-        "pi" => PI_SESSIONS_DIR,
-        _ => return false,
-    };
+    if !matches!(agent, "omp" | "pi") { return false; }
     path.len() <= PATH_LIMIT
         && path.starts_with('/')
         && path.ends_with(".jsonl")
-        && path.contains(root)
         && !path.chars().any(char::is_control)
         && path
             .split('/')
