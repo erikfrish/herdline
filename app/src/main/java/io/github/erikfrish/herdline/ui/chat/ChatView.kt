@@ -923,8 +923,8 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
     val toggle = { expanded[item.key] = !open }
     val summary = item.summary()
     val spoken = listOfNotNull(
-        item.name,
-        summary.takeIf { it.isNotBlank() },
+        // The name and what it worked on read as one phrase: "run_terminal_cmd: ls".
+        if (summary.isBlank()) item.name else "${item.name}: $summary",
         stringResource(
             when (state) {
                 ToolState.Running -> R.string.chat_tool_running
