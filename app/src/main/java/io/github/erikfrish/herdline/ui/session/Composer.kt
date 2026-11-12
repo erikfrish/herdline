@@ -168,6 +168,10 @@ internal inline fun <T> afterWriteAhead(writeAhead: () -> Boolean, refused: T, c
 /** The refusal of a delivery whose write-ahead record could not be stored. */
 internal const val WRITE_AHEAD_FAILED = "write_ahead_failed"
 
+/** Image steering needs Chat's live OMP endpoint; the PTY route is text-only. */
+internal fun endpointSteerReady(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
+    reading && instance?.agent.equals("omp", ignoreCase = true) && probe is IngressProbe.Live && !probe.state.idle
+
 /**
  * The draft after an edit to [text] with the selection [start]..[end], or
  * null while the draft is frozen: while a delivery is [sending] or awaits
@@ -976,6 +980,7 @@ private fun Editor(
         }
     }
     val probe = probeFor(probeRead, draft.instance)
+    val endpointSteer = endpointSteerReady(reading, draft.instance, probe)
 
     // UR3: the uploads under way, by attachment ID, and how far each got.
     // They belong to this destination: leaving it cancels them, and what
@@ -1264,8 +1269,11 @@ private fun Editor(
      * receipt is confirmed and the pane shows it.
      */
     fun pasteSteer() {
-        // A steer carries no files (docs/attachments.md).
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding) || draft.attachments.isNotEmpty()) return
+        if (draft.attachments.isNotEmpty()) {
+            refusal = "attachment_steer"
+            return
+        }
+        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
         val target = composerTarget() ?: return
         val text = value.text
         val via = connection
@@ -1299,9 +1307,10 @@ private fun Editor(
      * [pasteSteer]. Its own tap only; Send never becomes it.
      */
     fun steerStart() {
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (draftBusy || !draft.mayDeliver(binding) || (holdsDraft && viewed != null && viewed != key.pane)) return
         if (endpointRoute(reading, draft.instance, submit = true)) {
             if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
+            if (draft.attachments.isNotEmpty() && !endpointSteer) return
             endpointSend("steer", ::pasteSteer)
         } else {
             pasteSteer()
@@ -1421,10 +1430,9 @@ private fun Editor(
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
     val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
-    // Its own gate: never derived from Send's, and never offered for a
-    // draft without the agent instance the native side compares, or with files.
-    val steerEnabled = !busy && draft.mayDeliver(binding) && draft.attachments.isEmpty() && !mismatched &&
-        draft.instance != null && check?.steer?.ok == true
+    // Endpoint steering accepts ready attachments; PTY steering stays text-only.
+    val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
+        draft.instance != null && (endpointSteer || draft.attachments.isEmpty() && check?.steer?.ok == true)
     val rebind = NoticeAction(stringResource(R.string.composer_rebind)) {
         save(draft.rebound(boot, check?.agent, readInstance))
     }
@@ -1541,6 +1549,10 @@ private fun Editor(
             stringResource(R.string.reason_target_unchecked, draftTitle),
             NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled },
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
+        )
+        endpointSteer && steerEnabled && holdsDraft -> Notice(
+            stringResource(R.string.steer_help),
+            NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
         )
         blocked != null -> when (val code = blocked) {
             // Insert goes only where its own check passes; Send stays disabled.

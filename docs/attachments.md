@@ -111,8 +111,10 @@ instance was read, or the draft already holds its 10 files
   uploaded, and uploads again only on the user's tap.
 - **Held until ready.** Send and Insert stay off until every file is staged
   for exactly the draft's target (`attachmentsState`). After a rebind,
-  move or new agent instance, the earlier copy no longer counts. Steer is
-  off while the draft has files.
+  move or new agent instance, the earlier copy no longer counts. Explicit Chat
+  Steer accepts ready images and files through the live OMP endpoint while it
+  works; the terminal/PTY Steer route remains text-only. A missing endpoint
+  keeps the image draft and reports a refusal instead of dropping its files.
 - **Images without text.** A staged image is a non-empty draft; no caption
   is required. The same refusal, offline and target-mismatch notices shown
   for text also explain why a photo-only draft cannot be sent. A Chat send
@@ -181,8 +183,12 @@ If two pastes were merged into one, OMP would get the path as plain text, and
 the transcript would show no `Image` block. Check for `[Image #N]` after
 sending an image together with text.
 
-Steers carry no attachments: `composerSteer` refuses a request that has
-attachments (`attachment_steer`).
+The terminal/PTY `composerSteer` path refuses attachments (`attachment_steer`).
+Chat's endpoint route carries them as image parts or file mentions with
+`deliverAs: "steer"`, using the same staging, instance, dialog, request-id,
+queue receipt and uncertain-delivery safeguards as an ordinary Chat Send.
+Photo-only steering needs no caption. The explicit Steer action remains
+distinct from Send; no text-only fallback discards an attached photo.
 
 ## JNI contract
 
