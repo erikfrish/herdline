@@ -479,9 +479,10 @@ class Connection(val node: Node) {
     }
 
     /**
-     * Hands [text] and [attachments] to exactly [target]'s OMP instance
-     * through its ingress endpoint, as request [id]; [deliverAs] is `auto`
-     * (steers a working agent, starts an idle one's turn) or `steer`. Only
+     * Hands [text] and [attachments] to exactly [target]'s instance through
+     * its endpoint, as request [id]; [deliverAs] is `auto` (an idle agent's
+     * turn starts; a working OMP is steered, a working OpenCode refuses it),
+     * `steer`, or `queue` (after the running turn, where the runtime has it). Only
      * [IngressSend.Absent] lets the caller use [deliver] instead: it is
      * answered when the instance publishes no endpoint, before anything is
      * sent. Never retried. Blocks on the host: call it off the main thread.
@@ -528,6 +529,14 @@ class Connection(val node: Node) {
         val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
         return ingressWithdrawn {
             Native.ingress(session, ingressRequest("withdraw", target, requestId).toString())
+        }
+    }
+
+    /** Steers queued follow-up [requestId] into the running turn; false when it had left the queue. Blocks on the host. */
+    fun ingressPromote(target: ComposerTarget, requestId: String): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressPromoted {
+            Native.ingress(session, ingressRequest("promote", target, requestId).toString())
         }
     }
 

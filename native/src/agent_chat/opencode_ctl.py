@@ -1,8 +1,9 @@
 """One call to a discovered, already-running local OpenCode or Kilo server.
 
-argv: flavor (opencode | kilo), op (send | dialogs | submit | abort),
-session id, payload JSON. Prints one line: a word, or a word, a tab and a
-JSON payload.
+argv: flavor (opencode | kilo), op (send | state | status | withdraw |
+promote | dialogs | submit | abort), session id, payload JSON. Prints one
+line: a word, or a word, a tab and a JSON payload. Kilo takes only
+dialogs, submit and abort; the rest are OpenCode's own inbox.
 
 Discovery reads only this user's default state directories under $HOME,
 never another process's environment:
@@ -17,7 +18,13 @@ bare TUI registers nothing: its worker has no port (kilo cli/cmd/tui.ts:
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:
   GET /api/session/:id (session.ts:234); POST /api/session/:id/prompt
-  (session.ts:339); GET /api/session/:id/permission (permission.ts:114);
+  {id, text, delivery?} -> {data: Inbox.User} (session.ts:339);
+  GET /api/session/active -> {data: {id: {type}}}, absent = inactive
+  (session.ts:222); GET /api/session/:id/inbox -> {data: [Inbox.Info]} in
+  enqueue order (session.ts:542); DELETE /api/session/:id/inbox/:inboxID,
+  a no-op once unavailable (session.ts:556); PATCH .../inbox/:inboxID
+  {delivery} (session.ts:569); GET /api/session/:id/message/:messageID
+  (session.ts:709); GET /api/session/:id/permission (permission.ts:114);
   POST /api/session/:id/permission/:requestID/reply {decision}
   (permission.ts:142); POST /api/session/:id/interrupt -> {interrupted}
   (session.ts:676).
@@ -44,6 +51,11 @@ LIMIT = 65536
 MAX_DIALOGS = 5
 MAX_DETAIL = 4000
 DECISIONS = (('once', 'Allow once'), ('always', 'Always allow'), ('reject', 'Reject'))
+DELIVERIES = ('steer', 'queue')
+# Shown in the queue panel only; a withdraw restores the app's own record.
+MAX_QUEUED = 20
+MAX_QUEUED_TEXT = 2000
+KILO_OPS = ('dialogs', 'submit', 'abort')
 
 
 class NoServer(Exception):
@@ -183,14 +195,91 @@ def dialog(entry):
     }
 
 
+def active(base, headers):
+    found = call(base, headers, 'GET', '/api/session/active')['data']
+    if not isinstance(found, dict):
+        raise ValueError('not a map')
+    return session in found
+
+
+def inbox(base, headers):
+    found = call(base, headers, 'GET', '/api/session/' + quoted(session) + '/inbox')['data']
+    if not isinstance(found, list) or not all(isinstance(entry, dict) and entry.get('sessionID') == session for entry in found):
+        raise ValueError('not this session')
+    return found
+
+
+def request_id(inbox_id):
+    """The app's request id inside an inbox id it made (msg_<uuid>), else None."""
+    if not isinstance(inbox_id, str) or not inbox_id.startswith('msg_'):
+        return None
+    rest = inbox_id[4:]
+    shaped = len(rest) == 36 and all(c == '-' if at in (8, 13, 18, 23) else c in '0123456789abcdef' for at, c in enumerate(rest))
+    return rest if shaped else None
+
+
+def state(base, headers):
+    queued = []
+    for entry in inbox(base, headers):
+        payload = entry.get('payload')
+        queue = {'steer': 'steering', 'queue': 'followUp'}.get(entry.get('delivery'))
+        if entry.get('type') != 'user' or queue is None or not isinstance(payload, dict):
+            continue
+        queued.append({'requestId': request_id(entry.get('id')), 'text': text(payload.get('text'))[:MAX_QUEUED_TEXT], 'queue': queue})
+    return {'idle': not active(base, headers), 'queued': queued[:MAX_QUEUED]}
+
+
+def listed(base, headers, inbox_id):
+    return any(entry.get('id') == inbox_id for entry in inbox(base, headers))
+
+
+def in_history(base, headers, message_id):
+    """Whether the session's history holds this message; a 404 is no."""
+    try:
+        found = call(base, headers, 'GET', '/api/session/' + quoted(session) + '/message/' + quoted(message_id))['data']
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return False
+        raise
+    if not isinstance(found, dict) or found.get('id') != message_id:
+        raise ValueError('another message')
+    return True
+
+
 def main():
+    if flavor == 'kilo' and op not in KILO_OPS:
+        # Kilo's v1 server has no such route here: nothing is asked of it.
+        return 'local'
     try:
         base, headers = registration()
     except NoServer:
-        # A send keeps the answer it always gave for an unreachable service.
-        return 'local' if op == 'send' else 'no_server'
+        # No server for this user's defaults: said as such, for every op.
+        return 'no_server'
+    except Exception:
+        # A registration that cannot be trusted as the one server (another
+        # root, two of them, loose permissions): refused, never guessed.
+        return 'discovery'
     try:
         directory = verified(base, headers)
+        if op == 'state':
+            return 'state\t' + json.dumps(state(base, headers), separators=(',', ':'))
+        if op == 'status':
+            message_id = json.loads(payload)['id']
+            found = listed(base, headers, message_id) or in_history(base, headers, message_id)
+            return 'accepted' if found else 'unknown'
+        if op in ('withdraw', 'promote'):
+            inbox_id = json.loads(payload)['id']
+            if not listed(base, headers, inbox_id):
+                # Already left the queue: nothing to take back or steer.
+                return ('withdrawn' if op == 'withdraw' else 'promoted') + '\tfalse'
+        if op == 'send':
+            sent = json.loads(payload)
+            if sent.get('delivery', 'steer') not in DELIVERIES:
+                return 'local'
+            # Without a verb the prompt starts a turn; a working session
+            # takes only the verb the user chose, never one guessed here.
+            if 'delivery' not in sent and active(base, headers):
+                return 'busy'
         if op == 'dialogs':
             entries = open_requests(base, headers, directory)[:MAX_DIALOGS]
             return 'dialogs\t' + json.dumps([dialog(entry) for entry in entries], separators=(',', ':'))
@@ -209,12 +298,22 @@ def main():
     # an admitted change. Never downgrade them to a safe-to-retry refusal.
     try:
         if op == 'send':
-            sent = json.loads(payload)
             path = '/api/session/' + quoted(session) + '/prompt'
             result = call(base, headers, 'POST', path, sent, timeout=30)['data']
             if result.get('sessionID') == session and result.get('id') == sent['id']:
                 return 'queued'
             return 'doubt'
+        if op == 'withdraw':
+            call(base, headers, 'DELETE', '/api/session/' + quoted(session) + '/inbox/' + quoted(inbox_id))
+            # Cancel is a no-op on an item already delivered, so leaving the
+            # inbox alone proves nothing: in the history means it ran.
+            if listed(base, headers, inbox_id):
+                return 'doubt'
+            return 'withdrawn\t' + json.dumps(not in_history(base, headers, inbox_id))
+        if op == 'promote':
+            path = '/api/session/' + quoted(session) + '/inbox/' + quoted(inbox_id)
+            call(base, headers, 'PATCH', path, {'delivery': 'steer'})
+            return 'promoted\ttrue'
         if op == 'submit':
             if flavor == 'opencode':
                 path = '/api/session/' + quoted(session) + '/permission/' + quoted(request_id) + '/reply'

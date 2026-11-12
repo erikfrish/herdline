@@ -128,6 +128,14 @@ class IngressTest {
     }
 
     @Test
+    fun aPromoteAnswerMustSayWhetherItSteered() {
+        assertEquals(true, ingressPromoted { """{"endpoint":"live","id":"$id","promoted":true}""" }.getOrThrow())
+        assertEquals(false, ingressPromoted { """{"endpoint":"live","id":"$id","promoted":false}""" }.getOrThrow())
+        assertTrue(ingressPromoted { """{"endpoint":"live","id":"$id","promoted":"true"}""" }.isFailure)
+        assertTrue(ingressPromoted { """{"endpoint":"unsupported","missing":["promote"]}""" }.isFailure)
+    }
+
+    @Test
     fun theDialogSnapshotComesOnlyFromALiveEndpoint() {
         val dialogs = ingressDialogsOutcome {
             """{"endpoint":"live","dialogs":[{"dialogId":"d1","kind":"form","source":"ask","createdAt":5}]}"""

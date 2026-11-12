@@ -48,6 +48,12 @@ class Server:
             def do_POST(self):
                 self.handle_one('POST')
 
+            def do_DELETE(self):
+                self.handle_one('DELETE')
+
+            def do_PATCH(self):
+                self.handle_one('PATCH')
+
             def log_message(self, *args):
                 pass
 
@@ -74,13 +80,14 @@ class OpenCode(unittest.TestCase):
             target = Server({('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}})})
             service = Server({
                 ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/active'): (200, {'data': {}}),
                 ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_test'}}),
             })
             try:
                 register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid(), 'password': 'test-only'})
                 body = json.dumps({'id': 'msg_test', 'text': 'isolated'})
                 self.assertEqual(run(home, 'opencode', 'send', body), 'queued')
-                self.assertEqual([(m, p) for m, p, _, _ in service.seen], [('GET', '/api/session/ses_test'), ('POST', '/api/session/ses_test/prompt')])
+                self.assertEqual([(m, p) for m, p, _, _ in service.seen], [('GET', '/api/session/ses_test'), ('GET', '/api/session/active'), ('POST', '/api/session/ses_test/prompt')])
                 service.seen.clear()
                 service.routes[('POST', '/api/session/ses_test/prompt')] = (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_other'}})
                 self.assertEqual(run(home, 'opencode', 'send', body), 'doubt')
@@ -123,15 +130,63 @@ class OpenCode(unittest.TestCase):
             finally:
                 service.close()
 
+    def test_inbox_queue_withdraw_and_promote_by_the_verb_the_user_chose(self):
+        mine = 'msg_0b5d3c1e-8f2a-4c6d-9e7b-1a2b3c4d5e6f'
+        queued = {'id': mine, 'sessionID': 'ses_test', 'type': 'user', 'delivery': 'queue', 'payload': {'text': 'next'}, 'time': {'created': 1}}
+        desktop = {'id': 'msg_01JDESKTOP', 'sessionID': 'ses_test', 'type': 'user', 'delivery': 'steer', 'payload': {'text': 'from desktop'}, 'time': {'created': 2}}
+        compaction = {'id': 'cmp_1', 'sessionID': 'ses_test', 'type': 'compaction', 'delivery': 'queue', 'payload': {}, 'time': {'created': 3}}
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/active'): (200, {'data': {'ses_test': {'type': 'running'}}}),
+                ('GET', '/api/session/ses_test/inbox'): (200, {'data': [queued, desktop, compaction]}),
+                ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': mine}}),
+                ('DELETE', '/api/session/ses_test/inbox/' + mine): (204, None),
+                ('PATCH', '/api/session/ses_test/inbox/' + mine): (204, None),
+            })
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid()})
+                # No verb while the session runs: refused before any prompt.
+                self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': mine, 'text': 'x'})), 'busy')
+                self.assertNotIn('POST', [m for m, _, _, _ in service.seen])
+                self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': mine, 'text': 'x', 'delivery': 'queue'})), 'queued')
+                self.assertEqual(service.seen[-1][2], {'id': mine, 'text': 'x', 'delivery': 'queue'})
+                word, _, payload = run(home, 'opencode', 'state').partition('\t')
+                self.assertEqual(word, 'state')
+                self.assertEqual(json.loads(payload), {'idle': False, 'queued': [
+                    {'requestId': mine[4:], 'text': 'next', 'queue': 'followUp'},
+                    {'requestId': None, 'text': 'from desktop', 'queue': 'steering'},
+                ]})
+                self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'accepted')
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\ttrue')
+                self.assertEqual(service.seen[-1][:3], ('PATCH', '/api/session/ses_test/inbox/' + mine, {'delivery': 'steer'}))
+                # A cancel the inbox still lists is not a withdrawal.
+                self.assertEqual(run(home, 'opencode', 'withdraw', json.dumps({'id': mine})), 'doubt')
+                # Gone from the inbox after the cancel but in the history: it ran.
+                service.routes[('GET', '/api/session/ses_test/inbox')] = (200, {'data': [desktop]})
+                service.routes[('GET', '/api/session/ses_test/message/' + mine)] = (200, {'data': {'id': mine}})
+                self.assertEqual(run(home, 'opencode', 'withdraw', json.dumps({'id': mine})), 'withdrawn\tfalse')
+                self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'accepted')
+                del service.routes[('GET', '/api/session/ses_test/message/' + mine)]
+                self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'unknown')
+                # Nothing is cancelled or moved once the entry left the queue.
+                service.seen.clear()
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\tfalse')
+                self.assertNotIn('PATCH', [m for m, _, _, _ in service.seen])
+                # Idle: no verb starts the turn.
+                service.routes[('GET', '/api/session/active')] = (200, {'data': {}})
+                self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': mine, 'text': 'x'})), 'queued')
+                self.assertEqual(service.seen[-1][2], {'id': mine, 'text': 'x'})
+            finally:
+                service.close()
+
     def test_no_registration_is_no_server(self):
         with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
-            self.assertEqual(run(home, 'opencode', 'dialogs'), 'no_server')
-            self.assertEqual(run(home, 'opencode', 'abort'), 'no_server')
-            # A send keeps its old answer for an unreachable service.
-            self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'local')
+            for op in ('send', 'state', 'status', 'withdraw', 'promote', 'dialogs', 'abort'):
+                self.assertEqual(run(home, 'opencode', op, json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server', op)
             # A registration whose server is gone is no server either.
             register(Path(home) / '.local/state/opencode/service.json', {'url': 'http://127.0.0.1:9', 'pid': 2 ** 22 + 7})
-            self.assertEqual(run(home, 'opencode', 'abort'), 'no_server')
+            self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server')
 
 
 class Kilo(unittest.TestCase):
@@ -158,7 +213,10 @@ class Kilo(unittest.TestCase):
                 # Both default locations registered: ambiguous, refused.
                 register(Path(home) / '.local/share/kilo/state/daemon.json', {'pid': os.getpid(), 'url': daemon.url, 'username': 'kilo', 'password': 'x'})
                 daemon.seen.clear()
-                self.assertEqual(run(home, 'kilo', 'abort'), 'local')
+                self.assertEqual(run(home, 'kilo', 'abort'), 'discovery')
+                self.assertEqual(daemon.seen, [])
+                # Kilo's text and checks are not asked of its server here.
+                self.assertEqual(run(home, 'kilo', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'local')
                 self.assertEqual(daemon.seen, [])
             finally:
                 daemon.close()
@@ -168,7 +226,7 @@ class Kilo(unittest.TestCase):
             file = Path(home) / '.local/state/kilo/daemon.json'
             register(file, {'pid': os.getpid(), 'url': 'http://127.0.0.1:9', 'username': 'kilo', 'password': 'x'})
             file.chmod(0o644)
-            self.assertEqual(run(home, 'kilo', 'abort'), 'local')
+            self.assertEqual(run(home, 'kilo', 'abort'), 'discovery')
 
 
 if __name__ == '__main__':

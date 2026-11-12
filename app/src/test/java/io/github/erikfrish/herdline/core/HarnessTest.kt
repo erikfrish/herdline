@@ -10,7 +10,7 @@ class HarnessTest {
     fun a_name_matches_in_any_case_and_keeps_herdrs_spelling() {
         val shown = Harness.of("OpenCode")
         assertEquals("OpenCode", shown.name)
-        assertEquals(SendRoute.Api, shown.send)
+        assertEquals(SendRoute.Endpoint, shown.send)
         assertTrue(shown.chat)
     }
 

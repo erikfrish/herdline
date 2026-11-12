@@ -132,6 +132,18 @@ internal fun withdrawEnabled(entry: IngressQueued, withdrawing: String?): Boolea
 internal fun withdrawRestorable(editor: String, busy: Boolean): Boolean = editor.isEmpty() && !busy
 
 /**
+ * The words for an unusable endpoint: a server the session needs and does
+ * not run, or one whose registration could not be trusted, each in its own
+ * terms; any other check that failed in the general ones.
+ */
+@StringRes
+internal fun unusableRes(reason: String): Int = when (reason) {
+    "needs_server" -> R.string.ingress_needs_server
+    "server_discovery" -> R.string.ingress_server_discovery
+    else -> R.string.ingress_unusable
+}
+
+/**
  * OMP's queue for the instance Chat reads, its own block above the
  * composer's notice. The persisted "Steering" label on a sent message is
  * history; this is what is waiting now.
@@ -142,6 +154,8 @@ internal fun IngressQueuePanel(
     withdrawing: String?,
     @StringRes note: Int?,
     onWithdraw: (IngressQueued) -> Unit,
+    /** Steers a queued follow-up into the running turn; null where the runtime has no such verb. */
+    onPromote: ((IngressQueued) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val error = MaterialTheme.colorScheme.error
@@ -159,7 +173,7 @@ internal fun IngressQueuePanel(
             modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unsupported"),
         )
         is QueuePanel.Unusable -> Text(
-            stringResource(R.string.ingress_unusable, panel.reason),
+            stringResource(unusableRes(panel.reason), panel.reason),
             style = MaterialTheme.typography.bodySmall,
             color = error,
             modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unusable"),
@@ -186,6 +200,13 @@ internal fun IngressQueuePanel(
                     if (entry.requestId == null) {
                         Text(stringResource(R.string.ingress_queue_desktop), style = MaterialTheme.typography.labelSmall)
                     } else {
+                        if (onPromote != null && !entry.steering) {
+                            TextButton(
+                                onClick = { onPromote(entry) },
+                                enabled = withdrawEnabled(entry, withdrawing),
+                                modifier = Modifier.heightIn(min = 48.dp).testTag("ingress:promote"),
+                            ) { Text(stringResource(R.string.ingress_promote)) }
+                        }
                         TextButton(
                             onClick = { onWithdraw(entry) },
                             enabled = withdrawEnabled(entry, withdrawing),

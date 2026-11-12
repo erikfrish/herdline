@@ -10,6 +10,7 @@
     <string name="composer_terminal_keyboard">Terminal keyboard</string>
     <string name="composer_paste_clipboard">Paste from clipboard</string>
     <string name="composer_send">Send</string>
+    <string name="composer_queue">Queue</string>
     <string name="composer_close">Close</string>
     <string name="composer_draft">Draft</string>
     <string name="composer_check">Check</string>
@@ -156,6 +157,8 @@
     <string name="reason_dropped">OMP did not take the message. Nothing was queued.</string>
     <string name="reason_endpoint_unsupported">This OMP lacks the hooks Chat\'s Send needs. Nothing sent, and nothing typed into the pane.</string>
     <string name="reason_endpoint_unusable">Chat\'s line to the agent can\'t be used safely now. Nothing sent, and nothing typed into the pane.</string>
+    <string name="reason_needs_server">This session has no agent server running, so Chat can\'t send to it. Nothing sent, and nothing typed into the pane.</string>
+    <string name="reason_server_discovery">Chat can\'t tell which server is this session\'s (a custom data root, two servers, or loose file permissions), so it won\'t guess. Nothing sent, and nothing typed into the pane.</string>
     <string name="ingress_uncertain">Not confirmed: the agent may already have it queued. Nothing was resent.</string>
     <string name="ingress_check_description">Ask the agent whether it has the message</string>
     <string name="ingress_check_unknown">Still unknown: the agent has no settled record of it. Nothing was resent.</string>
@@ -171,4 +174,10 @@
     <string name="ingress_withdraw_text_unknown">Withdrawn, but this phone has no record of the text it sent, so its text was not put back. Any files it kept are back.</string>
     <string name="ingress_unsupported">The Herdline extension runs here, but this OMP lacks the hooks it needs (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
     <string name="ingress_unusable">Chat\'s line to the agent is there but unusable (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
+    <string name="ingress_needs_server">This session\'s agent server isn\'t running, so Chat can\'t send to it. Nothing is typed into the pane.</string>
+    <string name="ingress_server_discovery">Chat can\'t trust which server belongs to this session (a custom data root, two servers, or loose file permissions), so it refuses rather than guess. Nothing is typed into the pane.</string>
+    <string name="ingress_promote">Steer</string>
+    <string name="ingress_promote_gone">Not steered: it had already left the queue.</string>
+    <string name="ingress_promote_failed">Couldn\'t steer it: it may still be waiting as a follow-up.</string>
+    <string name="steer_help_queue">The agent is working: Queue runs your message after this turn; Steer puts it into the turn.</string>
 </resources>

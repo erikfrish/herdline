@@ -98,61 +98,52 @@ fn replies_stay_in_the_shapes_kotlin_reads() {
 
 #[test]
 fn only_proved_words_say_a_definite_verdict() {
-    // The four words proved before the agent could hold anything: the CLI
-    // is absent, the login refused, the session gone, or nothing ran.
-    assert_eq!(
-        refused(composer::Refusal::AgentRestarted),
-        reply("gone", Op::Send, Engine::Codex, ID).unwrap()
-    );
-    assert_eq!(
-        unavailable("codex_cli"),
-        reply("cli", Op::Send, Engine::Codex, ID).unwrap()
-    );
-    assert_eq!(
-        unavailable("server_auth"),
-        reply("auth", Op::Send, Engine::OpenCode, ID).unwrap()
-    );
-    assert_eq!(
-        unavailable("local"),
-        reply("local", Op::Send, Engine::Codex, ID).unwrap()
-    );
-    // Unknown words and any answer after an invocation whose fate is
-    // unreadable keep a send uncertain: never a refusal, never an unusable
-    // endpoint Kotlin could read as nothing left.
-    for word in ["doubt", "", "answer", "500", "\u{0}"] {
-        let out = reply(word, Op::Send, Engine::Codex, ID).unwrap();
-        assert_eq!(
-            uncertain(ID),
-            out,
-            "word {word:?} must keep a send uncertain"
-        );
-        assert!(reply(word, Op::Status, Engine::Codex, ID).is_err());
+    // The words proved before the agent could hold anything: the session
+    // gone, the login refused, no server, or the pane not this instance.
+    assert_eq!(refused(composer::Refusal::AgentRestarted), control_reply("gone", Op::Send, ID, "").unwrap());
+    assert_eq!(unavailable("server_auth"), control_reply("auth", Op::Send, ID, "").unwrap());
+    assert_eq!(unavailable("local"), control_reply("local", Op::Send, ID, "").unwrap());
+    assert_eq!(refused(composer::Refusal::AgentRestarted), control_reply("refused_changed", Op::Send, ID, "").unwrap());
+    assert_eq!(refused(composer::Refusal::InstanceUnknown), control_reply("refused_unknown", Op::Send, ID, "").unwrap());
+    assert_eq!(unavailable("instance_unknown"), control_reply("refused_unknown", Op::State, ID, "").unwrap());
+    assert_eq!(Some(refused(composer::Refusal::AgentRestarted)), gate_reply("refused_changed", Op::Send));
+    // Unknown words, and any answer after an invocation whose fate is
+    // unreadable, keep a send uncertain: never a refusal, never an unusable
+    // endpoint Kotlin could read as nothing left. A check fails.
+    for word in ["doubt", "", "answer", "500", "\u{0}", "accepted", "withdrawn\ttrue"] {
+        assert_eq!(uncertain(ID), control_reply(word, Op::Send, ID, "").unwrap(), "word {word:?} must keep a send uncertain");
+        assert!(control_reply(word, Op::State, ID, "").is_err());
+        assert_eq!(None, gate_reply(word, Op::Send));
     }
-    // The check ops answer only after the same binding stands.
-    for (op, reason) in [
-        ("status", "status"),
-        ("queue", "queue"),
-        ("withdraw", "withdraw"),
-    ] {
-        let op = match op {
-            "status" => Op::Status,
-            "queue" => Op::State,
-            _ => Op::Withdraw,
-        };
-        assert_eq!(
-            unavailable(reason),
-            reply("bound", op, Engine::Codex, ID).unwrap()
-        );
+}
+
+#[test]
+fn opencode_inbox_answers_read_as_the_live_endpoint_kotlin_parses() {
+    assert_eq!(accepted(ID), control_reply("queued", Op::Send, ID, "").unwrap());
+    // A send with no verb to a running session: refused before anything
+    // was queued, so the phone can offer Queue or Steer by name.
+    assert_eq!(refused(composer::Refusal::AgentWorking), control_reply("busy", Op::Send, ID, "").unwrap());
+    assert!(control_reply("busy", Op::State, ID, "").is_err());
+    // No server is an unusable route with its reason, never an absence the
+    // pane route could take a send over on.
+    for op in [Op::Send, Op::State, Op::Status, Op::Withdraw, Op::Promote, Op::Dialogs, Op::Abort] {
+        assert_eq!(unavailable("needs_server"), control_reply("no_server", op, ID, "").unwrap());
     }
-    // The verifier's words fail closed for sends and checks alike.
+    let state = format!(r#"state	{{"idle":false,"queued":[{{"requestId":"{ID}","text":"next","queue":"followUp"}},{{"requestId":null,"text":"desktop","queue":"steering"}},{{"text":"x","queue":"later"}}]}}"#);
     assert_eq!(
-        refused(composer::Refusal::AgentRestarted),
-        reply("refused_changed", Op::Send, Engine::OpenCode, ID).unwrap()
+        control_reply(&state, Op::State, ID, "").unwrap(),
+        json!({"endpoint": "live", "state": {"idle": false, "queued": [
+            {"requestId": ID, "text": "next", "queue": "followUp"},
+            {"requestId": null, "text": "desktop", "queue": "steering"},
+        ]}})
     );
-    assert_eq!(
-        refused(composer::Refusal::InstanceUnknown),
-        reply("refused_unknown", Op::Send, Engine::OpenCode, ID).unwrap()
-    );
+    assert!(control_reply("state\t{\"queued\":[]}", Op::State, ID, "").is_err(), "no idle flag is no state");
+    assert_eq!(control_reply("unknown", Op::Status, ID, "").unwrap(), json!({"endpoint": "live", "id": ID, "outcome": "unknown"}));
+    assert_eq!(control_reply("withdrawn\tfalse", Op::Withdraw, ID, "").unwrap(), json!({"endpoint": "live", "id": ID, "withdrawn": false}));
+    assert_eq!(control_reply("promoted\ttrue", Op::Promote, ID, "").unwrap(), json!({"endpoint": "live", "id": ID, "promoted": true}));
+    // A cancel or a move whose fate could not be read is never settled.
+    assert!(control_reply("doubt", Op::Withdraw, ID, "").is_err());
+    assert!(control_reply("promoted\tmaybe", Op::Promote, ID, "").is_err());
 }
 
 #[test]
@@ -181,11 +172,6 @@ fn the_unsupported_answers_name_what_is_missing() {
         r#"{"endpoint":"unsupported","missing":["attachments"]}"#,
         unsupported_type().to_string()
     );
-    // The words the engine reasons use stay short and readable.
-    assert_eq!("codex_cli", cli_reason(Engine::Codex));
-    assert_eq!("opencode_cli", cli_reason(Engine::OpenCode));
-    assert_eq!("codex_auth", server(Engine::Codex));
-    assert_eq!("server_auth", server(Engine::OpenCode));
 }
 
 #[test]
@@ -276,21 +262,20 @@ fn the_codex_step_runs_the_daemon_client_with_quoted_arguments() {
 fn control_replies_keep_the_omp_dialog_shapes_and_fail_closed() {
     let dialog = r#"[{"dialogId":"per_1","kind":"permission"}]"#;
     assert_eq!(
-        control_reply(&format!("dialogs\t{dialog}"), Op::Dialogs, "").unwrap(),
+        control_reply(&format!("dialogs\t{dialog}"), Op::Dialogs, ID, "").unwrap(),
         json!({"endpoint": "live", "dialogs": [{"dialogId": "per_1", "kind": "permission"}]})
     );
     // A dialog the phone could not answer by name is no dialog snapshot.
-    assert!(control_reply(r#"dialogs	[{"dialogId":"../x","kind":"permission"}]"#, Op::Dialogs, "").is_err());
-    assert!(control_reply(r#"dialogs	[{"dialogId":"per_1","kind":"question"}]"#, Op::Dialogs, "").is_err());
+    assert!(control_reply(r#"dialogs	[{"dialogId":"../x","kind":"permission"}]"#, Op::Dialogs, ID, "").is_err());
+    assert!(control_reply(r#"dialogs	[{"dialogId":"per_1","kind":"question"}]"#, Op::Dialogs, ID, "").is_err());
     assert_eq!(
-        control_reply("not_open", Op::DialogSubmit, "per_1").unwrap(),
+        control_reply("not_open", Op::DialogSubmit, ID, "per_1").unwrap(),
         json!({"endpoint": "live", "dialogId": "per_1", "result": "not_open"})
     );
-    assert_eq!(control_reply("aborted\tfalse", Op::Abort, "").unwrap(), json!({"endpoint": "live", "aborted": false}));
-    assert_eq!(control_reply("no_server", Op::Abort, "").unwrap(), unavailable("no_server"));
-    assert_eq!(control_reply("gone", Op::DialogSubmit, "per_1").unwrap(), unavailable("agent_restarted"));
+    assert_eq!(control_reply("aborted\tfalse", Op::Abort, ID, "").unwrap(), json!({"endpoint": "live", "aborted": false}));
+    assert_eq!(control_reply("gone", Op::DialogSubmit, ID, "per_1").unwrap(), unavailable("agent_restarted"));
     // An answer that may have been admitted is never read as a result.
-    assert!(control_reply("doubt", Op::DialogSubmit, "per_1").is_err());
+    assert!(control_reply("doubt", Op::DialogSubmit, ID, "per_1").is_err());
     // A word from another op is not this op's answer.
-    assert!(control_reply("submitted", Op::Abort, "").is_err());
+    assert!(control_reply("submitted", Op::Abort, ID, "").is_err());
 }

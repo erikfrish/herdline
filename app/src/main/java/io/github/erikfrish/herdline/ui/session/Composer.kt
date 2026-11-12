@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.shape.CircleShape
@@ -184,6 +185,25 @@ internal const val WRITE_AHEAD_FAILED = "write_ahead_failed"
 /** Image steering needs a live, working endpoint (OMP's, Codex's daemon); the PTY route is text-only. */
 internal fun endpointSteerReady(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
     reading && agentNamed(instance?.agent, Harness.endpointAgents) && probe is IngressProbe.Live && !probe.state.idle
+
+/**
+ * Whether Chat's Send queues behind the running turn: a program whose
+ * runtime has that verb, read live and working. The button then says
+ * Queue before the tap; Auto never becomes a queue on the host.
+ */
+internal fun sendQueues(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
+    reading && agentNamed(instance?.agent, Harness.queueAgents) && probe is IngressProbe.Live && !probe.state.idle
+
+/**
+ * The refusal code an endpoint send shows: a route that needs its server,
+ * or whose server could not be told apart, in its own words; any other
+ * unusable route in the general ones.
+ */
+internal fun ingressRefusalCode(outcome: IngressSend.Refused): String =
+    when (outcome.detail) {
+        "needs_server", "server_discovery" -> outcome.detail.takeIf { outcome.reason == REASON_UNUSABLE } ?: outcome.reason
+        else -> outcome.reason
+    }
 
 /**
  * The draft after an edit to [text] with the selection [start]..[end], or
@@ -1034,6 +1054,7 @@ private fun Editor(
     }
     val probe = probeFor(probeRead, draft.instance)
     val endpointSteer = endpointSteerReady(reading, draft.instance, probe)
+    val queueVerb = sendQueues(reading, draft.instance, probe)
 
     // UR3: the uploads under way, by attachment ID, and how far each got.
     // They belong to this destination: leaving it cancels them, and what
@@ -1262,7 +1283,7 @@ private fun Editor(
             sending = false
             when (outcome) {
                 IngressSend.Absent -> typeIn()
-                is IngressSend.Refused -> refusal = outcome.reason
+                is IngressSend.Refused -> refusal = ingressRefusalCode(outcome)
                 is IngressSend.Accepted, is IngressSend.Uncertain -> {}
             }
         }
@@ -1327,7 +1348,12 @@ private fun Editor(
     fun deliver(submit: Boolean) {
         if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
-        if (endpointRoute(reading, draft.instance, submit)) endpointSend("auto") { typeIn(submit) } else typeIn(submit)
+        if (endpointRoute(reading, draft.instance, submit)) {
+            // The verb the button showed: Queue while a queueing runtime works.
+            endpointSend(if (queueVerb) "queue" else "auto") { typeIn(submit) }
+        } else {
+            typeIn(submit)
+        }
     }
 
     /**
@@ -1452,6 +1478,26 @@ private fun Editor(
         }
     }
 
+    /**
+     * Steers queued follow-up [entry] into the running turn, then reads the
+     * queue again. Only the runtime's answer moves it; a failure says so.
+     */
+    fun promote(entry: IngressQueued) {
+        val requestId = entry.requestId ?: return
+        val target = composerTarget() ?: return
+        val instance = target.instance ?: return
+        val via = connection
+        withdrawing = requestId
+        withdrawNote = null
+        scope.launch {
+            val done = withContext(Dispatchers.IO) { via.ingressPromote(target, requestId) }
+            val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
+            withdrawing = null
+            probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
+            withdrawNote = done.fold({ if (it) null else R.string.ingress_promote_gone }, { R.string.ingress_promote_failed })
+        }
+    }
+
     // The draft's target title, for the placeholder, the field's hint and the notices.
     val title = view?.paneTitle(key.pane) ?: ""
     val titleWhere = view?.paneWhere(key.pane) ?: ""
@@ -1482,9 +1528,7 @@ private fun Editor(
     // same notice a refusal would, held steady by PrecheckHold.
     // A live endpoint takes Chat's Send without the pane: the box checks,
     // which read what the pane shows, neither gate nor explain it then.
-    val apiAgent = reading && draft.instance != null && agentNamed(draft.agent, Harness.apiAgents)
-    val apiReady = apiAgent && state is Connection.State.Connected && check?.paneExists == true && (check.status == AgentStatus.Idle || check.status == AgentStatus.Done)
-    val endpointReady = reading && probe is IngressProbe.Live || apiReady
+    val endpointReady = reading && probe is IngressProbe.Live
     val sendGate = if (reading) check?.chatSend else check?.send
     val precheck = sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
@@ -1644,8 +1688,9 @@ private fun Editor(
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
         )
         // The endpoint queues text and images; the PTY wording (paste, then Enter) is not its.
+        // Where Send says Queue, the help names both verbs.
         endpointSteer && steerEnabled && holdsDraft -> Notice(
-            stringResource(R.string.steer_help_endpoint),
+            stringResource(if (queueVerb) R.string.steer_help_queue else R.string.steer_help_endpoint),
             NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
         )
         blocked != null -> when (val code = blocked) {
@@ -1761,7 +1806,13 @@ private fun Editor(
     }
 
     if (reading) {
-        IngressQueuePanel(queuePanel(probe), withdrawing, withdrawNote, ::withdraw)
+        IngressQueuePanel(
+            queuePanel(probe),
+            withdrawing,
+            withdrawNote,
+            ::withdraw,
+            onPromote = if (agentNamed(draft.agent, Harness.queueAgents)) ::promote else null,
+        )
     }
 
     // Compact (J2): the notice is the field's top line (ComposerBand); its
@@ -1820,6 +1871,7 @@ private fun Editor(
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
         sendEnabled = sendEnabled,
+        sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
         onSend = { deliver(submit = true) },
         onTerminalKeyboard = {
@@ -1910,6 +1962,7 @@ private fun Editor(
             sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
             readOnly = busy,
             sendEnabled = sendEnabled,
+            sendQueues = queueVerb,
             insertEnabled = insertEnabled,
             onInsert = { deliver(submit = false) },
             onSend = { deliver(submit = true) },
@@ -1988,6 +2041,8 @@ internal fun ComposerBand(
     onMenu: (Boolean) -> Unit,
     insertEnabled: Boolean,
     sendEnabled: Boolean,
+    /** Send queues behind the running turn: the button says Queue (§1 S). */
+    sendQueues: Boolean = false,
     onInsert: () -> Unit,
     onSend: () -> Unit,
     destinationMismatch: Boolean,
@@ -2291,7 +2346,8 @@ internal fun ComposerBand(
         // The only primary action: Send, once the native check allows.
         Box(
             Modifier
-                .size(48.dp)
+                .heightIn(min = 48.dp)
+                .widthIn(min = 48.dp)
                 // The accessibility node must say what the visuals say: a
                 // greyed Send is disabled even though the tap target stays
                 // clickable so the precheck notice explains the refusal
@@ -2301,19 +2357,7 @@ internal fun ComposerBand(
                 .testTag("composer:send"),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .background(if (sendEnabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.Send,
-                    stringResource(R.string.composer_send),
-                    tint = if (sendEnabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            SendFace(sendEnabled, accent, sendQueues)
         }
     }
 }
@@ -2488,6 +2532,7 @@ private fun LargerEditor(
     agentStatus: AgentStatus?,
     readOnly: Boolean,
     sendEnabled: Boolean,
+    sendQueues: Boolean,
     insertEnabled: Boolean,
     onInsert: () -> Unit,
     onSend: () -> Unit,
@@ -2555,7 +2600,7 @@ private fun LargerEditor(
                             )
                         }
                     }
-                    SendButton(sendEnabled, accent, sendHint, onSend)
+                    SendButton(sendEnabled, accent, sendHint, sendQueues, onSend)
                 }
                 chips(Modifier.padding(horizontal = 16.dp))
                 BasicTextField(
@@ -2632,26 +2677,41 @@ private fun LargerEditor(
 
 /** The round 40 dp Send inside a 48 dp target. */
 @Composable
-private fun SendButton(enabled: Boolean, accent: Color, hint: String?, onSend: () -> Unit) {
+private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: Boolean, onSend: () -> Unit) {
     Box(
         Modifier
-            .size(48.dp)
+            .heightIn(min = 48.dp)
+            .widthIn(min = 48.dp)
             .clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onSend)
             .testTag("composer:send"),
         contentAlignment = Alignment.Center,
     ) {
+        SendFace(enabled, accent, queues)
+    }
+}
+
+/**
+ * Send's face: the round arrow, or the word Queue while a send waits for
+ * the running turn, so the verb is seen before the tap (§1 S).
+ */
+@Composable
+private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean) {
+    val fill = if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val ink = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    if (queues) {
         Box(
             Modifier
-                .size(40.dp)
-                .background(if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
+                .height(40.dp)
+                .background(fill, CircleShape)
+                .padding(horizontal = 14.dp)
+                .testTag("composer:queue"),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                Icons.Default.Send,
-                stringResource(R.string.composer_send),
-                tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
+            Text(stringResource(R.string.composer_queue), color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    } else {
+        Box(Modifier.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Send, stringResource(R.string.composer_send), tint = ink, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -2743,6 +2803,8 @@ internal fun reasonRes(reason: String): Int =
         "instance_unknown" -> R.string.reason_instance_unknown
         "agent_idle" -> R.string.agent_idle
         "steer_expired" -> R.string.steer_expired
+        "needs_server" -> R.string.reason_needs_server
+        "server_discovery" -> R.string.reason_server_discovery
         "steer_not_shown" -> R.string.steer_not_shown
         WRITE_AHEAD_FAILED -> R.string.reason_write_ahead_failed
         "attachment_target" -> R.string.reason_attachment_target

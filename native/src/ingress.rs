@@ -57,6 +57,9 @@ pub enum Op {
     /// Stop the instance's running turn. OMP's endpoint has no such op;
     /// OpenCode and Kilo answer it through their own server.
     Abort,
+    /// Move a follow-up queued entry, named by its request id, into the
+    /// running turn. Only OpenCode's inbox takes it.
+    Promote,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -65,6 +68,8 @@ pub enum DeliverAs {
     /// Steers a working agent; starts the turn of an idle one.
     Auto,
     Steer,
+    /// Waits for the running turn to end. Only OpenCode's inbox takes it.
+    Queue,
 }
 
 /// One ingress call as Kotlin asks for it.
@@ -159,9 +164,14 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
-    if request.op == Op::Abort {
-        // The extension speaks no stop: say so, nothing was sent.
-        return Ok(json!({"endpoint": "unsupported", "missing": ["abort"]}).to_string());
+    if matches!(request.op, Op::Abort | Op::Promote) {
+        // The extension speaks no stop or promote: say so, nothing was sent.
+        let missing = if request.op == Op::Abort { "abort" } else { "promote" };
+        return Ok(json!({"endpoint": "unsupported", "missing": [missing]}).to_string());
+    }
+    if request.deliver_as == Some(DeliverAs::Queue) {
+        // Its wire knows auto and steer only: never send a queue as either.
+        return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
     }
     let send = request.op == Op::Send;
     if send {
@@ -224,7 +234,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
             .to_string(),
             _ => return Err(Error::BadReply),
         },
-        Op::Abort => unreachable!("answered above"),
+        Op::Abort | Op::Promote => unreachable!("answered above"),
     };
     if line.len() > LINE_MAX {
         return Ok(refused(Refusal::TooLarge));
@@ -474,7 +484,8 @@ fn send_line(request: &Request, endpoint: &Endpoint) -> String {
     }
     let deliver_as = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
-        _ => "auto",
+        Some(DeliverAs::Auto) | None => "auto",
+        Some(DeliverAs::Queue) => unreachable!("answered as unsupported"),
     };
     line.insert("deliverAs".into(), json!(deliver_as));
     Value::Object(line).to_string()
@@ -606,13 +617,13 @@ fn answer_reply(op: Op, id: &str, dialog_id: Option<&str>, answer: &Value) -> Op
                 reply.insert("state".into(), state);
             }
         }
-        Op::Abort => return None,
+        Op::Abort | Op::Promote => return None,
     }
     Some(Value::Object(reply).to_string())
 }
 
 /// The queue as the extension reports it, kept to the documented shape.
-fn state(state: &Value) -> Option<Value> {
+pub(crate) fn state(state: &Value) -> Option<Value> {
     let idle = state["idle"].as_bool()?;
     let queued: Vec<Value> = state["queued"]
         .as_array()?

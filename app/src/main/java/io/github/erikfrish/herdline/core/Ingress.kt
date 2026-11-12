@@ -132,6 +132,16 @@ internal fun ingressWithdrawn(call: () -> String): Result<Boolean> {
     return Result.success(reply.optBoolean("withdrawn"))
 }
 
+/** Whether queued entry was steered into the running turn; false when it had left the queue. Anything less fails. */
+internal fun ingressPromoted(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    val promoted = reply.opt("promoted")
+    if (reply.optString("endpoint") != "live" || promoted !is Boolean) {
+        return Result.failure(IOException("not promoted"))
+    }
+    return Result.success(promoted)
+}
+
 internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val dialogs = reply.optJSONArray("dialogs")

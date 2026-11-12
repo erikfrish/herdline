@@ -15,6 +15,7 @@ import java.util.Locale
  * `agent` field); the name is kept exactly as reported. A name not in the
  * table is Terminal only and is never treated as another program.
  */
+
 data class Harness(
     /** Herdr's name, exactly as Herdr reported it. */
     val name: String,
@@ -28,6 +29,12 @@ data class Harness(
      * permission dialogs (ChatView keys those on the program's own server).
      */
     val readOnlyHistory: Boolean = false,
+    /**
+     * While the program works, Send queues behind the running turn by the
+     * runtime's own verb and says Queue before the tap; a queued entry can
+     * be moved into the turn. Only rows with a pinned route set it.
+     */
+    val queue: Boolean = false,
     /** The card's claims, one per [HarnessKey] in key order. */
     private val claims: List<Cell>,
 ) {
@@ -51,11 +58,11 @@ data class Harness(
         // Lazy: [KNOWN] builds Harness rows, so reading it while this
         // companion initialises would see it still null.
 
-        /** Programs whose live queue can be read and withdrawn through ingress. */
+        /** Programs whose live queue can be read and withdrawn through the native core. */
         val endpointAgents: Set<String> by lazy { names { it.send == SendRoute.Endpoint } }
 
-        /** Programs Chat asks through their own API instead of typing into the pane. */
-        val apiAgents: Set<String> by lazy { names { it.send == SendRoute.Api } }
+        /** Programs whose Send queues while they work, and whose queued entries can be steered. */
+        val queueAgents: Set<String> by lazy { names { it.queue } }
 
         private fun names(keep: (Harness) -> Boolean): Set<String> =
             KNOWN.values.filter(keep).mapTo(linkedSetOf()) { it.name }
@@ -89,11 +96,12 @@ val Harness.stop: StopRoute
 
 /** How Chat's Send reaches the program. */
 enum class SendRoute {
-    /** OMP's own ingress queue (`native/src/ingress.rs`). */
+    /**
+     * The program's own live queue through the native core: OMP's ingress
+     * (`native/src/ingress.rs`), Codex's daemon and OpenCode's server
+     * (`native/src/agent_chat.rs`).
+     */
     Endpoint,
-
-    /** The program's own API over the host's exec channel (`native/src/agent_chat.rs`). */
-    Api,
 
     /** Typed into the pane, for an editor box the native composer reads. */
     Pty,
@@ -189,8 +197,8 @@ private fun card(vararg cells: Cell) = cells.toList()
 
 private fun sessionless(all: Cell, stop: Cell, steer: Cell) = card(all, all, all, stop, steer, all, all, all, SS, all, all)
 
-private fun routed(name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false) =
-    Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims)
+private fun routed(name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false) =
+    Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue)
 
 private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = false, send = SendRoute.None, claims = claims)
 
@@ -201,7 +209,9 @@ private val KNOWN: Map<String, Harness> = (
         routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
         routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
         routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB)),
-        routed("opencode", SendRoute.Api, card(V, V, V, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB)),
+        // opencode: Send (Auto, Steer, Queue), its inbox, withdraw and steer-a-queued-entry go to the
+        // already-running server (native agent_chat, opencode_ctl.py, pinned v2.2.7 fedc6f2); unit tests only.
+        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), queue = true),
         routed("kilo", SendRoute.None, card(V, V, NB, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), readOnlyHistory = true),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),

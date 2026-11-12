@@ -24,15 +24,23 @@
 //! queue reads and withdraws by the app's request id, which travels as
 //! `clientUserMessageId`, and Status finds that id in the queue or the turns.
 //!
-//! OpenCode: `POST /api/session/:sessionID/prompt` with `{id, text}` on an
-//! explicitly discovered, already-running local service. The default CLI API
-//! command may autostart a service, so it is not used for delivery.
+//! OpenCode (`agent_chat/opencode_ctl.py`, pinned to v2.2.7 fedc6f2): the
+//! session's own inbox on the explicitly discovered, already-running local
+//! service, the one its TUI attaches to; nothing starts a second process.
+//! Send is `POST /api/session/:id/prompt` with `{id, text, delivery?}`: Auto
+//! carries no delivery and is refused `agent_working` while the session
+//! runs, so the phone only ever queues or steers by the verb the user saw;
+//! Steer and Queue name theirs. State reads the inbox and
+//! `/api/session/active`; Status finds the id in the inbox or the history;
+//! Withdraw cancels and then proves the entry did not run; Promote moves a
+//! queued entry into the running turn. No server registered under this
+//! user's defaults is `needs_server` for every op: an unusable route,
+//! never an absence that would let a send fall through to the pane.
 //!
-//! OpenCode and Kilo control (`agent_chat/opencode_ctl.py`): the session's
-//! open permission requests as dialogs, the user's reply to one, and Stop.
-//! Only a server already registered under this user's default state
-//! directories is used; a bare TUI has none and answers `no_server`. Kilo
-//! text keeps the validated PTY route.
+//! OpenCode and Kilo control: the session's open permission requests as
+//! dialogs, the user's reply to one, and Stop. Kilo (v1 server) takes only
+//! these; every other Kilo op answers unsupported by name. Kilo has no
+//! validated PTY route, so nothing of it is typed into the pane.
 //!
 //! Every call runs as one command. First the transcript's own pane report,
 //! then the tiny embedded verifier, which must read that report as exactly
@@ -44,12 +52,7 @@
 //! refusals or unusable endpoints. An admission is accepted only on the
 //! engine's own answer. Every other answer follows a call that may have
 //! been admitted, so a send reads it as [`uncertain`]: kept by the caller,
-//! never sent again.
-//!
-//! OpenCode's check ops answer that no wire path here serves them. Kotlin
-//! then keeps the receipt it holds exactly as it was, and nothing is
-//! invented to make a queue look readable. Questions, file parts, status
-//! and children are not served here.
+//! never sent again. OpenCode file parts and children are not served here.
 
 use crate::{
     Error, Result, attach, composer,
@@ -74,8 +77,8 @@ const MAX_TEXT_BYTES: usize = composer::MAX_TEXT_BYTES;
 enum Engine {
     Codex,
     OpenCode,
-    /// Kilo, the OpenCode fork: control ops through its daemon; text
-    /// through the PTY route, as before.
+    /// Kilo, the OpenCode fork: permissions and Stop through its server;
+    /// every other op unsupported by name, never absent.
     Kilo,
     /// Pi, Claude Code, or any name not recognized: report [`absent`], so
     /// the caller's validated PTY route (`composer::deliver`) takes over
@@ -93,11 +96,17 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::Abort);
     match engine {
-        // Dialogs and Stop have no Codex path here: a truthful absence of
-        // that op, not a request Kotlin may treat as done.
-        Engine::Codex if control => return Ok(unsupported_op(request.op).to_string()),
-        // Kilo text and its checks stay on the validated PTY route.
-        Engine::Kilo if !control => return Ok(absent().to_string()),
+        // Dialogs, Stop and Promote have no Codex path here: a truthful
+        // absence of that op, not a request Kotlin may treat as done.
+        Engine::Codex if control || request.op == Op::Promote => return Ok(unsupported_op(request.op).to_string()),
+        // Its daemon steers or starts a turn; it never queues behind one.
+        Engine::Codex if request.deliver_as == Some(DeliverAs::Queue) => {
+            return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
+        }
+        // Kilo's server serves only permissions and Stop here. Its text and
+        // checks have no route yet: said as such, never an absence a send
+        // could fall through to the pane on.
+        Engine::Kilo if !control => return Ok(unsupported_op(request.op).to_string()),
         _ => {}
     }
     let mut submitted = None;
@@ -147,22 +156,29 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     // past it the engine step (or `bound` when there is no step to run).
     let step = match engine {
         Engine::Codex => codex_step(&request, &text),
-        Engine::OpenCode | Engine::Kilo if control => {
-            let op = match request.op {
-                Op::Dialogs => "dialogs",
-                Op::DialogSubmit => "submit",
-                _ => "abort",
+        Engine::OpenCode | Engine::Kilo => {
+            let message = format!("msg_{}", request.id);
+            let (op, payload) = match request.op {
+                Op::Send => {
+                    let mut body = json!({"id": message, "text": text});
+                    match request.deliver_as {
+                        Some(DeliverAs::Steer) => body["delivery"] = json!("steer"),
+                        Some(DeliverAs::Queue) => body["delivery"] = json!("queue"),
+                        Some(DeliverAs::Auto) | None => {}
+                    }
+                    ("send", body.to_string())
+                }
+                Op::Status => ("status", json!({"id": message}).to_string()),
+                Op::State => ("state", String::from("{}")),
+                Op::Withdraw => ("withdraw", json!({"id": message}).to_string()),
+                Op::Promote => ("promote", json!({"id": message}).to_string()),
+                Op::Dialogs => ("dialogs", String::from("{}")),
+                Op::DialogSubmit => ("submit", submitted.unwrap_or_else(|| String::from("{}"))),
+                Op::Abort => ("abort", String::from("{}")),
             };
-            control_step(engine, op, &request.instance, submitted.as_deref().unwrap_or("{}"))
+            control_step(engine, op, &request.instance, &payload)
         }
-        Engine::OpenCode => match request.op {
-            Op::Send => {
-                let body = json!({"id": format!("msg_{}", request.id), "text": text}).to_string();
-                control_step(engine, "send", &request.instance, &body)
-            }
-            _ => String::from("printf 'bound\\n'"),
-        },
-        Engine::Kilo | Engine::Pty => unreachable!("routed to the PTY above"),
+        Engine::Pty => unreachable!("routed to the PTY above"),
     };
     let word = match host_gate(exec, herdr_session, &request.instance, &step) {
         Ok(word) => word,
@@ -179,8 +195,9 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     };
     let answer = match (engine, word.split_once('\t')) {
         (Engine::Codex, Some((word, payload))) => codex_reply(word, payload, request.op, &request.id)?,
-        _ if control => control_reply(&word, request.op, request.dialog_id.as_deref().unwrap_or(""))?,
-        _ => reply(word.as_str(), request.op, engine, &request.id)?,
+        // The verifier refused before the client ran, or nothing answered.
+        (Engine::Codex, None) => gate_reply(&word, request.op).map_or_else(|| unreadable(request.op, &request.id), Ok)?,
+        _ => control_reply(&word, request.op, &request.id, request.dialog_id.as_deref().unwrap_or(""))?,
     };
     Ok(answer.to_string())
 }
@@ -225,71 +242,81 @@ fn codex_reply(word: &str, payload: &str, op: Op, id: &str) -> Result<Value> {
     })
 }
 
-/// The reply for one status word the command answered. Only the four words
-/// proved before the agent could hold anything may say a definite verdict;
-/// anything else keeps a send uncertain and never names a refusal.
-fn reply(word: &str, op: Op, engine: Engine, id: &str) -> Result<Value> {
-    Ok(match word {
-        "queued" => accepted(id),
-        // This session or thread is one the engine does not know: its ref
-        // moved on while the pane report still read ours, or the session is
-        // gone. Nothing of ours was queued.
-        "gone" => match op {
-            Op::Send => refused(composer::Refusal::AgentRestarted),
-            _ => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
-        },
-        // Nothing ran: the CLI is absent, the login was refused, or the
-        // work directory could not even be made.
-        "cli" => unavailable(cli_reason(engine)),
-        "auth" => unavailable(server(engine)),
-        "local" => unavailable("local"),
-        // The binding stood and nothing else ran: the check ops, whose only
-        // honest answer today is that no wire path here serves this call.
-        "bound" => match op {
-            Op::Status => unavailable("status"),
-            Op::State => unavailable("queue"),
-            Op::Withdraw => unavailable("withdraw"),
-            Op::Send | Op::Dialogs | Op::DialogSubmit | Op::Abort => return Err(Error::BadReply),
-        },
-        // The pane report is not this instance now, or could not be read as
-        // one: both fail closed, before any CLI ran.
-        "refused_changed" => match op {
-            Op::Send => refused(composer::Refusal::AgentRestarted),
-            _ => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
-        },
-        "refused_unknown" => match op {
-            Op::Send => refused(composer::Refusal::InstanceUnknown),
-            _ => unavailable(refusal_name(composer::Refusal::InstanceUnknown)),
-        },
-        // Anything else follows an invocation whose fate is unreadable: it
-        // may have been admitted. A send is uncertain, never a second try;
-        // a check that cannot be read is a failure Kotlin does not settle
-        // anything on.
-        _ => match op {
-            Op::Send => uncertain(id),
-            _ => return Err(Error::BadReply),
-        },
+/// The words the host gate itself answers before any engine step ran: no
+/// scratch directory, or a pane report that is not this instance now or
+/// could not be read as one. Both fail closed.
+fn gate_reply(word: &str, op: Op) -> Option<Value> {
+    let refusal = match word {
+        "local" => return Some(unavailable("local")),
+        "refused_changed" => composer::Refusal::AgentRestarted,
+        "refused_unknown" => composer::Refusal::InstanceUnknown,
+        _ => return None,
+    };
+    Some(match op {
+        Op::Send => refused(refusal),
+        _ => unavailable(refusal_name(refusal)),
     })
+}
+
+/// Any other answer follows an invocation whose fate is unreadable: it may
+/// have been admitted. A send is uncertain, never a second try; a check
+/// that cannot be read is a failure Kotlin settles nothing on.
+fn unreadable(op: Op, id: &str) -> Result<Value> {
+    match op {
+        Op::Send => Ok(uncertain(id)),
+        _ => Err(Error::BadReply),
+    }
 }
 
 /// The answers a permission request takes, as both servers name them
 /// (opencode `schema/src/permission.ts:42`, kilo `schema/src/v1/permission.ts`).
 const DECISIONS: [&str; 3] = ["once", "always", "reject"];
 
-/// The reply for one line of the OpenCode/Kilo control script: dialogs,
-/// one dialog's result, or Stop's answer, in the shapes Kotlin reads for
-/// OMP. Words said before any change was asked are definite; anything else
-/// is a failure, which keeps a submit uncertain on the phone.
-fn control_reply(line: &str, op: Op, dialog_id: &str) -> Result<Value> {
+/// The reply for one line of the OpenCode/Kilo script (`opencode_ctl.py`),
+/// in the shapes Kotlin reads for OMP. Words said before any change was
+/// asked are definite; anything else keeps a send uncertain and fails a
+/// check or a submit, which the phone then keeps as it was.
+fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value> {
+    if let Some(reply) = gate_reply(line, op) {
+        return Ok(reply);
+    }
     let (word, payload) = line.split_once('\t').unwrap_or((line, ""));
+    let live = |mut value: Value| {
+        value["endpoint"] = json!("live");
+        value
+    };
     Ok(match (word, op) {
-        // No server registered under this user's defaults (a bare TUI, or a
-        // custom state directory): nothing here reaches the agent.
-        ("no_server", _) => unavailable("no_server"),
-        ("local", _) => unavailable("local"),
+        // No server registered under this user's defaults: a TUI started
+        // standalone, or one whose server is gone. The route is there and
+        // cannot be used until the server runs; nothing reached the agent.
+        ("no_server", _) => unavailable("needs_server"),
         ("auth", _) => unavailable("server_auth"),
-        ("gone" | "refused_changed", _) => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
-        ("refused_unknown", _) => unavailable(refusal_name(composer::Refusal::InstanceUnknown)),
+        // A registration not trusted as the one server for this user (a
+        // custom root, two of them, loose permissions): refused, never the
+        // latest one guessed.
+        ("discovery", _) => unavailable("server_discovery"),
+        // The server does not know this session: its ref moved on.
+        ("gone", Op::Send) => refused(composer::Refusal::AgentRestarted),
+        ("gone", _) => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
+        // A send with no verb while the session runs: nothing was queued,
+        // and nothing is turned into a steer or a queue behind the user.
+        ("busy", Op::Send) => refused(composer::Refusal::AgentWorking),
+        ("queued", Op::Send) => accepted(id),
+        ("state", Op::State) => {
+            let state = serde_json::from_str(payload).ok().and_then(|state| crate::ingress::state(&state));
+            live(json!({"state": state.ok_or(Error::BadReply)?}))
+        }
+        // In the inbox or the history: held. Nowhere: possibly still on
+        // its way, never a refusal.
+        ("accepted" | "unknown", Op::Status) => live(json!({"id": id, "outcome": word})),
+        ("withdrawn", Op::Withdraw) => match payload {
+            "true" | "false" => live(json!({"id": id, "withdrawn": payload == "true"})),
+            _ => return Err(Error::BadReply),
+        },
+        ("promoted", Op::Promote) => match payload {
+            "true" | "false" => live(json!({"id": id, "promoted": payload == "true"})),
+            _ => return Err(Error::BadReply),
+        },
         ("dialogs", Op::Dialogs) => {
             let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
             let named = dialogs.as_array().is_some_and(|all| {
@@ -298,15 +325,14 @@ fn control_reply(line: &str, op: Op, dialog_id: &str) -> Result<Value> {
             if !named {
                 return Err(Error::BadReply);
             }
-            json!({"endpoint": "live", "dialogs": dialogs})
+            live(json!({"dialogs": dialogs}))
         }
         ("submitted" | "not_open" | "invalid", Op::DialogSubmit) => submit_result(dialog_id, word),
         ("aborted", Op::Abort) => match payload {
-            "true" => json!({"endpoint": "live", "aborted": true}),
-            "false" => json!({"endpoint": "live", "aborted": false}),
+            "true" | "false" => live(json!({"aborted": payload == "true"})),
             _ => return Err(Error::BadReply),
         },
-        _ => return Err(Error::BadReply),
+        _ => return unreadable(op, id),
     })
 }
 
@@ -338,20 +364,6 @@ fn engine(instance: &Identity) -> Engine {
     }
 }
 
-fn cli_reason(engine: Engine) -> &'static str {
-    match engine {
-        Engine::Codex => "codex_cli",
-        _ => "opencode_cli",
-    }
-}
-
-fn server(engine: Engine) -> &'static str {
-    match engine {
-        Engine::Codex => "codex_auth",
-        _ => "server_auth",
-    }
-}
-
 /// The Codex daemon client for this request, bounded to its own thread: one
 /// line, a word and a JSON payload ([`codex_reply`]). The client is found as
 /// the night route found the CLI, and speaks only to a daemon already
@@ -362,11 +374,12 @@ fn codex_step(request: &Request, text: &str) -> String {
         Op::Status => "status",
         Op::State => "state",
         Op::Withdraw => "withdraw",
-        Op::Dialogs | Op::DialogSubmit | Op::Abort => unreachable!("answered as unsupported"),
+        Op::Dialogs | Op::DialogSubmit | Op::Abort | Op::Promote => unreachable!("answered as unsupported"),
     };
     let deliver = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
-        _ => "auto",
+        Some(DeliverAs::Auto) | None => "auto",
+        Some(DeliverAs::Queue) => unreachable!("answered as unsupported"),
     };
     let images: Vec<&str> = request.attachments.iter().map(|a| a.path.as_str()).collect();
     format!(
@@ -521,10 +534,14 @@ fn uncertain(id: &str) -> Value {
 
 fn unsupported_op(op: Op) -> Value {
     let op = match op {
+        Op::Send => "send",
+        Op::Status => "status",
+        Op::State => "queue",
+        Op::Withdraw => "withdraw",
+        Op::Promote => "promote",
         Op::Dialogs => "dialogs",
         Op::DialogSubmit => "dialog_submit",
         Op::Abort => "abort",
-        Op::Send | Op::Status | Op::State | Op::Withdraw => unreachable!("handled"),
     };
     json!({"endpoint": "unsupported", "missing": [op]})
 }
