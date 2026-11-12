@@ -230,7 +230,13 @@ def state(base, headers):
 
 
 def listed(base, headers, inbox_id):
-    return any(entry.get('id') == inbox_id for entry in inbox(base, headers))
+    return entry_of(base, headers, inbox_id) is not None
+
+
+def entry_of(base, headers, inbox_id):
+    """This session's inbox entry with this id, else None."""
+    return next((entry for entry in inbox(base, headers) if entry.get('id') == inbox_id), None)
+
 
 
 def in_history(base, headers, message_id):
@@ -312,8 +318,22 @@ def main():
             return 'withdrawn\t' + json.dumps(not in_history(base, headers, inbox_id))
         if op == 'promote':
             path = '/api/session/' + quoted(session) + '/inbox/' + quoted(inbox_id)
-            call(base, headers, 'PATCH', path, {'delivery': 'steer'})
-            return 'promoted\ttrue'
+            try:
+                call(base, headers, 'PATCH', path, {'delivery': 'steer'})
+            except urllib.error.HTTPError as error:
+                # Conflict or not found: not a pending item any more. Only
+                # an entry gone from the inbox proves nothing was moved.
+                if error.code in (404, 409) and not listed(base, headers, inbox_id):
+                    return 'promoted\tfalse'
+                return 'doubt'
+            # A 204 alone is no proof: the update may meet an item that just
+            # left or stayed (session.inbox.update, pinned v2.2.7). Only the
+            # inbox listing it as a steer says it is one. Gone: it ran or
+            # left, as a steer or not, which nothing here can tell.
+            entry = entry_of(base, headers, inbox_id)
+            if entry is not None and entry.get('delivery') == 'steer':
+                return 'promoted\ttrue'
+            return 'doubt'
         if op == 'submit':
             if flavor == 'opencode':
                 path = '/api/session/' + quoted(session) + '/permission/' + quoted(request_id) + '/reply'

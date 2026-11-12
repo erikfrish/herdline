@@ -33,6 +33,8 @@ class Server:
                 body = json.loads(self.rfile.read(length)) if length else None
                 outer.seen.append((method, self.path, body, self.headers.get('Authorization')))
                 status, value = outer.routes.get((method, self.path), (404, {'name': 'NotFound'}))
+                if callable(value):
+                    status, value = value()
                 data = b'' if value is None else json.dumps(value).encode()
                 self.send_response(status)
                 if status in (301, 302):
@@ -158,8 +160,32 @@ class OpenCode(unittest.TestCase):
                     {'requestId': None, 'text': 'from desktop', 'queue': 'steering'},
                 ]})
                 self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'accepted')
+                # A 204 the inbox does not bear out is never a steer: still a
+                # follow-up is doubt, and so is an entry gone right after it
+                # (it ran or left, as a steer or not).
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'doubt')
+                self.assertEqual(service.seen[-2][:3], ('PATCH', '/api/session/ses_test/inbox/' + mine, {'delivery': 'steer'}))
+                inbox, patch = ('GET', '/api/session/ses_test/inbox'), ('PATCH', '/api/session/ses_test/inbox/' + mine)
+                listing = service.routes[inbox]
+
+                def drained():
+                    service.routes[inbox] = (200, {'data': [desktop]})
+                    return 204, None
+
+                service.routes[patch] = (0, drained)
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'doubt')
+                # A conflict on an entry that left: nothing was moved.
+                def settled():
+                    service.routes[inbox] = (200, {'data': [desktop]})
+                    return 409, {'name': 'Conflict'}
+
+                service.routes[inbox] = listing
+                service.routes[patch] = (0, settled)
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\tfalse')
+                service.routes[inbox] = (200, {'data': [dict(queued, delivery='steer'), desktop]})
+                service.routes[patch] = (204, None)
                 self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\ttrue')
-                self.assertEqual(service.seen[-1][:3], ('PATCH', '/api/session/ses_test/inbox/' + mine, {'delivery': 'steer'}))
+                service.routes[inbox] = listing
                 # A cancel the inbox still lists is not a withdrawal.
                 self.assertEqual(run(home, 'opencode', 'withdraw', json.dumps({'id': mine})), 'doubt')
                 # Gone from the inbox after the cancel but in the history: it ran.
