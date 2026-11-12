@@ -213,4 +213,18 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // grok: transcript/grok.rs fixture tests only (updates.jsonl, pinned
+    // grok-build 2bdd1d6); no run against a real Grok, nothing sends.
+    Harness(
+        "grok",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }
