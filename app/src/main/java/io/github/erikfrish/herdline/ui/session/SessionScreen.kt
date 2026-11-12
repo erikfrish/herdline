@@ -9,10 +9,14 @@ import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -104,6 +108,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.text.font.FontFamily
@@ -190,9 +197,13 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.sessionAccent
@@ -1045,32 +1056,58 @@ fun SessionScreen(
                                 modifier = Modifier.align(Alignment.Center).padding(24.dp).testTag("chat:pane_closed"),
                             )
                         }
-                        if (chatWanted && chatPane != null) chatState.SaveableStateProvider(chatPane) {
-                            ChatView(
-                                connection,
-                                chatPane,
-                                accent,
-                                onTerminal = { showChat(false) },
-                                modifier = if (chatUnreadable) Modifier.size(0.dp) else Modifier,
-                                onUnavailable = { unreadable, refusal ->
-                                    if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
-                                        // The fallback happens on its own, so it
-                                        // stays long enough to be read (lab.4 G5).
-                                        scope.launch {
-                                            snackbar.showSnackbar(
-                                                chatUnreadableText(refusal),
-                                                duration = SnackbarDuration.Long,
-                                            )
+                        // The pane Chat last read, kept so the fade-out still draws it after it went away.
+                        var shownChatPane by remember { mutableStateOf(chatPane) }
+                        if (chatPane != null) shownChatPane = chatPane
+                        // A fade only (graphicsLayer alpha): no size, focus or scroll change, and with
+                        // animator scale 0 Compose's motion scale makes both ends instant.
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = chatWanted && chatPane != null,
+                            enter = fadeIn(tween(150, easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f))),
+                            exit = fadeOut(tween(100)),
+                        ) {
+                            val leaving = transition.targetState != EnterExitState.Visible
+                            val shown = shownChatPane
+                            if (shown != null) chatState.SaveableStateProvider(shown) {
+                                ChatView(
+                                    connection,
+                                    shown,
+                                    accent,
+                                    onTerminal = { showChat(false) },
+                                    // While it fades out it is a picture of the old view: TalkBack reaches
+                                    // Terminal beneath at once, but a tap in the 100 ms fade-out is dropped
+                                    // here and never reaches Terminal (a logged limit, review M2a SHOULD 1).
+                                    modifier = (if (chatUnreadable) Modifier.size(0.dp) else Modifier).then(
+                                        if (leaving) {
+                                            Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                                }
+                                            }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                    onUnavailable = { unreadable, refusal ->
+                                        if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
+                                            // The fallback happens on its own, so it
+                                            // stays long enough to be read (lab.4 G5).
+                                            scope.launch {
+                                                snackbar.showSnackbar(
+                                                    chatUnreadableText(refusal),
+                                                    duration = SnackbarDuration.Long,
+                                                )
+                                            }
                                         }
-                                    }
-                                    chatUnreadable = unreadable
-                                    chatRefusal = refusal
-                                },
-                                // The tab's readable title (Titles.kt), never a pane ID.
-                                tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
-                                dense = typingShort,
-                                memory = chatMemory,
-                            )
+                                        chatUnreadable = unreadable
+                                        chatRefusal = refusal
+                                    },
+                                    // The tab's readable title (Titles.kt), never a pane ID.
+                                    tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
+                                    dense = typingShort,
+                                    memory = chatMemory,
+                                )
+                            }
                         }
                         if (state is Connection.State.Connecting) {
                             LinearProgressIndicator(
@@ -1632,20 +1669,43 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
 private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, state: String? = null, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
-    val unavailable = state?.takeIf { !enabled }
+    // A stateDescription replaces the Tab's own Selected, so a selected unavailable
+    // segment says both itself (M5-U1); unselected, it keeps the harness's reason (N1).
+    val unavailable = when {
+        enabled -> null
+        selected -> stringResource(R.string.chat_mode_unavailable_selected)
+        else -> state ?: stringResource(R.string.chat_mode_unavailable)
+    }
     Box(
         Modifier
             .fillMaxHeight()
             .widthIn(min = 52.dp)
             .clip(CircleShape)
             .background(fill)
-            .then(if (selected) Modifier.border(1.dp, accent, CircleShape) else Modifier)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
+            // Unavailable says so by shape too, not by the dimming alone: a dashed
+            // ring, drawn inside the segment, so it costs no width. The selected
+            // ring stays as it is.
+            .then(
+                if (enabled || selected) Modifier else Modifier.drawBehind {
+                    val w = 1.dp.toPx()
+                    drawRoundRect(
+                        text,
+                        Offset(w / 2, w / 2),
+                        Size(size.width - w, size.height - w),
+                        CornerRadius((size.height - w) / 2),
+                        style = Stroke(w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))),
+                    )
+                },
+            )
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 10.dp)
             .testTag(tag)
             .then(if (unavailable != null) Modifier.semantics { stateDescription = unavailable } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
+        // The thick onSurface ring says which mode is on without the fill colour, at no
+        // width: both segments keep labelLarge's one weight, so switching never resizes them.
         Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }

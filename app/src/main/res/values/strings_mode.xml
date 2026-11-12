@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The state TalkBack reads on the Chat mode segment when Chat can't read the pane. -->
+<resources>
+    <string name="chat_mode_unavailable">Unavailable</string>
+    <!-- Replaces the segment's Selected, so it names both. -->
+    <string name="chat_mode_unavailable_selected">Selected, unavailable</string>
+</resources>

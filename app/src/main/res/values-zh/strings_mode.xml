@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chat mode segment state when Chat can't read the pane (Simplified Chinese). -->
+<resources>
+    <string name="chat_mode_unavailable">不可用</string>
+    <string name="chat_mode_unavailable_selected">已选择，不可用</string>
+</resources>
