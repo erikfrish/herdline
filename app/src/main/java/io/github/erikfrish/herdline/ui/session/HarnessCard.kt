@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.ui.session
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +29,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
-import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -36,6 +37,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Harness
@@ -79,58 +81,82 @@ internal fun BoxScope.HarnessCardSlot(
             .align(Alignment.TopCenter)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            .atMostOf(0.6f)
             .semantics { paneTitle = title },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        // Title, body and actions never scroll away (review N1-1: landscape at
-        // font 1.3 cut Open Terminal under the cap); only the list scrolls.
-        // No outer scroll as a fallback: a weight inside an unbounded
-        // scrolling Column would hand the inner scroll an infinite height.
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(
-                    onClick = onTerminal,
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
-                ) { Text(stringResource(R.string.harness_open_terminal, terminal)) }
-                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.harness_close))
-                }
-            }
-            Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(stringResource(R.string.harness_works_here), style = MaterialTheme.typography.labelMedium, color = muted)
-                rows.forEach { (item, available) ->
-                    val name = itemName(item, terminal)
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 40.dp).semantics(mergeDescendants = true) {},
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Shape and words carry the difference, never colour: both icons are muted.
-                        Icon(if (available) Icons.Filled.Check else ClockIcon, null, Modifier.size(18.dp), tint = muted)
+        // Title and actions stay at the top; body, list and footnote are the one
+        // scroll region under them, so the cap (CardCap of the slot) shortens the
+        // body, never the buttons (QA N1-g: landscape at font 1.3). Where title and
+        // actions alone leave less than [MinScrollRegion] under that cap, the cap
+        // goes and the whole column scrolls in the full slot instead, so both
+        // buttons fit whole: chosen from the measured heights, not orientation.
+        BoxWithConstraints {
+            val slot = constraints.maxHeight
+            Layout(
+                content = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            if (available) name else stringResource(R.string.harness_not_yet, name),
-                            style = MaterialTheme.typography.bodyMedium,
+                            title,
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            FilledTonalButton(
+                                onClick = onTerminal,
+                                modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
+                            ) { Text(stringResource(R.string.harness_open_terminal, terminal)) }
+                            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.harness_close))
+                            }
+                        }
                     }
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(body, style = MaterialTheme.typography.bodyMedium, color = muted)
+                        Text(stringResource(R.string.harness_works_here), style = MaterialTheme.typography.labelMedium, color = muted)
+                        rows.forEach { (item, available) ->
+                            val name = itemName(item, terminal)
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 40.dp).semantics(mergeDescendants = true) {},
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Shape and words carry the difference, never colour: both icons are muted.
+                                Icon(if (available) Icons.Filled.Check else ClockIcon, null, Modifier.size(18.dp), tint = muted)
+                                Text(
+                                    if (available) name else stringResource(R.string.harness_not_yet, name),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                        Text(stringResource(R.string.harness_checked_only), style = MaterialTheme.typography.bodySmall, color = muted)
+                    }
+                },
+                // The outer scroll only ever has range in the fallback: when the
+                // split fits, the column is no taller than the cap. In the fallback
+                // it is bounded by the full slot.
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+            ) { (headPart, restPart), outer ->
+                val loose = outer.copy(minHeight = 0)
+                val head = headPart.measure(loose)
+                val gap = 8.dp.roundToPx()
+                // What the split leaves the scroll region: the cap less padding, head and gap.
+                val budget = if (slot == Constraints.Infinity) -1 else (slot * CardCap).toInt() - 2 * 16.dp.roundToPx() - head.height - gap
+                val rest = if (budget >= MinScrollRegion.roundToPx()) {
+                    restPart.measure(loose.copy(maxHeight = budget))
+                } else {
+                    // Fallback: the region at its full height, so only the outer column scrolls
+                    // (an inner scroll under an unbounded one must get a finite height).
+                    val full = restPart.maxIntrinsicHeight(outer.maxWidth)
+                    restPart.measure(loose.copy(minHeight = full, maxHeight = full))
                 }
-                Text(stringResource(R.string.harness_checked_only), style = MaterialTheme.typography.bodySmall, color = muted)
+                layout(outer.maxWidth, head.height + gap + rest.height) {
+                    head.place(0, 0)
+                    rest.place(0, head.height + gap)
+                }
             }
         }
     }
@@ -148,16 +174,11 @@ private fun itemName(item: HarnessItem, terminal: String): String = when (item) 
     HarnessItem.Media -> stringResource(R.string.harness_item_media)
 }
 
-/** Caps the height at [fraction] of the box's own, so a long list scrolls inside the card. */
-private fun Modifier.atMostOf(fraction: Float) = layout { measurable, constraints ->
-    val capped = if (constraints.hasBoundedHeight) {
-        constraints.copy(maxHeight = (constraints.maxHeight * fraction).toInt().coerceAtLeast(constraints.minHeight))
-    } else {
-        constraints
-    }
-    val placeable = measurable.measure(capped)
-    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-}
+/** The least a split scroll region may get under the fixed head: one list row and its gap. */
+private val MinScrollRegion = 48.dp
+
+/** The card's height while the split fits, as a share of its slot, so the terminal stays in view. */
+private const val CardCap = 0.6f
 
 /*
  * Material Symbols `schedule` (outlined), path data copied from
