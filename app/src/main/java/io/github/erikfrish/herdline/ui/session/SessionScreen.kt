@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenuItem
@@ -938,6 +939,7 @@ fun SessionScreen(
                                             outputFocus = outputFocus.takeIf { !chatMode && !wide },
                                             onOutputFocus = ::setOutputFocus,
                                             onPin = { focusedPane?.let(pinOrUnpin) },
+                                            onWorksHere = focusedPane?.let { p -> view?.agentIn(p) }?.let { agent -> { harnessCard = HarnessCardKey(agent.pane, agent.agent) } },
                                         )
                                     }
                                 }
@@ -1363,7 +1365,15 @@ fun SessionScreen(
                         harnessCard?.let { card ->
                             // Keyed, so a new card is announced afresh and the one kept under the keyboard is not.
                             key(card) {
-                                HarnessCardSlot(card.program, cardTab, keyboardUp = imeVisible, onTerminal = { harnessCard = null; showChat(false) }, onClose = { harnessCard = null })
+                                HarnessCardSlot(
+                                    card.program,
+                                    cardTab,
+                                    keyboardUp = imeVisible,
+                                    live = state is Connection.State.Connected,
+                                    agentHere = card.pane?.let { view?.agentIn(it) } != null,
+                                    onTerminal = { harnessCard = null; showChat(false) },
+                                    onClose = { harnessCard = null },
+                                )
                             }
                         }
                         AgentBannerSlot(
@@ -1714,6 +1724,8 @@ private fun SessionMenu(
     /** Whether output focus is armed; null where the item is not offered (Chat, or a wide layout). */
     outputFocus: Boolean?,
     onOutputFocus: (Boolean) -> Unit,
+    /** Opens "What works here"; null when the focused pane runs no Herdr agent. */
+    onWorksHere: (() -> Unit)? = null,
 ) {
     @Composable
     fun item(
@@ -1765,6 +1777,7 @@ private fun SessionMenu(
         if (pinned != null) {
             divider()
             item(if (pinned) R.string.monitor_stop else R.string.monitor_agent, Icons.Default.Notifications, tag = "session:menu:pin") { onPin() }
+            onWorksHere?.let { item(R.string.harness_works_here, Icons.Default.Info, tag = "session:menu:works_here") { it() } }
         }
         if (paneActions) {
             divider()

@@ -15,44 +15,38 @@ class HarnessTest {
     }
 
     @Test
-    fun an_unknown_agent_never_offers_chat_only_its_terminal() {
+    fun an_unread_or_unknown_agent_never_offers_chat_only_its_terminal() {
         for (name in listOf("agy", "Gemini", "not-an-agent", "")) {
             val other = Harness.of(name)
             assertEquals(name, other.name)
             assertFalse(name, other.chat)
             assertFalse(name, isChatAgent(name))
             assertEquals(SendRoute.None, other.send)
-            assertEquals(listOf(HarnessItem.Terminal), other.worksHere().filter { it.second }.map { it.first })
         }
     }
 
     @Test
-    fun opencode_never_shows_steer_while_working() {
-        // Its prompt API sends an ordinary prompt; steering a working turn is unproved (N1-CORRECTION).
-        val steer = Harness.of("opencode").worksHere().first { it.first == HarnessItem.Steer }
-        assertFalse(steer.second)
+    fun cant_check_now_yields_to_an_unknown_program_and_offline_wins_over_identity() {
+        val unknown = Shown.Claim(Cell.NotYet(Reason.UnknownProgram))
+        for (key in HarnessKey.entries) {
+            // 1. An unknown program says so even offline.
+            assertEquals(unknown, shown("not-an-agent", key, live = false))
+            // 2. Offline over a missing name; 3. a missing name while live.
+            assertEquals(Shown.CantCheck(offline = true), shown(null, key, live = false))
+            assertEquals(Shown.CantCheck(offline = false), shown(null, key, live = true))
+            // 4. A known program shows its cell only while live.
+            assertEquals(Shown.CantCheck(offline = true), shown("omp", key, live = false))
+            assertEquals(Shown.Claim(Harness.of("omp").cell(key)), shown("omp", key, live = true))
+        }
     }
 
     @Test
-    fun terminal_comes_first_and_an_unproved_item_never_shows_as_available() {
-        val fixture = Harness(
-            "fixture",
-            history = Proof.Verified,
-            send = SendRoute.Api,
-            sendProof = Proof.Unverified,
-            steer = Proof.None,
-            status = Proof.Verified,
-            questions = Proof.None,
-            subagents = Proof.None,
-            media = Proof.Unverified,
-        )
-        val rows = fixture.worksHere()
-        assertEquals(HarnessItem.Terminal to true, rows.first())
-        assertEquals(HarnessItem.entries.size, rows.size)
-        assertEquals(HarnessItem.entries.toSet(), rows.map { it.first }.toSet())
-        val available = rows.filter { it.second }.map { it.first }.toSet()
-        assertFalse("an unverified Send must not read as working", HarnessItem.Send in available)
-        assertFalse(HarnessItem.Media in available)
-        assertTrue(HarnessItem.History in available)
+    fun a_runtime_replacement_applies_only_to_its_program_and_keys() {
+        val server = HarnessRuntime(noServer = true)
+        assertEquals(Shown.Claim(Cell.NotYet(Reason.NeedsServer, "Kilo")), shown("Kilo", HarnessKey.Stop, live = true, runtime = server))
+        assertEquals(Shown.Claim(Harness.of("kilo").cell(HarnessKey.History)), shown("kilo", HarnessKey.History, live = true, runtime = server))
+        assertEquals(Shown.Claim(Harness.of("omp").cell(HarnessKey.Send)), shown("omp", HarnessKey.Send, live = true, runtime = server))
+        // Offline still wins over a replacement.
+        assertEquals(Shown.CantCheck(offline = true), shown("opencode", HarnessKey.Send, live = false, runtime = server))
     }
 }
