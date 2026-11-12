@@ -176,6 +176,28 @@ internal fun scrollingCapWidth(viewport: Float, gap: Float, min: Float = 48f): F
 private val KeyGap = 5.dp
 private val KeyRowPad = 6.dp
 
+/** One row's caps: their width and the gap between them, in dp, and whether the row scrolls. */
+internal data class CapLayout(val width: Float, val gap: Float, val scrolls: Boolean)
+
+/**
+ * How a row of [count] caps sits in a panel [panel] dp wide. Caps fill the row
+ * with the 5 dp gap while each stays a 48 dp target. Narrower than that, the
+ * gap tightens to 2 dp if every cap then fits at 48 dp, so the seven-key
+ * default fits a 360 dp phone whole (KEY-LAYOUT R1). Only past that does the
+ * row scroll, a long custom set's case, and never under a 48 dp cap.
+ */
+internal fun capLayout(panel: Float, count: Int): CapLayout {
+    val inner = panel - KeyRowPad.value * 2
+    val roomy = (inner - KeyGap.value * (count - 1)) / count
+    if (roomy >= 48f) return CapLayout(roomy, KeyGap.value, scrolls = false)
+    // A hair of slack, so a width that fits exactly in dp is not lost to float rounding.
+    val tight = (inner - TightKeyGap * (count - 1)) / count
+    if (tight >= 48f - 0.01f) return CapLayout(tight.coerceAtLeast(48f), TightKeyGap, scrolls = false)
+    return CapLayout(scrollingCapWidth(inner, KeyGap.value), KeyGap.value, scrolls = true)
+}
+
+private const val TightKeyGap = 2f
+
 /** How TalkBack reads the caps whose glyphs name nothing. */
 private val Spoken: Map<String, String> = mapOf(
     "←" to "Arrow left", "↓" to "Arrow down", "↑" to "Arrow up", "→" to "Arrow right",
@@ -231,15 +253,15 @@ fun ExtraKeysRow(
             for (row in rows) {
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
-                // and no cap is ever narrower than a 48 dp target.
-                val fill = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
+                // and no cap is ever narrower than a 48 dp target ([capLayout]).
+                val layout = capLayout(panelWidth.value, row.size)
                 // A row that scrolls: a drag that starts on a cap scrolls it and sends nothing.
-                val scrolls = fill < 48.dp
-                val width = if (scrolls) scrollingCapWidth((panelWidth - KeyRowPad * 2).value, KeyGap.value).dp else fill
+                val scrolls = layout.scrolls
+                val width = layout.width.dp
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(KeyGap),
+                    horizontalArrangement = Arrangement.spacedBy(layout.gap.dp),
                 ) {
                     for (key in row) {
                         val active = key is ExtraKey.Modifier && latched and key.meta != 0

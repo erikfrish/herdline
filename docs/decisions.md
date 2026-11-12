@@ -200,6 +200,21 @@ stays. Closing the keyboard brings the rows back. In the same windows the ⋮
 menu lists Settings and Disconnect… first, so both are reachable without
 scrolling; other widths keep the order above.
 
+Extra keys (`ui/terminal/ExtraKeys.kt`) default to fourteen keys in two rows
+of seven, placed as on a hardware keyboard, so thumbs find them without
+looking: Tab Esc Home ↑ End / ⌫ over Ctrl Alt ← ↓ → | ⏎. Ctrl is bottom left
+with Tab above it and Esc beside Tab; the arrows are an inverted T, ↑
+directly above ↓. A saved row exactly equal to an old default (0.6.22's flat
+fourteen, or the sixteen before it) is that default, not a choice, and
+migrates once; any other saved row, a reordered default included, is the
+user's and is kept. Reset gives the new default. A row too narrow for its
+caps with 5 dp gaps first tightens to 2 dp gaps while every cap stays 48 dp,
+so the default fits a 360 dp phone whole; only a longer custom row scrolls.
+The one-row panel of a sideways phone typing (QF-6) is refused when the two
+rows stack ↑ over ↓, since one row would turn that pair sideways: the default
+stays two 48 dp rows there, and a custom set without that pair still gets one
+row.
+
 Titles: a tab is named by its Herdr name, which stays put while agents
 retitle. A pane is named by its agent's task title, else its label, its
 directory, or "Tab N"; never a pane ID or a bare agent kind. One sanitizer

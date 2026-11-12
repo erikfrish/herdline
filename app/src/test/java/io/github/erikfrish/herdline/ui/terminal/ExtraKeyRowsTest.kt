@@ -47,6 +47,22 @@ class ExtraKeyRowsTest {
     }
 
     @Test
+    fun sevenCapsFitA360DpPhoneWholeAndOnlyNarrowerScrolls() {
+        // KEY-LAYOUT R1: 360 dp no longer scrolls Enter and Backspace off the edge; the gap tightens instead.
+        for (panel in listOf(360f, 411f, 640f)) {
+            val row = capLayout(panel, 7)
+            assertTrue("$panel: $row", !row.scrolls && row.width >= 48f)
+            assertTrue("$panel: $row", 7 * row.width + 6 * row.gap + 12f <= panel + 0.01f)
+        }
+        // Roomy screens keep the 5 dp gap; only 360 dp needs the tight one.
+        assertEquals(5f, capLayout(411f, 7).gap, 0f)
+        assertEquals(2f, capLayout(360f, 7).gap, 0f)
+        // Too narrow even with a 2 dp gap: the row scrolls with 48 dp caps or wider.
+        val narrow = capLayout(340f, 7)
+        assertTrue("$narrow", narrow.scrolls && narrow.width >= 48f)
+    }
+
+    @Test
     fun aScrollingRowEndsOnHalfACapAndNeverShrinksATarget() {
         // 640 dp landscape and a 457 dp split, less the 6 dp padding a side; 5 dp gaps.
         for (viewport in listOf(628f, 445f)) {
