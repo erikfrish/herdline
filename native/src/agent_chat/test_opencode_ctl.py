@@ -15,10 +15,17 @@ SCRIPT = Path(__file__).with_name('opencode_ctl.py')
 PERMISSION = 'per_test'
 
 
-def run(home, flavor, op, payload='{}'):
-    # No XDG_STATE_HOME: discovery uses the defaults under HOME only.
-    env = {'HOME': home, 'PATH': '/usr/bin:/bin'}
+def run(home, flavor, op, payload='{}', pane=None):
+    # No XDG_STATE_HOME: discovery uses the defaults under HOME only. The
+    # pane's foreground agent is this test process unless `pane` says else.
+    env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid() if pane is None else pane)}
     return subprocess.check_output([sys.executable, '-B', str(SCRIPT), flavor, op, 'ses_test', payload], env=env, text=True, timeout=10).strip()
+
+
+def sibling():
+    """A live child of this test process, so this process is not under it: another pane's agent."""
+    child = subprocess.Popen(['sleep', '30'], stdin=subprocess.DEVNULL)
+    return child
 
 
 class Server:
@@ -268,6 +275,40 @@ class OpenCode(unittest.TestCase):
             register(Path(home) / '.local/state/opencode/service.json', {'url': 'http://127.0.0.1:9', 'pid': 2 ** 22 + 7})
             self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server')
 
+    def test_only_the_panes_own_server_is_ever_asked(self):
+        # QA 10067 U6: `opencode --standalone` (its server on stdio only, no
+        # registration) next to another pane's `serve --service` on the same
+        # data root. The service's pid is this test process; the standalone
+        # pane's agent is a sibling, so the service is not under it.
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/active'): (200, {'data': {}}),
+                ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_test'}}),
+                ('POST', '/api/session/ses_test/interrupt'): (200, {'data': {'interrupted': True}}),
+            })
+            standalone = sibling()
+            server = None
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid(), 'password': 'test-only'})
+                body = json.dumps({'id': 'msg_test', 'text': 'x', 'delivery': 'steer'})
+                for op in ('send', 'state', 'status', 'withdraw', 'promote', 'dialogs', 'submit', 'cancel', 'abort', 'children'):
+                    self.assertEqual(run(home, 'opencode', op, body, pane=standalone.pid), 'no_server', op)
+                for op in ('dialogs', 'submit', 'cancel', 'abort'):
+                    self.assertEqual(run(home, 'kilo', op, body, pane=standalone.pid), 'no_server', op)
+                self.assertEqual(service.seen, [], 'no request may reach another pane\'s server')
+                # The pane's own server, a process under its agent: used.
+                server = subprocess.Popen(['sleep', '30'], stdin=subprocess.DEVNULL)
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': server.pid, 'password': 'test-only'})
+                self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'queued')
+                self.assertIn(('POST', '/api/session/ses_test/prompt'), [(m, p) for m, p, _, _ in service.seen])
+            finally:
+                for process in (standalone, server):
+                    if process is not None:
+                        process.kill()
+                        process.wait()
+                service.close()
+
     def test_staged_files_go_on_the_prompt_or_the_whole_send_is_refused(self):
         # As agent_chat.rs control_step composes it: the media helper, then
         # this script, with {records, target} on fd 3.
@@ -299,7 +340,7 @@ class OpenCode(unittest.TestCase):
                 body = json.dumps({'id': 'msg_test', 'text': 'look'})
                 return subprocess.check_output(
                     ['/bin/sh', '-c', '"$0" -B - opencode send ses_test "$1" media 3<&0 < "$2"', sys.executable, body, str(script)],
-                    input=json.dumps({'records': records, 'target': target}), env={'HOME': home, 'PATH': '/usr/bin:/bin'},
+                    input=json.dumps({'records': records, 'target': target}), env={'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid())},
                     text=True, timeout=10).strip()
 
             try:

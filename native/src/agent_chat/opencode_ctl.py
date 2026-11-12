@@ -18,6 +18,14 @@ A server registered elsewhere (a custom XDG_STATE_HOME) is not found, and a
 bare TUI registers nothing: its worker has no port (kilo cli/cmd/tui.ts:
 435-450). Both answer 'no_server'.
 
+The registered server must also be the pane's own: its pid is the pane's
+foreground agent pid (HERDLINE_PANE_PID, which the native gate has just
+verified against Herdr's pane report) or a descendant of it. A server of
+another pane on the same data root, such as a `serve --service` next to an
+`opencode --standalone` whose own server listens on stdio only, answers
+'no_server' before any request: nothing is asked of a server outside the
+pane, for any op (QA 10067 U6).
+
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:
   GET /api/session/:id (session.ts:234); POST /api/session/:id/prompt
@@ -49,6 +57,7 @@ import glob
 import json
 import os
 import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -134,6 +143,9 @@ def registration():
     except ProcessLookupError:
         # A registration its server outlived: nothing is listening for it.
         raise NoServer()
+    if not in_pane(pid):
+        # Another pane's server on the same data root: never this pane's.
+        raise NoServer()
     headers = {'Content-Type': 'application/json'}
     if flavor == 'opencode':
         if data.get('password'):
@@ -144,6 +156,39 @@ def registration():
             raise Refused()
         headers['Authorization'] = 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode()
     return url.rstrip('/'), headers
+
+
+def in_pane(pid):
+    """Whether `pid` is the pane's foreground agent or runs under it."""
+    try:
+        pane = int(os.environ.get('HERDLINE_PANE_PID', ''))
+    except ValueError:
+        return False
+    if pane <= 1:
+        return False
+    for _ in range(64):
+        if pid == pane:
+            return True
+        if pid <= 1:
+            return False
+        pid = parent(pid)
+        if pid is None:
+            return False
+    return False
+
+
+def parent(pid):
+    """`pid`'s parent: /proc on Linux, else `ps`; None when unreadable."""
+    try:
+        with open('/proc/%d/stat' % pid) as handle:
+            return int(handle.read().rsplit(')', 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        found = subprocess.run(['ps', '-o', 'ppid=', '-p', str(pid)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
+        return int(found.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 def call(base, headers, method, path, body=None, timeout=10):

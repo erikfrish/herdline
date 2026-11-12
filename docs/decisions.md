@@ -680,9 +680,14 @@ its foreground process does not authorize a send. OpenCode and Kilo connect
 only to their private, already-running loopback server registration under
 this user's default state directories (OpenCode `service*.json`, Kilo
 `daemon.json`, mode 0600, own uid, live pid): no automatic service start,
-HTTP redirects or environment proxy routing. A bare TUI registers nothing
-and answers `no_server`. An unknown acknowledgement after POST remains
-uncertain; discovery failure before POST is a refusal.
+HTTP redirects or environment proxy routing. The registered server must be
+the pane's own: its pid is the pane's verified foreground agent pid or a
+descendant of it. Another pane's server on the same data root (QA 10067
+U6: a `serve --service` beside an `opencode --standalone`, whose own server
+listens on stdio only) is never asked, for any op, and answers
+`no_server`, as a bare TUI that registers nothing does. An unknown
+acknowledgement after POST remains uncertain; discovery failure before
+POST is a refusal.
 
 Over that server, Chat reads the session's open permission requests and
 questions while the agent is Blocked, as dialogs (permissions with an Allow

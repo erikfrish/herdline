@@ -556,7 +556,8 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
         ("", "")
     };
     format!(
-        "python3 - {op} {} {}{fd} <<'HERDLINE_KILO_CTL'\n{helper}{}\nHERDLINE_KILO_CTL",
+        "HERDLINE_PANE_PID={} python3 - {op} {} {}{fd} <<'HERDLINE_KILO_CTL'\n{helper}{}\nHERDLINE_KILO_CTL",
+        pane_pid(&request.instance),
         shell_quote(&request.instance.path),
         shell_quote(&payload),
         include_str!("agent_chat/kilo_ctl.py"),
@@ -565,9 +566,10 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
 
 /// The OpenCode/Kilo control script for one `op` on this exact session:
 /// only the already-running server registered under this user's default
-/// state directory, which must know the session. No process environment is
-/// read. The CLI's default api path can autostart a service, so discovery
-/// and HTTP stay explicit here.
+/// state directory, which must know the session and be the pane's own
+/// (its pid the pane's verified foreground pid or under it, [`pane_pid`]).
+/// No other process environment is read. The CLI's default api path can
+/// autostart a service, so discovery and HTTP stay explicit here.
 ///
 /// With `media`, the script also holds `opencode_media.py` in the same
 /// namespace and reads [`media_input`] from the command's stdin on fd 3 (the
@@ -581,11 +583,21 @@ fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str, me
         ("", "")
     };
     format!(
-        "python3 - {flavor} {op} {} {}{fd} <<'HERDLINE_OPENCODE_CTL'\n{helper}{}\nHERDLINE_OPENCODE_CTL",
+        "HERDLINE_PANE_PID={} python3 - {flavor} {op} {} {}{fd} <<'HERDLINE_OPENCODE_CTL'\n{helper}{}\nHERDLINE_OPENCODE_CTL",
+        pane_pid(instance),
         shell_quote(&instance.path),
         shell_quote(payload),
         include_str!("agent_chat/opencode_ctl.py"),
     )
+}
+
+/// The pane's foreground agent pid, as the gate verifies it against Herdr's
+/// report before the step runs; 0 when Herdr reports none. The control
+/// scripts use only a registered server whose pid is this one or runs
+/// under it, and answer `no_server` otherwise, 0 included (QA 10067 U6:
+/// another pane's `serve --service` on the same data root took a send).
+fn pane_pid(instance: &Identity) -> u32 {
+    instance.pid.unwrap_or(0)
 }
 
 /// What an OpenCode send with files writes to the host command's stdin: the

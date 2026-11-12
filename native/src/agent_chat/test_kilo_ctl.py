@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from test_opencode_ctl import Server, register
+from test_opencode_ctl import Server, register, sibling
 
 SCRIPT = Path(__file__).with_name('kilo_ctl.py')
 DIRECTORY = '/srv/project'
@@ -18,9 +18,10 @@ QUERY = '?directory=%2Fsrv%2Fproject'
 SESSION = ('GET', '/session/ses_test')
 
 
-def run(home, op, payload='{}'):
-    # No XDG_STATE_HOME: discovery uses the defaults under HOME only.
-    env = {'HOME': home, 'PATH': '/usr/bin:/bin'}
+def run(home, op, payload='{}', pane=None):
+    # No XDG_STATE_HOME: discovery uses the defaults under HOME only. The
+    # pane's foreground agent is this test process unless `pane` says else.
+    env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid() if pane is None else pane)}
     return subprocess.check_output([sys.executable, '-B', str(SCRIPT), op, 'ses_test', payload], env=env, text=True, timeout=10).strip()
 
 
@@ -81,7 +82,7 @@ class Send(Daemon):
             body = json.dumps({'id': 'msg_one', 'text': 'look'})
             return subprocess.check_output(
                 ['/bin/sh', '-c', '"$0" -B - send ses_test "$1" media 3<&0 < "$2"', sys.executable, body, str(script)],
-                input=json.dumps({'records': records, 'target': bound}), env={'HOME': home, 'PATH': '/usr/bin:/bin'},
+                input=json.dumps({'records': records, 'target': bound}), env={'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid())},
                 text=True, timeout=10).strip()
 
         self.assertEqual(send([record]), 'queued')
@@ -105,6 +106,20 @@ class Send(Daemon):
         staged.write_bytes(b'\x89PNG\r\n\x1a\nother--pixels')
         self.assertEqual(send([record]), 'media\tattachment_missing')
         self.assertEqual(self.posts(server), [])
+
+    def test_another_panes_daemon_is_never_asked(self):
+        # QA 10067 U6's rule for Kilo: daemon.json names a server that is not
+        # the pane's agent nor under it, so every op is no_server, unasked.
+        home, server = self.serve({
+            ('GET', '/session/status' + QUERY): (200, {}),
+            ('POST', '/session/ses_test/prompt_async'): (204, None),
+        })
+        other = sibling()
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for op in ('send', 'status', 'state', 'withdraw', 'children'):
+            self.assertEqual(run(home, op, json.dumps({'id': 'msg_one', 'text': 'x'}), pane=other.pid), 'no_server', op)
+        self.assertEqual(server.seen, [])
 
     # schema/src/session-status-event.ts:11-47: busy, retry, offline,
     # scheduled are all at work or waiting; only idle starts a turn.

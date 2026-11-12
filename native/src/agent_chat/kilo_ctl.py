@@ -7,10 +7,13 @@ takes them. Prints one line: a word, or a word, a tab and a JSON payload.
 Kilo's Stop, permissions and questions stay in opencode_ctl.py.
 
 Discovery is opencode_ctl.py's Kilo rule, and no process environment is
-read: exactly one of $HOME/.local/state/kilo/daemon.json or
+read but the pane's verified foreground pid (HERDLINE_PANE_PID): exactly
+one of $HOME/.local/state/kilo/daemon.json or
 $HOME/.local/share/kilo/state/daemon.json (kilo core/src/global.ts:25-26,
 kilocode/daemon/daemon.ts:97-99), this uid's, 0600, a loopback http url,
-a live pid, Basic auth from its username and password.
+a live pid that is the pane's foreground agent or runs under it (else
+'no_server': never another pane's server), Basic auth from its username
+and password.
 
 Routes, pinned to Kilo v7.8.27 (03a6f07),
 packages/opencode/src/server/routes/instance/httpapi/groups:
@@ -49,6 +52,7 @@ import base64
 import json
 import os
 import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -106,6 +110,9 @@ def registration():
         os.kill(pid, 0)
     except ProcessLookupError:
         raise NoServer()
+    if not in_pane(pid):
+        # Another pane's server on the same data root: never this pane's.
+        raise NoServer()
     user, password = data['username'], data['password']
     if not isinstance(user, str) or not isinstance(password, str):
         raise ValueError('no credentials')
@@ -114,6 +121,39 @@ def registration():
         'Authorization': 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode(),
     }
     return url.rstrip('/'), headers
+
+
+def in_pane(pid):
+    """Whether `pid` is the pane's foreground agent or runs under it (as opencode_ctl.py)."""
+    try:
+        pane = int(os.environ.get('HERDLINE_PANE_PID', ''))
+    except ValueError:
+        return False
+    if pane <= 1:
+        return False
+    for _ in range(64):
+        if pid == pane:
+            return True
+        if pid <= 1:
+            return False
+        pid = parent(pid)
+        if pid is None:
+            return False
+    return False
+
+
+def parent(pid):
+    """`pid`'s parent: /proc on Linux, else `ps`; None when unreadable."""
+    try:
+        with open('/proc/%d/stat' % pid) as handle:
+            return int(handle.read().rsplit(')', 1)[1].split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        found = subprocess.run(['ps', '-o', 'ppid=', '-p', str(pid)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
+        return int(found.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 def call(base, headers, method, path, body=None, timeout=10):
