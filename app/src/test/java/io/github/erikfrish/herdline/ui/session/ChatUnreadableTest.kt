@@ -42,4 +42,13 @@ class ChatUnreadableTest {
             assertNotEquals(R.string.session_chat_unreadable, notice.words.res)
         }
     }
+
+    @Test
+    fun grok_refusals_say_why_with_the_existing_words() {
+        val notice = { format: String -> unreadableNotice(TranscriptRefusal.UnsupportedFormat(format), "Grok", everRead = false) }
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_outside_home, listOf("Grok"))), notice("grok_store_outside_home"))
+        for (format in listOf("grok_session_ambiguous", "grok_store_unreadable", "grok_session_too_large")) {
+            assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Grok"))), notice(format))
+        }
+    }
 }

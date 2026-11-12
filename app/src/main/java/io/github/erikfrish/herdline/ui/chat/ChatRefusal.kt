@@ -18,8 +18,10 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
     TranscriptRefusal.OutsideHome -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
     is TranscriptRefusal.UnsupportedFormat -> when (refusal.format) {
         "managed_session_journal" -> RefusalWords(R.string.chat_refused_qwen_managed)
-        // Kilo's store resolved outside the home folder: the same cause as OutsideHome.
-        "kilo_store_outside_home" -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
+        // Kilo's or Grok's store resolved outside the home folder: the same
+        // cause as OutsideHome.
+        "kilo_store_outside_home", "grok_store_outside_home" ->
+            RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
     // A format Chat can't name is said without a number, never as "unknown".
