@@ -203,7 +203,8 @@ enum class TranscriptSteer {
     Live,
 }
 
-enum class TranscriptKind { Message, Compaction, Other }
+/** [Boundary]: the history shown stops here at another session's turns, which are not shown. */
+enum class TranscriptKind { Message, Compaction, Boundary, Other }
 
 /** An assistant message's tokens and OMP's own cost estimate in USD, null when OMP has no price. */
 data class TranscriptUsage(val input: Long, val output: Long, val totalTokens: Long, val cost: Double?) {
@@ -253,6 +254,7 @@ data class TranscriptEntry(
             kind = when (json.optString("kind")) {
                 "message" -> TranscriptKind.Message
                 "compaction" -> TranscriptKind.Compaction
+                "boundary" -> TranscriptKind.Boundary
                 else -> TranscriptKind.Other
             },
             role = json.optString("role").takeUnless { json.isNull("role") || it.isEmpty() },

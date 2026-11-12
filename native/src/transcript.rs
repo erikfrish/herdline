@@ -22,10 +22,11 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode`/`qwen` own their line/row formats; the
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes` own their line/row formats; the
 /// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
+mod hermes;
 mod opencode;
 mod pi;
 mod qwen;
@@ -129,7 +130,8 @@ pub struct Identity {
     /// `path` refs (OMP, Pi), the session ID for `id` refs (the rest). Never
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
-    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`, `qwen`.
+    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
+    /// `qwen`, `hermes`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -304,6 +306,8 @@ pub struct Usage {
 pub enum Kind {
     Message,
     Compaction,
+    /// Where the history shown stops at another session's turns; no content.
+    Boundary,
     /// Kept without content so the branch can be walked through it.
     Other,
 }
@@ -416,12 +420,13 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     for _ in 0..MAX_READS {
         let (script, limit) = match &expect {
             // OpenCode pages its own `seq` sequence, Qwen its whole active
-            // chain (a tree, not a byte range), each via its module.
-            Some(identity) if identity.agent == "opencode" || identity.agent == "qwen" => {
-                let page = if identity.agent == "qwen" {
-                    qwen::page(exec, session, &request.pane, identity, read, reset)
-                } else {
-                    opencode::page(exec, session, &request.pane, identity, read, reset)
+            // chain (a tree, not a byte range), Hermes its SQLite `messages`
+            // ids read only, each via its module.
+            Some(identity) if matches!(identity.agent.as_str(), "opencode" | "qwen" | "hermes") => {
+                let page = match identity.agent.as_str() {
+                    "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
+                    "hermes" => hermes::page(exec, session, &request.pane, identity, read, reset),
+                    _ => opencode::page(exec, session, &request.pane, identity, read, reset),
                 };
                 match page {
                     Ok(page) => return Ok(page),
@@ -531,8 +536,9 @@ fn image(
     if expect.agent == "opencode" {
         return opencode::image(exec, session, pane, expect, media);
     }
-    // Qwen's images are shown as references only; chat never fetches them.
-    if expect.agent == "qwen" {
+    // Qwen's images are shown as references only, and Hermes history is read
+    // without its media: chat never fetches either, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes") {
         return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
@@ -1062,7 +1068,7 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let session = &pane["agent_session"];
     let agent = session["agent"]
         .as_str()
-        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen"))
+        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes"))
         .ok_or(Error::NoTranscript)?;
     // The agent's own reported reference, held exactly as Herdr gives it:
     // the session file for `path` (OMP, Pi), the session id for `id` (the
@@ -1079,8 +1085,13 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let identity = Identity {
         pane_id: text(&pane["pane_id"])?,
         terminal_id: text(&pane["terminal_id"])?,
-        // The pane's foreground process must be that agent's own name.
-        pid: foreground_pid(process, agent),
+        // The pane's foreground process must be that agent's own name; Hermes
+        // runs as either of its entry points.
+        pid: if agent == "hermes" {
+            hermes::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name))
+        } else {
+            foreground_pid(process, agent)
+        },
         path: value.to_owned(),
         agent: agent.to_owned(),
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),

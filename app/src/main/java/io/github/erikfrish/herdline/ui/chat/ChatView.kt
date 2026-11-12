@@ -692,6 +692,7 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
         is ChatItem.Compaction -> CompactionDivider(colors, open, toggle) {
             Markdown(item.summary, colors, color = colors.muted, dense = dense)
         }
+        is ChatItem.Boundary -> HistoryBoundary(colors)
         is ChatItem.Image -> Box(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = if (item.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
             ChatImageThumb(item.image, colors)
         }
@@ -748,6 +749,29 @@ private fun CompactionDivider(colors: ChatColors, open: Boolean, onToggle: () ->
             Box(Modifier.weight(1f).height(1.dp).background(colors.border))
         }
         if (open) Barred(colors.rule, 2.dp) { content() }
+    }
+}
+
+/**
+ * The compaction divider's look with the boundary's own words in its place.
+ * Nothing opens: it has no body, and the text itself says what it is, so it
+ * wraps instead of being cut.
+ */
+@Composable
+private fun HistoryBoundary(colors: ChatColors) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat:history_boundary"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+        Text(
+            stringResource(R.string.chat_history_boundary),
+            style = ChatType.meta.copy(color = colors.dim),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
     }
 }
 
