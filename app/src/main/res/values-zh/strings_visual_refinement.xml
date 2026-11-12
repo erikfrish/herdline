@@ -4,7 +4,7 @@
         <item quantity="other">%1$d 个工作区</item>
     </plurals>
     <plurals name="host_agent_count">
-        <item quantity="other">%1$d 个智能体</item>
+        <item quantity="other">%1$d 个代理</item>
     </plurals>
     <string name="form_fix_fields_named">提交前请检查：%1$s</string>
 </resources>

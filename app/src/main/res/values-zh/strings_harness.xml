@@ -2,7 +2,7 @@
 <resources>
     <string name="harness_card_title">%1$s：%2$s 尚未接入</string>
     <string name="harness_card_body">%3$s 可完整使用。%4$s 正在运行 %1$s，可像在电脑上一样在那里输入。</string>
-    <string name="harness_card_shell_title">%1$s 需要智能体</string>
+    <string name="harness_card_shell_title">%1$s 需要代理</string>
     <string name="harness_card_shell_body">%2$s 运行的是 shell。%3$s 可完整使用。</string>
     <string name="harness_open_terminal">打开%1$s</string>
     <string name="harness_close">关闭</string>
@@ -13,7 +13,7 @@
     <string name="harness_item_steer">运行中引导</string>
     <string name="harness_item_status">状态</string>
     <string name="harness_item_questions">提问与表单</string>
-    <string name="harness_item_subagents">子智能体</string>
+    <string name="harness_item_subagents">子代理</string>
     <string name="harness_item_media">图片和文件</string>
     <string name="harness_not_yet">%1$s：尚未接入</string>
     <string name="harness_checked_only">Herdline 只显示已为此程序验证的功能。</string>
