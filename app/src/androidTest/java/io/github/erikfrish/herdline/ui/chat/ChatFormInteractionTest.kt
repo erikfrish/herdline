@@ -47,7 +47,7 @@ class ChatFormInteractionTest {
             HerdlineTheme(dark = true) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     visibleDialogs(current).forEach { dialog ->
-                        ChatFormCard(dialog, chatColors(Color(0xFF57C6BC)), false, null, { answer = it })
+                        ChatFormCard(dialog, chatColors(Color(0xFF57C6BC)), false, null, { submitted, _ -> answer = submitted })
                     }
                 }
             }

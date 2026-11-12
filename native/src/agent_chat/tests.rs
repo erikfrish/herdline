@@ -279,3 +279,40 @@ fn control_replies_keep_the_omp_dialog_shapes_and_fail_closed() {
     // A word from another op is not this op's answer.
     assert!(control_reply("submitted", Op::Abort, ID, "").is_err());
 }
+
+#[test]
+fn question_replies_name_their_own_kind_and_settle_only_on_the_servers_word() {
+    let dialogs = r#"[{"dialogId":"per_1","kind":"permission"},{"dialogId":"frm_1","kind":"form"},{"dialogId":"que_1","kind":"form"}]"#;
+    assert_eq!(control_reply(&format!("dialogs\t{dialogs}"), Op::Dialogs, ID, "").unwrap()["dialogs"].as_array().unwrap().len(), 3);
+    // A form is never answered as a permission, nor one under another kind's id.
+    assert!(control_reply(r#"dialogs	[{"dialogId":"per_1","kind":"form"}]"#, Op::Dialogs, ID, "").is_err());
+    assert!(control_reply(r#"dialogs	[{"dialogId":"frm_1","kind":"permission"}]"#, Op::Dialogs, ID, "").is_err());
+    assert!(control_reply(r#"dialogs	[{"dialogId":"frm_../x","kind":"form"}]"#, Op::Dialogs, ID, "").is_err());
+    assert_eq!(
+        control_reply("cancelled", Op::DialogCancel, ID, "frm_1").unwrap(),
+        json!({"endpoint": "live", "dialogId": "frm_1", "result": "cancelled"})
+    );
+    // Answered elsewhere first: not open, and said so for both ops.
+    for op in [Op::DialogSubmit, Op::DialogCancel] {
+        assert_eq!(
+            control_reply("answered", op, ID, "que_1").unwrap(),
+            json!({"endpoint": "live", "dialogId": "que_1", "result": "not_open", "settled": "answered"})
+        );
+        assert!(control_reply("doubt", op, ID, "que_1").is_err());
+    }
+    // A decline is never read as an answer, nor an answer as a decline.
+    assert!(control_reply("cancelled", Op::DialogSubmit, ID, "frm_1").is_err());
+    assert!(control_reply("submitted", Op::DialogCancel, ID, "frm_1").is_err());
+    assert!(control_reply("invalid", Op::DialogCancel, ID, "frm_1").is_err());
+    assert_eq!(
+        r#"{"endpoint":"unsupported","missing":["dialog_cancel"]}"#,
+        unsupported_op(Op::DialogCancel).to_string()
+    );
+}
+
+#[test]
+fn question_ids_are_the_ones_the_servers_make() {
+    assert!(valid_form_id("frm_01JZ") && valid_form_id("que_01JZ"));
+    assert!(!valid_form_id("per_1") && !valid_form_id("frm_1/../x") && !valid_form_id("frm_1 x") && !valid_form_id(&format!("frm_{}", "a".repeat(130))));
+    assert!(!valid_permission_id("frm_1"));
+}

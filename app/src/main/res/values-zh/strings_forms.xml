@@ -5,6 +5,17 @@
     <string name="form_untitled">问题</string>
     <string name="form_kind">类型：%1$s</string>
     <string name="form_unsupported">Herdline 无法显示这类问题。未作答，也未批准任何操作。</string>
+    <string name="form_unsupported_field">此问题含有 Chat 无法显示的字段（%1$s）。未作答：可在此拒绝，或在终端中回答。</string>
+    <string name="form_unsupported_condition">此问题仅在 Chat 无法判断的条件下显示某个字段（%1$s）。未作答：可在此拒绝，或在终端中回答。</string>
+    <string name="form_unsupported_link">此问题指向 Chat 不会打开的链接（%1$s）。未作答：可在此拒绝，或在终端中回答。</string>
+    <string name="form_unsupported_size">此问题过大，无法在此显示。未作答：可在此拒绝，或在终端中回答。</string>
+    <string name="form_decline">拒绝</string>
+    <string name="form_answering">正在回答…</string>
+    <string name="form_declining">正在拒绝…</string>
+    <string name="form_settled_answered">已回答：%1$s</string>
+    <string name="form_settled_declined">已拒绝</string>
+    <string name="form_settled_gone">已不再询问</string>
+    <string name="form_settled_desktop">已在电脑上回答</string>
     <string name="form_required">必填</string>
     <string name="form_label_required_spoken">%1$s，必填</string>
     <string name="form_other">其他</string>

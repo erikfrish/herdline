@@ -169,4 +169,17 @@ class IngressTest {
         assertTrue(ingressSubmitOutcome("d1") { """{"endpoint":"live","dialogId":"d1","result":"approved"}""" }.isFailure)
         assertTrue(ingressSubmitOutcome("d1") { throw IOException("timeout") }.isFailure)
     }
+
+    @Test
+    fun aDeclineIsOnlyTheServersWordForThatQuestionAndAnsweredElsewhereIsSaidApart() {
+        assertEquals("cancelled", ingressCancelOutcome("frm_1") { """{"endpoint":"live","dialogId":"frm_1","result":"cancelled"}""" }.getOrThrow())
+        assertEquals("not_open", ingressCancelOutcome("frm_1") { """{"endpoint":"live","dialogId":"frm_1","result":"not_open"}""" }.getOrThrow())
+        val elsewhere = """{"endpoint":"live","dialogId":"frm_1","result":"not_open","settled":"answered"}"""
+        assertEquals(DIALOG_ANSWERED_ELSEWHERE, ingressCancelOutcome("frm_1") { elsewhere }.getOrThrow())
+        assertEquals(DIALOG_ANSWERED_ELSEWHERE, ingressSubmitOutcome("frm_1") { elsewhere }.getOrThrow())
+        // A decline never reads as an answer, and only for its own question on a live endpoint.
+        assertTrue(ingressCancelOutcome("frm_1") { """{"endpoint":"live","dialogId":"frm_1","result":"submitted"}""" }.isFailure)
+        assertTrue(ingressCancelOutcome("frm_1") { """{"endpoint":"live","dialogId":"frm_2","result":"cancelled"}""" }.isFailure)
+        assertTrue(ingressCancelOutcome("frm_1") { """{"endpoint":"unsupported","dialogId":"frm_1","result":"cancelled"}""" }.isFailure)
+    }
 }

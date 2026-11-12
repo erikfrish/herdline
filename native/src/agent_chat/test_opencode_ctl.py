@@ -109,6 +109,7 @@ class OpenCode(unittest.TestCase):
             service = Server({
                 ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
                 ('GET', '/api/session/ses_test/permission'): (200, {'data': [asked, other]}),
+                ('GET', '/api/session/ses_test/form'): (200, {'data': []}),
                 ('POST', '/api/session/ses_test/permission/per_test/reply'): (204, None),
                 ('POST', '/api/session/ses_test/interrupt'): (200, {'interrupted': True}),
             })
@@ -225,6 +226,116 @@ class OpenCode(unittest.TestCase):
             self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server')
 
 
+FORM = 'frm_test'
+
+
+class Forms(unittest.TestCase):
+    """OpenCode forms (pinned 2.2.7 schema/form.ts, groups/session.ts:722-797)."""
+
+    def test_a_form_is_shown_whole_answered_once_and_declined_by_its_id(self):
+        fields = [
+            {'type': 'boolean', 'key': 'deploy', 'title': 'Deploy?', 'required': True},
+            {'type': 'string', 'key': 'env', 'title': 'Where', 'options': [{'value': 'prod', 'label': 'Production', 'description': 'live'}, {'value': 'stage', 'label': 'Stage'}],
+             'required': True, 'when': [{'key': 'deploy', 'op': 'eq', 'value': True}]},
+            {'type': 'integer', 'key': 'count', 'minimum': 1, 'maximum': 9, 'default': 2, 'description': 'How many'},
+            {'type': 'multiselect', 'key': 'tags', 'options': [{'value': 'a', 'label': 'A'}, {'value': 'b', 'label': 'B'}], 'maxItems': 1},
+            {'type': 'string', 'key': 'token', 'hidden': True, 'default': 'x'},
+            {'type': 'external', 'key': 'docs', 'url': 'https://example.test/d', 'title': 'Read the docs'},
+        ]
+        form = {'id': FORM, 'sessionID': 'ses_test', 'title': 'Ship it', 'fields': fields}
+        detail = dict(form, state={'status': 'pending'})
+        base = '/api/session/ses_test/form/' + FORM
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/ses_test/permission'): (200, {'data': []}),
+                ('GET', '/api/session/ses_test/form'): (200, {'data': [form, dict(form, id='frm_other', sessionID='global')]}),
+                ('GET', base): (200, {'data': detail}),
+                ('POST', base + '/reply'): (204, None),
+            })
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid()})
+                word, _, payload = run(home, 'opencode', 'dialogs').partition('\t')
+                self.assertEqual(word, 'dialogs')
+                [shown] = json.loads(payload)
+                self.assertEqual((shown['dialogId'], shown['kind'], shown['submittable'], shown['cancellable']), (FORM, 'form', True, True), 'a global form is no session’s')
+                byname = {f['name']: f for f in shown['form']['fields']}
+                self.assertEqual(list(byname), ['deploy', 'env', 'count', 'tags'], 'hidden takes its default; a link is a block')
+                self.assertEqual(byname['env']['when'], [{'key': 'deploy', 'op': 'eq', 'value': True}])
+                self.assertEqual([o['label'] for o in byname['env']['options']][0], [{'text': 'Production'}, {'text': ' — live', 'style': 'em'}])
+                self.assertEqual((byname['count']['type'], byname['count']['value'], byname['count']['min'], byname['count']['max']), ('integer', '2', 1, 9))
+                self.assertEqual((byname['tags']['multi'], byname['tags']['maxItems']), (True, 1))
+                self.assertIn({'kind': 'link', 'url': 'https://example.test/d', 'label': [{'text': 'Read the docs'}]}, shown['form']['sections'][0]['blocks'])
+
+                def submit(data):
+                    return run(home, 'opencode', 'submit', json.dumps({'dialogId': FORM, 'answer': data}))
+                # Re-checked against the server's own fields, coerced to their types.
+                self.assertEqual(submit({'deploy': 'true', 'env': 'stage', 'count': '3', 'tags': ['a']}), 'submitted')
+                self.assertEqual(service.seen[-1][:3], ('POST', base + '/reply', {'answer': {'deploy': True, 'env': 'stage', 'count': 3, 'tags': ['a']}}))
+                # An inactive field is not answerable: neither required nor sent.
+                self.assertEqual(submit({'deploy': 'false', 'count': ''}), 'submitted')
+                self.assertEqual(service.seen[-1][2], {'answer': {'deploy': False}})
+                replies = [m for m, p, _, _ in service.seen].count('POST')
+                for bad in ({'deploy': 'true'}, {'deploy': 'true', 'env': 'mars'}, {'deploy': 'false', 'count': '2.5'},
+                            {'deploy': 'false', 'token': 'y'}, {'deploy': 'false', 'docs': 'x'}, {'deploy': 'maybe'}):
+                    self.assertEqual(submit(bad), 'invalid', bad)
+                self.assertEqual([m for m, p, _, _ in service.seen].count('POST'), replies, 'an invalid answer is never sent')
+                # Settled before the phone asked: said, never sent.
+                service.routes[('GET', base)] = (200, {'data': dict(form, state={'status': 'answered', 'answer': {}})})
+                self.assertEqual(submit({'deploy': 'false'}), 'answered')
+                self.assertEqual(run(home, 'opencode', 'cancel', json.dumps({'dialogId': FORM})), 'answered')
+                service.routes[('GET', base)] = (404, {'name': 'FormNotFound'})
+                self.assertEqual(submit({'deploy': 'false'}), 'not_open')
+                self.assertEqual([m for m, p, _, _ in service.seen].count('POST'), replies)
+                # Refused at the reply: the re-read says what holds.
+                service.routes[('GET', base)] = (200, {'data': detail})
+                service.routes[('POST', base + '/reply')] = (0, lambda: (service.routes.__setitem__(('GET', base), (200, {'data': dict(form, state={'status': 'answered', 'answer': {}})})), (409, {'name': 'FormAlreadySettled'}))[1])
+                self.assertEqual(submit({'deploy': 'false'}), 'answered')
+                service.routes[('GET', base)] = (200, {'data': detail})
+                service.routes[('POST', base + '/reply')] = (500, {'name': 'Internal'})
+                self.assertEqual(submit({'deploy': 'false'}), 'doubt')
+                # Decline is the DELETE with a reason, confirmed by the state.
+                settle = lambda: (service.routes.__setitem__(('GET', base), (200, {'data': dict(form, state={'status': 'cancelled'})})), (204, None))[1]
+                service.routes[('DELETE', base + '?message=Declined%20in%20Herdline%20Chat')] = (0, settle)
+                self.assertEqual(run(home, 'opencode', 'cancel', json.dumps({'dialogId': FORM})), 'cancelled')
+                self.assertEqual(service.seen[-2][:2], ('DELETE', base + '?message=Declined%20in%20Herdline%20Chat'))
+                self.assertEqual(run(home, 'opencode', 'cancel', json.dumps({'dialogId': FORM})), 'not_open')
+                service.routes[('GET', base)] = (200, {'data': detail})
+                service.routes[('DELETE', base + '?message=Declined%20in%20Herdline%20Chat')] = (204, None)
+                self.assertEqual(run(home, 'opencode', 'cancel', json.dumps({'dialogId': FORM})), 'doubt', 'a 204 that left it pending is no decline')
+                # A permission is never declined by cancel; an id of no kind is refused.
+                self.assertEqual(run(home, 'opencode', 'cancel', json.dumps({'dialogId': PERMISSION})), 'invalid')
+                self.assertEqual(run(home, 'opencode', 'submit', json.dumps({'dialogId': 'que_x', 'answer': {}})), 'invalid')
+            finally:
+                service.close()
+
+    def test_a_form_chat_cannot_show_whole_is_refused_in_words(self):
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/ses_test/permission'): (200, {'data': []}),
+            })
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid()})
+                cases = [
+                    ([{'type': 'color', 'key': 'c', 'title': 'Colour'}], {'reason': 'field', 'subject': 'Colour'}),
+                    ([{'type': 'string', 'key': 's', 'format': 'ipv4'}], {'reason': 'field', 'subject': 's'}),
+                    ([{'type': 'string', 'key': 'h', 'hidden': True}, {'type': 'string', 'key': 'x', 'title': 'X', 'when': [{'key': 'h', 'op': 'eq', 'value': 'a'}]}], {'reason': 'condition', 'subject': 'X'}),
+                    ([{'type': 'external', 'key': 'e', 'url': 'file:///etc/passwd', 'title': 'Open'}], {'reason': 'link', 'subject': 'Open'}),
+                    ([{'type': 'string', 'key': 'k%d' % i, 'description': 'd' * 400} for i in range(40)], {'reason': 'size', 'subject': ''}),
+                ]
+                for fields, why in cases:
+                    form = {'id': FORM, 'sessionID': 'ses_test', 'title': 't', 'fields': fields}
+                    service.routes[('GET', '/api/session/ses_test/form')] = (200, {'data': [form]})
+                    service.routes[('GET', '/api/session/ses_test/form/' + FORM)] = (200, {'data': dict(form, state={'status': 'pending'})})
+                    [shown] = json.loads(run(home, 'opencode', 'dialogs').partition('\t')[2])
+                    self.assertEqual((shown['submittable'], 'form' in shown, shown['cancellable'], shown['unsupported']), (False, False, True, why))
+                    self.assertEqual(run(home, 'opencode', 'submit', json.dumps({'dialogId': FORM, 'answer': {}})), 'invalid')
+                self.assertNotIn('POST', [m for m, _, _, _ in service.seen])
+            finally:
+                service.close()
+
+
 class Kilo(unittest.TestCase):
     def test_daemon_permission_reply_and_abort(self):
         with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
@@ -234,6 +345,7 @@ class Kilo(unittest.TestCase):
             daemon = Server({
                 ('GET', '/session/ses_test'): (200, {'id': 'ses_test', 'directory': directory}),
                 ('GET', '/permission' + query): (200, [asked, dict(asked, id='per_other', sessionID='ses_other')]),
+                ('GET', '/question' + query): (200, []),
                 ('POST', '/permission/per_test/reply' + query): (200, True),
                 ('POST', '/session/ses_test/abort'): (200, True),
             })
@@ -254,6 +366,47 @@ class Kilo(unittest.TestCase):
                 # Kilo's text and checks are not asked of its server here.
                 self.assertEqual(run(home, 'kilo', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'local')
                 self.assertEqual(daemon.seen, [])
+            finally:
+                daemon.close()
+
+    def test_a_question_is_answered_with_its_labels_and_rejected_by_its_id(self):
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            query = '?directory=%2Fsrv%2Fproject'
+            asked = {'id': 'que_test', 'sessionID': 'ses_test', 'questions': [
+                {'question': 'Which database?', 'header': 'Database', 'options': [{'label': 'Postgres', 'description': 'default'}, {'label': 'SQLite', 'description': 'local'}], 'default': 'SQLite'},
+                {'question': 'Extras?', 'header': 'Extras', 'options': [{'label': 'Cache', 'description': ''}], 'multiple': True, 'custom': False},
+            ]}
+            daemon = Server({
+                ('GET', '/session/ses_test'): (200, {'id': 'ses_test', 'directory': '/srv/project'}),
+                ('GET', '/permission' + query): (200, []),
+                ('GET', '/question' + query): (200, [asked, dict(asked, id='que_other', sessionID='ses_other')]),
+                ('POST', '/question/que_test/reply' + query): (200, True),
+                ('POST', '/question/que_test/reject' + query): (200, True),
+            })
+            try:
+                register(Path(home) / '.local/state/kilo/daemon.json', {'pid': os.getpid(), 'url': daemon.url, 'username': 'kilo', 'password': 'test-only'})
+                [shown] = json.loads(run(home, 'kilo', 'dialogs').partition('\t')[2])
+                self.assertEqual((shown['dialogId'], shown['kind'], shown['submittable'], shown['cancellable'], shown['title']), ('que_test', 'form', True, True, 'Database'))
+                first, second = shown['form']['fields']
+                self.assertEqual((first['name'], first['multi'], first['other'], first['help']), ('q0', False, True, [{'text': 'Which database?'}]))
+                self.assertEqual([(o['value'], o['checked']) for o in first['options']], [('Postgres', False), ('SQLite', True)])
+                self.assertEqual((second['multi'], second['other']), (True, False))
+                answer = lambda data: run(home, 'kilo', 'submit', json.dumps({'dialogId': 'que_test', 'answer': data}))
+                self.assertEqual(answer({'q0': 'MySQL, my own', 'q1': ['Cache']}), 'submitted')
+                self.assertEqual(daemon.seen[-1][:3], ('POST', '/question/que_test/reply' + query, {'answers': [['MySQL, my own'], ['Cache']]}))
+                sent = len(daemon.seen)
+                for bad in ({'q0': 'Postgres'}, {'q0': ['Postgres', 'SQLite'], 'q1': ['Cache']}, {'q0': 'Postgres', 'q1': ['Other']}, {'q0': 'Postgres', 'q1': [], 'q2': 'x'}):
+                    self.assertEqual(answer(bad), 'invalid', bad)
+                self.assertNotIn('POST', [m for m, _, _, _ in daemon.seen[sent:]])
+                self.assertEqual(run(home, 'kilo', 'cancel', json.dumps({'dialogId': 'que_test'})), 'cancelled')
+                self.assertEqual(daemon.seen[-1][:2], ('POST', '/question/que_test/reject' + query))
+                daemon.routes[('POST', '/question/que_test/reject' + query)] = (404, {'name': 'QuestionNotFound'})
+                self.assertEqual(run(home, 'kilo', 'cancel', json.dumps({'dialogId': 'que_test'})), 'not_open')
+                daemon.routes[('POST', '/question/que_test/reply' + query)] = (200, False)
+                self.assertEqual(answer({'q0': 'SQLite', 'q1': ['Cache']}), 'doubt')
+                daemon.routes[('GET', '/question' + query)] = (200, [])
+                self.assertEqual(answer({'q0': 'SQLite', 'q1': ['Cache']}), 'not_open')
+                self.assertEqual(run(home, 'kilo', 'cancel', json.dumps({'dialogId': 'frm_x'})), 'invalid')
             finally:
                 daemon.close()
 

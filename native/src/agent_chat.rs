@@ -72,6 +72,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 const ROOM: usize = 64 * 1024;
 /// Longest text a send carries, as the composer draws it.
 const MAX_TEXT_BYTES: usize = composer::MAX_TEXT_BYTES;
+/// Longest form answer passed on: a form's own fields and options bound it
+/// far below this, and the script's argument stays small.
+const MAX_ANSWER_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
@@ -94,7 +97,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     if engine == Engine::Pty {
         return Ok(absent().to_string());
     }
-    let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::Abort);
+    let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort);
     match engine {
         // Dialogs, Stop and Promote have no Codex path here: a truthful
         // absence of that op, not a request Kotlin may treat as done.
@@ -103,21 +106,38 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         Engine::Codex if request.deliver_as == Some(DeliverAs::Queue) => {
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
-        // Kilo's server serves only permissions and Stop here. Its text and
-        // checks have no route yet: said as such, never an absence a send
-        // could fall through to the pane on.
+        // Kilo's server serves only permissions, questions and Stop here.
+        // Its text and checks have no route yet: said as such, never an
+        // absence a send could fall through to the pane on.
         Engine::Kilo if !control => return Ok(unsupported_op(request.op).to_string()),
         _ => {}
     }
     let mut submitted = None;
     if request.op == Op::DialogSubmit {
-        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_permission_id(id)).ok_or(Error::BadReply)?;
-        let decision = request.answer.as_ref().and_then(|answer| answer["data"]["decision"].as_str());
-        let Some(decision) = decision.filter(|d| DECISIONS.contains(d)) else {
-            // Nothing left the phone: the answer is not one the server takes.
-            return Ok(submit_result(dialog_id, "invalid").to_string());
-        };
-        submitted = Some(json!({"dialogId": dialog_id, "decision": decision}).to_string());
+        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_permission_id(id) || valid_form_id(id)).ok_or(Error::BadReply)?;
+        let data = request.answer.as_ref().map(|answer| &answer["data"]);
+        submitted = Some(if valid_permission_id(dialog_id) {
+            let Some(decision) = data.and_then(|data| data["decision"].as_str()).filter(|d| DECISIONS.contains(d)) else {
+                // Nothing left the phone: the answer is not one the server takes.
+                return Ok(submit_result(dialog_id, "invalid").to_string());
+            };
+            json!({"dialogId": dialog_id, "decision": decision}).to_string()
+        } else {
+            // The script re-checks it against the server's own form.
+            let Some(data) = data.filter(|data| data.is_object()) else {
+                return Ok(submit_result(dialog_id, "invalid").to_string());
+            };
+            let body = json!({"dialogId": dialog_id, "answer": data}).to_string();
+            if body.len() > MAX_ANSWER_BYTES {
+                return Ok(submit_result(dialog_id, "invalid").to_string());
+            }
+            body
+        });
+    }
+    if request.op == Op::DialogCancel {
+        // Only a question is declined; a permission's answer is a decision.
+        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_form_id(id)).ok_or(Error::BadReply)?;
+        submitted = Some(json!({"dialogId": dialog_id}).to_string());
     }
     let text = composer::clean(&request.text);
     if request.op == Op::Send {
@@ -174,6 +194,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
                 Op::Promote => ("promote", json!({"id": message}).to_string()),
                 Op::Dialogs => ("dialogs", String::from("{}")),
                 Op::DialogSubmit => ("submit", submitted.unwrap_or_else(|| String::from("{}"))),
+                Op::DialogCancel => ("cancel", submitted.unwrap_or_else(|| String::from("{}"))),
                 Op::Abort => ("abort", String::from("{}")),
             };
             control_step(engine, op, &request.instance, &payload)
@@ -320,7 +341,11 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         ("dialogs", Op::Dialogs) => {
             let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
             let named = dialogs.as_array().is_some_and(|all| {
-                all.iter().all(|d| d["dialogId"].as_str().is_some_and(valid_permission_id) && d["kind"] == "permission")
+                all.iter().all(|d| match (d["dialogId"].as_str(), d["kind"].as_str()) {
+                    (Some(id), Some("permission")) => valid_permission_id(id),
+                    (Some(id), Some("form")) => valid_form_id(id),
+                    _ => false,
+                })
             });
             if !named {
                 return Err(Error::BadReply);
@@ -328,6 +353,13 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
             live(json!({"dialogs": dialogs}))
         }
         ("submitted" | "not_open" | "invalid", Op::DialogSubmit) => submit_result(dialog_id, word),
+        ("cancelled" | "not_open", Op::DialogCancel) => submit_result(dialog_id, word),
+        // Another client answered it first: nothing of ours was taken.
+        ("answered", Op::DialogSubmit | Op::DialogCancel) => {
+            let mut reply = submit_result(dialog_id, "not_open");
+            reply["settled"] = json!("answered");
+            reply
+        }
         ("aborted", Op::Abort) => match payload {
             "true" | "false" => live(json!({"aborted": payload == "true"})),
             _ => return Err(Error::BadReply),
@@ -343,7 +375,17 @@ fn submit_result(dialog_id: &str, result: &str) -> Value {
 /// A permission request id as both servers make them (`per` + an ascending
 /// id): never a path or a shell-relevant byte.
 fn valid_permission_id(id: &str) -> bool {
-    id.len() <= 128 && id.starts_with("per") && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    id.len() <= 128 && id.starts_with("per") && safe_id(id)
+}
+
+/// A question's id: OpenCode's form (`frm_`, schema/form.ts:8) or Kilo's
+/// question (`que`, schema/v1/question.ts:11).
+fn valid_form_id(id: &str) -> bool {
+    id.len() <= 128 && (id.starts_with("frm_") || id.starts_with("que")) && safe_id(id)
+}
+
+fn safe_id(id: &str) -> bool {
+    id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// The refusal word for a failed binding: what the app already shows for
@@ -374,7 +416,7 @@ fn codex_step(request: &Request, text: &str) -> String {
         Op::Status => "status",
         Op::State => "state",
         Op::Withdraw => "withdraw",
-        Op::Dialogs | Op::DialogSubmit | Op::Abort | Op::Promote => unreachable!("answered as unsupported"),
+        Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort | Op::Promote => unreachable!("answered as unsupported"),
     };
     let deliver = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
@@ -541,6 +583,7 @@ fn unsupported_op(op: Op) -> Value {
         Op::Promote => "promote",
         Op::Dialogs => "dialogs",
         Op::DialogSubmit => "dialog_submit",
+        Op::DialogCancel => "dialog_cancel",
         Op::Abort => "abort",
     };
     json!({"endpoint": "unsupported", "missing": [op]})

@@ -168,12 +168,21 @@ internal fun ingressNeedsServerOutcome(call: () -> String): Result<Boolean> {
 /** OMP's results for a dialog submit; only these say what became of the answer. */
 private val SUBMIT_RESULTS = setOf("submitted", "not_open", "invalid", "kind_mismatch")
 
-internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<String> {
+/** A question another client answered first: `not_open` with `settled: answered`. */
+internal const val DIALOG_ANSWERED_ELSEWHERE = "answered"
+
+internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<String> = dialogOutcome(dialogId, SUBMIT_RESULTS, call)
+
+/** A decline's results: `cancelled`, or `not_open` (answered elsewhere said apart). Anything less is unconfirmed. */
+internal fun ingressCancelOutcome(dialogId: String, call: () -> String): Result<String> = dialogOutcome(dialogId, setOf("cancelled", "not_open"), call)
+
+private fun dialogOutcome(dialogId: String, results: Set<String>, call: () -> String): Result<String> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val result = reply.optString("result")
-    if (reply.optString("endpoint") != "live" || reply.optString("dialogId") != dialogId || result !in SUBMIT_RESULTS) {
-        return Result.failure(IOException("no submit result"))
+    if (reply.optString("endpoint") != "live" || reply.optString("dialogId") != dialogId || result !in results) {
+        return Result.failure(IOException("no dialog result"))
     }
+    if (result == "not_open" && reply.optString("settled") == "answered") return Result.success(DIALOG_ANSWERED_ELSEWHERE)
     return Result.success(result)
 }
 

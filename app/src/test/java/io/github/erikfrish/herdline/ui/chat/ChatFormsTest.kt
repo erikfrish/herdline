@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.ui.chat
 import androidx.compose.runtime.saveable.SaverScope
 import io.github.erikfrish.herdline.core.ChatForm
 import io.github.erikfrish.herdline.core.FormField
+import io.github.erikfrish.herdline.core.FormCondition
 import io.github.erikfrish.herdline.core.FormOption
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
@@ -64,6 +65,20 @@ class ChatFormsTest {
         assertEquals("", restored.text(secret))
         assertEquals("7", restored.text(count))
         assertTrue(restored.choice(checks).selected == listOf("x"))
+    }
+
+    @Test
+    fun `a field hidden by its condition is neither checked nor sent`() {
+        val needed = FormField.Text("why", emptyList(), required = true, type = "text", multiline = false, value = "", placeholder = "",
+            min = null, max = null, pattern = null, minLength = null, maxLength = null, rows = 1,
+            conditions = listOf(FormCondition("pick", true, "a")))
+        val gated = ChatForm(emptyList(), listOf(radio, needed), emptyList())
+        val onB = initialAnswers(gated)
+        assertFalse(formData(gated, onB).has("why"))
+        assertTrue(formErrors(gated, onB).isEmpty())
+        val onA = onB.with(radio, ChoiceDraft(listOf("a")))
+        assertEquals(setOf("why"), formErrors(gated, onA).keys)
+        assertEquals("", formData(gated, onA).getString("why"))
     }
 
     private fun JSONArray.strings() = (0 until length()).map(::getString)

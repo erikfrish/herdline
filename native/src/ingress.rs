@@ -54,6 +54,9 @@ pub enum Op {
     Dialogs,
     /// The user's answer to one open dialog, named by its exact id.
     DialogSubmit,
+    /// Decline one open question, named by its exact id. OMP's endpoint has
+    /// no such op; OpenCode and Kilo answer it through their own server.
+    DialogCancel,
     /// Stop the instance's running turn. OMP's endpoint has no such op;
     /// OpenCode and Kilo answer it through their own server.
     Abort,
@@ -164,9 +167,13 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
-    if matches!(request.op, Op::Abort | Op::Promote) {
-        // The extension speaks no stop or promote: say so, nothing was sent.
-        let missing = if request.op == Op::Abort { "abort" } else { "promote" };
+    if matches!(request.op, Op::Abort | Op::Promote | Op::DialogCancel) {
+        // The extension speaks no stop, promote or decline: say so, nothing was sent.
+        let missing = match request.op {
+            Op::Abort => "abort",
+            Op::Promote => "promote",
+            _ => "dialog_cancel",
+        };
         return Ok(json!({"endpoint": "unsupported", "missing": [missing]}).to_string());
     }
     if request.deliver_as == Some(DeliverAs::Queue) {
@@ -234,7 +241,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
             .to_string(),
             _ => return Err(Error::BadReply),
         },
-        Op::Abort | Op::Promote => unreachable!("answered above"),
+        Op::Abort | Op::Promote | Op::DialogCancel => unreachable!("answered above"),
     };
     if line.len() > LINE_MAX {
         return Ok(refused(Refusal::TooLarge));
@@ -617,7 +624,7 @@ fn answer_reply(op: Op, id: &str, dialog_id: Option<&str>, answer: &Value) -> Op
                 reply.insert("state".into(), state);
             }
         }
-        Op::Abort | Op::Promote => return None,
+        Op::Abort | Op::Promote | Op::DialogCancel => return None,
     }
     Some(Value::Object(reply).to_string())
 }

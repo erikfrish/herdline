@@ -5,6 +5,19 @@
     <string name="form_untitled">Question</string>
     <string name="form_kind">Kind: %1$s</string>
     <string name="form_unsupported">Herdline cannot show this kind of question. Nothing was answered or approved.</string>
+    <!-- A question Chat refuses to show in part; %1$s names the field, condition or link. -->
+    <string name="form_unsupported_field">This question has a field Chat can\'t show (%1$s). Nothing was answered: decline it here or answer in Terminal.</string>
+    <string name="form_unsupported_condition">This question shows a field only under a condition Chat can\'t check (%1$s). Nothing was answered: decline it here or answer in Terminal.</string>
+    <string name="form_unsupported_link">This question links somewhere Chat won\'t open (%1$s). Nothing was answered: decline it here or answer in Terminal.</string>
+    <string name="form_unsupported_size">This question is too large to show here. Nothing was answered: decline it here or answer in Terminal.</string>
+    <string name="form_decline">Decline</string>
+    <string name="form_answering">Answering…</string>
+    <string name="form_declining">Declining…</string>
+    <!-- %1$s: the chosen answers, short. -->
+    <string name="form_settled_answered">Answered: %1$s</string>
+    <string name="form_settled_declined">Declined</string>
+    <string name="form_settled_gone">No longer asked</string>
+    <string name="form_settled_desktop">Answered on desktop</string>
     <string name="form_required">Required</string>
     <!-- Spoken for a field label: %1$s is the label. -->
     <string name="form_label_required_spoken">%1$s, required</string>

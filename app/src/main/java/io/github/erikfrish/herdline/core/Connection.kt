@@ -580,6 +580,17 @@ class Connection(val node: Node) {
     }
 
     /**
+     * Decline the one question [dialogId] on [target]'s instance (OpenCode's
+     * form, Kilo's question). `cancelled` or `not_open`, or
+     * [DIALOG_ANSWERED_ELSEWHERE]; anything less fails. Blocks on the host.
+     */
+    fun ingressCancelDialog(target: ComposerTarget, dialogId: String): Result<String> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        val request = ingressRequest("dialog_cancel", target, UUID.randomUUID().toString()).put("dialogId", dialogId)
+        return ingressCancelOutcome(dialogId) { Native.ingress(session, request.toString()) }
+    }
+
+    /**
      * Stop the turn running on exactly [target]'s instance: through the
      * agent's own server (OpenCode, Kilo), else with one key in its pane
      * ([StopRoute.Pty]). True when one was stopped, false when the server

@@ -55,7 +55,13 @@ DELIVERIES = ('steer', 'queue')
 # Shown in the queue panel only; a withdraw restores the app's own record.
 MAX_QUEUED = 20
 MAX_QUEUED_TEXT = 2000
-KILO_OPS = ('dialogs', 'submit', 'abort')
+KILO_OPS = ('dialogs', 'submit', 'cancel', 'abort')
+# One form or question set per dialog: five stay inside the 64 KiB reply.
+MAX_DIALOG = 12000
+MAX_FIELDS = 50
+MAX_OPTIONS = 100
+# The text formats a phone keyboard and the app's checks know.
+FORMATS = {None: 'text', 'email': 'email', 'uri': 'url', 'date': 'date', 'date-time': 'datetime-local'}
 
 
 class NoServer(Exception):
@@ -195,6 +201,297 @@ def dialog(entry):
     }
 
 
+def forms(base, headers):
+    """OpenCode's pending forms of this session (session.ts:722). The
+    `global` owner (MCP elicitation) is no session's: never shown here."""
+    found = call(base, headers, 'GET', '/api/session/' + quoted(session) + '/form')['data']
+    if not isinstance(found, list):
+        raise ValueError('not a list')
+    return [entry for entry in found if isinstance(entry, dict) and entry.get('sessionID') == session and isinstance(entry.get('id'), str) and entry['id'].startswith('frm_')]
+
+
+def form_detail(base, headers, form_id):
+    """The form and its state (session.ts:753), or None when the server has none."""
+    try:
+        found = call(base, headers, 'GET', '/api/session/' + quoted(session) + '/form/' + quoted(form_id))['data']
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+    if not isinstance(found, dict) or found.get('id') != form_id or found.get('sessionID') != session:
+        raise ValueError('another form')
+    return found
+
+
+def settled(detail):
+    """A word for a form no longer pending, else None."""
+    if detail is None:
+        return 'not_open'
+    status = (detail.get('state') or {}).get('status')
+    if status == 'pending':
+        return None
+    return {'answered': 'answered', 'cancelled': 'not_open'}.get(status, 'not_open')
+
+
+def questions(base, headers, directory):
+    """Kilo's pending questions of this session (groups/question.ts list:
+    every session's, so filtered here)."""
+    found = call(base, headers, 'GET', '/question?directory=' + quoted(directory))
+    if not isinstance(found, list):
+        raise ValueError('not a list')
+    return [entry for entry in found if isinstance(entry, dict) and entry.get('sessionID') == session and isinstance(entry.get('id'), str) and entry['id'].startswith('que')]
+
+
+class Unsupported(Exception):
+    """A form Chat can't show whole: said in words, never a subset."""
+    def __init__(self, reason, subject=''):
+        super().__init__(reason)
+        self.reason, self.subject = reason, subject[:120]
+
+
+def spans(value, extra=''):
+    out = [{'text': text(value)[:MAX_DETAIL]}] if text(value) else []
+    if text(extra):
+        out.append({'text': ' — ' + text(extra)[:MAX_DETAIL], 'style': 'em'})
+    return out
+
+
+def options_of(field, checked):
+    options = field.get('options')
+    if not isinstance(options, list) or len(options) > MAX_OPTIONS or not all(isinstance(o, dict) and isinstance(o.get('value'), str) for o in options):
+        raise Unsupported('field', text(field.get('title')) or text(field.get('key')))
+    return [{'value': o['value'], 'label': spans(o.get('label') or o['value'], o.get('description')), 'checked': o['value'] in checked} for o in options]
+
+
+def form_field(field):
+    """One OpenCode field as the app's field (schema/form.ts:43-114)."""
+    kind, key = field.get('type'), field['key']
+    name = text(field.get('title')) or key
+    out = {'name': key, 'label': spans(name), 'required': field.get('required') is True}
+    if text(field.get('description')):
+        out['help'] = spans(field['description'])
+    default = field.get('default')
+    if kind == 'string' and 'options' in field:
+        out.update(kind='choice', other=field.get('custom') is True, options=options_of(field, [default]))
+    elif kind == 'string':
+        if field.get('format') not in FORMATS:
+            raise Unsupported('field', name)
+        out.update(kind='text', type=FORMATS[field.get('format')], value=text(default), placeholder=text(field.get('placeholder')))
+        for limit in ('minLength', 'maxLength'):
+            if isinstance(field.get(limit), int):
+                out[limit] = field[limit]
+        if text(field.get('pattern')):
+            out['pattern'] = field['pattern']
+    elif kind in ('number', 'integer'):
+        number = default if isinstance(default, (int, float)) and not isinstance(default, bool) else None
+        out.update(kind='text', type=kind, value='' if number is None else json.dumps(number), placeholder='')
+        for limit, to in (('minimum', 'min'), ('maximum', 'max')):
+            if isinstance(field.get(limit), (int, float)) and not isinstance(field.get(limit), bool):
+                out[to] = field[limit]
+    elif kind == 'boolean':
+        checked = [json.dumps(default)] if isinstance(default, bool) else []
+        out.update(kind='choice', other=False, options=[
+            {'value': 'true', 'label': [{'text': 'Yes'}], 'checked': 'true' in checked},
+            {'value': 'false', 'label': [{'text': 'No'}], 'checked': 'false' in checked},
+        ])
+    elif kind == 'multiselect':
+        out.update(kind='choice', multi=True, other=field.get('custom') is True,
+                   options=options_of(field, default if isinstance(default, list) else []))
+        for limit in ('minItems', 'maxItems'):
+            if isinstance(field.get(limit), int):
+                out[limit] = field[limit]
+    else:
+        raise Unsupported('field', name)
+    return out
+
+
+def form_dialog(entry):
+    """An OpenCode form as the app's form, whole or refused in words."""
+    dialog = {'dialogId': entry['id'], 'kind': 'form', 'title': text(entry.get('title'))[:200], 'submittable': False, 'cancellable': True}
+    try:
+        fields, blocks, kinds = entry.get('fields'), [], {}
+        if not isinstance(fields, list) or not 0 < len(fields) <= MAX_FIELDS or not all(isinstance(f, dict) and isinstance(f.get('key'), str) for f in fields):
+            raise Unsupported('size')
+        shown = []
+        for field in fields:
+            key, kind = field['key'], field.get('type')
+            name = text(field.get('title')) or key
+            when = field.get('when') or []
+            # A condition on a field Chat does not answer (hidden, a link, a
+            # later or unknown one) can't be checked on the phone.
+            if not isinstance(when, list) or any(not isinstance(c, dict) or kinds.get(c.get('key')) not in ('answered',) or c.get('op') not in ('eq', 'neq') for c in when):
+                raise Unsupported('condition', name)
+            if kind == 'external':
+                url = text(field.get('url'))
+                if urllib.parse.urlsplit(url).scheme not in ('http', 'https'):
+                    raise Unsupported('link', name)
+                kinds[key] = 'external'
+                blocks.append({'kind': 'link', 'url': url, 'label': spans(name, field.get('description'))})
+                continue
+            if field.get('hidden') is True:
+                # Skips the prompt: the server takes its default (form.ts:47-49).
+                kinds[key] = 'hidden'
+                continue
+            mapped = form_field(field)
+            if when:
+                mapped['when'] = [{'key': c['key'], 'op': c['op'], 'value': c.get('value')} for c in when]
+            kinds[key] = 'answered'
+            shown.append(mapped)
+            blocks.append({'kind': 'field', 'field': {'name': key}})
+        form = {'sections': [{'title': [], 'blocks': blocks}], 'fields': shown, 'hidden': []}
+        whole = dict(dialog, submittable=True, form=form)
+        if len(json.dumps(whole, separators=(',', ':'))) > MAX_DIALOG:
+            raise Unsupported('size')
+        return whole
+    except Unsupported as why:
+        return dict(dialog, unsupported={'reason': why.reason, 'subject': why.subject})
+
+
+def question_dialog(entry):
+    """A Kilo question set as one form: field qN per question, its option
+    labels as values, since a reply names labels (schema/v1/question.ts)."""
+    dialog = {'dialogId': entry['id'], 'kind': 'form', 'title': '', 'submittable': False, 'cancellable': True}
+    asked = entry.get('questions')
+    try:
+        if not isinstance(asked, list) or not 0 < len(asked) <= MAX_FIELDS or not all(isinstance(q, dict) for q in asked):
+            raise Unsupported('size')
+        fields, blocks = [], []
+        for index, question in enumerate(asked):
+            options = question.get('options')
+            if not isinstance(options, list) or len(options) > MAX_OPTIONS or not all(isinstance(o, dict) and isinstance(o.get('label'), str) for o in options):
+                raise Unsupported('field', text(question.get('header')))
+            multi = question.get('multiple') is True
+            # The default is a label, for one-choice questions only.
+            default = question.get('default') if not multi else None
+            field = {
+                'kind': 'choice', 'name': 'q%d' % index, 'label': spans(question.get('header')), 'required': True,
+                'multi': multi, 'other': question.get('custom') is not False,
+                'options': [{'value': o['label'], 'label': spans(o['label'], o.get('description')), 'checked': o['label'] == default} for o in options],
+            }
+            if text(question.get('question')):
+                field['help'] = spans(question['question'])
+            fields.append(field)
+            blocks.append({'kind': 'field', 'field': {'name': field['name']}})
+        whole = dict(dialog, title=text(asked[0].get('header'))[:200], submittable=True,
+                     form={'sections': [{'title': [], 'blocks': blocks}], 'fields': fields, 'hidden': []})
+        if len(json.dumps(whole, separators=(',', ':'))) > MAX_DIALOG:
+            raise Unsupported('size')
+        return whole
+    except Unsupported as why:
+        return dict(dialog, unsupported={'reason': why.reason, 'subject': why.subject})
+
+
+class Invalid(Exception):
+    pass
+
+
+def holds(condition, answers):
+    """schema/form.ts:28-41: unanswered is false for eq and neq alike;
+    against a multiselect, eq is "includes"."""
+    if condition['key'] not in answers:
+        return False
+    value, wanted = answers[condition['key']], condition.get('value')
+    if isinstance(value, list):
+        if not isinstance(wanted, str):
+            return False
+        hit = wanted in value
+    elif number(value) and number(wanted) or type(value) is type(wanted):
+        hit = value == wanted
+    else:
+        # A value not of the field's type matches neither way.
+        return False
+    return hit if condition['op'] == 'eq' else not hit
+
+
+def number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def coerced(field, value):
+    """The phone's value as the field's type, else Invalid; None is no answer."""
+    kind = field.get('type')
+    if value is None or value == '' or value == []:
+        return None
+    if kind == 'string':
+        if not isinstance(value, str):
+            raise Invalid()
+        if 'options' in field and field.get('custom') is not True and value not in [o.get('value') for o in field['options']]:
+            raise Invalid()
+        return value
+    if kind in ('number', 'integer'):
+        try:
+            number = float(value) if isinstance(value, str) else value
+        except ValueError:
+            raise Invalid()
+        if isinstance(number, bool) or not isinstance(number, (int, float)) or number != number or number in (float('inf'), float('-inf')):
+            raise Invalid()
+        if kind == 'integer':
+            if number != int(number):
+                raise Invalid()
+            return int(number)
+        return number
+    if kind == 'boolean':
+        if value in (True, 'true'):
+            return True
+        if value in (False, 'false'):
+            return False
+        raise Invalid()
+    if kind == 'multiselect':
+        values = [value] if isinstance(value, str) else value
+        if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+            raise Invalid()
+        known = [o.get('value') for o in field.get('options') or []]
+        if field.get('custom') is not True and any(v not in known for v in values):
+            raise Invalid()
+        return values
+    raise Invalid()
+
+
+def form_answer(detail, data):
+    """The answer the server takes, re-checked against its own fields: only
+    active, answerable keys; a required active one must be answered."""
+    if not isinstance(data, dict):
+        raise Invalid()
+    fields = detail.get('fields') if isinstance(detail.get('fields'), list) else []
+    answerable = {f.get('key') for f in fields if isinstance(f, dict) and f.get('type') != 'external' and f.get('hidden') is not True}
+    if any(key not in answerable for key in data):
+        raise Invalid()
+    answers = {}
+    for field in fields:
+        key = field.get('key')
+        if key not in answerable or not all(holds(c, answers) for c in field.get('when') or []):
+            continue
+        value = coerced(field, data.get(key))
+        if value is None:
+            if field.get('required') is True:
+                raise Invalid()
+            continue
+        answers[key] = value
+    return answers
+
+
+def question_answers(entry, data):
+    """Label lists in question order (question.ts ReplyPayload)."""
+    if not isinstance(data, dict):
+        raise Invalid()
+    asked = entry.get('questions') or []
+    if set(data) - {'q%d' % i for i in range(len(asked))}:
+        raise Invalid()
+    answers = []
+    for index, question in enumerate(asked):
+        value = data.get('q%d' % index)
+        labels = [value] if isinstance(value, str) else value
+        if not isinstance(labels, list) or not labels or not all(isinstance(l, str) and l for l in labels):
+            raise Invalid()
+        if question.get('multiple') is not True and len(labels) != 1:
+            raise Invalid()
+        known = [o.get('label') for o in question.get('options') or []]
+        if question.get('custom') is False and any(l not in known for l in labels):
+            raise Invalid()
+        answers.append(labels)
+    return answers
+
+
 def active(base, headers):
     found = call(base, headers, 'GET', '/api/session/active')['data']
     if not isinstance(found, dict):
@@ -287,15 +584,47 @@ def main():
             if 'delivery' not in sent and active(base, headers):
                 return 'busy'
         if op == 'dialogs':
-            entries = open_requests(base, headers, directory)[:MAX_DIALOGS]
-            return 'dialogs\t' + json.dumps([dialog(entry) for entry in entries], separators=(',', ':'))
-        if op == 'submit':
+            entries = [dialog(entry) for entry in open_requests(base, headers, directory)]
+            asked = forms(base, headers) if flavor == 'opencode' else questions(base, headers, directory)
+            entries += [form_dialog(entry) if flavor == 'opencode' else question_dialog(entry) for entry in asked]
+            return 'dialogs\t' + json.dumps(entries[:MAX_DIALOGS], separators=(',', ':'))
+        if op in ('submit', 'cancel'):
             asked = json.loads(payload)
-            request_id, decision = asked['dialogId'], asked['decision']
-            if decision not in [value for value, _ in DECISIONS]:
+            request_id = asked['dialogId']
+            if op == 'submit' and request_id.startswith('per'):
+                decision = asked['decision']
+                if decision not in [value for value, _ in DECISIONS]:
+                    return 'invalid'
+                if all(entry['id'] != request_id for entry in open_requests(base, headers, directory)):
+                    return 'not_open'
+            elif flavor == 'opencode' and request_id.startswith('frm_'):
+                # The server's own form, re-read: the phone's copy may be old.
+                detail = form_detail(base, headers, request_id)
+                word = settled(detail)
+                if word is not None:
+                    return word
+                if op == 'submit':
+                    if not form_dialog(detail)['submittable']:
+                        # A form Chat refused to show is never answered from it.
+                        return 'invalid'
+                    try:
+                        reply = form_answer(detail, asked['answer'])
+                    except Invalid:
+                        return 'invalid'
+            elif flavor == 'kilo' and request_id.startswith('que'):
+                entry = next((entry for entry in questions(base, headers, directory) if entry['id'] == request_id), None)
+                if entry is None:
+                    # Kilo drops a settled question: answered or not, it is gone.
+                    return 'not_open'
+                if op == 'submit':
+                    if not question_dialog(entry)['submittable']:
+                        return 'invalid'
+                    try:
+                        reply = question_answers(entry, asked['answer'])
+                    except Invalid:
+                        return 'invalid'
+            else:
                 return 'invalid'
-            if all(entry['id'] != request_id for entry in open_requests(base, headers, directory)):
-                return 'not_open'
     except urllib.error.HTTPError as error:
         return 'gone' if error.code == 404 else 'auth' if error.code == 401 else 'local'
     except Exception:
@@ -339,7 +668,7 @@ def main():
             # The wake may drain it before any re-read, so none is made. Unlike
             # DELETE, which swallows the conflict as a 204 (session.ts:545-554).
             return 'promoted\ttrue'
-        if op == 'submit':
+        if op == 'submit' and request_id.startswith('per'):
             if flavor == 'opencode':
                 path = '/api/session/' + quoted(session) + '/permission/' + quoted(request_id) + '/reply'
                 call(base, headers, 'POST', path, {'decision': decision})
@@ -348,6 +677,36 @@ def main():
             # A person answered this on the phone: Kilo's interactive flag.
             done = call(base, headers, 'POST', path, {'reply': decision, 'interactive': True})
             return 'submitted' if done is True else 'doubt'
+        if op in ('submit', 'cancel') and flavor == 'opencode':
+            path = '/api/session/' + quoted(session) + '/form/' + quoted(request_id)
+            try:
+                if op == 'submit':
+                    # session.ts:768: 204 is this answer taken, once.
+                    call(base, headers, 'POST', path + '/reply', {'answer': reply})
+                    return 'submitted'
+                # session.ts:784: the message tells the asker why.
+                call(base, headers, 'DELETE', path + '?message=' + quoted('Declined in Herdline Chat'))
+            except urllib.error.HTTPError as error:
+                # A refusal changed nothing; the re-read says what holds now.
+                word = settled(form_detail(base, headers, request_id))
+                if word is not None:
+                    return word
+                return 'invalid' if op == 'submit' and error.code == 400 else 'doubt'
+            # A cancel is confirmed by the state, not the 204.
+            word = settled(form_detail(base, headers, request_id))
+            if word == 'not_open':
+                return 'cancelled'
+            return word or 'doubt'
+        if op in ('submit', 'cancel'):
+            # groups/question.ts reply/reject: true is done; 404 is gone.
+            path = '/question/' + quoted(request_id) + ('/reply' if op == 'submit' else '/reject') + '?directory=' + quoted(directory)
+            try:
+                done = call(base, headers, 'POST', path, {'answers': reply} if op == 'submit' else None)
+            except urllib.error.HTTPError as error:
+                if error.code == 404:
+                    return 'not_open'
+                return 'invalid' if op == 'submit' and error.code == 400 else 'doubt'
+            return ('submitted' if op == 'submit' else 'cancelled') if done is True else 'doubt'
         if op == 'abort':
             if flavor == 'opencode':
                 stopped = call(base, headers, 'POST', '/api/session/' + quoted(session) + '/interrupt')['interrupted']

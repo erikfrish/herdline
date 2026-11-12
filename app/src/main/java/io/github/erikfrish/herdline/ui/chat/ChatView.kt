@@ -122,6 +122,7 @@ import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.StopRoute
 import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
+import io.github.erikfrish.herdline.core.DIALOG_ANSWERED_ELSEWHERE
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressSubagent
 import io.github.erikfrish.herdline.core.MarkerKind
@@ -410,6 +411,8 @@ private fun ChatContent(
     val uncertainDialogs = remember(dialogTarget) { mutableStateMapOf<String, Boolean>() }
     val currentDialogTarget by rememberUpdatedState(dialogTarget)
     val dialogErrors = remember(dialogTarget) { mutableStateMapOf<String, String>() }
+    // Questions this phone answered or declined, shown as they ended; never resent.
+    val settledDialogs = remember(dialogTarget) { mutableStateMapOf<String, Pair<ChatDialog, DialogSettled>>() }
     LaunchedEffect(dialogTarget, linkLive) {
         val target = dialogTarget ?: return@LaunchedEffect
         if (!linkLive) return@LaunchedEffect
@@ -418,7 +421,7 @@ private fun ChatContent(
                 val result = withContext(Dispatchers.IO) { connection.ingressDialogs(target) }
                 result.onSuccess { array ->
                     try {
-                        dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) })
+                        dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) }).filterNot { it.id in settledDialogs }
                         dialogProblem = null
                     } catch (error: IllegalArgumentException) {
                         dialogs = emptyList()
@@ -442,7 +445,13 @@ private fun ChatContent(
             }
         }
     }
-    fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject) {
+    fun settle(dialog: ChatDialog, outcome: DialogSettled) {
+        settledDialogs[dialog.id] = dialog to outcome
+        dialogs = dialogs.filterNot { it.id == dialog.id }
+        uncertainDialogs.remove(dialog.id)
+        dialogErrors.remove(dialog.id)
+    }
+    fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject, summary: String) {
         val target = dialogTarget ?: return
         if (!linkLive || dialogProblem != null || submittingDialog != null || uncertainDialogs[dialog.id] == true || !dialog.submittable || dialogs.none { it.id == dialog.id }) return
         submittingDialog = dialog.id
@@ -451,14 +460,45 @@ private fun ChatContent(
             try {
                 val result = withContext(Dispatchers.IO) { connection.ingressSubmitDialog(target, dialog.id, answer) }
                 if (currentDialogTarget != target) return@launch
-                if (result.getOrNull() == "submitted") {
-                    dialogs = dialogs.filterNot { it.id == dialog.id }
-                    uncertainDialogs.remove(dialog.id)
-                    wake.trySend(Unit)
-                } else {
-                    val code = result.getOrNull()
-                    if (code == null) uncertainDialogs[dialog.id] = true
-                    dialogErrors[dialog.id] = code ?: "unconfirmed"
+                val code = result.getOrNull()
+                when {
+                    // A question the host can decline shows how it ended; OMP's own forms settle in the transcript.
+                    dialog.cancellable && code == "submitted" -> settle(dialog, DialogSettled.Answered(summary))
+                    dialog.cancellable && code == FORM_NOT_OPEN -> settle(dialog, DialogSettled.NoLongerAsked)
+                    dialog.cancellable && code == DIALOG_ANSWERED_ELSEWHERE -> settle(dialog, DialogSettled.AnsweredElsewhere)
+                    code == "submitted" -> {
+                        dialogs = dialogs.filterNot { it.id == dialog.id }
+                        uncertainDialogs.remove(dialog.id)
+                    }
+                    else -> {
+                        if (code == null) uncertainDialogs[dialog.id] = true
+                        dialogErrors[dialog.id] = if (code == DIALOG_ANSWERED_ELSEWHERE) FORM_NOT_OPEN else code ?: "unconfirmed"
+                    }
+                }
+                if (code == "submitted") wake.trySend(Unit)
+            } finally {
+                submittingDialog = null
+            }
+        }
+    }
+    fun cancelDialog(dialog: ChatDialog) {
+        val target = dialogTarget ?: return
+        if (!linkLive || dialogProblem != null || submittingDialog != null || uncertainDialogs[dialog.id] == true || !dialog.cancellable || dialogs.none { it.id == dialog.id }) return
+        submittingDialog = dialog.id
+        dialogErrors.remove(dialog.id)
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { connection.ingressCancelDialog(target, dialog.id) }
+                if (currentDialogTarget != target) return@launch
+                when (result.getOrNull()) {
+                    "cancelled" -> settle(dialog, DialogSettled.Declined).also { wake.trySend(Unit) }
+                    FORM_NOT_OPEN -> settle(dialog, DialogSettled.NoLongerAsked)
+                    DIALOG_ANSWERED_ELSEWHERE -> settle(dialog, DialogSettled.AnsweredElsewhere)
+                    else -> {
+                        // The decline may have reached the host: never retried as if it had not.
+                        uncertainDialogs[dialog.id] = true
+                        dialogErrors[dialog.id] = "unconfirmed"
+                    }
                 }
             } finally {
                 submittingDialog = null
@@ -671,8 +711,19 @@ private fun ChatContent(
                     dialogs.forEach { dialog ->
                         item(key = "dialog:" + dialog.id) {
                             LiveGap {
-                                ChatFormCard(dialog, colors, submitting = !linkLive || dialogProblem != null || submittingDialog == dialog.id || uncertainDialogs[dialog.id] == true, submitError = dialogErrors[dialog.id], onSubmit = { submitDialog(dialog, it) })
+                                ChatFormCard(
+                                    dialog, colors,
+                                    submitting = !linkLive || dialogProblem != null || submittingDialog == dialog.id || uncertainDialogs[dialog.id] == true,
+                                    submitError = dialogErrors[dialog.id],
+                                    onSubmit = { answer, summary -> submitDialog(dialog, answer, summary) },
+                                    onCancel = if (dialog.cancellable) ({ cancelDialog(dialog) }) else null,
+                                )
                             }
+                        }
+                    }
+                    settledDialogs.values.forEach { (dialog, outcome) ->
+                        item(key = "dialog:" + dialog.id) {
+                            LiveGap { ChatFormCard(dialog, colors, submitting = false, submitError = null, onSubmit = { _, _ -> }, settled = outcome) }
                         }
                     }
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
