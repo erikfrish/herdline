@@ -1,7 +1,10 @@
 //! Chat's direct line to an OMP instance: the `herdline-ingress` extension
 //! (host/omp/herdline-ingress.ts) listens on a per-session Unix socket under
-//! the agent's `$XDG_RUNTIME_DIR`, and this module finds it over the link's
-//! exec channel and speaks its newline-delimited JSON through `socat`.
+//! its `$XDG_RUNTIME_DIR`, and this module finds it over the link's exec
+//! channel and speaks its newline-delimited JSON through `socat`. Only the
+//! exec shell's own runtime directory is looked in (`$XDG_RUNTIME_DIR`, else
+//! `/run/user/<uid>`); no other process's environment is read, so an
+//! extension that published elsewhere is absent and the pane route is used.
 //!
 //! The one rule everything here keeps: the app may fall back to typing into
 //! the pane only when this instance has no endpoint at all, known before
@@ -36,7 +39,8 @@ const EXCHANGE_ROOM: usize = 1024 * 1024;
 /// Longest request line sent; the extension reads lines up to 1 MiB.
 const LINE_MAX: usize = 256 * 1024;
 const SIDECAR_MAX: usize = 4096;
-const PROC: &str = "/proc";
+/// The per-user runtime root when the exec shell has no `$XDG_RUNTIME_DIR`.
+const RUN_USER: &str = "/run/user";
 const DIR_NAME: &str = "herdline-ingress";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -165,7 +169,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
         return Ok(absent());
     };
     let discovery = match exec.run(
-        sh(&discovery_script(herdr_session, &request.pane, pid, PROC)),
+        sh(&discovery_script(herdr_session, &request.pane, pid, RUN_USER)),
         DISCOVERY_TIMEOUT,
         DISCOVERY_ROOM,
     ) {
@@ -272,19 +276,18 @@ fn refusal_name(reason: Refusal) -> &'static str {
 }
 
 /// The pane report, then the endpoint the extension in agent `pid` would
-/// have published, without trusting anything it did not create: the
-/// directory and sidecar must be this user's, private and no links. One
-/// status word per outcome; only `absent` means there is none.
-fn discovery_script(herdr_session: &str, pane: &str, pid: u32, proc: &str) -> String {
+/// have published in this user's runtime directory, without trusting
+/// anything it did not create: the directory and sidecar must be this
+/// user's, private and no links. One status word per outcome; only `absent`
+/// means there is none.
+fn discovery_script(herdr_session: &str, pane: &str, pid: u32, run_user: &str) -> String {
     let mut script = transcript::instance_script(herdr_session, pane);
     script.push_str(&format!(
         r#"printf '\n@@ingress\n'
 fail() {{ printf 'error %s\n' "$1"; exit 0; }}
-env={proc}/{pid}/environ
-[ -r "$env" ] || fail proc
-x=$(tr '\0' '\n' < "$env" | sed -n 's/^XDG_RUNTIME_DIR=//p' | head -n 1)
+x=${{XDG_RUNTIME_DIR:-}}
+[ -n "$x" ] || x={run_user}/$(id -u)
 case "$x" in
-    '') printf 'absent\n'; exit 0 ;;
     *[!A-Za-z0-9._/-]* | *//* | */./* | */../*) fail runtime ;;
     /*) ;;
     *) fail runtime ;;
@@ -331,7 +334,6 @@ fn parse_discovery(exit_status: Option<u32>, bytes: &[u8], expected: &Identity) 
     }
     if let Some(reason) = status.strip_prefix("error ") {
         return Discovery::Unusable(match reason {
-            "proc" => "proc",
             "runtime" => "runtime",
             "dir" => "dir",
             "many" => "many",
