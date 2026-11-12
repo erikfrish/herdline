@@ -820,6 +820,8 @@ private fun Editor(
     var steerText by remember(key) { mutableStateOf("") }
     var steerBefore by remember(key) { mutableStateOf<SentRecord?>(null) }
     var steerTarget by remember(key) { mutableStateOf<Connection.ComposerTarget?>(null) }
+    // Where the bound session's history ended before the steer's paste.
+    var steerFrom by remember(key) { mutableStateOf<Long?>(null) }
     // QA HB2: the receipt and the steer steps are awaited here only, so the
     // composer stays on this pane until they settle (DraftStore.releasesComposer).
     val waiting = sending || pending != null || steer.active
@@ -1172,10 +1174,9 @@ private fun Editor(
                 save(draft.copy(sent = SentRecord(steerText, phase.awaiting ?: "", true, SentState.Queued, now)))
             }
             SteerPhase.Sent -> {
-                // Only now does the text leave the editor, as after Send.
-                write(if (value.text == steerText) "" else value.text)
-                save(draft.copy(sent = SentRecord(steerText, was.awaiting ?: "", true, SentState.Confirmed, now)))
-                delivered()
+                // The Enter's receipt is the pane's, not the agent's: the editor
+                // keeps the text until the history shows the steer (P1 watch).
+                save(draft.copy(sent = steerEntered(steerText, was.awaiting ?: "", steerFrom, now)))
             }
             SteerPhase.Uncertain -> save(draft.copy(sent = SentRecord(steerText, was.awaiting ?: "", true, SentState.Uncertain, now)))
             is SteerPhase.Refused -> {
@@ -1390,6 +1391,7 @@ private fun Editor(
         steerText = text
         steerBefore = draft.sent
         steerTarget = target
+        steerFrom = null
         onDeliveryStart()
         val seen = captureViewport()
         steerOn(SteerEvent.Tap(steerEpoch))
@@ -1399,6 +1401,12 @@ private fun Editor(
         save(draft.copy(sent = SentRecord(text, "", true, SentState.Queued, System.currentTimeMillis())))
         val ahead = draft
         scope.launch {
+            // As for a Chat PTY send (P1): only a user entry after this end of
+            // the bound session's history can be this steer.
+            steerFrom = target.instance?.let { instance ->
+                withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
+                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+            }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.SteerStart.Refused(WRITE_AHEAD_FAILED)) {
                     via.steer(target, text, seen)

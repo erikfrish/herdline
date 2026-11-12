@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.data.SentRecord
+import io.github.erikfrish.herdline.data.SentState
 
 /**
  * What a steer can rely on: the link it was started on and the daemon run
@@ -94,6 +96,20 @@ internal data class SteerStep(val phase: SteerPhase, val effect: SteerEffect = S
 
 /** How long a confirmed paste may wait for the pane to show it before the steer ends. */
 internal const val STEER_ENTER_WINDOW_MS = 2_000L
+
+/**
+ * The record a steer's confirmed Enter leaves. That receipt shows only that
+ * the pane took the Enter, never that the agent admitted the steer, so it is
+ * never Sent: with [historyFrom], the end of the session's history read
+ * before the paste, it waits as [SentState.InPane] for a user entry with
+ * that very text after it (the P1 watch); without one it stays Uncertain.
+ */
+internal fun steerEntered(text: String, receipt: String, historyFrom: Long?, now: Long): SentRecord =
+    if (historyFrom != null) {
+        SentRecord(text, receipt, true, SentState.InPane, now, historyFrom = historyFrom)
+    } else {
+        SentRecord(text, receipt, true, SentState.Uncertain, now)
+    }
 
 /** The receipt this phase waits on, if any. */
 internal val SteerPhase.awaiting: String?

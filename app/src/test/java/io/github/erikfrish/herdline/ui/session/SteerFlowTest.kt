@@ -209,6 +209,24 @@ class SteerFlowTest {
     }
 
     @Test
+    fun aSteerWhoseEnterThePaneTookIsNeverSentOnThatReceiptAlone() {
+        // With the history's end read before the paste: it waits for that
+        // session's own user entry, also after a restart, and holds the text.
+        val watched = Draft.fromJson(Draft(text = "fix it", sent = steerEntered("fix it", "E", historyFrom = 4096, now = 1)).toJson())
+        assertEquals(SentState.InPane, watched.sent?.state)
+        assertEquals(4096L, watched.sent?.historyFrom)
+        assertEquals("fix it", watched.text)
+        assertTrue(watched.unsettled)
+        assertFalse(watched.mayDeliver(Binding.Bound))
+
+        // No baseline: nothing can ever show it was admitted.
+        val blind = Draft.fromJson(Draft(text = "fix it", sent = steerEntered("fix it", "E", historyFrom = null, now = 1)).toJson())
+        assertEquals(SentState.Uncertain, blind.sent?.state)
+        assertTrue(blind.unsettled)
+        assertFalse(blind.mayDeliver(Binding.Bound))
+    }
+
+    @Test
     fun aSteerStoredMidFlightReadsBackUncertainAndIsNeverEntered() {
         // What the Editor saves while the paste is out, and while Enter is asked.
         for (receipt in listOf("", "R")) {
