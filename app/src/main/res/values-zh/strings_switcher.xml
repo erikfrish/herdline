@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="filter_all">全部</string>
+    <string name="filter_needs_you">需要你 %1$d</string>
+    <string name="filter_working">工作中 %1$d</string>
+    <string name="filter_ready">就绪 %1$d</string>
+</resources>

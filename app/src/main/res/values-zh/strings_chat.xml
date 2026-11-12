@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat">聊天</string>
+    <string name="chat_terminal">终端</string>
+    <string name="chat_tool_running">运行中</string>
+    <string name="chat_tool_done">已完成</string>
+    <string name="chat_tool_failed">失败</string>
+    <plurals name="chat_show_all_lines">
+        <item quantity="other">显示全部 %d 行</item>
+    </plurals>
+</resources>
