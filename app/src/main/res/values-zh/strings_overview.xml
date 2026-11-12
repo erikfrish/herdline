@@ -2,7 +2,7 @@
 <!-- TB1: the phone Tabs overview and its pane picker. -->
 <resources>
     <string name="overview_title">标签页</string>
-    <string name="overview_sub">%1$s · %3$s中的 %2$s</string>
+    <string name="overview_counts">%2$s中的 %1$s</string>
     <plurals name="overview_tabs">
         <item quantity="other">%d 个标签页</item>
     </plurals>
@@ -11,6 +11,7 @@
     </plurals>
     <string name="overview_as_list">以列表显示</string>
     <string name="overview_as_columns">以双列显示</string>
+    <string name="overview_as_rails">以工作区横排显示</string>
     <string name="overview_current">当前</string>
     <string name="overview_current_spoken">当前标签页</string>
     <string name="overview_tab_n">标签页 %1$d</string>

@@ -1441,6 +1441,7 @@ fun SessionScreen(
                         onScope = { tabsScope = it },
                         actions = actions,
                         onShowList = { showAs(TabsView.List) },
+                        onShowRails = { showAs(TabsView.Rails) },
                         modifier = Modifier.fillMaxWidth(),
                         here = focusedPane,
                         reading = chatMode,

@@ -137,6 +137,8 @@ fun TabsOverview(
     onScope: (String?) -> Unit,
     actions: SwitcherActions,
     onShowList: () -> Unit,
+    /** Two columns' toggle: the next view in the cycle, List → Two columns → Rails → List. */
+    onShowRails: () -> Unit,
     /** The phone sheet's visible way out (U-1 #7). */
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -206,7 +208,12 @@ fun TabsOverview(
         Column(Modifier.fillMaxWidth().testTag("overview")) {
             // The Tabs sheet's one header (H1), at the List's inset; the search pill keeps the overview's own.
             Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
-                val toggle = TabsViewToggle(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list), "overview:as-list", onShowList)
+                // The toggle shows the next view in the Settings order: Rails after Two columns, List after Rails.
+                val toggle = if (rails != null) {
+                    TabsViewToggle(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list), "overview:as-list", onShowList)
+                } else {
+                    TabsViewToggle(RailsIcon, stringResource(R.string.overview_as_rails), "overview:as-rails", onShowRails)
+                }
                 TabsHeader(host, view, state, chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "overview")
             }
             Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
@@ -810,6 +817,24 @@ internal val GridIcon: ImageVector by lazy {
     ImageVector.Builder(name = "GridView", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .addPath(
             pathData = addPathNodes("M3,3v8h8V3H3zM13,3v8h8V3H13zM3,13v8h8v-8H3zM13,13v8h8v-8H3z"),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+        .build()
+}
+
+/**
+ * Show as workspace rails: three full-width rows of short tiles, one row per
+ * workspace, drawn as [GridIcon] is (a 24 dp path, no extended icons).
+ */
+internal val RailsIcon: ImageVector by lazy {
+    ImageVector.Builder(name = "Rails", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = addPathNodes(
+                "M3,4h8v4H3zM13,4h8v4H13z" +
+                    "M3,10h5v4H3zM10,10h4v4H10zM16,10h5v4H16z" +
+                    "M3,16h11v4H3zM16,16h5v4H16z",
+            ),
             pathFillType = PathFillType.NonZero,
             fill = SolidColor(Color.Black),
         )

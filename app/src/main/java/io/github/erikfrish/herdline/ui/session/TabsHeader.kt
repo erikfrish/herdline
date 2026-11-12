@@ -42,8 +42,9 @@ internal fun tabsSearchMinHeight(): Dp = maxOf(48f, 16f * LocalDensity.current.f
 
 /**
  * The one phone Tabs sheet header (H1), the same in List, Two columns and
- * Rails: "Tabs" with the host and its tab and workspace totals under it (or
- * the connection state while there is no live view), then the view toggle
+ * Rails: "Tabs" with the host on one line under it, then its tab and
+ * workspace totals (or the connection state while there is no live view);
+ * the host gives way first, the totals wrap before they truncate (H1-O1). Then the view toggle
  * and Close; under that row, always, the labelled New tab, right-aligned,
  * before Search. No width decides where anything goes. The caller lays it
  * [TABS_SHEET_INSET] from both sheet edges. It reads [view] only; nothing
@@ -64,15 +65,14 @@ internal fun TabsHeader(
     tag: String,
 ) {
     val live = state is Connection.State.Connected
-    val subtitle = if (live && view != null) {
+    val stateLine = if (live && view != null) {
         stringResource(
-            R.string.overview_sub,
-            host,
+            R.string.overview_counts,
             pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
             pluralStringResource(R.plurals.overview_workspaces, view.workspaces.size, view.workspaces.size),
         )
     } else {
-        host + " · " + when (state) {
+        when (state) {
             is Connection.State.Connecting -> stringResource(R.string.connecting)
             is Connection.State.SettingUp -> stringResource(R.string.herdr_setup_pill)
             // Live, before the first view arrives.
@@ -87,7 +87,14 @@ internal fun TabsHeader(
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     Text(
-                        subtitle,
+                        host,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stateLine,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

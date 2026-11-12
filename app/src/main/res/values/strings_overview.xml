@@ -2,7 +2,8 @@
 <!-- TB1: the phone Tabs overview and its pane picker. -->
 <resources>
     <string name="overview_title">Tabs</string>
-    <string name="overview_sub">%1$s · %2$s in %3$s</string>
+    <!-- The header's state line under the host (H1-O1): %1$s the tab count, %2$s the workspace count. -->
+    <string name="overview_counts">%1$s in %2$s</string>
     <plurals name="overview_tabs">
         <item quantity="one">%d tab</item>
         <item quantity="other">%d tabs</item>
@@ -13,6 +14,7 @@
     </plurals>
     <string name="overview_as_list">Show as list</string>
     <string name="overview_as_columns">Show as two columns</string>
+    <string name="overview_as_rails">Show as workspace rails</string>
     <string name="overview_current">Current</string>
     <string name="overview_current_spoken">current tab</string>
     <string name="overview_tab_n">Tab %1$d</string>
