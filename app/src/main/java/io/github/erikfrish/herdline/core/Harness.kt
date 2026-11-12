@@ -199,4 +199,18 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // kilo: transcript/kilo.rs fixture tests only (v1 message/part tables of
+    // kilo.db, pinned 7.8.27); no run against a real Kilo, nothing sends.
+    Harness(
+        "kilo",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }
