@@ -130,6 +130,7 @@ import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.components.motionAllowed
+import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.OutageStrip
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
@@ -213,13 +214,44 @@ class ChatMemory {
 
 internal class ChatKept {
     var history by mutableStateOf<ChatHistory?>(null)
-    var problem by mutableStateOf<String?>(null)
-    /** Set with [problem] when the core refused the session by type; it never clears by itself. */
-    var refusal by mutableStateOf<TranscriptRefusal?>(null)
+    val read = ChatReadState()
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
     val media = ChatMedia()
 }
+
+/**
+ * How this pane's last reads went, kept with its history rather than
+ * remembered, so leaving Chat for Terminal and coming back keeps the strip
+ * (or its dismissal) until a good read ends it (HH-2).
+ */
+internal class ChatReadState {
+    var problem by mutableStateOf<String?>(null)
+    /** Set with [problem] when the core refused the session by type; it never clears by itself. */
+    var refusal by mutableStateOf<TranscriptRefusal?>(null)
+    /** The failed refresh the cached history shows under. */
+    val outage = mutableStateOf(Outage())
+
+    fun succeeded() {
+        problem = null
+        refusal = null
+    }
+
+    fun failed(error: Throwable) {
+        problem = error.message ?: error.javaClass.simpleName
+        refusal = lastingRefusal(error)
+    }
+}
+
+/**
+ * The refusal [error] carries when no retry ends it: any typed refusal, the
+ * same kind on every poll. Null is a transient failure (I/O, a timeout, an
+ * untyped core error), which the next poll may end.
+ */
+internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? TranscriptRefused)?.refusal
+
+/** What the chat strip says, held through its fade-out after a good read. */
+private data class StripWords(val since: Long, val refusal: TranscriptRefusal?, val dismissed: Boolean)
 
 @Composable
 private fun ChatContent(
@@ -234,8 +266,8 @@ private fun ChatContent(
     dense: Boolean,
 ) {
     var history by kept::history
-    var problem by kept::problem
-    var refusal by kept::refusal
+    var problem by kept.read::problem
+    val refusal by kept.read::refusal
     var loadingOlder by remember { mutableStateOf(false) }
     // The item at the top of the screen when older ones were requested, and how far it was scrolled.
     var anchor by remember { mutableStateOf<Pair<String, Int>?>(null) }
@@ -261,12 +293,8 @@ private fun ChatContent(
                 page.onSuccess { read ->
                     // Merged into whatever is current now: a load of older entries may have finished meanwhile.
                     history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
-                    problem = null
-                    refusal = null
-                }.onFailure {
-                    problem = it.message ?: it.javaClass.simpleName
-                    refusal = (it as? TranscriptRefused)?.refusal
-                }
+                    kept.read.succeeded()
+                }.onFailure { kept.read.failed(it) }
                 withTimeoutOrNull(
                     when {
                         page.isFailure -> ERROR_POLL_MS
@@ -280,7 +308,7 @@ private fun ChatContent(
 
     val shown = history
     // A refresh that fails after a transcript loaded. A lost link is the session's strip, not this one.
-    var outage by rememberOutage(if (shown == null) null else problem == null)
+    var outage by rememberOutage(if (shown == null) null else problem == null, state = kept.read.outage)
     val persistedItems = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
     val identity = shown?.identity
     val images = remember(identity) {
@@ -461,22 +489,32 @@ private fun ChatContent(
     // The terminal stays laid out underneath so its pane keeps its size; touches stop here.
     Column(modifier.fillMaxSize().background(colors.bg).pointerInput(Unit) {}.testTag("chat")) {
         val since = outage.since
-        // Fades out once the link refreshes (M2b), still naming the saved time it showed.
-        val stripShown = shown != null && linkLive && outage.strip && since != null
-        var stripSince by remember { mutableStateOf(since) }
-        SideEffect { if (stripShown) stripSince = since }
+        // Fades out once the link refreshes (M2b), still saying what it said. Dismissed,
+        // it keeps the saved-at title so cached history is never unmarked.
+        val stripShown = shown != null && linkLive && outage.shown && since != null
+        val now = if (stripShown && since != null) StripWords(since, refusal, outage.dismissed) else null
+        var held by remember { mutableStateOf(now) }
+        SideEffect { if (now != null) held = now }
         AnimatedVisibility(
             visible = stripShown,
             enter = EnterTransition.None,
             exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
         ) {
-            stripSince?.let { saved ->
+            (now ?: held)?.let { words ->
+                val lasting = words.refusal
+                // Retry and ✕ only while a retry may end it. A typed refusal says its own
+                // sentence, with neither (HH-1); one call, so a change crossfades the words.
+                val transient = lasting == null && !words.dismissed
                 OutageStrip(
-                    title = stringResource(R.string.outage_saved_at, outageTime(saved)),
-                    detail = stringResource(R.string.chat_not_refreshed),
+                    title = stringResource(R.string.outage_saved_at, outageTime(words.since)),
+                    detail = when {
+                        lasting != null -> LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
+                        words.dismissed -> null
+                        else -> stringResource(R.string.chat_not_refreshed)
+                    },
                     retrying = false,
-                    onRetry = { wake.trySend(Unit) },
-                    onDismiss = { outage = outage.dismiss() },
+                    onRetry = if (transient) ({ wake.trySend(Unit) }) else null,
+                    onDismiss = if (transient) ({ outage = outage.dismiss() }) else null,
                     tag = "chat:offline",
                 )
             }
