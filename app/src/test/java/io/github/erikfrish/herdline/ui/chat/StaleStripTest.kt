@@ -27,4 +27,15 @@ class StaleStripTest {
             assertTrue(lasting.more && transient.more)
         }
     }
+
+    @Test
+    fun aLastingRefusalOffersTerminalWhereRetryWouldBeAndNeverBoth() {
+        for (dense in listOf(false, true)) {
+            val lasting = staleStripShape(lasting = true, dense = dense)
+            val transient = staleStripShape(lasting = false, dense = dense)
+            assertTrue(lasting.terminal)
+            assertFalse(transient.terminal)
+            for (shape in listOf(lasting, transient)) assertTrue(shape.retry != shape.terminal)
+        }
+    }
 }

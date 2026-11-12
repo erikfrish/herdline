@@ -523,6 +523,7 @@ private fun ChatContent(
                 lasting = lasting != null,
                 dense = dense,
                 onRetry = { wake.trySend(Unit) },
+                onTerminal = onTerminal,
                 onMore = { moreCause = cause },
             )
         }
