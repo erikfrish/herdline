@@ -227,4 +227,18 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // copilot: transcript/copilot.rs fixture tests only (events.jsonl,
+    // pinned 1.0.109); no run against a real Copilot CLI, nothing sends.
+    Harness(
+        "copilot",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }

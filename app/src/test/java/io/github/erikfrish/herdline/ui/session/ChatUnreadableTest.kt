@@ -51,4 +51,16 @@ class ChatUnreadableTest {
             assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Grok"))), notice(format))
         }
     }
+
+    @Test
+    fun copilot_refusals_say_why_never_the_host_text_or_a_switch_back() {
+        val outside = unreadableNotice(TranscriptRefusal.UnsupportedFormat("copilot_store_outside_home"), "Copilot", everRead = false)
+        val large = unreadableNotice(TranscriptRefusal.UnsupportedFormat("copilot_session_too_large"), "Copilot", everRead = true)
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_outside_home, listOf("Copilot"))), outside)
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Copilot"))), large)
+        for (notice in listOf(outside, large)) {
+            assertNotEquals(R.string.session_chat_unreadable_host, notice.words.res)
+            assertNotEquals(R.string.session_chat_unreadable, notice.words.res)
+        }
+    }
 }

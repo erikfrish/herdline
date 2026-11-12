@@ -18,9 +18,9 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
     TranscriptRefusal.OutsideHome -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
     is TranscriptRefusal.UnsupportedFormat -> when (refusal.format) {
         "managed_session_journal" -> RefusalWords(R.string.chat_refused_qwen_managed)
-        // Kilo's or Grok's store resolved outside the home folder: the same
-        // cause as OutsideHome.
-        "kilo_store_outside_home", "grok_store_outside_home" ->
+        // Kilo's, Grok's or Copilot's store resolved outside the home folder:
+        // the same cause as OutsideHome.
+        "kilo_store_outside_home", "grok_store_outside_home", "copilot_store_outside_home" ->
             RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
