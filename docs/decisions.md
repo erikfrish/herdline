@@ -684,14 +684,24 @@ HTTP redirects or environment proxy routing. A bare TUI registers nothing
 and answers `no_server`. An unknown acknowledgement after POST remains
 uncertain; discovery failure before POST is a refusal.
 
-Over that server, Chat reads the session's open permission requests while
-the agent is Blocked, as dialogs with an Allow once / Always allow / Reject
-choice, sends the user's explicit reply to exactly one open request, and
-offers Stop while it works (OpenCode `interrupt`, Kilo `abort`). Kilo text
-keeps the PTY route. Codex answers `abort` and dialogs as unsupported. Not
-served: questions and forms, file parts, session status and children. The
+Over that server, Chat reads the session's open permission requests and
+questions while the agent is Blocked, as dialogs (permissions with an Allow
+once / Always allow / Reject choice), sends the user's explicit reply to
+exactly one open request, and offers Stop while it works (OpenCode
+`interrupt`, Kilo `abort`). Kilo's text Send with staged files, Steer,
+withdraw, status, state and children go through its v1 server
+(`kilo_ctl.py`, pinned v7.8.27 03a6f07); nothing of Kilo is typed into the
+pane. A plain Kilo send while it works is refused `agent_working`; a Steer
+is a send to the session at work, run at the turn's next step boundary, and
+a Steer that finds it idle is refused `agent_idle`, never a new turn. Kilo
+lists no waiting prompt, so Chat's queue for Kilo shows only the steers this
+app recorded as waiting, while the server reads the session at work, and
+withdraw takes back exactly one of them by its id; an idle read drops them.
+Kilo has no queue behind the turn and no promote: both are answered
+unsupported by name. Codex answers `abort` and dialogs as unsupported. The
 real loopback transport boundary is exercised with
-`python3 -B native/src/agent_chat/test_opencode_ctl.py`.
+`python3 -B native/src/agent_chat/test_opencode_ctl.py` and
+`python3 -B native/src/agent_chat/test_kilo_ctl.py`.
 
 
 ### Questions and submitted answers
