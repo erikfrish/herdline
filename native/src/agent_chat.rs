@@ -288,6 +288,7 @@ fn codex_step(request: &Request, text: &str) -> String {
     format!(
         r#"codex=$(command -v codex) || codex=$HOME/.codex/bin/codex
 [ -x "${{codex:-}}" ] || {{ printf 'cli\tnull\n'; exit 0; }}
+command -v python3 >/dev/null || {{ printf 'cli\tnull\n'; exit 0; }}
 python3 - "$codex" {op} {thread} {id} {deliver} {text} {images} <<'HERDLINE_CODEX_CTL'
 {client}
 HERDLINE_CODEX_CTL"#,
