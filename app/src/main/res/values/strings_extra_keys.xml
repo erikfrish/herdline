@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- How TalkBack reads a latched (On) or released (Off) Ctrl / Alt extra key. -->
+<resources>
+    <string name="extra_key_latch_on">On</string>
+    <string name="extra_key_latch_off">Off</string>
+</resources>

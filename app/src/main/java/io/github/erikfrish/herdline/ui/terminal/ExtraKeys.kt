@@ -35,6 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -42,17 +45,22 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import io.github.erikfrish.herdline.R
 
 /** What one extra key does. */
 sealed interface ExtraKey {
@@ -142,7 +150,9 @@ private val Spoken: Map<String, String> = mapOf(
  * Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
  * Alt latch for the next key or character, as on Termux; arrows and paging
  * keys repeat while held and stop at the moment the cap is released. A latched
- * modifier fills with the session's [accent].
+ * modifier fills with the session's [accent] and carries a bar under its
+ * label, so the latch shows without colour; TalkBack reads it as a switch, On
+ * or Off, so the next key is never silently Ctrl+key.
  */
 @Composable
 fun ExtraKeysRow(
@@ -159,6 +169,8 @@ fun ExtraKeysRow(
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val latchOn = stringResource(R.string.extra_key_latch_on)
+    val latchOff = stringResource(R.string.extra_key_latch_off)
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -172,9 +184,10 @@ fun ExtraKeysRow(
         Column(Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp)) {
             for (row in rows) {
                 // Caps fill the row when it holds few keys; a row too wide for
-                // the screen (a long custom set) scrolls sideways, never taller.
+                // the screen (a long custom set) scrolls sideways, never taller,
+                // and no cap is ever narrower than a 48 dp target.
                 val width = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
-                    .coerceAtLeast(if (compact) 40.dp else 44.dp)
+                    .coerceAtLeast(48.dp)
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -192,13 +205,20 @@ fun ExtraKeysRow(
                             },
                             label = "keyFill",
                         )
+                        val labelColor = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface
                         val hit = Modifier
                             .width(width)
                             .height(KeyRowHeight)
                             .testTag("key:${key.label}")
                             .semantics {
                                 contentDescription = Spoken[key.label] ?: key.label
-                                role = Role.Button
+                                if (key is ExtraKey.Modifier) {
+                                    role = Role.Switch
+                                    toggleableState = ToggleableState(active)
+                                    stateDescription = if (active) latchOn else latchOff
+                                } else {
+                                    role = Role.Button
+                                }
                                 onClick {
                                     when (key) {
                                         is ExtraKey.Key -> onKey(key.keyCode, false)
@@ -255,7 +275,19 @@ fun ExtraKeysRow(
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .clip(KeyShape)
                                     .background(fill)
-                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape),
+                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape)
+                                    .drawBehind {
+                                        if (!active) return@drawBehind
+                                        // The latch's non-colour mark: a short bar under the label,
+                                        // drawn only, so the cap keeps its size.
+                                        val bar = Size(size.width * 0.4f, 2.dp.toPx())
+                                        drawRoundRect(
+                                            labelColor,
+                                            Offset((size.width - bar.width) / 2, size.height - bar.height - 4.dp.toPx()),
+                                            bar,
+                                            CornerRadius(bar.height / 2),
+                                        )
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -263,7 +295,7 @@ fun ExtraKeysRow(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 14.sp,
-                                    color = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface,
+                                    color = labelColor,
                                 )
                             }
                         }
