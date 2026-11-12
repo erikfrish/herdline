@@ -22,12 +22,13 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode` own their line/row formats; the shared
-/// OMP record parser below handles `omp` and serves as the base for `pi`.
+/// `pi`/`claude`/`codex`/`opencode`/`qwen` own their line/row formats; the
+/// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
 mod opencode;
 mod pi;
+mod qwen;
 mod subagents;
 
 #[cfg(test)]
@@ -128,7 +129,7 @@ pub struct Identity {
     /// `path` refs (OMP, Pi), the session ID for `id` refs (the rest). Never
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
-    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`.
+    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`, `qwen`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -392,9 +393,15 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     let mut reset = false;
     for _ in 0..MAX_READS {
         let (script, limit) = match &expect {
-            // OpenCode pages its own `seq` sequence via its module.
-            Some(identity) if identity.agent == "opencode" => {
-                match opencode::page(exec, session, &request.pane, identity, read, reset) {
+            // OpenCode pages its own `seq` sequence, Qwen its whole active
+            // chain (a tree, not a byte range), each via its module.
+            Some(identity) if identity.agent == "opencode" || identity.agent == "qwen" => {
+                let page = if identity.agent == "qwen" {
+                    qwen::page(exec, session, &request.pane, identity, read, reset)
+                } else {
+                    opencode::page(exec, session, &request.pane, identity, read, reset)
+                };
+                match page {
                     Ok(page) => return Ok(page),
                     Err(error @ Error::NoTranscript) => {
                         let current = instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
@@ -501,6 +508,10 @@ fn image(
     // fetches by `seq` and rechecks the instance before and after.
     if expect.agent == "opencode" {
         return opencode::image(exec, session, pane, expect, media);
+    }
+    // Qwen's images are shown as references only; chat never fetches them.
+    if expect.agent == "qwen" {
+        return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
         Some(len) if len > 0 && len <= MAX_WINDOW => len,
@@ -1029,14 +1040,14 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let session = &pane["agent_session"];
     let agent = session["agent"]
         .as_str()
-        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode"))
+        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen"))
         .ok_or(Error::NoTranscript)?;
     // The agent's own reported reference, held exactly as Herdr gives it:
     // the session file for `path` (OMP, Pi), the session id for `id` (the
     // rest). Resolution stays in the host script, so identity cannot drift.
     let (kind, value) = match (session["kind"].as_str(), session["value"].as_str()) {
         (Some("path"), Some(value)) if agent == "omp" || agent == "pi" => ("path", value),
-        (Some("id"), Some(value)) if session_id(value) => ("id", value),
+        (Some("id"), Some(value)) if session_id(value) && (agent != "qwen" || qwen::session_id(value)) => ("id", value),
         _ => return Err(Error::NoTranscript),
     };
     if kind == "path" && !confined(agent, value) {

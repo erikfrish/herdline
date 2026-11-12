@@ -63,6 +63,8 @@ pub enum Error {
     TranscriptUnconfined,
     #[error("unknown endpoint method `{0}`")]
     UnknownMethod(String),
+    #[error("chat cannot read this session's format: {0}")]
+    UnsupportedFormat(&'static str),
     #[error("host key {fingerprint} of {host} is not trusted")]
     UntrustedHostKey {
         hop: usize,
