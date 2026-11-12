@@ -4,8 +4,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,7 +50,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,9 +81,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -103,6 +108,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -745,7 +751,7 @@ private fun Aside(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(16.dp), tint = colors.dim)
+            DisclosureArrow(open, 16.dp, colors.dim)
             val style = (if (italic) ChatType.aside.copy(fontStyle = FontStyle.Italic) else ChatType.meta).copy(color = colors.dim)
             Text(title, style = style, maxLines = 1)
             if (!open && hint != null) {
@@ -871,7 +877,7 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
         exit?.takeIf { state == ToolState.Failed }?.let { stringResource(R.string.chat_tool_exit_spoken, it) },
     ).joinToString(", ")
     val stateText = stringResource(if (open) R.string.chat_state_expanded else R.string.chat_state_collapsed)
-    Column(Modifier.fillMaxWidth().animateContentSize().testTag("chat:tool")) {
+    Column(Modifier.fillMaxWidth().testTag("chat:tool")) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -900,14 +906,24 @@ private fun ToolRow(item: ChatItem.Tool, colors: ChatColors, expanded: MutableMa
                 state == ToolState.Denied -> StatusChip(stringResource(R.string.chat_tool_denied), colors.blocked)
                 else -> Unit
             }
-            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.dim)
+            // One glyph turned, not two swapped: the turn shows the change and the
+            // spoken state carries it, never the motion alone.
+            val turn by animateFloatAsState(if (open) 180f else 0f, tween(250), label = "toolChevron")
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp).graphicsLayer { rotationZ = turn }, tint = colors.dim)
         }
         // Under the tail: every child when the row is open; else the ones still
         // running, so spawned children show even while the tool row is collapsed.
         if (item.subagents.isNotEmpty()) {
-            SubagentSection(if (open) item.subagents else item.subagents.filter { it.alive }, colors, expanded, item.key)
+            // Only the children's list resizes as they come and go; the body below has its own motion.
+            Box(Modifier.fillMaxWidth().animateContentSize()) {
+                SubagentSection(if (open) item.subagents else item.subagents.filter { it.alive }, colors, expanded, item.key)
+            }
         }
-        if (open) {
+        AnimatedVisibility(
+            open,
+            enter = fadeIn(tween(150, delayMillis = 50)) + expandVertically(),
+            exit = fadeOut(tween(100)) + shrinkVertically(),
+        ) {
             Column(Modifier.padding(start = ToolBodyIndent, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (result != null && result.answers.isNotEmpty()) {
                     ChatFormAnswers(result.answers, result.timedOut, colors)
@@ -1013,10 +1029,23 @@ private fun Disclosure(label: String, colors: ChatColors, open: Boolean? = null,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (open != null) {
-            Icon(if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(14.dp), tint = colors.accentText)
+            DisclosureArrow(open, 14.dp, colors.accentText)
         }
         Text(label, style = ChatType.action.copy(color = colors.accentText))
     }
+}
+
+/**
+ * The disclosure arrow: one end-pointing glyph that turns to point down when
+ * [open] (clockwise in LTR, anticlockwise in RTL, where it starts mirrored).
+ * Drawn turned only, so the row never reflows; the row's text or spoken
+ * state says open or closed, never the turn alone.
+ */
+@Composable
+internal fun DisclosureArrow(open: Boolean, size: Dp, tint: Color, description: String? = null) {
+    val down = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 90f else -90f
+    val turn by animateFloatAsState(if (open) down else 0f, tween(250), label = "disclosure")
+    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, description, Modifier.size(size).graphicsLayer { rotationZ = turn }, tint = tint)
 }
 
 /**
@@ -1049,11 +1078,11 @@ private fun RunRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(
-            if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        DisclosureArrow(
+            open,
+            16.dp,
+            colors.dim,
             if (spoken != null) null else stringResource(if (open) R.string.chat_hide_steps else R.string.chat_show_steps),
-            Modifier.size(16.dp),
-            tint = colors.dim,
         )
         content()
     }
