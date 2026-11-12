@@ -1,0 +1,17 @@
+Herdline 0.6.2 — Chat follows a replaced session, clearer sign-in failures, a visible way in to typing
+
+When the agent in a pane starts a new session, Chat now follows it to the new transcript instead of staying on the old one.
+
+A host whose saved password has gone stale now says the password was rejected and offers Enter password, instead of only Reconnect. A rejected device key is no longer called a rejected password.
+
+Terminal shows a muted "Tap the terminal to type" hint while the keyboard is closed. It goes away for good on the first keyboard, key, scroll or drag, takes no taps itself and never resizes the terminal. TalkBack users get a Show keyboard action on the terminal.
+
+In a dense chat list the Latest pill sits at the end edge as a 48 dp square, and grows with large fonts instead of clipping.
+
+Changing the app icon now asks first and says Herdline closes to apply it. Applying still closes the app.
+
+The Tabs sheet has a Close button in its header, and in the list view the header stays in view while you scroll. Back and swipe-down still close it.
+
+More of the interface is translated into Chinese.
+
+Hidden-column handling and the empty-filter Show all button are held for a later build.
