@@ -96,7 +96,7 @@ sealed interface ChatItem {
     data class Note(override val key: String, val role: String, val text: String, override val timestamp: Long? = null) : ChatItem
     data class Compaction(override val key: String, val summary: String, override val timestamp: Long? = null) : ChatItem
     /** Where the history shown stops: earlier turns belong to another session. */
-    data class Boundary(override val key: String) : ChatItem
+    data class Boundary(override val key: String, override val timestamp: Long? = null) : ChatItem
     /** An image of a message; [fromUser] draws it in the user's turn. */
     data class Image(override val key: String, val image: TranscriptImage, val fromUser: Boolean, override val timestamp: Long? = null) : ChatItem
 }
