@@ -164,8 +164,8 @@ layout; it settles when the keyboard closes. The Session layout setting
 
 |Area|Phone and medium|Tablet (expanded)|
 |---|---|---|
-|Header|← Hosts; the workspace name, with a connection dot, host and tab count below; a "N need you" chip only while an agent is blocked; one Chat \| Terminal segmented control, always in the same place; ⋮|the same; Settings is also on the rail|
-|Tab row|the workspace's tabs by their Herdr names, the active one centred and underlined, with ‹ › to step and an n/N button that opens the Tabs sheet; a long press offers Rename and Close tab|the same; n/N is left out while the sidebar is open (the sidebar is the switcher) and reopens it while folded|
+|Header|one 48 dp row (taller only for a large font): ← Hosts; a place button with the tab's name and ▾ over the connection glyph, workspace, n/N, a changed mark for other tabs, and a monitor glyph while the desktop is on another pane; a "N need you" chip only while an agent is blocked; one Chat \| Terminal segmented control, always in the same place; ⋮. A tap on the place button opens the Tabs sheet, where New tab is; a long press offers Rename and Close tab. TalkBack reads "‹tab›, tab n of N in ‹workspace›. Opens Tabs"|the same, but the tap shows or folds the sidebar, also while it is open, and is read "Shows tabs"; Settings is also on the rail|
+|Tab row|none: the place button and the Tabs sheet are how to move (HEADER-COMPACT)|the workspace's tabs by their Herdr names, the active one centred and underlined, with ‹ › to step; a long press offers Rename and Close tab|
 |Sidebar|none; the switcher is the Tabs sheet|Herdr's switcher as a 320 dp list pane, folded by its ‹ button to a 56 dp rail. The rail has one 48 dp item per workspace, its number with a status dot, spoken as "name, status", with Herdr's focused workspace marked current. A rail tap focuses that workspace in Herdr. Open or folded is kept across restarts|
 |Panes|a pane bar when the tab has more than one pane: a chip per pane|a pane toolbar on every tab: chips plus Split right / Split down / Zoom / Close pane (shared)|
 |⋮ menu|New tab, Rename tab, Close tab…; then Split right / Split down / Zoom / Close pane… (shared; phones only); then Settings, Reconnect (only while a live link is lost) and Disconnect…, which asks first. Close pane… is offered only on a split tab, as in the pane toolbar: the only pane closes with its tab, through Close tab…|the same without the pane group|
@@ -174,9 +174,10 @@ layout; it settles when the keyboard closes. The Session layout setting
 
 
 A window shorter than 480 dp (a phone held sideways) merges the header and
-the tab row into one 48 dp row. It holds ←, the connection dot, the
-workspace name (at most 160 dp), the tab row with ‹ › and n/N, the need-you
-chip, Chat \| Terminal and ⋮. The host and tab count line is left out there.
+the tab row into one 48 dp row. It holds ←, the place button on one line (the
+connection glyph, tab name and ▾, n/N and the marks, at most 220 dp), the tab
+row with ‹ ›, the need-you chip, Chat \| Terminal and ⋮. A tap on the place
+button opens the Tabs sheet there too.
 Height and width come from the session window, not the device, so split
 screen follows the same rules.
 

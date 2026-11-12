@@ -197,14 +197,14 @@ class GlassUiTest {
             need(By.res("session:primary_action")).click()
             need(By.res("session:state:Connected"), timeout = CONNECT_TIMEOUT)
         }
-        need(By.res("session:title"))
-        need(By.res("session:tabrow"))
+        // A phone in portrait has no tab strip: the header's place button is the way to Tabs.
+        need(By.res("session:place"))
         need(By.res("composer"))
         device.waitForIdle()
         shot("12_session")
 
-        // Tabs n/N opens the Tabs sheet; a workspace's ⋮ offers rename and close, both cancelled.
-        need(By.res("session:tabs_button")).click()
+        // The place button opens the Tabs sheet; a workspace's ⋮ offers rename and close, both cancelled.
+        need(By.res("session:place")).click()
         need(By.res("switcher"))
         val menu = need(By.res(Pattern.compile("workspace:.*:menu")), "a workspace in the switcher")
         val id = menu.resourceName.removePrefix("workspace:").removeSuffix(":menu")
