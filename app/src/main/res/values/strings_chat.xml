@@ -7,6 +7,12 @@
     <string name="chat_unavailable">Chat cannot read this agent: %1$s</string>
     <!-- Under the saved-at title of the shared outage strip, while the link is up but a read failed. -->
     <string name="chat_not_refreshed">Chat could not read the transcript again; it keeps trying</string>
+    <!-- R-F1b: the stale-history strip over Chat. More opens the whole cause in a dialog. -->
+    <string name="chat_strip_more">More</string>
+    <!-- Dense strip, one row: saved time, then a short cause. -->
+    <string name="chat_strip_saved_short">Saved %1$s · %2$s</string>
+    <string name="chat_strip_cannot_read">Cannot read</string>
+    <string name="chat_strip_not_refreshed">Not refreshed</string>
     <string name="chat_open_terminal">Open Terminal</string>
     <plurals name="chat_latest_new">
         <item quantity="one">Latest · %d new</item>

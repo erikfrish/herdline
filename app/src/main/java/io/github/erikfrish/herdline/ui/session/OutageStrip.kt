@@ -169,13 +169,11 @@ internal fun OutageStrip(
                     ) {
                         Text(shownTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!shownDetail.isNullOrBlank()) {
-                            // Two lines: a reason such as an SSH error reads to its end; four
-                            // without Retry, where the words are a whole refusal sentence. The
-                            // strip is an overlay, so a taller one covers more and resizes nothing.
+                            // Two lines: a reason such as an SSH error reads to its end.
                             Text(
                                 shownDetail,
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = if (onRetry == null) 4 else 2,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }

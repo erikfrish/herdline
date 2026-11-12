@@ -1,8 +1,6 @@
 package io.github.erikfrish.herdline.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -62,7 +60,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -130,9 +127,7 @@ import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
-import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.session.Outage
-import io.github.erikfrish.herdline.ui.session.OutageStrip
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
 import kotlinx.coroutines.Dispatchers
@@ -279,9 +274,6 @@ internal class ChatReadState {
  */
 internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? TranscriptRefused)?.refusal
 
-/** What the chat strip says, held through its fade-out after a good read. */
-private data class StripWords(val since: Long, val refusal: TranscriptRefusal?, val dismissed: Boolean)
-
 @Composable
 private fun ChatContent(
     connection: Connection,
@@ -330,7 +322,7 @@ private fun ChatContent(
 
     val shown = history
     // A refresh that fails after a transcript loaded. A lost link is the session's strip, not this one.
-    var outage by rememberOutage(if (shown == null) null else problem == null, state = kept.read.outage)
+    val outage by rememberOutage(if (shown == null) null else problem == null, state = kept.read.outage)
     val persistedItems = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
     val identity = shown?.identity
     val images = remember(identity) {
@@ -511,35 +503,22 @@ private fun ChatContent(
     // The terminal stays laid out underneath so its pane keeps its size; touches stop here.
     Column(modifier.fillMaxSize().background(colors.bg).pointerInput(Unit) {}.testTag("chat")) {
         val since = outage.since
-        // Fades out once the link refreshes (M2b), still saying what it said. Dismissed,
-        // it keeps the saved-at title so cached history is never unmarked.
-        val stripShown = shown != null && linkLive && outage.shown && since != null
-        val now = if (stripShown && since != null) StripWords(since, refusal, outage.dismissed) else null
-        var held by remember { mutableStateOf(now) }
-        SideEffect { if (now != null) held = now }
-        AnimatedVisibility(
-            visible = stripShown,
-            enter = EnterTransition.None,
-            exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
-        ) {
-            (now ?: held)?.let { words ->
-                val lasting = words.refusal
-                // Retry and ✕ only while a retry may end it. A typed refusal says its own
-                // sentence, with neither (HH-1); one call, so a change crossfades the words.
-                val transient = lasting == null && !words.dismissed
-                OutageStrip(
-                    title = stringResource(R.string.outage_saved_at, outageTime(words.since)),
-                    detail = when {
-                        lasting != null -> LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
-                        words.dismissed -> null
-                        else -> stringResource(R.string.chat_not_refreshed)
-                    },
-                    retrying = false,
-                    onRetry = if (transient) ({ wake.trySend(Unit) }) else null,
-                    onDismiss = if (transient) ({ outage = outage.dismiss() }) else null,
-                    tag = "chat:offline",
-                )
-            }
+        // R-F1b: fixed lines for both kinds, so the list never jumps; no close, since
+        // cached history must stay marked; it leaves at once on a good read (no motion).
+        if (shown != null && linkLive && outage.shown && since != null) {
+            val lasting = refusal
+            StaleStrip(
+                savedAt = outageTime(since),
+                cause = if (lasting != null) {
+                    LocalContext.current.refusalText(lasting, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty())
+                } else {
+                    stringResource(R.string.chat_not_refreshed)
+                },
+                shortCause = stringResource(if (lasting != null) R.string.chat_strip_cannot_read else R.string.chat_strip_not_refreshed),
+                lasting = lasting != null,
+                dense = dense,
+                onRetry = { wake.trySend(Unit) },
+            )
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {

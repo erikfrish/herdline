@@ -11,6 +11,10 @@
     <string name="chat_load_older">加载更早的消息</string>
     <string name="chat_loading">正在读取对话记录…</string>
     <string name="chat_not_refreshed">聊天无法再次读取对话记录，仍在重试</string>
+    <string name="chat_strip_more">更多</string>
+    <string name="chat_strip_saved_short">%1$s 保存 · %2$s</string>
+    <string name="chat_strip_cannot_read">无法读取</string>
+    <string name="chat_strip_not_refreshed">未刷新</string>
     <plurals name="chat_latest_new">
         <item quantity="other">最新 · %d 条新消息</item>
     </plurals>
