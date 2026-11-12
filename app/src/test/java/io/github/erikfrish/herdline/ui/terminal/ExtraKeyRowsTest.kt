@@ -27,17 +27,23 @@ class ExtraKeyRowsTest {
     }
 
     @Test
-    fun aLandscapePhoneTypingGetsOneRowLedByTheFirstKeys() {
+    fun theDefaultKeepsUpAboveDownEvenWhereOneRowWouldBeUsed() {
         val keys = extraKeysFrom(DEFAULT_EXTRA_KEY_IDS)
-        // QF-6: landscape, keyboard up, a window under 480 dp tall: one row,
-        // every key in saved order, so Esc, Tab, Ctrl and the arrows lead.
-        val one = extraKeyRows(keys, extraKeyRowCount(landscape = true, imeVisible = true, windowHeightDp = 411))
-        assertEquals(listOf(keys), one)
-        // Keyboard down, portrait, or a window tall enough: the user's two rows.
-        for ((landscape, ime, height) in listOf(Triple(true, false, 411), Triple(false, true, 400), Triple(true, true, 480))) {
-            val rows = extraKeyRows(keys, extraKeyRowCount(landscape, ime, height))
-            assertEquals(listOf(keys.take(7), keys.drop(7)), rows)
+        val two = listOf(keys.take(7), keys.drop(7))
+        // Every case, QF-6's landscape typing under 480 dp included: the two rows,
+        // with Up (column 4) directly above Down, Left and Right either side.
+        for ((landscape, ime, height) in listOf(Triple(true, true, 411), Triple(true, false, 411), Triple(false, true, 400), Triple(true, true, 480))) {
+            assertEquals(two, extraKeyRows(keys, extraKeyRowCount(landscape, ime, height)))
         }
+        assertEquals(extraKeysFrom(listOf("tab", "esc", "home", "up", "end", "slash", "backspace")), two[0])
+        assertEquals(extraKeysFrom(listOf("ctrl", "alt", "left", "down", "right", "pipe", "enter")), two[1])
+    }
+
+    @Test
+    fun aLandscapePhoneTypingStillFlattensASetWithNoStackedArrows() {
+        // The 0.6.22 default, arrows in one run: QF-6's one row, saved order kept.
+        val keys = extraKeysFrom(PREVIOUS_DEFAULT_EXTRA_KEY_IDS)
+        assertEquals(listOf(keys), extraKeyRows(keys, extraKeyRowCount(landscape = true, imeVisible = true, windowHeightDp = 411)))
     }
 
     @Test

@@ -100,35 +100,58 @@ val AllExtraKeys: Map<String, ExtraKey> = linkedMapOf(
 )
 
 /**
- * The panel's default: fourteen keys, seven a row. The first row holds the
- * keys taken from the hardware keyboard (Esc, Tab, Ctrl) with the four arrows
- * kept together and first; the second holds Alt, Enter and Backspace beside the
- * shell characters and Home/End. Two Gboard-sized rows, nothing hidden behind
- * a scroll on a phone (HG-EXK).
+ * The panel's default: fourteen keys, seven a row, placed as on a hardware
+ * keyboard. Ctrl is bottom left with Tab above it and Esc beside Tab; the
+ * arrows are an inverted T, Up directly above Down with Left and Right
+ * either side of Down; Backspace is top right over Enter (KEY-LAYOUT).
  */
 val DEFAULT_EXTRA_KEY_IDS: List<String> = listOf(
+    "tab", "esc", "home", "up", "end", "slash", "backspace",
+    "ctrl", "alt", "left", "down", "right", "pipe", "enter",
+)
+
+/**
+ * The fourteen-key default of 0.6.x up to 0.6.22, arrows in one flat run. A
+ * saved row exactly equal to it is that default, not a choice, and migrates
+ * to [DEFAULT_EXTRA_KEY_IDS]; any other saved row is the user's and is kept.
+ */
+val PREVIOUS_DEFAULT_EXTRA_KEY_IDS: List<String> = listOf(
     "esc", "tab", "ctrl", "left", "down", "up", "right",
     "alt", "enter", "backspace", "pipe", "slash", "home", "end",
 )
 
-
 /** The keys for saved [ids], in their order; unknown IDs from older builds are skipped. */
 fun extraKeysFrom(ids: List<String>): List<ExtraKey> = ids.mapNotNull(AllExtraKeys::get)
-
 
 /**
  * The panel's rows: [rowsOf] rows of as even a length as keys allow, filled in
  * saved order. The default takes 7 + 7; a custom set of many keys stays visible
- * in the same two rows and lets the wider one scroll (HG-EXK).
+ * in the same two rows and lets the wider one scroll (HG-EXK). One row (QF-6,
+ * a landscape phone typing) is refused when the two rows put Up directly above
+ * Down: flattening would turn that pair sideways, so the user's geometry wins.
  */
 internal fun extraKeyRows(keys: List<ExtraKey>, rowsOf: Int = 2): List<List<ExtraKey>> {
     if (keys.isEmpty()) return emptyList()
+    if (rowsOf == 1 && stacksUpOverDown(split(keys, 2))) return split(keys, 2)
+    return split(keys, rowsOf)
+}
+
+private fun split(keys: List<ExtraKey>, rowsOf: Int): List<List<ExtraKey>> {
     val rows = rowsOf.coerceIn(1, keys.size)
     val short = keys.size % rows
     val per = keys.size / rows
     var at = 0
     return (0 until rows).map { row ->
         keys.subList(at, at + per + if (row < short) 1 else 0).also { at += per + if (row < short) 1 else 0 }
+    }
+}
+
+/** Whether some column of [rows] has Up in the first row and Down right under it. */
+private fun stacksUpOverDown(rows: List<List<ExtraKey>>): Boolean {
+    val (top, bottom) = rows.takeIf { it.size == 2 } ?: return false
+    return top.indices.any { i ->
+        (top[i] as? ExtraKey.Key)?.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+            (bottom.getOrNull(i) as? ExtraKey.Key)?.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
     }
 }
 

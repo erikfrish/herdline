@@ -4,6 +4,7 @@ package io.github.erikfrish.herdline.data
 import android.content.Context
 import android.content.SharedPreferences
 import io.github.erikfrish.herdline.ui.terminal.DEFAULT_EXTRA_KEY_IDS
+import io.github.erikfrish.herdline.ui.terminal.PREVIOUS_DEFAULT_EXTRA_KEY_IDS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -157,7 +158,7 @@ data class Settings(
     }
 }
 
-/** The sixteen-key default the builds before today's fourteen saved; a saved row equal to it migrates to the default. */
+/** The sixteen-key default of the builds before the fourteen-key one; a saved row equal to it migrates to the default. */
 private val LEGACY_EXTRA_KEYS = listOf(
     "esc", "tab", "ctrl", "alt", "left", "down", "up", "right", "pipe", "dash", "slash", "tilde", "home", "end", "pgup", "pgdn",
 )
@@ -206,9 +207,10 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             density = enumOf("density", d.density),
             accent = prefs.getInt("accent", d.accent),
             extraKeys = ids("extra_keys")?.let { saved ->
-                // The row saved by the old sixteen-key default is that default, not a
-                // custom set: it takes today's default once, written back so this runs once.
-                if (saved == LEGACY_EXTRA_KEYS) {
+                // A row saved by an old default (the sixteen keys, or 0.6.22's flat fourteen) is that
+                // default, not a custom set: it takes today's default once, written back so this runs once.
+                // Any other row, a reordered default included, is the user's and is kept.
+                if (saved == LEGACY_EXTRA_KEYS || saved == PREVIOUS_DEFAULT_EXTRA_KEY_IDS) {
                     prefs.edit().putString("extra_keys", d.extraKeys.joinToString(",")).apply()
                     d.extraKeys
                 } else saved
