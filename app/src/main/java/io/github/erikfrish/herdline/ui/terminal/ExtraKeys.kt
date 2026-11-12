@@ -66,6 +66,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.erikfrish.herdline.R
 import kotlin.math.floor
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 
 /** What one extra key does. */
 sealed interface ExtraKey {
@@ -265,6 +271,48 @@ private val Spoken: Map<String, String> = mapOf(
     "⏎" to "Enter", "⌫" to "Backspace",
 )
 
+/** Keys that change form together, so a pair never reads "⇱ … End" (POSTNIGHT-KEYS §8.3). */
+internal enum class LabelGroup { Modifiers, LineEnds, Pages, Editing }
+
+/** A key's short form: its keycap [glyph], and the [alt] text where the font lacks it. */
+internal data class ShortLabel(val group: LabelGroup, val glyph: String, val alt: String)
+
+/** The short forms by full label; arrows, ⏎, ⌫ and one-character keys have none and never switch. */
+internal val ShortLabels: Map<String, ShortLabel> = mapOf(
+    "Ctrl" to ShortLabel(LabelGroup.Modifiers, "⌃", "^"),
+    "Alt" to ShortLabel(LabelGroup.Modifiers, "⌥", "Al"),
+    "Shift" to ShortLabel(LabelGroup.Modifiers, "⇧", "Sh"),
+    "Home" to ShortLabel(LabelGroup.LineEnds, "⇱", "Hm"),
+    "End" to ShortLabel(LabelGroup.LineEnds, "⇲", "En"),
+    "PgUp" to ShortLabel(LabelGroup.Pages, "⇞", "PU"),
+    "PgDn" to ShortLabel(LabelGroup.Pages, "⇟", "PD"),
+    "Tab" to ShortLabel(LabelGroup.Editing, "⇥", "Tb"),
+    "Esc" to ShortLabel(LabelGroup.Editing, "⎋", "Es"),
+    "Del" to ShortLabel(LabelGroup.Editing, "⌦", "Dl"),
+)
+
+/**
+ * Whether a full label measured [width] × [height] px fits a cap [capWidth] px
+ * wide with [inset] px clear either side, in its visible box [capHeight] px high.
+ */
+internal fun fitsFull(width: Float, height: Float, capWidth: Float, capHeight: Float, inset: Float): Boolean =
+    width <= capWidth - 2 * inset && height <= capHeight
+
+/** The groups of [labels] in which some key's full label does not [fit]: those keys all go short. */
+internal fun shortGroups(labels: Collection<String>, fit: (String) -> Boolean): Set<LabelGroup> =
+    labels.mapNotNullTo(mutableSetOf()) { full -> ShortLabels[full]?.group?.takeIf { !fit(full) } }
+
+/**
+ * The visible label for [full]: itself, unless its group is [short]; then its
+ * keycap glyph, or the group's alternative text where [hasGlyph] fails for any
+ * glyph of the group, so a group never mixes the two.
+ */
+internal fun labelFor(full: String, short: Set<LabelGroup>, hasGlyph: (String) -> Boolean): String {
+    val form = ShortLabels[full]?.takeIf { it.group in short } ?: return full
+    val glyphs = ShortLabels.values.filter { it.group == form.group }.all { hasGlyph(it.glyph) }
+    return if (glyphs) form.glyph else form.alt
+}
+
 /**
  * The panel of keys a phone keyboard lacks, drawn as two compact rows (one
  * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input.
@@ -304,7 +352,7 @@ fun ExtraKeysRow(
         if (l / (ink.luminance() + 0.05f) >= 1.05f / l) ink else Color.White
     }
     // One cap: its own press state, latch look and TalkBack switch or button.
-    val cap: @Composable (ExtraKey, Dp, Boolean) -> Unit = { key, width, scrolls ->
+    val cap: @Composable (ExtraKey, Dp, Boolean, String) -> Unit = { key, width, scrolls, shown ->
         val active = key is ExtraKey.Modifier && latched and key.meta != 0
         var down by remember { mutableStateOf(false) }
         val scale by animateFloatAsState(if (down) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 900f), label = "key")
@@ -416,26 +464,33 @@ fun ExtraKeysRow(
                     },
                 contentAlignment = Alignment.Center,
             ) {
+                // The measured form ([labelFor]); the clip is only a guard, a short form always fits.
                 Text(
-                    key.label,
+                    shown,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                     fontSize = 14.sp,
                     color = labelColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
                 )
             }
         }
     }
     // A row of caps; one that scrolls takes a drag that starts on a cap and sends nothing.
-    val capRow: @Composable (List<ExtraKey>, CapLayout, Modifier) -> Unit = { row, layout, rowModifier ->
+    val capRow: @Composable (List<ExtraKey>, CapLayout, Modifier, (ExtraKey) -> String) -> Unit = { row, layout, rowModifier, shown ->
         Row(
             rowModifier.horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(layout.gap.dp),
         ) {
-            for (key in row) cap(key, layout.width.dp, layout.scrolls)
+            for (key in row) cap(key, layout.width.dp, layout.scrolls, shown(key))
         }
     }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val glyphs = remember { Paint().apply { typeface = Typeface.MONOSPACE } }
     val extrasLabel = stringResource(R.string.section_extra_keys)
     BoxWithConstraints(
         Modifier
@@ -452,29 +507,48 @@ fun ExtraKeysRow(
         val gridOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 0f }
         val extrasOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 1f; contentDescription = extrasLabel }
         val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)
+        val grid = capLayout(panelWidth, GridColumns)
+        // Every cap this panel draws, and the narrowest of them: one form per group panel-wide.
+        val widths = when {
+            panel.extras.isEmpty() -> panel.grid.map { capLayout(panelWidth, it.size).width }
+            beside != null -> listOf(beside.width)
+            else -> listOf(grid.width)
+        }
+        val capHeight = if (compact) 36.dp else 40.dp
+        val short = remember(panel, widths, capHeight, density) {
+            // Bold, the latched weight, so a latch never flips the form.
+            val style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            val capWidthPx = with(density) { (widths.minOrNull() ?: 0f).dp.toPx() }
+            val capHeightPx = with(density) { capHeight.toPx() }
+            val inset = with(density) { 1.dp.toPx() }
+            shortGroups((panel.grid.flatten() + panel.extras).map { it.label }) { full ->
+                val size = measurer.measure(full, style, softWrap = false, maxLines = 1, density = density).size
+                fitsFull(size.width.toFloat(), size.height.toFloat(), capWidthPx, capHeightPx, inset)
+            }
+        }
+        val shown: (ExtraKey) -> String = { key -> labelFor(key.label, short) { glyphs.hasGlyph(it) } }
         when {
             panel.extras.isEmpty() -> Column(padded) {
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target ([capLayout]).
-                for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth())
+                for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth(), shown)
             }
             beside != null -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
                 // The grid, an 8 dp separator, then the added keys two rows high, column by column.
-                Column(gridOrder) { for (row in panel.grid) capRow(row, beside, Modifier) }
+                Column(gridOrder) { for (row in panel.grid) capRow(row, beside, Modifier, shown) }
                 Box(Modifier.width(ClusterGap).height(KeyRowHeight * 2), contentAlignment = Alignment.Center) {
                     Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
                 }
                 Row(extrasOrder, horizontalArrangement = Arrangement.spacedBy(beside.gap.dp)) {
-                    for (column in panel.extras.chunked(2)) Column { for (key in column) cap(key, beside.width.dp, false) }
+                    for (column in panel.extras.chunked(2)) Column { for (key in column) cap(key, beside.width.dp, false, shown(key)) }
                 }
             }
             else -> Column(padded) {
                 // No room beside (portrait, split screen, typing included): the added keys
                 // wrap in rows above the grid, on its caps and columns.
-                val grid = capLayout(panelWidth, GridColumns)
-                Column(extrasOrder) { for (row in extraRowsAbove(panel.extras)) capRow(row, grid, Modifier.fillMaxWidth()) }
-                Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier.fillMaxWidth()) }
+                Column(extrasOrder) { for (row in extraRowsAbove(panel.extras)) capRow(row, grid, Modifier.fillMaxWidth(), shown) }
+                Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier.fillMaxWidth(), shown) }
             }
         }
     }
