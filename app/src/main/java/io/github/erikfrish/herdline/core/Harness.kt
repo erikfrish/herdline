@@ -297,7 +297,8 @@ private val KNOWN: Map<String, Harness> = (
         // unwrapped Gemini is refused. Stop is Esc under its own working timer (native control/pty), never
         // confirmed by its history. A paste and Enter in one write is typed as a newline (its unsafe-paste
         // window), so Send and media stay unproved; its queue lives in the TUI and dialogs answer only there.
-        // Subagents are its invoke_agent calls' recorded progress, keyed by the child's session id.
+        // Subagents are its invoke_agent calls' recorded progress, keyed by the child's session id, and while
+        // one runs, the child's own record beside the session.
         routed(
             "gemini",
             SendRoute.None,

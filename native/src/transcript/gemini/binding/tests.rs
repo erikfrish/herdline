@@ -442,6 +442,82 @@ fn the_store_stays_inside_home_without_links() {
     assert!(matches!(host.read("w1:p1", &expect, 0), Err(Error::TranscriptUnconfined)));
 }
 
+const CHILD: &str = "4aa4baf8-9311-46fd-a863-4041ff3538f8";
+const SIBLING: &str = "9b1e7c2d-4a5f-4e6b-8c7d-0e1f2a3b4c5d";
+
+/// A running `invoke_agent` child's record, started after [`user`]'s turn.
+fn child(sid: &str, stage: &str) -> String {
+    [
+        json!({"sessionId": sid, "projectHash": PROJECT_HASH, "startTime": "2026-11-12T10:00:05.000Z",
+            "lastUpdated": "2026-11-12T10:00:05.000Z", "kind": "subagent"}),
+        json!({"id": "c1", "timestamp": "2026-11-12T10:00:05.000Z", "type": "user", "content": [{"text": "look"}]}),
+        json!({"id": "c2", "timestamp": "2026-11-12T10:00:06.000Z", "type": "gemini", "content": "",
+            "toolCalls": [{"id": "t", "name": "list_directory", "displayName": stage, "status": "success"}]}),
+    ]
+    .iter()
+    .map(|record| record.to_string() + "\n")
+    .collect()
+}
+
+fn running(response: &Response) -> Vec<(String, Option<String>)> {
+    response
+        .entries
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .filter_map(|block| match block {
+            crate::transcript::Block::ToolResult { subagents, .. } => Some(subagents),
+            _ => None,
+        })
+        .flatten()
+        .filter(|child| child.status == "running")
+        .map(|child| (child.id.clone(), child.stage.clone()))
+        .collect()
+}
+
+#[test]
+fn a_running_child_is_read_from_its_own_file_and_its_changes_change_the_stamp() {
+    let host = Host::new();
+    host.session("app", &name(SID), &chat(SID, "go"));
+    host.bind("w1:p1", SID, 42, GEN);
+    let expect = host.identity().unwrap().unwrap();
+    let before = host.read("w1:p1", &expect, 0).unwrap();
+    assert!(running(&before).is_empty());
+
+    let dir = host.path(&format!(".gemini/tmp/app/chats/{SID}"));
+    fs::create_dir(&dir).unwrap();
+    fs::write(dir.join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFolder")).unwrap();
+    // Not a child's name: never read.
+    fs::write(dir.join("notes.jsonl"), child(SIBLING, "Elsewhere")).unwrap();
+    let page = host.read("w1:p1", &expect, before.end).unwrap();
+    assert_eq!(running(&page), [(CHILD.to_owned(), Some("ReadFolder".to_owned()))]);
+    assert_eq!(shown(&page), ["go"]);
+
+    fs::write(dir.join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFile")).unwrap();
+    let next = host.read("w1:p1", &expect, page.end).unwrap();
+    assert_eq!(running(&next), [(CHILD.to_owned(), Some("ReadFile".to_owned()))]);
+}
+
+#[test]
+fn a_linked_child_dir_or_file_is_never_followed_and_the_session_still_reads() {
+    let host = Host::new();
+    host.session("app", &name(SID), &chat(SID, "go"));
+    host.bind("w1:p1", SID, 42, GEN);
+    let expect = host.identity().unwrap().unwrap();
+    let real = tempfile::tempdir().unwrap();
+    fs::write(real.path().join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFolder")).unwrap();
+
+    let dir = host.path(&format!(".gemini/tmp/app/chats/{SID}"));
+    symlink(real.path(), &dir).unwrap();
+    let page = host.read("w1:p1", &expect, 0).unwrap();
+    assert_eq!((shown(&page), running(&page)), (vec!["go".to_owned()], vec![]));
+
+    fs::remove_file(&dir).unwrap();
+    fs::create_dir(&dir).unwrap();
+    symlink(real.path().join(format!("{CHILD}.jsonl")), dir.join(format!("{CHILD}.jsonl"))).unwrap();
+    let page = host.read("w1:p1", &expect, 0).unwrap();
+    assert_eq!((shown(&page), running(&page)), (vec!["go".to_owned()], vec![]));
+}
+
 /// The shipped launcher in a dir of its own, named exactly `gemini`, and a
 /// stand-in bundle that records what it ran with, then waits if asked.
 fn launcher_dir(root: &Path) -> PathBuf {

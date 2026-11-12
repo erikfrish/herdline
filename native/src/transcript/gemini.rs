@@ -14,7 +14,7 @@
 //! `hl_gemini_*` pane tokens) is [`binding`]; transcript.rs asks it first
 //! for every pane Herdr names `gemini`.
 
-use super::subagents::{OUTPUT_LIMIT, Subagent, text as child_text};
+use super::subagents::{OUTPUT_LIMIT, Subagent, clean, text as child_text};
 use super::{ARGS_LIMIT, Block, Entry, Kind, RESULT_LIMIT, Usage, cap, iso_timestamp, text_block};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -25,11 +25,13 @@ pub(super) mod binding;
 #[derive(Debug)]
 pub(super) struct Conversation {
     pub session_id: String,
-    /// Checked against the slug dir on the host (binding.rs); kept for the fold's own tests.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Checked against the slug dir on the host (binding.rs), and a child's header here.
     pub project_hash: String,
     pub messages: Vec<Value>,
 }
+
+/// The most running children one read shows (binding.rs's host script sends no more).
+pub(super) const MAX_RUNNING: usize = 8;
 
 /// A JavaScript TypeError in Gemini's loader: the rest of that one record
 /// is not applied, what it already changed stays (`processLine` catches per
@@ -291,6 +293,120 @@ impl Conversation {
             })
             .collect()
     }
+
+    /// What Gemini is running now and has not recorded here yet. A running
+    /// `invoke_agent` call is written to the parent only once it ends
+    /// (`agents/local-invocation`, bundle chunk-RCB6BI5H.js:352975-353051);
+    /// until then its child records itself in `chats/<session>/<child>.jsonl`
+    /// under a `subagent` header (chatRecordingService.ts:855-862). `children`
+    /// are those files' bytes by child id, as the host read them. A child
+    /// shows while the parent names it nowhere and has recorded nothing since
+    /// it started: no call with its `agentId`, no message, and no ended
+    /// `invoke_agent` call without one (a cancelled call records no id,
+    /// :353011, :353048). One trailing entry, a running row per child.
+    pub(super) fn running(&self, children: &[(&str, &[u8])]) -> Option<Entry> {
+        let mut named = HashSet::new();
+        let mut since = None;
+        for message in &self.messages {
+            since = since.max(string(message, "timestamp").and_then(iso_timestamp));
+            for call in message.get("toolCalls").and_then(Value::as_array).into_iter().flatten() {
+                match string(call, "agentId") {
+                    Some(id) => {
+                        named.insert(id);
+                    }
+                    None if string(call, "name") == Some("invoke_agent")
+                        && matches!(string(call, "status"), Some("success" | "error" | "cancelled")) =>
+                    {
+                        since = since.max(string(call, "timestamp").and_then(iso_timestamp));
+                    }
+                    None => {}
+                }
+            }
+        }
+        let mut started = None;
+        let blocks: Vec<Block> = children
+            .iter()
+            .filter(|(id, _)| !named.contains(*id))
+            .filter_map(|(id, data)| live(id, data, &self.project_hash))
+            .filter(|(start, _)| since.is_none_or(|since| since < *start))
+            .take(MAX_RUNNING)
+            .map(|(start, child)| {
+                started = Some(started.map_or(start, |at: u64| at.min(start)));
+                Block::ToolResult {
+                    call_id: child.id.clone(),
+                    name: "Invoke Subagent".to_owned(),
+                    text: String::new(),
+                    is_error: false,
+                    images: Vec::new(),
+                    truncated: false,
+                    exit_code: None,
+                    answers: Vec::new(),
+                    timed_out: false,
+                    subagents: vec![child],
+                }
+            })
+            .collect();
+        if blocks.is_empty() {
+            return None;
+        }
+        Some(Entry {
+            id: Some("gemini:running".to_owned()),
+            parent_id: None,
+            offset: 0,
+            end: 0,
+            kind: Kind::Message,
+            role: Some("assistant".to_owned()),
+            blocks,
+            timestamp: started,
+            usage: None,
+            stop_reason: None,
+            steer: None,
+            subagent_ends: Vec::new(),
+        })
+    }
+}
+
+/// A running child from its own record, with when it started: only a
+/// `subagent` header naming this id in the parent's project. Its record
+/// has no agent name, so the id stands for it; the task is the query it
+/// was given, the stage its latest tool, else its latest words.
+fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
+    let head: Value = serde_json::from_slice(data.split(|&byte| byte == b'\n').next()?).ok()?;
+    if string(&head, "sessionId") != Some(id) || string(&head, "kind") != Some("subagent") || string(&head, "projectHash") != Some(project) {
+        return None;
+    }
+    let start = string(&head, "startTime").and_then(iso_timestamp)?;
+    let child = fold(data).filter(|child| child.session_id == id)?;
+    let task = child
+        .messages
+        .iter()
+        .find(|message| message["type"] == "user")
+        .and_then(|message| clean(&part_text(&message["content"]), 1024));
+    let stage = child.messages.iter().rev().find(|message| message["type"] == "gemini").and_then(|message| {
+        let tool = message["toolCalls"].as_array().and_then(|calls| calls.last()).and_then(|call| {
+            string(call, "displayName").filter(|name| !name.trim().is_empty()).or_else(|| string(call, "name"))
+        });
+        match tool {
+            Some(name) => clean(name, 128),
+            None => part_text(&message["content"]).lines().find_map(|line| clean(line, 256)),
+        }
+    });
+    Some((
+        start,
+        Subagent {
+            id: id.to_owned(),
+            agent: id.to_owned(),
+            agent_type: None,
+            status: "running",
+            task,
+            stage,
+            output: None,
+            error: None,
+            duration_ms: None,
+            requests: None,
+            exit_code: None,
+        },
+    ))
 }
 
 /// One message as `convertSessionToHistoryFormats` shows it: a Gemini

@@ -1,9 +1,10 @@
 //! Session lines here are synthetic, written in the record shapes of
 //! gemini-cli v0.68.0 (5a5c7180,
 //! `packages/core/src/services/chatRecordingTypes.ts`), except
-//! `subagent.jsonl`, captured from a real Gemini 0.68.0 against a mock
-//! provider. They pin what the parser does with such lines, as
-//! `createJsonlRecordAccumulator` and `convertSessionToHistoryFormats` do.
+//! `subagent.jsonl` and the `live-*.jsonl` sessions and children, captured
+//! from a real Gemini 0.68.0 against a mock provider. They pin what the
+//! parser does with such lines, as `createJsonlRecordAccumulator` and
+//! `convertSessionToHistoryFormats` do.
 
 use super::*;
 use serde_json::json;
@@ -258,4 +259,60 @@ fn a_child_left_running_ends_as_its_call_did_and_a_failure_keeps_its_error() {
     let found = children(&jsonl(&[header(), user("m1", "go"), turn]));
     let shown: Vec<_> = found.iter().map(|child| (child.id.as_str(), child.status, child.error.as_deref())).collect();
     assert_eq!(shown, vec![("c1", "cancelled", None), ("c2", "failed", Some("Error: quota"))]);
+}
+
+/// Captured, not synthetic: one `invoke_agent` run read while its child
+/// had listed the work dir (`mid`, the session not yet naming it) and
+/// after it ended (`end`, the call recorded with its `agentId`).
+const LIVE_MID: &[u8] = include_bytes!("live-mid.jsonl");
+const LIVE_MID_CHILD: &[u8] = include_bytes!("live-mid-child.jsonl");
+const LIVE_END: &[u8] = include_bytes!("live-end.jsonl");
+const LIVE_END_CHILD: &[u8] = include_bytes!("live-end-child.jsonl");
+const CHILD: &str = "4aa4baf8-9311-46fd-a863-4041ff3538f8";
+
+fn running(parent: &[u8], child: &[u8]) -> Vec<Subagent> {
+    let conversation = fold(parent).unwrap();
+    let entry = conversation.running(&[(CHILD, child)]);
+    entry
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .flat_map(|block| match block {
+            Block::ToolResult { subagents, .. } => subagents.clone(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_child_the_session_has_not_recorded_yet_shows_running_from_its_own_record() {
+    let live = running(LIVE_MID, LIVE_MID_CHILD);
+    let shown: Vec<_> = live.iter().map(|child| (child.id.as_str(), child.status, child.stage.as_deref())).collect();
+    assert_eq!(shown, vec![(CHILD, "running", Some("ReadFolder"))]);
+    assert!(live[0].task.as_deref().unwrap().contains("Investigate the work dir"));
+    assert!(children(LIVE_MID).is_empty());
+}
+
+#[test]
+fn once_the_session_records_the_child_only_its_finished_row_shows() {
+    assert!(running(LIVE_END, LIVE_END_CHILD).is_empty());
+    let done: Vec<_> = children(LIVE_END).iter().map(|child| (child.id.clone(), child.status)).collect();
+    assert_eq!(done, vec![(CHILD.to_owned(), "completed")]);
+}
+
+#[test]
+fn a_child_ends_when_the_session_moves_on_or_cancels_and_never_from_another_project() {
+    let at = |ts: &str| json!({"id": "late", "timestamp": ts, "type": "user", "content": [{"text": "x"}]});
+    let cancelled = |ts: &str| json!({"id": "late", "timestamp": "2026-11-12T23:15:48.063Z", "type": "gemini", "content": "",
+        "toolCalls": [{"id": "c", "name": "invoke_agent", "status": "cancelled", "timestamp": ts}]});
+    let with = |record: Value| {
+        let mut data = LIVE_MID.to_vec();
+        data.extend(jsonl(&[record]));
+        data
+    };
+    // Recorded before the child started: still running.
+    assert_eq!(running(&with(at("2026-11-12T23:15:48.000Z")), LIVE_MID_CHILD).len(), 1);
+    assert!(running(&with(at("2026-11-12T23:16:00.000Z")), LIVE_MID_CHILD).is_empty());
+    assert!(running(&with(cancelled("2026-11-12T23:16:00.000Z")), LIVE_MID_CHILD).is_empty());
+    let foreign = String::from_utf8(LIVE_MID_CHILD.to_vec()).unwrap().replacen("\"projectHash\":\"", "\"projectHash\":\"0", 1);
+    assert!(running(LIVE_MID, foreign.as_bytes()).is_empty());
 }
