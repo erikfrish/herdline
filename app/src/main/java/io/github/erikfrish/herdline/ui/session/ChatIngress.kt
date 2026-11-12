@@ -98,6 +98,14 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
+/**
+ * The code Send's precheck shows for the pane's refused box check [gate]: where the
+ * endpoint said its server is missing or can't be told apart, that reason, since the
+ * box check is the PTY route's and says nothing of the program's own server.
+ */
+internal fun sendPrecheckCode(gate: String?, probe: IngressProbe?): String? =
+    gate?.let { code -> (probe as? IngressProbe.Unusable)?.reason?.takeIf { it == "needs_server" || it == "server_discovery" } ?: code }
+
 /** What the queue panel shows. */
 internal sealed interface QueuePanel {
     data object Hidden : QueuePanel

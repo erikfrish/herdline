@@ -1553,7 +1553,7 @@ private fun Editor(
     // which read what the pane shows, neither gate nor explain it then.
     val endpointReady = reading && probe is IngressProbe.Live
     val sendGate = if (reading) check?.chatSend else check?.send
-    val precheck = sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
+    val precheck = sendPrecheckCode(sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason, probe)
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }

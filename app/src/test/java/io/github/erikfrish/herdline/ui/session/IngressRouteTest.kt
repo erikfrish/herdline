@@ -84,6 +84,18 @@ class IngressRouteTest {
     }
 
     @Test
+    fun aRefusedSendOnAPaneWithoutItsServerGivesTheServersReason() {
+        // opencode --standalone: the box check refuses the PTY route; the endpoint says why Chat can't send.
+        assertEquals("needs_server", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("needs_server")))
+        assertEquals("server_discovery", sendPrecheckCode("not_visible", IngressProbe.Unusable("server_discovery")))
+        // Any other probe leaves the box check's own code; a Send the gate allows stays allowed.
+        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("stale")))
+        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", null))
+        assertEquals("agent_working", sendPrecheckCode("agent_working", IngressProbe.Absent))
+        assertNull(sendPrecheckCode(null, IngressProbe.Unusable("needs_server")))
+    }
+
+    @Test
     fun acceptedSettlesUncertainHoldsAndNothingSentGivesTheEarlierRecordBack() {
         val accepted = sentAfterIngress(IngressSend.Accepted("id-1", "accepted", null), before, "hi", 9)
         assertEquals(SentState.Confirmed, accepted?.state)
