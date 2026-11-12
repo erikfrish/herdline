@@ -190,6 +190,136 @@ fn a_prompt_on_a_held_grids_top_row_is_drawn_and_takes_text() {
     assert_eq!(cursor_view(&hidden, rows_px(1)), view(&hidden, rows_px(1), 0, 0));
 }
 
+/// Ten rows, 20 columns: pane `focused`'s inner rect on rows 1-3 over the
+/// other's on rows 5-8, the surface cursor at column 2 of `cursor_row`.
+fn stacked(cursor_row: u16, visible: bool, focused: Option<usize>) -> RenderFrame {
+    let rects = [
+        Rect {
+            x: 1,
+            y: 1,
+            width: 18,
+            height: 3,
+        },
+        Rect {
+            x: 1,
+            y: 5,
+            width: 18,
+            height: 4,
+        },
+    ];
+    let mut shown = RenderFrame {
+        cols: 20,
+        rows: 10,
+        ..RenderFrame::default()
+    };
+    shown.cursor.x = 2;
+    shown.cursor.y = cursor_row;
+    shown.cursor.visible = visible;
+    shown.panes = rects
+        .iter()
+        .enumerate()
+        .map(|(i, &rect)| Pane {
+            id: format!("p{i}"),
+            rect,
+            focused: Some(i) == focused,
+            mouse_reporting: false,
+            alternate_screen: false,
+        })
+        .collect();
+    shown
+}
+
+/// The anchor row for `frame` in a view `rows` cells tall, no output focus.
+fn anchor(frame: &RenderFrame, rows: u16) -> Option<u16> {
+    shown_anchor_row(frame, rows_px(rows), 0.0, 0, CELL_H)
+}
+
+/// The offset TerminalView draws `frame` at in a view `height_px` tall.
+fn drawn_at(frame: &RenderFrame, height_px: f32, hidden: u16, clip: f32) -> f32 {
+    let row = shown_anchor_row(frame, height_px, clip, hidden, CELL_H);
+    view_offset_at(height_px, clip, hidden, CELL_H, frame.rows, row)
+}
+
+#[test]
+fn a_focused_pane_above_the_window_is_drawn_from_its_top() {
+    // Four rows tall: the cursor in the other pane keeps rows 6-9, none of
+    // the focused pane's. Its top inner row is kept instead (QF9-U2).
+    let shown = stacked(7, true, Some(0));
+    assert_eq!(anchor(&shown, 4), Some(1));
+    let offset = drawn_at(&shown, rows_px(4), 0, 0.0);
+    assert_eq!(offset, -CELL_H);
+    assert_eq!(drawn_rows(rows_px(4), offset, CELL_H, 10), Some(1..=4));
+    // No cursor shown: the bottom anchor drew rows 6-9 alone.
+    assert_eq!(anchor(&stacked(7, false, Some(0)), 4), Some(1));
+    // Taller than the view (limit): its top, the rest cut below.
+    let short = drawn_at(&shown, rows_px(2), 0, 0.0);
+    assert_eq!(drawn_rows(rows_px(2), short, CELL_H, 10), Some(1..=2));
+}
+
+#[test]
+fn a_cursor_inside_the_focused_pane_wins() {
+    let shown = stacked(2, true, Some(0));
+    assert_eq!(anchor(&shown, 4), Some(2));
+    assert_eq!(drawn_at(&shown, rows_px(4), 0, 0.0), -2.0 * CELL_H);
+    assert_eq!(anchor(&stacked(3, true, Some(0)), 2), Some(3));
+}
+
+#[test]
+fn a_focused_pane_already_drawn_keeps_the_window() {
+    // Eight rows tall: rows 2-9 hold the focused pane's rows 2-3.
+    let shown = stacked(7, true, Some(0));
+    assert_eq!(anchor(&shown, 8), Some(7));
+    assert_eq!(
+        drawn_at(&shown, rows_px(8), 0, 0.0),
+        at(rows_px(8), Some(7))
+    );
+    // Zoomed: the focused pane fills the frame, so every window holds it.
+    let mut zoomed = stacked(7, false, Some(0));
+    zoomed.panes.truncate(1);
+    zoomed.panes[0].rect.height = 8;
+    assert_eq!(anchor(&zoomed, 4), None);
+    assert_eq!(drawn_at(&zoomed, rows_px(4), 0, 0.0), at(rows_px(4), None));
+    // Output focus holds its window whatever the row.
+    assert_eq!(
+        drawn_at(&shown, rows_px(4), 2, 0.0),
+        view_offset(rows_px(4), 0.0, 2, CELL_H, 10)
+    );
+    assert_eq!(
+        drawn_at(&shown, rows_px(4), 0, CELL_H),
+        view_offset(rows_px(4), CELL_H, 0, CELL_H, 10)
+    );
+}
+
+#[test]
+fn no_focused_pane_keeps_the_shown_cursor_rule() {
+    assert_eq!(anchor(&stacked(7, true, None), 4), Some(7));
+    assert_eq!(anchor(&stacked(7, false, None), 4), None);
+    assert_eq!(anchor(&stacked(10, true, None), 4), None);
+    assert_eq!(
+        drawn_at(&stacked(7, true, None), rows_px(4), 0, 0.0),
+        at(rows_px(4), Some(7))
+    );
+}
+
+#[test]
+fn the_anchor_row_is_kotlins() {
+    // Same frame, view and cell as DrawnRowsTest.theAnchorRowIsTheNativeCores.
+    let shown = stacked(7, true, Some(0));
+    assert_eq!(shown_anchor_row(&shown, 80.0, 0.0, 0, 20.0), Some(1));
+    assert_eq!(drawn_at(&shown, 80.0, 0, 0.0), -20.0);
+    let inside = stacked(2, true, Some(0));
+    assert_eq!(shown_anchor_row(&inside, 80.0, 0.0, 0, 20.0), Some(2));
+    assert_eq!(shown_anchor_row(&shown, 160.0, 0.0, 0, 20.0), Some(7));
+    // The gate takes the view TerminalView reports for this window.
+    let mut seen = view(&shown, 80.0, 0, 0);
+    seen.offset_y_px = -20.0;
+    seen.first = 1;
+    seen.last = 4;
+    assert_eq!(consistent(&seen, &shown), Some(1..=4));
+    let anchored = view(&shown, 80.0, 0, 0);
+    assert_eq!(consistent(&anchored, &shown), None);
+}
+
 #[test]
 fn omp_needs_its_whole_box_and_cursor_on_the_phone() {
     let shown = frame("w1:p1", EMPTY);
