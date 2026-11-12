@@ -419,6 +419,7 @@
     <string name="ingress_withdraw_gone">它已离开队列。</string>
     <string name="ingress_withdraw_failed">无法撤回：它可能仍在队列中。</string>
     <string name="ingress_withdraw_editor">未撤回：请先清空编辑框，以便请求放回其中。它仍在队列中。</string>
+    <string name="ingress_withdraw_text_unknown">已撤回，但此手机没有它所发送文字的记录，因此文字未放回。保留的文件已放回。</string>
     <string name="ingress_unsupported">Herdline 扩展已运行，但此 OMP 缺少所需的钩子（%1$s）。聊天发送被拒绝，不会向窗格输入。</string>
     <string name="ingress_unusable">聊天到代理的通道存在但无法使用（%1$s）。聊天发送被拒绝，不会向窗格输入。</string>
     <string name="dest_agents">代理</string>

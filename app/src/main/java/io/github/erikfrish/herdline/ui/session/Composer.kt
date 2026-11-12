@@ -1184,7 +1184,9 @@ private fun Editor(
         onDeliveryStart()
         // As for the pane route: on disk before the request may leave, so a
         // restart before the answer reads back unconfirmed, with the id Check asks for.
-        save(draft.copy(sent = SentRecord(text, ingressReceipt(id), true, SentState.Queued, System.currentTimeMillis())))
+        // The text and files this request carries are kept by its id with it: a
+        // withdrawal restores exactly them, never the queue's display text (QA m43 C3).
+        save(draft.copy(sent = SentRecord(text, ingressReceipt(id), true, SentState.Queued, System.currentTimeMillis())).queuedWith(id, text, draft.attachments))
         val ahead = draft
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
@@ -1197,11 +1199,12 @@ private fun Editor(
                 // OMP holds it: the text and its files leave the editor. Nothing
                 // was typed into the pane, so the terminal is not brought up.
                 write(if (value.text == text) "" else value.text)
-                // Kept by request id: a withdrawal of this send puts the same files back (PHOTO-STEER-W).
-                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }).queuedWith(id, draft.attachments.filter { it.id in carried }))
+                // Its record, by request id, was written ahead (PHOTO-STEER-W).
+                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }))
                 outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
             } else {
-                save(draft.copy(sent = sent))
+                // Refused: nothing is queued, so nothing can be withdrawn. Uncertain keeps its record.
+                save(draft.copy(sent = sent, queued = if (outcome is IngressSend.Refused) draft.queued - id else draft.queued))
             }
             sending = false
             when (outcome) {
@@ -1378,7 +1381,10 @@ private fun Editor(
             // editor, after anything typed while the withdraw was on its way.
             // Send and Steer stayed off meanwhile (draftBusy).
             if (done.getOrNull() == true) {
-                val back = draft.withdrawn(requestId, withdrawnText(value.text, entry.text))
+                // A request this draft has no record of (sent before 10064) has no known text:
+                // nothing is guessed from the queue, and the user is told.
+                if (draft.queued[requestId]?.text == null) withdrawNote = R.string.ingress_withdraw_text_unknown
+                val back = draft.withdrawn(requestId, value.text)
                 value = TextFieldValue(back.text, TextRange(back.text.length))
                 save(back)
             }

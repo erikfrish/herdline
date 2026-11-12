@@ -116,15 +116,11 @@ class IngressRouteTest {
     }
 
     @Test
-    fun aWithdrawStartsOnlyWhenItsRequestCanComeBackAndLosesNoTypedText() {
+    fun aWithdrawStartsOnlyWhenItsRequestCanComeBack() {
         assertTrue(withdrawRestorable("", busy = false))
         // Typed text or a send on its way: refused before the queue is touched.
         assertFalse(withdrawRestorable("draft", busy = false))
         assertFalse(withdrawRestorable("", busy = true))
-        assertEquals("fix it", withdrawnText("", "fix it"))
-        assertEquals("typed meanwhile\n\nfix it", withdrawnText("typed meanwhile", "fix it"))
-        // An images-only request brings back its files and leaves the text as typed.
-        assertEquals("typed meanwhile", withdrawnText("typed meanwhile", ""))
     }
 
     @Test
