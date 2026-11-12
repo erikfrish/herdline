@@ -80,6 +80,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -563,8 +564,21 @@ private fun NodeCard(
                                 Pill(stringResource(it.text), tone, dot = it.tone != HostTone.Neutral)
                             }
                         }
-                        view?.agents?.filter { it.status == AgentStatus.Blocked }?.take(2)?.forEach {
-                            Pill(stringResource(R.string.needs_input_named, it.displayName), AgentStatus.Blocked.color(), dot = true)
+                        // A-22: panes of one program in one state share a chip with a count; the first two
+                        // chips show, as before. One pane is today's chip, word for word.
+                        val blocked = view?.agents?.filter { it.status == AgentStatus.Blocked }.orEmpty()
+                        chipGroups(blocked.map { it.displayName to it.status }).take(2).forEach { (key, count) ->
+                            if (count == 1) {
+                                Pill(stringResource(R.string.needs_input_named, key.first), AgentStatus.Blocked.color(), dot = true)
+                            } else {
+                                val spoken = pluralStringResource(R.plurals.needs_input_named_spoken, count, key.first, count)
+                                Pill(
+                                    stringResource(R.string.needs_input_named_count, key.first, count),
+                                    AgentStatus.Blocked.color(),
+                                    Modifier.clearAndSetSemantics { contentDescription = spoken },
+                                    dot = true,
+                                )
+                            }
                         }
                         jump?.let { Pill(stringResource(R.string.via_jump, it.title), NodeColors.of(it.color)) }
                         if (hasCertificate) Pill(stringResource(R.string.certificate), MaterialTheme.colorScheme.secondary)
