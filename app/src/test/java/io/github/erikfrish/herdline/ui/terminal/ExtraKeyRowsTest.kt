@@ -14,8 +14,13 @@ class ExtraKeyRowsTest {
     @Test
     fun manyKeysStayTwoRowsAndUnevenSplitsLeadFull() {
         val all = extraKeysFrom(AllExtraKeys.keys.toList())
-        assertEquals(2, extraKeyRows(all).size)
-        assertEquals(listOf(12, 11), extraKeyRows(all).map { it.size })
-        assertEquals(listOf(3, 2), extraKeyRows(all.take(5)).map { it.size })
+        // Every key the app has, then one fewer for an odd count: two rows,
+        // every key kept once in saved order, the fuller row first.
+        for (keys in listOf(all, all.dropLast(1), all.take(5))) {
+            val rows = extraKeyRows(keys)
+            assertEquals(2, rows.size)
+            assertEquals(keys, rows.flatten())
+            assertEquals(listOf((keys.size + 1) / 2, keys.size / 2), rows.map { it.size })
+        }
     }
 }
