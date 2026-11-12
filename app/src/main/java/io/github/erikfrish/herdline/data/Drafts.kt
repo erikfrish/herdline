@@ -134,6 +134,20 @@ data class Draft(
     fun queuedWith(requestId: String, text: String, files: List<DraftAttachment>): Draft =
         copy(queued = (queued - requestId + (requestId to QueuedSend(text, files))).entries.toList().takeLast(QUEUED_FILES_KEPT).associate { it.toPair() })
 
+    /** This draft with send [requestId] waiting in session [session], as a steer its server lists nowhere (Kilo) took it. */
+    fun waitingSteer(requestId: String, session: String): Draft =
+        queued[requestId]?.let { copy(queued = queued + (requestId to it.copy(waitingIn = session))) } ?: this
+
+    /** This draft's steers waiting in session [session], oldest first: what Chat's queue shows for it. */
+    fun waitingSteers(session: String): List<Pair<String, QueuedSend>> =
+        queued.filter { it.value.waitingIn == session }.toList()
+
+    /** This draft once the server said the steers [left] wait no more; their records stay, for a withdrawal's text. */
+    fun steersLeft(left: Collection<String>): Draft {
+        val ended = queued.filter { (id, send) -> send.waitingIn != null && id in left }
+        return if (ended.isEmpty()) this else copy(queued = queued + ended.mapValues { it.value.copy(waitingIn = null) })
+    }
+
     /**
      * The draft after the agent withdrew send [requestId]: the text that
      * send really carried after [editor] (typed meanwhile, kept first) and
@@ -208,7 +222,12 @@ data class Draft(
         .put("attachments", JSONArray(attachments.map { it.toJson() }))
         .put(
             "queuedFiles",
-            JSONArray(queued.map { (id, send) -> JSONObject().put("id", id).put("text", send.text ?: JSONObject.NULL).put("files", JSONArray(send.files.map { it.toJson() })) }),
+            JSONArray(
+                queued.map { (id, send) ->
+                    JSONObject().put("id", id).put("text", send.text ?: JSONObject.NULL).put("files", JSONArray(send.files.map { it.toJson() }))
+                        .put("waitingIn", send.waitingIn ?: JSONObject.NULL)
+                },
+            ),
         )
 
     companion object {
@@ -246,7 +265,11 @@ data class Draft(
                         // A record from before 10064 holds no text: unknown, not empty.
                         val text = if (entry.has("text") && !entry.isNull("text")) entry.getString("text") else null
                         entry.optString("id").takeIf { it.isNotEmpty() }?.let { id ->
-                            id to QueuedSend(text, (0 until files.length()).mapNotNull { j -> files.optJSONObject(j)?.let(DraftAttachment::fromJson) })
+                            id to QueuedSend(
+                                text,
+                                (0 until files.length()).mapNotNull { j -> files.optJSONObject(j)?.let(DraftAttachment::fromJson) },
+                                waitingIn = if (entry.has("waitingIn") && !entry.isNull("waitingIn")) entry.getString("waitingIn") else null,
+                            )
                         }
                     }.toMap()
                 }.orEmpty(),
@@ -258,8 +281,12 @@ data class Draft(
 /** How many queued sends a draft remembers for a withdrawal. */
 const val QUEUED_FILES_KEPT = 16
 
-/** What one queued send carried: its [text] as sent (null when not recorded) and its [files]. */
-data class QueuedSend(val text: String?, val files: List<DraftAttachment>)
+/**
+ * What one queued send carried: its [text] as sent (null when not recorded) and its [files].
+ * [waitingIn]: the session whose server took it as a steer and lists it nowhere (Kilo), until
+ * that server says it waits no more; null for every other send.
+ */
+data class QueuedSend(val text: String?, val files: List<DraftAttachment>, val waitingIn: String? = null)
 
 /**
  * The editor's text once a withdrawn request's [withdrawn] text comes back.

@@ -15,14 +15,17 @@ class HarnessTest {
     }
 
     @Test
-    fun kilos_endpoint_takes_text_and_never_offers_steer_or_queue() {
+    fun kilos_endpoint_steers_into_a_turn_but_never_offers_a_queue() {
         val kilo = Harness.of("Kilo")
         assertEquals(SendRoute.Endpoint, kilo.send)
         assertFalse(kilo.readOnlyHistory)
         assertTrue("kilo" in Harness.endpointAgents)
         assertFalse("kilo" in Harness.queueAgents)
-        assertFalse("kilo" in Harness.steerAgents)
-        // The programs that do steer keep it.
+        assertTrue("kilo" in Harness.steerAgents)
+        // Its server lists no waiting steer: only Kilo's queue is the app's own record.
+        assertEquals(setOf("kilo"), Harness.unlistedSteerAgents)
+        // S says what omp and codex say: steer, no queue.
+        assertEquals(Harness.of("omp").cell(HarnessKey.SteerQueue), kilo.cell(HarnessKey.SteerQueue))
         for (name in listOf("omp", "codex", "opencode")) assertTrue(name, name in Harness.steerAgents)
     }
 

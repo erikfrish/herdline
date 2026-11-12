@@ -1,6 +1,6 @@
 """One call to the already-running local Kilo server, v1 routes only.
 
-argv: op (send | status | state | children), session id, payload JSON,
+argv: op (send | status | state | withdraw | children), session id, payload JSON,
 and `media` for a send with staged files: then opencode_media.py is part
 of this script and {records, target} come on fd 3, as opencode_ctl.py
 takes them. Prints one line: a word, or a word, a tab and a JSON payload.
@@ -25,10 +25,24 @@ packages/opencode/src/server/routes/instance/httpapi/groups:
   filename?, url} (schema/src/v1/session.ts:442-466); files go as data: URLs
   (session/prompt.ts:1039-1070), never a host path. messageID starts with
   msg (schema/src/v1/session.ts:17-20).
+  On a session at work the message is stored at once and waits in Kilo's
+  in-memory prompt queue (session/prompt.ts:1430-1436, 1505-1515;
+  kilocode/session/prompt-queue.ts:213-288, the waiting FIFO :233-237);
+  the running turn breaks for it at its next step boundary, closed as
+  superseded (prompt-queue.ts:164-174, session/prompt.ts:1960-1975): a
+  steer. Kilo has no next-turn queue, no promote and no route listing the
+  waiting prompts (snapshot() serves only its cloud sender,
+  kilo-sessions/remote-sender.ts:620-628). So a send with delivery steer
+  goes only to a session at work, and one without only to an idle one.
 - GET /session/status?directory= -> {sessionID: {type}} (session.ts:153);
   an absent session is idle (session/status.ts:72); types idle, retry,
   busy, offline, scheduled (schema/src/session-status-event.ts:11-47).
 - GET /session/:id/message/:messageID -> {info, parts} (session.ts:223).
+- DELETE /session/:id/message/:messageID?directory=&queued=true -> boolean
+  (session.ts:133, 441-453, DeleteMessageQuery :50-53): true when the prompt
+  was still waiting, then dropped and removed (handlers/session.ts:449-462,
+  prompt-queue.ts:109-120); false when it waits no more (it started, or the
+  id is unknown), and nothing is touched.
 - GET /session/:id/children -> [Session.Info] (session.ts:176).
 """
 import base64
@@ -139,6 +153,15 @@ def status(base, headers, directory):
     return kind
 
 
+def unready(kind, steer):
+    """The word refusing a send to a session in state [kind], else None:
+    a steer joins only a turn at work, a send without a verb only an idle
+    session. Nothing is turned into the other verb here."""
+    if steer:
+        return 'idle' if kind == 'idle' else None
+    return None if kind == 'idle' else 'busy'
+
+
 def parts(sent, files):
     """The prompt's parts: its text, then each verified staged file as a
     FilePartInput whose url is its data: URI. Never a host path: a file:
@@ -176,7 +199,8 @@ def main():
     try:
         directory = directory_of(base, headers)
         if op == 'state':
-            # ingress::state's {idle, queued}; the app queues nothing on Kilo.
+            # ingress::state's {idle, queued}. Kilo lists no waiting prompt
+            # (see the routes above): the app shows its own steers.
             return 'state\t' + json.dumps({'idle': status(base, headers, directory) == 'idle', 'queued': []}, separators=(',', ':'))
         if op == 'status':
             message_id = json.loads(payload)['id']
@@ -199,14 +223,24 @@ def main():
             # Past MAX_CHILDREN the first ones go, marked as such (opencode_ctl's word).
             word = 'children_more' if len(found) > MAX_CHILDREN else 'children'
             return word + '\t' + json.dumps([child(entry) for entry in found[:MAX_CHILDREN]], separators=(',', ':'))
+        if op == 'withdraw':
+            message_id = json.loads(payload)['id']
+            if not isinstance(message_id, str) or not message_id.startswith('msg'):
+                return 'local'
         if op == 'send':
             sent = json.loads(payload)
             message_id = sent.get('id')
+            if sent.get('delivery', 'steer') != 'steer':
+                # Kilo has no other delivery: nothing is asked of it.
+                return 'local'
+            steer = sent.get('delivery') == 'steer'
             if not isinstance(message_id, str) or not message_id.startswith('msg') or not text(sent.get('text')):
                 return 'invalid'
-            # A prompt starts a turn; a session at work is never sent one here.
-            if status(base, headers, directory) != 'idle':
-                return 'busy'
+            # Without a verb a prompt starts a turn; a session at work is
+            # never sent one. A steer goes only into a turn at work.
+            word = unready(status(base, headers, directory), steer)
+            if word:
+                return word
             files = []
             if MEDIA:
                 # The staged records and their target, on the command's own
@@ -222,18 +256,19 @@ def main():
                     files = prepare(given['records'], target, agent='kilo', limits=FILE_LIMITS)
                 except MediaRefusal as refusal:
                     return 'media\t' + refusal.code
-                # Reading the files took time: the session, its idleness and
+                # Reading the files took time: the session, its state and
                 # the agent process are asked again just before the prompt.
                 if directory_of(base, headers) != directory:
                     return 'local'
-                if status(base, headers, directory) != 'idle':
-                    return 'busy'
+                word = unready(status(base, headers, directory), steer)
+                if word:
+                    return word
                 try:
                     os.kill(target['instance']['pid'], 0)
                 except ProcessLookupError:
                     return 'gone'
             body = parts(sent, files)
-        if op != 'send':
+        if op not in ('send', 'withdraw'):
             return 'local'
     except urllib.error.HTTPError as error:
         return 'gone' if error.code == 404 else 'auth' if error.code == 401 else 'local'
@@ -241,6 +276,13 @@ def main():
         return 'local'
     # From this boundary on, an unreadable reply may hide an admitted change.
     try:
+        if op == 'withdraw':
+            path = '/session/' + quoted(session) + '/message/' + quoted(message_id) + '?directory=' + quoted(directory) + '&queued=true'
+            found = call(base, headers, 'DELETE', path)
+            # Only Kilo's own boolean says what became of it.
+            if found is True or found is False:
+                return 'withdrawn\t' + json.dumps(found)
+            return 'doubt'
         path = '/session/' + quoted(session) + '/prompt_async'
         try:
             call(base, headers, 'POST', path, {'messageID': message_id, 'parts': body}, timeout=30)

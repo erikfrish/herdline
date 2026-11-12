@@ -136,6 +136,9 @@ fn opencode_inbox_answers_read_as_the_live_endpoint_kotlin_parses() {
     // was queued, so the phone can offer Queue or Steer by name.
     assert_eq!(refused(composer::Refusal::AgentWorking), control_reply("busy", Op::Send, ID, "").unwrap());
     assert!(control_reply("busy", Op::State, ID, "").is_err());
+    // Kilo's steer for a session no longer at work: refused, never a turn of its own.
+    assert_eq!(refused(composer::Refusal::AgentIdle), control_reply("idle", Op::Send, ID, "").unwrap());
+    assert!(control_reply("idle", Op::Withdraw, ID, "").is_err());
     // No server is an unusable route with its reason, never an absence the
     // pane route could take a send over on.
     for op in [Op::Send, Op::State, Op::Status, Op::Withdraw, Op::Promote, Op::Dialogs, Op::Abort, Op::Children] {

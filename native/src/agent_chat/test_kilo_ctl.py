@@ -136,6 +136,79 @@ class Send(Daemon):
         self.assertEqual(run(home, 'send', json.dumps({'id': 'msg_one', 'text': 'x'})), 'doubt')
 
 
+class Steer(Daemon):
+    # prompt.ts:1430-1436, 1505-1515; prompt-queue.ts:213-288: a prompt to a
+    # session at work waits for the turn's next step boundary.
+    def test_a_steer_goes_into_a_turn_at_work_and_never_starts_one(self):
+        steer = json.dumps({'id': 'msg_one', 'text': 'look', 'delivery': 'steer'})
+        for kind in ('busy', 'retry', 'offline', 'scheduled'):
+            with self.subTest(kind):
+                home, server = self.serve({
+                    ('GET', '/session/status' + QUERY): (200, {'ses_test': {'type': kind}}),
+                    ('POST', '/session/ses_test/prompt_async'): (204, None),
+                })
+                self.assertEqual(run(home, 'send', steer), 'queued')
+                self.assertEqual(self.posts(server), [('POST', '/session/ses_test/prompt_async', {'messageID': 'msg_one', 'parts': [
+                    {'type': 'text', 'text': 'look'},
+                ]})])
+        # An idle session (absent from the map is idle) would take it as a turn of its own: refused, nothing sent.
+        for listed in ({'ses_test': {'type': 'idle'}}, {}):
+            with self.subTest(listed):
+                home, server = self.serve({
+                    ('GET', '/session/status' + QUERY): (200, listed),
+                    ('POST', '/session/ses_test/prompt_async'): (204, None),
+                })
+                self.assertEqual(run(home, 'send', steer), 'idle')
+                self.assertEqual(self.posts(server), [])
+
+    def test_a_delivery_kilo_has_not_is_never_sent(self):
+        home, server = self.serve({
+            ('GET', '/session/status' + QUERY): (200, {'ses_test': {'type': 'busy'}}),
+            ('POST', '/session/ses_test/prompt_async'): (204, None),
+        })
+        for delivery in ('queue', 'followUp', None, 1):
+            with self.subTest(delivery):
+                self.assertEqual(run(home, 'send', json.dumps({'id': 'msg_one', 'text': 'x', 'delivery': delivery})), 'local')
+        # Only the session was read: not even its status was asked.
+        self.assertEqual({(m, p) for m, p, _, _ in server.seen}, {SESSION})
+
+    def test_a_dropped_steer_reply_is_a_doubt_never_a_resend(self):
+        home, server = self.serve({
+            ('GET', '/session/status' + QUERY): (200, {'ses_test': {'type': 'busy'}}),
+            ('POST', '/session/ses_test/prompt_async'): (500, {'name': 'Unknown'}),
+        })
+        self.assertEqual(run(home, 'send', json.dumps({'id': 'msg_one', 'text': 'x', 'delivery': 'steer'})), 'doubt')
+        self.assertEqual(len(self.posts(server)), 1)
+
+
+class Withdraw(Daemon):
+    # session.ts:441-453, handlers/session.ts:449-462: queued=true answers
+    # whether the prompt was still waiting and is now dropped.
+    DELETE = ('DELETE', '/session/ses_test/message/msg_one' + QUERY + '&queued=true')
+
+    def deletes(self, server):
+        return [seen[:2] for seen in server.seen if seen[0] == 'DELETE']
+
+    def test_only_kilos_own_boolean_says_what_became_of_the_steer(self):
+        for answer, word in ((True, 'withdrawn\ttrue'), (False, 'withdrawn\tfalse')):
+            with self.subTest(answer):
+                home, server = self.serve({self.DELETE: (200, answer)})
+                self.assertEqual(run(home, 'withdraw', json.dumps({'id': 'msg_one'})), word)
+                self.assertEqual(self.deletes(server), [self.DELETE])
+        # An error or any other body may hide a drop: doubt, never "gone" or "kept".
+        for reply in ((500, {'name': 'Unknown'}), (404, {'name': 'NotFound'}), (200, None), (200, 'true'), (200, {'ok': True})):
+            with self.subTest(reply):
+                home, server = self.serve({self.DELETE: reply})
+                self.assertEqual(run(home, 'withdraw', json.dumps({'id': 'msg_one'})), 'doubt')
+
+    def test_an_id_not_this_apps_is_never_deleted(self):
+        home, server = self.serve({})
+        for sent in ({'id': 'one'}, {'id': 7}, {}):
+            with self.subTest(sent):
+                self.assertEqual(run(home, 'withdraw', json.dumps(sent)), 'local')
+        self.assertEqual(self.deletes(server), [])
+
+
 class Status(Daemon):
     # session.ts:223 message -> {info, parts}; 404 = never stored.
     def test_a_stored_message_is_accepted_and_a_missing_one_unknown(self):

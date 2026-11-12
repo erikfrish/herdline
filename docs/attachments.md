@@ -219,7 +219,7 @@ JPEG, GIF or WebP), `attachment_target`, `attachment_missing`,
 
 ## Kilo
 
-A Kilo Send (Auto only: Kilo takes no Steer or Queue) carries the draft's
+A Kilo Send or Steer (Kilo takes no Queue) carries the draft's
 staged files through the same `opencode_media.py` checks, embedded in
 `kilo_ctl.py`, as v1 FilePartInput `{type: "file", mime, filename, url}` with
 the verified bytes as a `data:` URL (pinned v7.8.27 03a6f07

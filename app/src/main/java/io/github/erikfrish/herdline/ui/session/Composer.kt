@@ -1053,6 +1053,12 @@ private fun Editor(
         }
     }
     val probe = probeFor(probeRead, draft.instance)
+    // Kilo lists no waiting steer: its own steers leave the record once the
+    // server reads the session idle, the only answer that says so.
+    val unlistedSteers = agentNamed(draft.agent, Harness.unlistedSteerAgents)
+    LaunchedEffect(probe, unlistedSteers) {
+        if (unlistedSteers) steersSettled(probe, draft, draft.instance?.path)?.let(::save)
+    }
     val endpointSteer = endpointSteerReady(reading, draft.instance, probe)
     val queueVerb = sendQueues(reading, draft.instance, probe)
 
@@ -1273,8 +1279,10 @@ private fun Editor(
                 // OMP holds it: the text and its files leave the editor. Nothing
                 // was typed into the pane, so the terminal is not brought up.
                 write(if (value.text == text) "" else value.text)
-                // Its record, by request id, was written ahead (PHOTO-STEER-W).
-                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }))
+                // Its record, by request id, was written ahead (PHOTO-STEER-W). A steer
+                // the server lists nowhere waits by this record and the server's word only.
+                val kept = draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried })
+                save(if (deliverAs == "steer" && agentNamed(instance.agent, Harness.unlistedSteerAgents)) kept.waitingSteer(id, instance.path) else kept)
                 outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
             } else {
                 // Refused: nothing is queued, so nothing can be withdrawn. Uncertain keeps its record.
@@ -1467,6 +1475,10 @@ private fun Editor(
             // Withdrawn is taken back, not lost: its text and files into the
             // editor, after anything typed while the withdraw was on its way.
             // Send and Steer stayed off meanwhile (draftBusy).
+            if (done.getOrNull() == false) {
+                // Already left the server's queue: no longer waiting, by its own word.
+                save(draft.steersLeft(listOf(requestId)))
+            }
             if (done.getOrNull() == true) {
                 // A request this draft has no record of (sent before 10064) has no known text:
                 // nothing is guessed from the queue, and the user is told.
@@ -1807,7 +1819,7 @@ private fun Editor(
 
     if (reading) {
         IngressQueuePanel(
-            queuePanel(probe),
+            if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
             withdrawing,
             withdrawNote,
             ::withdraw,

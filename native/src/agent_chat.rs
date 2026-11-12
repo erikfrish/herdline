@@ -39,10 +39,13 @@
 //!
 //! OpenCode and Kilo control: the session's open permission requests and
 //! questions as dialogs, the user's reply to one, and Stop. Kilo's send,
-//! status and state go through its v1 server (`agent_chat/kilo_ctl.py`,
-//! pinned v7.8.27 03a6f07); steer, queue, withdraw, promote and files are
-//! unsupported by name. Kilo has no validated PTY route, so nothing of it
-//! is typed into the pane.
+//! steer, withdraw, status and state go through its v1 server
+//! (`agent_chat/kilo_ctl.py`, pinned v7.8.27 03a6f07): a steer is a send
+//! to a session at work, which Kilo's prompt queue runs at the turn's next
+//! step boundary, and withdraw takes back the app's own waiting steer by
+//! its id. Kilo has no queue behind the turn and no promote, both
+//! unsupported by name, and lists no waiting prompt. Kilo has no validated
+//! PTY route, so nothing of it is typed into the pane.
 //!
 //! Every call runs as one command. First the transcript's own pane report,
 //! then the tiny embedded verifier, which must read that report as exactly
@@ -96,8 +99,9 @@ const MAX_DIALOGS: usize = 5;
 enum Engine {
     Codex,
     OpenCode,
-    /// Kilo, the OpenCode fork: permissions and Stop through its server;
-    /// every other op unsupported by name, never absent.
+    /// Kilo, the OpenCode fork: its v1 server for send, steer, withdraw,
+    /// status, state and children; queue and promote unsupported by name,
+    /// never absent.
     Kilo,
     /// Pi, Claude Code, or any name not recognized: report [`absent`], so
     /// the caller's validated PTY route (`composer::deliver`) takes over
@@ -123,13 +127,13 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
         // Kilo's v1 server (`kilo_ctl.py`) starts a turn on an idle session
-        // only: no steer, no queue, no inbox to withdraw from or promote.
-        // Said as such, never an absence a send could fall through to the
-        // pane on. Permissions, questions and Stop stay in `opencode_ctl.py`.
-        Engine::Kilo if matches!(request.op, Op::Withdraw | Op::Promote) => return Ok(unsupported_op(request.op).to_string()),
-        Engine::Kilo if matches!(request.deliver_as, Some(DeliverAs::Steer | DeliverAs::Queue)) => {
-            let missing = if request.deliver_as == Some(DeliverAs::Steer) { "steer" } else { "queue" };
-            return Ok(json!({"endpoint": "unsupported", "missing": [missing]}).to_string());
+        // or steers one at work; it has no queue behind the turn and nothing
+        // to promote. Said as such, never an absence a send could fall
+        // through to the pane on. Permissions, questions and Stop stay in
+        // `opencode_ctl.py`.
+        Engine::Kilo if request.op == Op::Promote => return Ok(unsupported_op(request.op).to_string()),
+        Engine::Kilo if request.deliver_as == Some(DeliverAs::Queue) => {
+            return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
         _ => {}
     }
@@ -366,6 +370,9 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         // A send with no verb while the session runs: nothing was queued,
         // and nothing is turned into a steer or a queue behind the user.
         ("busy", Op::Send) => refused(composer::Refusal::AgentWorking),
+        // A steer for a session no longer at work: nothing was sent, and it
+        // never becomes a turn of its own behind the user (kilo_ctl.py).
+        ("idle", Op::Send) => refused(composer::Refusal::AgentIdle),
         // opencode_media.prepare refused the staged files before the prompt
         // was sent: the whole send, nothing dropped, nothing typed instead.
         ("media", Op::Send) => match payload {
@@ -520,8 +527,9 @@ HERDLINE_CODEX_CTL"#,
     )
 }
 
-/// Kilo's v1 server script for a send, a status check, the state or the
-/// children of this exact session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
+/// Kilo's v1 server script for a send or a steer, a withdraw of the app's
+/// own steer, a status check, the state or the children of this exact
+/// session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
 /// `control_reply`'s: the same discovery rule and the same boundary.
 ///
 /// With `media`, as in [`control_step`]: `opencode_media.py` in the same
@@ -529,8 +537,15 @@ HERDLINE_CODEX_CTL"#,
 fn kilo_step(request: &Request, text: &str, media: bool) -> String {
     let message = format!("msg_{}", request.id);
     let (op, payload) = match request.op {
-        Op::Send => ("send", json!({"id": message, "text": text}).to_string()),
+        Op::Send => {
+            let mut body = json!({"id": message, "text": text});
+            if request.deliver_as == Some(DeliverAs::Steer) {
+                body["delivery"] = json!("steer");
+            }
+            ("send", body.to_string())
+        }
         Op::Status => ("status", json!({"id": message}).to_string()),
+        Op::Withdraw => ("withdraw", json!({"id": message}).to_string()),
         Op::State => ("state", String::from("{}")),
         Op::Children => ("children", String::from("{}")),
         _ => unreachable!("answered as unsupported or served by control_step"),

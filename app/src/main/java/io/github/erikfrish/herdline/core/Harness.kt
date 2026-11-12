@@ -40,6 +40,12 @@ data class Harness(
      * its endpoint. A send route alone never implies it.
      */
     val steer: Boolean = false,
+    /**
+     * The program's server lists no waiting steer (Kilo): Chat's queue
+     * shows the steers this app sent and the server took, until the server
+     * says otherwise (a withdraw's answer, the session read idle).
+     */
+    val unlistedSteers: Boolean = false,
     /** The card's claims, one per [HarnessKey] in key order. */
     private val claims: List<Cell>,
 ) {
@@ -71,6 +77,9 @@ data class Harness(
 
         /** Programs whose endpoint takes a Steer into the running turn. */
         val steerAgents: Set<String> by lazy { names { it.steer } }
+
+        /** Programs whose waiting steers only this app's own record shows. */
+        val unlistedSteerAgents: Set<String> by lazy { names { it.unlistedSteers } }
 
         private fun names(keep: (Harness) -> Boolean): Set<String> =
             KNOWN.values.filter(keep).mapTo(linkedSetOf()) { it.name }
@@ -248,8 +257,10 @@ private fun card(vararg cells: Cell) = cells.toList()
 
 private fun sessionless(all: Cell, stop: Cell, steer: Cell) = card(all, all, all, stop, steer, all, all, all, SS, all, all)
 
-private fun routed(name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false, steer: Boolean = false) =
-    Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue, steer = steer)
+private fun routed(
+    name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false, steer: Boolean = false,
+    unlistedSteers: Boolean = false,
+) = Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue, steer = steer, unlistedSteers = unlistedSteers)
 
 private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = false, send = SendRoute.None, claims = claims)
 
@@ -264,11 +275,12 @@ private val KNOWN: Map<String, Harness> = (
         // and the session's children (by title, the cut list marked) go to the already-running server
         // (native agent_chat, opencode_ctl.py + opencode_media.py, pinned v2.2.7 fedc6f2); unit tests only.
         routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, V), queue = true, steer = true),
-        // kilo: text Send with staged files (verified data: file parts, the native per-kind limits), status,
-        // state and the session's children (by title) through its v1 server (kilo_ctl.py + opencode_media.py,
-        // pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer, queue,
-        // withdraw or promote.
-        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, V, V, V, V, no(Reason.StaleId))),
+        // kilo: text Send with staged files (verified data: file parts, the native per-kind limits), Steer
+        // into a turn at work, withdraw of the app's own waiting steer, status, state and the session's
+        // children (by title) through its v1 server (kilo_ctl.py + opencode_media.py, pinned v7.8.27
+        // 03a6f07); a plain send while it works is refused agent_working. Kilo has no queue behind the turn,
+        // no promote and lists no waiting prompt, so Chat shows its own steers only.
+        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, no(Reason.StaleId)), steer = true, unlistedSteers = true),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.
