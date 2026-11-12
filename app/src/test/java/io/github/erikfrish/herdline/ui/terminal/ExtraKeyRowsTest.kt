@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.terminal
 
 import io.github.erikfrish.herdline.ui.session.extraKeyRowCount
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -37,5 +38,19 @@ class ExtraKeyRowsTest {
             val rows = extraKeyRows(keys, extraKeyRowCount(landscape, ime, height))
             assertEquals(listOf(keys.take(7), keys.drop(7)), rows)
         }
+    }
+
+    @Test
+    fun aScrollingRowEndsOnHalfACapAndNeverShrinksATarget() {
+        // 640 dp landscape and a 457 dp split, less the 6 dp padding a side; 5 dp gaps.
+        for (viewport in listOf(628f, 445f)) {
+            val width = scrollingCapWidth(viewport, 5f)
+            // Whole caps and gaps, then exactly half a cap at the edge.
+            val whole = kotlin.math.round((viewport - width / 2) / (width + 5f)).toInt()
+            assertTrue("$viewport: $width", width >= 48f && whole >= 1)
+            assertEquals("$viewport", width / 2, viewport - whole * (width + 5f), 0.01f)
+        }
+        // Not room for one cap and half the next: the plain 48 dp target, no cue.
+        assertEquals(48f, scrollingCapWidth(70f, 5f), 0f)
     }
 }
