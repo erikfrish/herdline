@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="session_chat_other_agent">聊天支持 OMP、Pi、OpenCode、Codex 和 Claude Code。%1$s 运行的是 %2$s，因此保持终端模式。</string>
-</resources>
