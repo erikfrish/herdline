@@ -11,36 +11,41 @@
 //! may have reached the agent and is not confirmed is `outcome: uncertain`,
 //! kept by the caller and never sent again.
 //!
-//! Both engines send through their own control path over the host's exec
-//! channel, pinned to the exact session id the request names — Codex
-//! `codex queue --thread --message`, queued on that live thread's own
-//! session, never `exec resume` and never a second agent, and OpenCode
-//! `POST /api/session/:sessionID/prompt` with `{id, text}` on an explicitly
-//! discovered already-running local service. The default CLI API command
-//! may autostart a service, so it is not used for delivery.
+//! Both engines go through their own control path over the host's exec
+//! channel, pinned to the exact session id the request names.
 //!
-//! Every call runs as one command: the transcript's own pane report first,
-//! then the tiny embedded verifier that must read that report as exactly
+//! Codex: the running app-server daemon, through `codex app-server proxy`
+//! (`agent_chat/codex_ctl.py`). The proxy connects to the daemon's control
+//! socket and never starts one, and a thread the daemon has not loaded is
+//! never acted on, so nothing here resumes a session or runs a second agent.
+//! Send starts a turn on an idle thread and joins the daemon's queue on a
+//! working one. Steer goes into the running turn, named by its id. The
+//! queue reads and withdraws by the app's request id, which travels as
+//! `clientUserMessageId`, and Status finds that id in the queue or the turns.
+//!
+//! OpenCode: `POST /api/session/:sessionID/prompt` with `{id, text}` on an
+//! explicitly discovered, already-running local service. The default CLI API
+//! command may autostart a service, so it is not used for delivery.
+//!
+//! Every call runs as one command. First the transcript's own pane report,
+//! then the tiny embedded verifier, which must read that report as exactly
 //! the instance the request names (its pane, terminal, foreground pid,
 //! session id and session ref), and only then the engine step. A report
-//! that cannot be read as that instance refuses before any CLI runs. Past
-//! the CLI boundary only four facts are answered, each provable before the
-//! agent could hold anything: the CLI is absent ([`cli_reason`]), the
-//! server refuses the login ([`server`]), this session or thread is gone
-//! (`gone`), or nothing ran at all (`local`). Every other answer follows an
-//! invocation that may have been admitted somewhere, so a send reads it as
-//! [`uncertain`] — kept by the caller, never sent again — and never as a
-//! refusal or an unusable endpoint.
+//! that cannot be read as that instance refuses before any CLI runs.
 //!
-//! The check ops run the same binding and then answer that no wire path
-//! here serves this call: neither CLI exposes this client a request id's
-//! receipt or an engine queue, so a definite unusable endpoint stands and
-//! Kotlin keeps the receipt it holds exactly as it was. Nothing is invented
-//! to make a queue look readable.
+//! Only answers provable before the agent could hold anything are definite
+//! refusals or unusable endpoints. An admission is accepted only on the
+//! engine's own answer. Every other answer follows a call that may have
+//! been admitted, so a send reads it as [`uncertain`]: kept by the caller,
+//! never sent again.
+//!
+//! OpenCode's check ops answer that no wire path here serves them. Kotlin
+//! then keeps the receipt it holds exactly as it was, and nothing is
+//! invented to make a queue look readable.
 
 use crate::{
     Error, Result, attach, composer,
-    ingress::{Op, Request},
+    ingress::{DeliverAs, Op, Request},
     ssh::Exec,
     transcript::{self, Identity},
 };
@@ -94,17 +99,19 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         if let Err(reason) = attach::admit(&request.attachments, bound) {
             return Ok(refused(reason).to_string());
         }
-        if text.trim().is_empty() {
+        // Codex takes a staged image as its own `localImage` input, so a
+        // photo alone is a message; nothing else carries files.
+        let images = engine == Engine::Codex && request.attachments.iter().all(|a| a.kind == attach::Kind::Image);
+        if text.trim().is_empty() && !(images && !request.attachments.is_empty()) {
             return Ok(refused(composer::Refusal::EmptyText).to_string());
         }
         if text.len() > MAX_TEXT_BYTES {
             return Ok(refused(composer::Refusal::TooLarge).to_string());
         }
-        if !request.attachments.is_empty() {
-            // Codex and OpenCode have no verified command payload for
-            // attachments. Drop nothing silently. Once an upload has real
-            // confirmed support here this becomes the send body, not a
-            // text-only fallback.
+        if !request.attachments.is_empty() && !images {
+            // OpenCode, and files for Codex, have no verified payload here.
+            // Drop nothing silently: once one has real confirmed support it
+            // becomes the send body, not a text-only fallback.
             return Ok(unsupported_type().to_string());
         }
     }
@@ -115,14 +122,13 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     // One command: the pane report, the exact-instance verifier, and only
     // past it the engine step (or `bound` when there is no step to run).
-    let step = match request.op {
-        Op::Send => match engine {
-            Engine::Codex => codex_step(&request.instance, &text),
-            Engine::OpenCode => opencode_step(&request.instance, &text, &request.id),
-            Engine::Pty => unreachable!("routed to the PTY above"),
+    let step = match engine {
+        Engine::Codex => codex_step(&request, &text),
+        Engine::OpenCode => match request.op {
+            Op::Send => opencode_step(&request.instance, &text, &request.id),
+            _ => String::from("printf 'bound\\n'"),
         },
-        Op::Status | Op::State | Op::Withdraw => String::from("printf 'bound\\n'"),
-        Op::Dialogs | Op::DialogSubmit => unreachable!("dialogs are OMP-only"),
+        Engine::Pty => unreachable!("routed to the PTY above"),
     };
     let word = match host_gate(exec, herdr_session, &request.instance, &step) {
         Ok(word) => word,
@@ -137,7 +143,52 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             return Err(error);
         }
     };
-    Ok(reply(word.as_str(), request.op, engine, &request.id)?.to_string())
+    let answer = match (engine, word.split_once('\t')) {
+        (Engine::Codex, Some((word, payload))) => codex_reply(word, payload, request.op, &request.id)?,
+        _ => reply(word.as_str(), request.op, engine, &request.id)?,
+    };
+    Ok(answer.to_string())
+}
+
+/// The reply for one line of the Codex daemon client (`codex_ctl.py`):
+/// its word and its JSON payload. Only words said before any change was
+/// asked of the thread give a definite "nothing sent"; an admission is
+/// accepted only on the daemon's own answer naming our request.
+fn codex_reply(word: &str, payload: &str, op: Op, id: &str) -> Result<Value> {
+    let payload: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
+    let live = |mut value: Value| {
+        value["endpoint"] = json!("live");
+        value
+    };
+    Ok(match word {
+        // No daemon, or it would not speak: nothing reached the thread.
+        "daemon" => unavailable("codex_daemon"),
+        "cli" => unavailable("codex_cli"),
+        // The daemon has the thread on disk only: acting could load it.
+        "notloaded" => unavailable("codex_not_loaded"),
+        "error" => unavailable("codex_error"),
+        "gone" => match op {
+            Op::Send => refused(composer::Refusal::AgentRestarted),
+            _ => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
+        },
+        "blocked" if op == Op::Send => refused(composer::Refusal::AgentBlocked),
+        // Steer has no running turn to join.
+        "not_working" if op == Op::Send => refused(composer::Refusal::AgentIdle),
+        "accepted" if matches!(op, Op::Send | Op::Status) => {
+            live(json!({"id": id, "outcome": "accepted", "state": payload}))
+        }
+        // A status check found no trace of the request: still possibly queued.
+        "unknown" if op == Op::Status => live(json!({"id": id, "outcome": "unknown", "state": payload})),
+        "state" if op == Op::State && payload.is_object() => live(json!({"state": payload})),
+        "withdrawn" if op == Op::Withdraw && payload["withdrawn"].is_boolean() => live(json!({
+            "withdrawn": payload["withdrawn"],
+            "state": payload["state"],
+        })),
+        _ => match op {
+            Op::Send => uncertain(id),
+            _ => return Err(Error::BadReply),
+        },
+    })
 }
 
 /// The reply for one status word the command answered. Only the four words
@@ -218,27 +269,34 @@ fn server(engine: Engine) -> &'static str {
     }
 }
 
-/// The queued word for a `codex queue` admission on the live thread the
-/// request names. `codex queue` never starts or resumes an agent: the one
-/// running on that thread drains its queue into its turn, which is also how
-/// a working turn takes the text.
-fn codex_step(instance: &Identity, text: &str) -> String {
+/// The Codex daemon client for this request, bounded to its own thread: one
+/// line, a word and a JSON payload ([`codex_reply`]). The client is found as
+/// the night route found the CLI, and speaks only to a daemon already
+/// running for this user.
+fn codex_step(request: &Request, text: &str) -> String {
+    let op = match request.op {
+        Op::Send => "send",
+        Op::Status => "status",
+        Op::State => "state",
+        Op::Withdraw => "withdraw",
+        Op::Dialogs | Op::DialogSubmit => unreachable!("dialogs are OMP-only"),
+    };
+    let deliver = match request.deliver_as {
+        Some(DeliverAs::Steer) => "steer",
+        _ => "auto",
+    };
+    let images: Vec<&str> = request.attachments.iter().map(|a| a.path.as_str()).collect();
     format!(
         r#"codex=$(command -v codex) || codex=$HOME/.codex/bin/codex
-[ -x "${{codex:-}}" ] || {{ printf 'cli\n'; exit 0; }}
-t=$(mktemp -d) || {{ printf 'local\n'; exit 0; }}
-if "$codex" queue --thread {thread} --message {text} >"$t/out" 2>"$t/err"; then
-    printf 'queued\n'
-else
-    case "$(cat "$t/out" "$t/err")" in
-        *'no rollout found'*) printf 'gone\n' ;;
-        *'Operation not found'*) printf 'cli\n' ;;
-        *) printf 'doubt\n' ;;
-    esac
-fi
-rm -rf "$t""#,
-        thread = shell_quote(&instance.path),
-        text = shell_quote(&text),
+[ -x "${{codex:-}}" ] || {{ printf 'cli\tnull\n'; exit 0; }}
+python3 - "$codex" {op} {thread} {id} {deliver} {text} {images} <<'HERDLINE_CODEX_CTL'
+{client}
+HERDLINE_CODEX_CTL"#,
+        thread = shell_quote(&request.instance.path),
+        id = shell_quote(&request.id),
+        text = shell_quote(text),
+        images = shell_quote(&json!(images).to_string()),
+        client = include_str!("agent_chat/codex_ctl.py"),
     )
 }
 

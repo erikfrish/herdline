@@ -181,3 +181,89 @@ fn the_unsupported_answers_name_what_is_missing() {
     assert_eq!("codex_auth", server(Engine::Codex));
     assert_eq!("server_auth", server(Engine::OpenCode));
 }
+
+#[test]
+fn codex_daemon_words_say_nothing_sent_only_before_any_change() {
+    // No daemon, a thread it has not loaded, or one it cannot serve: the
+    // client stopped before asking the thread anything.
+    for (word, reason) in [
+        ("daemon", "codex_daemon"),
+        ("cli", "codex_cli"),
+        ("notloaded", "codex_not_loaded"),
+        ("error", "codex_error"),
+    ] {
+        for op in [Op::Send, Op::Status, Op::State, Op::Withdraw] {
+            assert_eq!(unavailable(reason), codex_reply(word, "null", op, ID).unwrap());
+        }
+    }
+    assert_eq!(
+        refused(composer::Refusal::AgentBlocked),
+        codex_reply("blocked", "null", Op::Send, ID).unwrap()
+    );
+    assert_eq!(
+        refused(composer::Refusal::AgentIdle),
+        codex_reply("not_working", "null", Op::Send, ID).unwrap()
+    );
+    assert_eq!(
+        refused(composer::Refusal::AgentRestarted),
+        codex_reply("gone", "null", Op::Send, ID).unwrap()
+    );
+    // Past a change asked of the thread, an unreadable answer is a doubt:
+    // a send stays uncertain and is never sent again; a check fails.
+    for word in ["doubt", "", "queued", "withdrawn", "state"] {
+        assert_eq!(uncertain(ID), codex_reply(word, "null", Op::Send, ID).unwrap(), "{word:?}");
+    }
+    assert!(codex_reply("doubt", "null", Op::Withdraw, ID).is_err());
+    assert!(codex_reply("accepted", "null", Op::Withdraw, ID).is_err());
+    assert!(codex_reply("accepted", "not json", Op::Send, ID).is_err());
+}
+
+#[test]
+fn codex_daemon_answers_read_as_the_live_endpoint_kotlin_parses() {
+    let state = r#"{"idle":false,"queued":[{"requestId":"r","text":"next","queue":"followUp"}]}"#;
+    let sent = codex_reply("accepted", state, Op::Send, ID).unwrap();
+    assert_eq!("live", sent["endpoint"]);
+    assert_eq!("accepted", sent["outcome"]);
+    assert_eq!(ID, sent["id"]);
+    assert_eq!("followUp", sent["state"]["queued"][0]["queue"]);
+    let probe = codex_reply("state", state, Op::State, ID).unwrap();
+    assert_eq!(json!({"endpoint": "live", "state": serde_json::from_str::<Value>(state).unwrap()}), probe);
+    // A state that is not an object is no probe.
+    assert!(codex_reply("state", "null", Op::State, ID).is_err());
+    // Status with no trace of the id is unknown, which Kotlin keeps as is.
+    let checked = codex_reply("unknown", state, Op::Status, ID).unwrap();
+    assert_eq!("unknown", checked["outcome"]);
+    assert!(codex_reply("unknown", state, Op::Send, ID).unwrap() == uncertain(ID));
+    let gone = codex_reply("withdrawn", r#"{"withdrawn":false,"state":null}"#, Op::Withdraw, ID).unwrap();
+    assert_eq!(json!({"endpoint": "live", "withdrawn": false, "state": null}), gone);
+    // Withdrawn needs the daemon's own boolean.
+    assert!(codex_reply("withdrawn", r#"{"withdrawn":"yes"}"#, Op::Withdraw, ID).is_err());
+}
+
+#[test]
+fn the_codex_step_runs_the_daemon_client_with_quoted_arguments() {
+    let request: Request = serde_json::from_value(json!({
+        "op": "send",
+        "node": "n",
+        "session": "s",
+        "boot": "b",
+        "pane": "w1:p1",
+        "instance": codex(),
+        "id": ID,
+        "text": "it's $(rm -rf ~)",
+        "deliverAs": "steer",
+    }))
+    .unwrap();
+    let step = codex_step(&request, &request.text);
+    // The proxy only, never a daemon start or a resume.
+    assert!(step.contains(r#"[codex, "app-server", "proxy"]"#));
+    assert!(!step.contains("daemon start"));
+    assert!(!step.contains("thread/resume") && !step.contains("exec resume"));
+    assert!(step.contains(&format!(
+        r#"python3 - "$codex" send {} {} steer {} {} <<'HERDLINE_CODEX_CTL'"#,
+        shell_quote(&codex().path),
+        shell_quote(ID),
+        shell_quote("it's $(rm -rf ~)"),
+        shell_quote("[]"),
+    )));
+}
