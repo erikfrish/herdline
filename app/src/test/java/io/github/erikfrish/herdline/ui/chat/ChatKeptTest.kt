@@ -83,19 +83,23 @@ class ChatKeptTest {
     }
 
     @Test
-    fun c9_a_pane_with_no_session_file_yet_fails_untyped_in_its_own_memory_and_reads_its_first_turn_later() = runBlocking {
+    fun c9_failure_then_success_remain_pane_local() = runBlocking {
         val memory = ChatMemories().at("b1")
-        val turn = TranscriptPage(claude.copy(paneId = "w4:pK"), reset = true, size = 10, start = 0, end = 10, entries = emptyList())
+        val pKPage = TranscriptPage(claude.copy(paneId = "w4:pK", terminalId = "term_2", path = "/h/.claude/projects/x/k.jsonl"), reset = true, size = 10, start = 0, end = 10, entries = emptyList())
         assertTrue(memory.of("w4:pJ").readNext({ Result.success(page) }, "w4:pJ"))
+        val pJHistory = memory.of("w4:pJ").history
         // NoTranscript, for a fresh session or an unbound agent, arrives untyped: a read error that keeps trying, never a refusal.
         val pK = memory.of("w4:pK")
         assertFalse(pK.readNext({ Result.failure(IOException("the pane is not an OMP agent with a session file")) }, "w4:pK"))
         assertTrue(chatUnavailable(loaded = pK.history != null, failed = pK.read.problem != null, readHere = true))
         assertNull(pK.read.refusal)
-        // The next read (the poll, or Retry waking it) finds the first turn's file.
-        assertTrue(pK.readNext({ Result.success(turn) }, "w4:pK"))
-        assertFalse(chatUnavailable(loaded = pK.history != null, failed = pK.read.problem != null, readHere = true))
-        // Back on pJ: its own history, untouched by pK's failure.
+        assertNull(memory.of("w4:pJ").read.problem)
+        // The next read of pK (the poll, or Retry waking it) succeeds: its history is pK's own page.
+        assertTrue(pK.readNext({ Result.success(pKPage) }, "w4:pK"))
+        assertEquals(pKPage.identity, pK.history?.identity)
+        assertNull(pK.read.problem)
+        // pJ keeps exactly what it read: neither pK's failure nor its page reached it.
+        assertSame(pJHistory, memory.of("w4:pJ").history)
         assertEquals(claude, memory.of("w4:pJ").history?.identity)
         assertNull(memory.of("w4:pJ").read.problem)
     }
