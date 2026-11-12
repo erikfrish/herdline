@@ -143,7 +143,7 @@ enum class Note { Typed, QueueMissing, PermissionsOnly }
 
 /** What the route reports right now, for the card's runtime replacements (card §3.4). */
 data class HarnessRuntime(
-    /** opencode/kilo: the adapter answers `unusable: no_server`. */
+    /** opencode/kilo: the native core answers `unusable: needs_server` (Connection.ingressNeedsServer). */
     val noServer: Boolean = false,
     /** mastracode: Herdr still reports the session as `session-init`. */
     val sessionInit: Boolean = false,
@@ -180,7 +180,7 @@ private fun replaced(name: String, key: HarnessKey, runtime: HarnessRuntime): Ce
     else -> null
 }
 
-private val SERVER_KEYS = setOf(HarnessKey.Send, HarnessKey.Stop, HarnessKey.Questions)
+private val SERVER_KEYS = setOf(HarnessKey.Send, HarnessKey.Stop, HarnessKey.SteerQueue, HarnessKey.Questions)
 private val SERVER_PROGRAMS = mapOf("opencode" to "OpenCode", "kilo" to "Kilo")
 
 // The claims, one plain table (card §4). Columns: H L P X S T M Q U A R.

@@ -553,6 +553,18 @@ class Connection(val node: Node) {
     }
 
     /**
+     * Whether [target]'s program runs without its server, for the card's
+     * runtime row (card §3.4). Asks the dialogs read, the one op both
+     * OpenCode and Kilo take to their server; it changes nothing. Blocks on the host.
+     */
+    fun ingressNeedsServer(target: ComposerTarget): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressNeedsServerOutcome {
+            Native.ingress(session, ingressRequest("dialogs", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
+    /**
      * The user's [answer] to the one dialog [dialogId] on [target]'s
      * instance, as OMP takes it for that kind (a form's is `{data: …}`).
      * OMP's result comes back as it said it: `submitted`, `not_open`,

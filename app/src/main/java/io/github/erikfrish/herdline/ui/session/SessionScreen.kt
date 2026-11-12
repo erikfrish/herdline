@@ -174,6 +174,7 @@ import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
 import io.github.erikfrish.herdline.ui.chat.ChatMemory
 import io.github.erikfrish.herdline.ui.chat.ChatView
+import io.github.erikfrish.herdline.ui.chat.rememberHarnessRuntime
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
 import io.github.erikfrish.herdline.ui.LocalWindowClass
@@ -1374,6 +1375,7 @@ fun SessionScreen(
                                     agentHere = card.pane?.let { view?.agentIn(it) } != null,
                                     onTerminal = { harnessCard = null; showChat(false) },
                                     onClose = { harnessCard = null },
+                                    runtime = rememberHarnessRuntime(connection, chatMemory, card.pane),
                                 )
                             }
                         }

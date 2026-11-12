@@ -151,6 +151,20 @@ internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
     return Result.success(dialogs)
 }
 
+/**
+ * Whether the program's server is missing: `unusable: needs_server` is
+ * true, a live answer false. Any other answer says nothing either way and
+ * fails, so the card keeps its claim rather than guess.
+ */
+internal fun ingressNeedsServerOutcome(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    return when (val endpoint = reply.optString("endpoint")) {
+        "live" -> Result.success(false)
+        "unusable" -> if (reply.optString("reason") == "needs_server") Result.success(true) else Result.failure(IOException("unusable"))
+        else -> Result.failure(IOException("endpoint ${endpoint.ifEmpty { "unknown" }}"))
+    }
+}
+
 /** OMP's results for a dialog submit; only these say what became of the answer. */
 private val SUBMIT_RESULTS = setOf("submitted", "not_open", "invalid", "kind_mismatch")
 

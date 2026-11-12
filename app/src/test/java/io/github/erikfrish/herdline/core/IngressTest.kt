@@ -147,6 +147,16 @@ class IngressTest {
     }
 
     @Test
+    fun onlyTheCoresOwnWordSaysTheServerIsMissing() {
+        assertEquals(true, ingressNeedsServerOutcome { """{"endpoint":"unusable","reason":"needs_server"}""" }.getOrThrow())
+        assertEquals(false, ingressNeedsServerOutcome { """{"endpoint":"live","dialogs":[]}""" }.getOrThrow())
+        // An untrusted server, another refusal, or no answer says nothing about the server either way.
+        assertTrue(ingressNeedsServerOutcome { """{"endpoint":"unusable","reason":"server_discovery"}""" }.isFailure)
+        assertTrue(ingressNeedsServerOutcome { """{"endpoint":"unsupported","missing":["dialogs"]}""" }.isFailure)
+        assertTrue(ingressNeedsServerOutcome { throw IOException("gone") }.isFailure)
+    }
+
+    @Test
     fun aDialogSubmitIsOnlyWhatOmpSaidForThatDialog() {
         for (result in listOf("submitted", "not_open", "invalid", "kind_mismatch")) {
             assertEquals(

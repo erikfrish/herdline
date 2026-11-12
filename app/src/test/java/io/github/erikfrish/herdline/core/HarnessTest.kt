@@ -49,4 +49,14 @@ class HarnessTest {
         // Offline still wins over a replacement.
         assertEquals(Shown.CantCheck(offline = true), shown("opencode", HarnessKey.Send, live = false, runtime = server))
     }
+
+    @Test
+    fun opencode_steer_and_queue_says_it_needs_the_server_when_none_runs() {
+        // S goes through OpenCode's server (O1-S), so without one it is not Unverified.
+        assertEquals(Cell.Unverified(), Harness.of("opencode").cell(HarnessKey.SteerQueue))
+        assertEquals(
+            Shown.Claim(Cell.NotYet(Reason.NeedsServer, "OpenCode")),
+            shown("opencode", HarnessKey.SteerQueue, live = true, runtime = HarnessRuntime(noServer = true)),
+        )
+    }
 }
