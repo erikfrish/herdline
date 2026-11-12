@@ -491,9 +491,9 @@ fun SessionScreen(
         modes.forget(node.id, node.session, shown.boot) { pane -> shown.agentIn(pane)?.agent }
     }
     val chatWanted = chatFor(chatPane)
-    // While Chat can't read the agent's transcript, the tab shows Terminal and
-    // switches back by itself once a read succeeds; the stored choice stays
-    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying.
+    // While Chat can't read the agent's transcript, the tab shows Terminal; the stored choice stays
+    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R a good read
+    // ends the fallback only for a Chat tap still pending (fallbackEnds): never by itself.
     var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
     // Why, when the core refused the session by type: these never clear by themselves.
     var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
@@ -686,9 +686,11 @@ fun SessionScreen(
         val kept = chatMemory.of(pane)
         when (kept.recheck(connection, pane)) {
             true -> {
-                chatUnreadable = false
                 chatRefusal = null
-                if (switchesToChat(pendingChatTap, chatPaneNow, tabNow)) showChat(true, pane)
+                if (fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
+                    chatUnreadable = false
+                    showChat(true, pane)
+                }
                 pendingChatTap = null
             }
             false -> {
@@ -1225,8 +1227,14 @@ fun SessionScreen(
                                             // stays long enough to be read (lab.4 G5).
                                             scope.launch { sayChatUnreadable(refusal, SnackbarDuration.Long) }
                                         }
-                                        chatUnreadable = unreadable
                                         chatRefusal = refusal
+                                        if (unreadable) {
+                                            chatUnreadable = true
+                                        } else if (chatUnreadable && fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
+                                            // FOBS1-R: readable again ends the fallback only for a tap still pending.
+                                            chatUnreadable = false
+                                            pendingChatTap = null
+                                        }
                                     },
                                     // The tab's readable title (Titles.kt), never a pane ID.
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
@@ -1623,7 +1631,10 @@ private fun terminalListener(
         }
     }
 
-    override fun onPaste() = pasteClipboard(view.context, connection, pane())
+    override fun onPaste() {
+        onUsed()
+        pasteClipboard(view.context, connection, pane())
+    }
 
     override fun onFontSize(sp: Float) {
         app.settings.update { it.copy(fontSize = sp.coerceIn(8f, 24f)) }

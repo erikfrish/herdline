@@ -32,4 +32,15 @@ class ChatRecheckTest {
         assertFalse(switchesToChat(tap, "w1:p3", "w1:t1"))
         assertFalse(switchesToChat(tap, "w1:p2", "w1:t2"))
     }
+
+    @Test
+    fun a_read_that_comes_good_on_its_own_never_ends_the_fallback() {
+        val tap = PendingChatTap("w1:p2", "w1:t1")
+        // The refused session dir is gone and the hidden Chat reads: no tap, so Terminal stays.
+        assertFalse(fallbackEnds(readable = true, pending = null, pane = "w1:p2", tab = "w1:t1"))
+        assertFalse(fallbackEnds(readable = true, pending = tap, pane = "w1:p3", tab = "w1:t1"))
+        assertFalse(fallbackEnds(readable = true, pending = tap, pane = "w1:p2", tab = "w1:t2"))
+        assertFalse(fallbackEnds(readable = false, pending = tap, pane = "w1:p2", tab = "w1:t1"))
+        assertTrue(fallbackEnds(readable = true, pending = tap, pane = "w1:p2", tab = "w1:t1"))
+    }
 }
