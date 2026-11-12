@@ -160,7 +160,11 @@ data class HarnessRuntime(
     val server: ServerProbe = ServerProbe.Unknown,
     /** mastracode: Herdr still reports the session as `session-init`. */
     val sessionInit: Boolean = false,
-    /** grok: more than one candidate session for the pane; Chat refuses (`grok_session_ambiguous`). */
+    /**
+     * grok: Chat stands behind no one session for the pane and refuses: more than one candidate
+     * (`grok_session_ambiguous`), or Grok's own open-session list names another (`grok_session_stale`)
+     * or none (`grok_session_unregistered`).
+     */
     val ambiguousSession: Boolean = false,
 )
 
