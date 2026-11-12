@@ -1143,22 +1143,26 @@ fun SessionScreen(
                         }
                         var stripLast by remember { mutableStateOf<OutageWords?>(null) }
                         SideEffect { if (stripNow != null) stripLast = stripNow }
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = stripShown,
-                            enter = EnterTransition.None,
-                            exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
-                            modifier = Modifier.align(Alignment.TopCenter),
-                        ) {
-                            (stripNow ?: stripLast)?.let { words ->
-                                // A retry is a new Connection, whose screen starts empty: it says so.
-                                OutageStrip(
-                                    title = words.title,
-                                    detail = words.detail,
-                                    retrying = words.retrying,
-                                    onRetry = ::retry,
-                                    onDismiss = { outage = outage.dismiss() },
-                                    tag = "session:outage",
-                                )
+                        // The strip's drawn height, through its fade-out, and 0 once it has left: an agent
+                        // banner starts under it (M2b-1). The Box stays composed so it reports that 0.
+                        var outagePx by remember { mutableIntStateOf(0) }
+                        Box(Modifier.align(Alignment.TopCenter).onSizeChanged { outagePx = it.height }) {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = stripShown,
+                                enter = EnterTransition.None,
+                                exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
+                            ) {
+                                (stripNow ?: stripLast)?.let { words ->
+                                    // A retry is a new Connection, whose screen starts empty: it says so.
+                                    OutageStrip(
+                                        title = words.title,
+                                        detail = words.detail,
+                                        retrying = words.retrying,
+                                        onRetry = ::retry,
+                                        onDismiss = { outage = outage.dismiss() },
+                                        tag = "session:outage",
+                                    )
+                                }
                             }
                         }
                         if (!lostLive) {
@@ -1204,6 +1208,7 @@ fun SessionScreen(
                                 there
                             },
                             onDismiss = { id -> banners = banners.dismiss(id) },
+                            below = with(LocalDensity.current) { outagePx.toDp() },
                         )
                         GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
                     }
