@@ -838,6 +838,9 @@ private fun Editor(
     // Chat's OMP endpoint for the draft's instance (ChatIngress.kt): the
     // last probe, a Check under way or come back empty, and a withdraw.
     var probeRead by remember(key, connection) { mutableStateOf<ProbeRead?>(null) }
+    // Bumped by every read a send, Withdraw or Steer makes itself, and when one starts: a poll
+    // begun before then answers for an older queue and is dropped, never laid over the fresh one.
+    var probeEpoch by remember(key, connection) { mutableIntStateOf(0) }
     var checking by remember(key) { mutableStateOf(false) }
     var checkUnknown by remember(key, draft.sent?.receipt) { mutableStateOf(false) }
     var withdrawing by remember(key) { mutableStateOf<String?>(null) }
@@ -1047,8 +1050,9 @@ private fun Editor(
         val target = probeTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
         while (true) {
+            val epoch = probeEpoch
             val read = withContext(Dispatchers.IO) { connection.ingressState(target) }
-            probeRead = read.getOrNull()?.let { ProbeRead(instance, it) }
+            if (epoch == probeEpoch && withdrawing == null) probeRead = read.getOrNull()?.let { ProbeRead(instance, it) }
             delay(INSTANCE_POLL_MS)
         }
     }
@@ -1288,7 +1292,7 @@ private fun Editor(
                 // the server lists nowhere waits by this record and the server's word only.
                 val kept = draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried })
                 save(if (deliverAs == "steer" && agentNamed(instance.agent, Harness.unlistedSteerAgents)) kept.waitingSteer(id, instance.path) else kept)
-                outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
+                outcome.state?.let { probeEpoch++; probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
             } else {
                 // Refused: nothing is queued, so nothing can be withdrawn. Uncertain keeps its record.
                 save(draft.copy(sent = sent, queued = if (outcome is IngressSend.Refused) draft.queued - id else draft.queued))
@@ -1471,10 +1475,12 @@ private fun Editor(
         val via = connection
         withdrawing = requestId
         withdrawNote = null
+        probeEpoch++
         scope.launch {
             val done = withContext(Dispatchers.IO) { via.ingressWithdraw(target, requestId) }
             val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
             withdrawing = null
+            probeEpoch++
             probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
             withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
             // Withdrawn is taken back, not lost: its text and files into the
@@ -1504,10 +1510,12 @@ private fun Editor(
         val via = connection
         withdrawing = requestId
         withdrawNote = null
+        probeEpoch++
         scope.launch {
             val done = withContext(Dispatchers.IO) { via.ingressPromote(target, requestId) }
             val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
             withdrawing = null
+            probeEpoch++
             probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
             withdrawNote = done.fold({ if (it) null else R.string.ingress_promote_gone }, { R.string.ingress_promote_failed })
         }
