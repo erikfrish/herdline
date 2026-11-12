@@ -496,6 +496,12 @@ class Kilo(unittest.TestCase):
                 for bad in ({'q0': 'Postgres'}, {'q0': ['Postgres', 'SQLite'], 'q1': ['Cache']}, {'q0': 'Postgres', 'q1': ['Other']}, {'q0': 'Postgres', 'q1': [], 'q2': 'x'}):
                     self.assertEqual(answer(bad), 'invalid', bad)
                 self.assertNotIn('POST', [m for m, _, _, _ in daemon.seen[sent:]])
+                # Five permissions ahead of it: the question past them is marked, never hidden.
+                daemon.routes[('GET', '/permission' + query)] = (200, [{'id': 'per_%d' % n, 'sessionID': 'ses_test', 'permission': 'bash', 'patterns': ['make'], 'metadata': {}, 'always': []} for n in range(5)])
+                word, _, payload = run(home, 'kilo', 'dialogs').partition('\t')
+                self.assertEqual((word, [d['dialogId'] for d in json.loads(payload)]), ('dialogs_more', ['per_%d' % n for n in range(5)]))
+                daemon.routes[('GET', '/permission' + query)] = (200, [])
+                self.assertEqual(run(home, 'kilo', 'dialogs').partition('\t')[0], 'dialogs')
                 self.assertEqual(run(home, 'kilo', 'cancel', json.dumps({'dialogId': 'que_test'})), 'cancelled')
                 self.assertEqual(daemon.seen[-1][:2], ('POST', '/question/que_test/reject' + query))
                 daemon.routes[('POST', '/question/que_test/reject' + query)] = (404, {'name': 'QuestionNotFound'})

@@ -38,6 +38,9 @@ data class IngressChild(val id: String, val title: String)
 /** The sessions listed, and [more] when the server holds others beyond them. */
 data class IngressChildren(val sessions: List<IngressChild>, val more: Boolean)
 
+/** The open dialogs' snapshot as given, and [more] when the server holds others beyond them (OpenCode, Kilo). */
+class IngressDialogs(val dialogs: JSONArray, val more: Boolean)
+
 /** What one send through the endpoint amounts to. */
 sealed interface IngressSend {
     /** This instance publishes no endpoint: nothing was sent, and the pane route may be used. */
@@ -148,13 +151,13 @@ internal fun ingressPromoted(call: () -> String): Result<Boolean> {
     return Result.success(promoted)
 }
 
-internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
+internal fun ingressDialogsOutcome(call: () -> String): Result<IngressDialogs> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val dialogs = reply.optJSONArray("dialogs")
     if (reply.optString("endpoint") != "live" || dialogs == null) {
         return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
     }
-    return Result.success(dialogs)
+    return Result.success(IngressDialogs(dialogs, reply.optBoolean("more", false)))
 }
 
 /** The sessions [ingressChildren][Connection.ingressChildren] listed; anything but a live list fails. */

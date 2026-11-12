@@ -321,6 +321,18 @@ fn control_replies_keep_the_omp_dialog_shapes_and_fail_closed() {
     assert!(control_reply("submitted", Op::Abort, ID, "").is_err());
 }
 
+// More open than one snapshot shows: the first ones, said as cut, never as the whole.
+#[test]
+fn a_cut_dialog_snapshot_says_more_and_holds_exactly_the_first_ones() {
+    let five = format!("[{}]", vec![r#"{"dialogId":"per_1","kind":"permission"}"#; 5].join(","));
+    let reply = control_reply(&format!("dialogs_more\t{five}"), Op::Dialogs, ID, "").unwrap();
+    assert_eq!((reply["endpoint"].as_str(), reply["more"].as_bool(), reply["dialogs"].as_array().map(Vec::len)), (Some("live"), Some(true), Some(5)));
+    assert_eq!(control_reply(&format!("dialogs\t{five}"), Op::Dialogs, ID, "").unwrap().get("more"), None);
+    assert!(control_reply(r#"dialogs_more	[{"dialogId":"per_1","kind":"permission"}]"#, Op::Dialogs, ID, "").is_err());
+    assert!(control_reply(&format!("dialogs_more\t{}", five.replace("per_1", "../x")), Op::Dialogs, ID, "").is_err());
+    assert!(control_reply(&format!("dialogs_more\t{five}"), Op::Children, ID, "").is_err());
+}
+
 #[test]
 fn question_replies_name_their_own_kind_and_settle_only_on_the_servers_word() {
     let dialogs = r#"[{"dialogId":"per_1","kind":"permission"},{"dialogId":"frm_1","kind":"form"},{"dialogId":"que_1","kind":"form"}]"#;

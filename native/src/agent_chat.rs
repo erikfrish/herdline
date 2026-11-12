@@ -89,6 +89,8 @@ const MAX_TEXT_BYTES: usize = composer::MAX_TEXT_BYTES;
 const MAX_ANSWER_BYTES: usize = 32 * 1024;
 /// Most children one list carries, as `kilo_ctl.py` and `opencode_ctl.py` cut it.
 const MAX_CHILDREN: usize = 50;
+/// Most dialogs one snapshot carries, as `opencode_ctl.py` cuts it.
+const MAX_DIALOGS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
@@ -390,20 +392,11 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
             "true" | "false" => live(json!({"id": id, "promoted": payload == "true"})),
             _ => return Err(Error::BadReply),
         },
-        ("dialogs", Op::Dialogs) => {
-            let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
-            let named = dialogs.as_array().is_some_and(|all| {
-                all.iter().all(|d| match (d["dialogId"].as_str(), d["kind"].as_str()) {
-                    (Some(id), Some("permission")) => valid_permission_id(id),
-                    (Some(id), Some("form")) => valid_form_id(id),
-                    _ => false,
-                })
-            });
-            if !named {
-                return Err(Error::BadReply);
-            }
-            live(json!({"dialogs": dialogs}))
-        }
+        // Past MAX_DIALOGS the script says `dialogs_more` with the first
+        // ones: a permission or question past them is never a cut list
+        // passed off as the whole.
+        ("dialogs", Op::Dialogs) => live(json!({"dialogs": dialog_list(payload, false)?})),
+        ("dialogs_more", Op::Dialogs) => live(json!({"dialogs": dialog_list(payload, true)?, "more": true})),
         ("submitted" | "not_open" | "invalid", Op::DialogSubmit) => submit_result(dialog_id, word),
         ("cancelled" | "not_open", Op::DialogCancel) => submit_result(dialog_id, word),
         // Another client answered it first: nothing of ours was taken.
@@ -424,6 +417,21 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         ("children_more", Op::Children) => live(json!({"children": children_list(payload, true)?, "more": true})),
         _ => return unreadable(op, id),
     })
+}
+
+/// A dialog snapshot, each named as a permission or a form by its own id;
+/// a snapshot said to have more holds exactly [`MAX_DIALOGS`].
+fn dialog_list(payload: &str, more: bool) -> Result<Value> {
+    let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
+    let named = dialogs.as_array().is_some_and(|all| {
+        (!more || all.len() == MAX_DIALOGS)
+            && all.iter().all(|d| match (d["dialogId"].as_str(), d["kind"].as_str()) {
+                (Some(id), Some("permission")) => valid_permission_id(id),
+                (Some(id), Some("form")) => valid_form_id(id),
+                _ => false,
+            })
+    });
+    if named { Ok(dialogs) } else { Err(Error::BadReply) }
 }
 
 /// A list of children, each exactly an id and a title; a list said to have

@@ -180,6 +180,15 @@ class Questions(Daemon):
         self.assertEqual([entry['id'] for entry in found], ['que_one'])
         self.assertEqual([(q['multiple'], q['custom']) for q in found[0]['questions']], [(False, False), (True, True)])
 
+    def test_a_question_past_the_shown_five_is_marked_never_hidden(self):
+        routes = self.routes()
+        routes[('GET', '/question' + QUERY)] = (200, [dict(ASKED, id='que_%d' % n) for n in range(6)])
+        home, server = self.serve(routes)
+        word, _, payload = run(home, 'questions').partition('\t')
+        self.assertEqual((word, [entry['id'] for entry in json.loads(payload)]), ('questions_more', ['que_%d' % n for n in range(5)]))
+        server.routes[('GET', '/question' + QUERY)] = (200, [dict(ASKED, id='que_%d' % n) for n in range(5)])
+        self.assertEqual(run(home, 'questions').partition('\t')[0], 'questions')
+
     def test_an_answer_per_question_is_replied_in_order(self):
         home, server = self.serve(self.routes())
         answers = [['A'], ['X', 'typed']]

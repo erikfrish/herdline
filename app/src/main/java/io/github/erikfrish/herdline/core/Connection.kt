@@ -541,11 +541,11 @@ class Connection(val node: Node) {
     }
 
     /**
-     * OMP's open dialogs on exactly [target]'s instance, its snapshot as
-     * given (`{dialogId, kind, source, html?, form?, title?, options?, createdAt}`
-     * each). Blocks on the host.
+     * The open dialogs on exactly [target]'s instance, its snapshot as given
+     * (`{dialogId, kind, source, html?, form?, title?, options?, createdAt}`
+     * each), and whether the server holds more than it shows. Blocks on the host.
      */
-    fun ingressDialogs(target: ComposerTarget): Result<JSONArray> {
+    fun ingressDialogs(target: ComposerTarget): Result<IngressDialogs> {
         val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
         return ingressDialogsOutcome {
             Native.ingress(session, ingressRequest("dialogs", target, UUID.randomUUID().toString()).toString())

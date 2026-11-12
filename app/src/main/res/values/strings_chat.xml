@@ -81,6 +81,8 @@
     <string name="chat_working_on">Working · %1$s</string>
     <string name="chat_children">Sessions it started: %1$d</string>
     <string name="chat_children_more">Sessions it started: more than %1$d</string>
+    <!-- The agent has more open permissions or questions than Chat shows at once. -->
+    <string name="chat_dialogs_more">More permissions or questions are waiting than shown here. Answer these and the next ones appear, or see them all in the terminal.</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
     <!-- X1: why a terminal Stop pressed no key; nothing reached the pane. -->

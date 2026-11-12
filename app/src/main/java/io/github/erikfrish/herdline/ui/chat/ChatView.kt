@@ -440,6 +440,8 @@ private fun ChatContent(
     val items = remember(persistedItems, liveSubagents) { withLiveSubagents(persistedItems, liveSubagents) }
     var dialogs by remember(dialogTarget) { mutableStateOf<List<ChatDialog>>(emptyList()) }
     var dialogProblem by remember(dialogTarget) { mutableStateOf<String?>(null) }
+    // The server holds more open dialogs than the snapshot shows: said, never passed off as all of them.
+    var dialogsMore by remember(dialogTarget) { mutableStateOf(false) }
     var submittingDialog by remember(dialogTarget) { mutableStateOf<String?>(null) }
     val uncertainDialogs = remember(dialogTarget) { mutableStateMapOf<String, Boolean>() }
     val currentDialogTarget by rememberUpdatedState(dialogTarget)
@@ -452,9 +454,11 @@ private fun ChatContent(
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 val result = withContext(Dispatchers.IO) { connection.ingressDialogs(target) }
-                result.onSuccess { array ->
+                result.onSuccess { snapshot ->
                     try {
+                        val array = snapshot.dialogs
                         dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) }).filterNot { it.id in settledDialogs }
+                        dialogsMore = snapshot.more
                         dialogProblem = null
                     } catch (error: IllegalArgumentException) {
                         dialogs = emptyList()
@@ -753,6 +757,9 @@ private fun ChatContent(
                                 )
                             }
                         }
+                    }
+                    if (dialogsMore) {
+                        item(key = "dialogs:more") { LiveGap { DialogsMoreRow(colors) } }
                     }
                     settledDialogs.values.forEach { (dialog, outcome) ->
                         item(key = "dialog:" + dialog.id) {
@@ -1615,6 +1622,14 @@ private fun ChildrenRow(children: IngressChildren, colors: ChatColors) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** More permissions or questions are open than Chat shows: answering these brings the next ones in. */
+@Composable
+private fun DialogsMoreRow(colors: ChatColors) {
+    StateRow(colors.blocked, colors.border, Color.Transparent, "chat:dialogs:more") {
+        Text(stringResource(R.string.chat_dialogs_more), style = ChatType.meta.copy(color = colors.muted))
     }
 }
 

@@ -52,6 +52,7 @@
     <string name="chat_working_on">工作中 · %1$s</string>
     <string name="chat_children">它启动的会话：%1$d</string>
     <string name="chat_children_more">它启动的会话：超过 %1$d 个</string>
+    <string name="chat_dialogs_more">还有更多权限请求或问题在等待，此处未全部显示。回答这些后会显示下一批，也可以在终端中查看全部。</string>
     <string name="chat_stop">停止</string>
     <string name="chat_stop_failed">未确认停止，请查看终端。</string>
     <string name="stop_refused_boot_changed">未停止：Herdr 已重启。未按任何键。</string>

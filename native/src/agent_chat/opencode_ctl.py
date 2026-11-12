@@ -663,7 +663,10 @@ def main():
             entries = [dialog(entry) for entry in open_requests(base, headers, directory)]
             asked = forms(base, headers) if flavor == 'opencode' else questions(base, headers, directory)
             entries += [form_dialog(entry) if flavor == 'opencode' else question_dialog(entry) for entry in asked]
-            return 'dialogs\t' + json.dumps(entries[:MAX_DIALOGS], separators=(',', ':'))
+            # Past MAX_DIALOGS the first ones go, marked as such: a pending
+            # permission or question past them is never hidden as none.
+            word = 'dialogs_more' if len(entries) > MAX_DIALOGS else 'dialogs'
+            return word + '\t' + json.dumps(entries[:MAX_DIALOGS], separators=(',', ':'))
         if op in ('submit', 'cancel'):
             asked = json.loads(payload)
             request_id = asked['dialogId']

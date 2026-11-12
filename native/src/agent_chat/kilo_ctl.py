@@ -239,8 +239,11 @@ def main():
                 raise
             return 'accepted' if found['info']['id'] == message_id else 'local'
         if op == 'questions':
-            entries = open_questions(base, headers, directory)[:MAX_QUESTIONS]
-            return 'questions\t' + json.dumps([shown(entry) for entry in entries], separators=(',', ':'))
+            entries = open_questions(base, headers, directory)
+            # Past MAX_QUESTIONS the first ones go, marked as such: a pending
+            # question past them is never hidden as if there were none.
+            word = 'questions_more' if len(entries) > MAX_QUESTIONS else 'questions'
+            return word + '\t' + json.dumps([shown(entry) for entry in entries[:MAX_QUESTIONS]], separators=(',', ':'))
         if op == 'children':
             found = call(base, headers, 'GET', '/session/' + quoted(session) + '/children')
             if not isinstance(found, list):

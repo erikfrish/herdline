@@ -140,7 +140,10 @@ class IngressTest {
         val dialogs = ingressDialogsOutcome {
             """{"endpoint":"live","dialogs":[{"dialogId":"d1","kind":"form","source":"ask","createdAt":5}]}"""
         }.getOrThrow()
-        assertEquals("d1", dialogs.getJSONObject(0).getString("dialogId"))
+        assertEquals("d1", dialogs.dialogs.getJSONObject(0).getString("dialogId"))
+        assertEquals(false, dialogs.more)
+        // A cut snapshot says so: never shown as all that is open.
+        assertEquals(true, ingressDialogsOutcome { """{"endpoint":"live","dialogs":[],"more":true}""" }.getOrThrow().more)
         assertTrue(ingressDialogsOutcome { """{"endpoint":"absent"}""" }.isFailure)
         assertTrue(ingressDialogsOutcome { """{"endpoint":"live"}""" }.isFailure)
         assertTrue(ingressDialogsOutcome { throw IOException("gone") }.isFailure)
