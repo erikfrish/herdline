@@ -1,10 +1,12 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.ui.chat.ChatMemory
+
 /** What a Chat tap or an agent change does to a pane Chat could not read (F-OBS1). */
 internal enum class ChatRecheck {
     /** Read the pane once. */
     Read,
-    /** Show Chat now on the history this connection holds for the pane; its own poll goes on from there. */
+    /** Show Chat now on the history this boot's memory holds for the pane; its own poll goes on from there. */
     Show,
     Nothing,
 }
@@ -29,16 +31,18 @@ internal fun chatRecheck(tap: Boolean, agentChanged: Boolean, unreadable: Boolea
 }
 
 /**
- * Whether a read's outcome for [readPane], asked on daemon boot [readBoot],
- * may change the screen's Chat state (the fallback, the refusal, a pending
- * tap): only for the pane read now ([pane]) on the same [boot] (a restarted
- * daemon may reuse pane ids), never from a Chat still fading out
- * ([leaving]), and a report that the pane is [unreadable] only while no
- * history is [cached] for it: one queued before a read came good, or a
- * slow read that failed after the screen moved on, is stale.
+ * Whether a read's outcome for [readPane], made through [owner] (the
+ * screen's memory for one connection and daemon boot when the read was
+ * asked), may change the screen's Chat state (the fallback, the refusal, a
+ * pending tap): only while [owner] is still the [current] memory (no
+ * reconnect or restarted daemon since: a new boot may reuse pane ids), for
+ * the pane read now ([pane]), never from a Chat still fading out
+ * ([leaving]), and a report that the pane is [unreadable] only while
+ * [owner] holds no history for it: one queued before a read came good, or
+ * a slow read that failed after one did, is stale.
  */
-internal fun chatOutcomeApplies(unreadable: Boolean, readPane: String, readBoot: String?, pane: String?, boot: String?, leaving: Boolean, cached: Boolean): Boolean =
-    !leaving && readPane == pane && readBoot == boot && !(unreadable && cached)
+internal fun chatOutcomeApplies(unreadable: Boolean, owner: ChatMemory, readPane: String, current: ChatMemory, pane: String?, leaving: Boolean): Boolean =
+    !leaving && owner === current && readPane == pane && !(unreadable && owner.holds(readPane))
 
 /** A Chat tap still waiting for its re-check: the pane and tab it was made on. */
 internal data class PendingChatTap(val pane: String, val tab: String?)

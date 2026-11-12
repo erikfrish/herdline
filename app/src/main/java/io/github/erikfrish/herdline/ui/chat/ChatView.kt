@@ -207,24 +207,65 @@ fun ChatView(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Hears whether Chat has nothing to show, and the core's typed refusal when that is why. */
-    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)? = null,
+    /**
+     * Hears whether Chat has nothing to show, the core's typed refusal when
+     * that is why, and the [memory] whose reads say so.
+     */
+    onUnavailable: ((Boolean, TranscriptRefusal?, ChatMemory) -> Unit)? = null,
     tabTitle: String? = null,
     dense: Boolean = false,
-    /** The caller's per-connection memory, so each pane read here comes back as it was (CT-1). */
-    memory: ChatMemory = remember(connection) { ChatMemory() },
+    /** The caller's memory for one connection and daemon boot, so each pane read here comes back as it was (CT-1). */
+    memory: ChatMemory,
 ) {
-    // A reconnect is a new Connection and starts over (the caller's memory is
-    // keyed on it). A new OMP instance in the pane resets what it loaded (ChatHistory.merge).
-    key(connection, pane) {
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, onUnavailable, tabTitle, dense)
+    // A reconnect is a new Connection and starts over, as a restarted daemon is a new
+    // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
+    // loaded (ChatHistory.merge).
+    key(connection, pane, memory) {
+        val hear = onUnavailable?.let { hear -> { unreadable: Boolean, refusal: TranscriptRefusal? -> hear(unreadable, refusal, memory) } }
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, hear, tabTitle, dense)
     }
 }
 
-/** What each pane's Chat loaded and the reader opened, kept while another pane is read; one per connection. */
+/**
+ * What each pane's Chat loaded and the reader opened, kept while another
+ * pane is read. The caller makes one per connection and daemon boot, since
+ * a restarted daemon may reuse pane ids, and a read's outcome is the
+ * memory's it was made through (SessionScreen `chatOutcomeApplies`).
+ */
 class ChatMemory {
     private val panes = HashMap<String, ChatKept>()
     internal fun of(pane: String): ChatKept = panes.getOrPut(pane) { ChatKept() }
+
+    /** Whether [pane] holds history read through this memory. */
+    internal fun holds(pane: String): Boolean = panes[pane]?.history != null
+
+    /**
+     * Whether [pane] holds history of the agent [kind] there now: what a
+     * Chat tap may show at once (C9). This memory is one daemon boot's
+     * ([ChatMemories]), so no reused pane id of an earlier boot counts.
+     * Display only; Chat's own poll checks the instance from there.
+     */
+    internal fun cachedFor(pane: String, kind: String?): Boolean =
+        kind != null && panes[pane]?.history?.identity?.agent.equals(kind, ignoreCase = true)
+}
+
+/**
+ * The [ChatMemory] of one connection's current daemon boot: a new boot
+ * starts a new one, since a restarted daemon may reuse pane ids, and a
+ * read's outcome is the memory's it was made through. A null boot (no view
+ * yet, or none for a moment) keeps the current memory.
+ */
+class ChatMemories {
+    private var boot: String? = null
+    private var memory = ChatMemory()
+
+    fun at(boot: String?): ChatMemory {
+        if (boot != null && boot != this.boot) {
+            if (this.boot != null) memory = ChatMemory()
+            this.boot = boot
+        }
+        return memory
+    }
 }
 
 /** Programs Chat reaches through their own server, whose absence the card names (card §3.4). */

@@ -172,7 +172,7 @@ import io.github.erikfrish.herdline.service.MonitorKey
 import io.github.erikfrish.herdline.service.LockGate
 import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
-import io.github.erikfrish.herdline.ui.chat.ChatMemory
+import io.github.erikfrish.herdline.ui.chat.ChatMemories
 import io.github.erikfrish.herdline.ui.chat.ChatView
 import io.github.erikfrish.herdline.ui.chat.rememberHarnessRuntime
 import io.github.erikfrish.herdline.ui.chat.ChatType
@@ -492,8 +492,9 @@ fun SessionScreen(
     }
     // Each pane read here keeps its own Chat scroll anchor and follow state (CT-1 §3).
     val chatState = rememberSaveableStateHolder()
-    // ...and its own loaded transcript, for this connection.
-    val chatMemory = remember(connection) { ChatMemory() }
+    // ...and its own loaded transcript, for this connection and daemon boot (C9: a new boot may reuse pane ids).
+    val chatMemory = remember(connection) { ChatMemories() }.at(view?.boot)
+    val chatMemoryNow by rememberUpdatedState(chatMemory)
     val closed = readingClosed(reading, view)
     /** Whether the selected supported agent's saved mode is Chat. */
     fun chatFor(pane: String?): Boolean {
@@ -512,9 +513,9 @@ fun SessionScreen(
     // While Chat can't read the agent's transcript, the tab shows Terminal; the stored choice stays
     // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R only a
     // re-check that came good with a Chat tap pending on it ends the fallback: never by itself.
-    var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
+    var chatUnreadable by remember(chatMemory, chatPane) { mutableStateOf(false) }
     // Why, when the core refused the session by type: these never clear by themselves.
-    var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
+    var chatRefusal by remember(chatMemory, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
     // F-OBS1: a Chat tap on an unreadable pane waits here for its one re-check. Not keyed: the
     // terminal's listener, made once, clears it on input, and the switch checks the pane itself.
     var pendingChatTap by remember { mutableStateOf<PendingChatTap?>(null) }
@@ -524,15 +525,14 @@ fun SessionScreen(
     val chatMode = if (closed) chatShown else chatWanted && !chatUnreadable
     // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
-    // D3-5: the Herdr agent kinds whose transcript has loaded on this connection, kept as long as
-    // chatMemory. A kind never read here names no cause: nothing typed says why (C9).
+    // D3-5: the Herdr agent kinds whose transcript has loaded on this connection. A kind never
+    // read here names no cause: nothing typed says why (C9).
     val readKinds = remember(connection) { mutableSetOf<String>() }
     val chatKind = chatPane?.let { view?.agentIn(it)?.agent }?.lowercase(Locale.ROOT)
-    val chatLoaded = chatPane?.let { chatMemory.of(it).history } != null
-    // C9: what a Chat tap may show at once: the pane's history of the agent kind there now. Display
-    // only: Chat's own poll checks the instance from there, under its outage strip if that fails.
-    val chatCached = chatPane?.let { chatMemory.of(it).history }?.identity?.agent?.equals(chatKind, ignoreCase = true) == true
-    val bootNow by rememberUpdatedState(view?.boot)
+    val chatLoaded = chatPane?.let { chatMemory.holds(it) } == true
+    // C9: what a Chat tap may show at once: this boot's history of the pane, of the agent kind there
+    // now. Display only: Chat's own poll checks the instance from there, under its outage strip if that fails.
+    val chatCached = chatPane?.let { chatMemory.cachedFor(it, chatKind) } == true
     LaunchedEffect(chatKind, chatLoaded) { if (chatLoaded && chatKind != null) readKinds += chatKind }
     var help by remember { mutableStateOf(false) }
     val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
@@ -705,14 +705,15 @@ fun SessionScreen(
     /**
      * Reads unreadable [pane] once while Chat does not poll it. Only a good
      * read clears the fallback, and only a tap still pending switches; an
-     * outcome for a pane the screen left, or a failure once a read came
-     * good, changes nothing (chatOutcomeApplies).
+     * outcome for a pane the screen left, from an earlier daemon boot or
+     * connection, or a failure once a read came good, changes nothing
+     * (chatOutcomeApplies).
      */
     suspend fun recheckChat(pane: String, tap: Boolean) {
-        val kept = chatMemory.of(pane)
-        val boot = bootNow
+        val owner = chatMemory
+        val kept = owner.of(pane)
         val ok = kept.recheck(connection::transcript, pane)
-        if (ok != null && !chatOutcomeApplies(unreadable = !ok, readPane = pane, readBoot = boot, pane = chatPaneNow, boot = bootNow, leaving = false, cached = kept.history != null)) return
+        if (ok != null && !chatOutcomeApplies(unreadable = !ok, owner = owner, readPane = pane, current = chatMemoryNow, pane = chatPaneNow, leaving = false)) return
         when (ok) {
             true -> {
                 chatRefusal = null
@@ -1282,10 +1283,10 @@ fun SessionScreen(
                                             Modifier
                                         },
                                     ),
-                                    onUnavailable = { unreadable, refusal ->
-                                        // Only this pane's own Chat, not one fading out, and never a report
-                                        // queued before a read of it came good.
-                                        if (!chatOutcomeApplies(unreadable, shown, bootNow, chatPaneNow, bootNow, leaving, cached = chatMemory.of(shown).history != null)) return@ChatView
+                                    onUnavailable = { unreadable, refusal, owner ->
+                                        // Only this pane's own Chat on this boot, not one fading out, and never
+                                        // a report queued before a read of it came good.
+                                        if (!chatOutcomeApplies(unreadable, owner, shown, chatMemoryNow, chatPaneNow, leaving)) return@ChatView
                                         if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
                                             // The fallback happens on its own, so it
                                             // stays long enough to be read (lab.4 G5).
