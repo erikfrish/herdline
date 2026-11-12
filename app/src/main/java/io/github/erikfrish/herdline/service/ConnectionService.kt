@@ -70,6 +70,7 @@ class ConnectionService : Service() {
         val fields: List<String> = io.github.erikfrish.herdline.data.NotificationFields.DEFAULT,
         val agents: Int = 0,
         val needYou: Int = 0,
+        val connection: AttachedState = AttachedState.Connecting,
         val minute: Long = 0,
     )
 
@@ -111,7 +112,7 @@ class ConnectionService : Service() {
         }
         val live = liveLevel(app.settings.liveLockDetail.value, settings.lockDetail)
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
-            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant, fields = settings.notificationFields)
+            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }))
         shown = state
         ServiceCompat.startForeground(
             this,
@@ -272,6 +273,7 @@ class ConnectionService : Service() {
                     fields = settings.notificationFields,
                     agents = snapshots.sumOf { it.view?.agents?.size ?: 0 },
                     needYou = snapshots.sumOf { snapshot -> snapshot.view?.agents?.count { it.status == AgentStatus.Blocked } ?: 0 },
+                    connection = attachedState(list.map { it.second }),
                     minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
                 )
                 AgentNotifications.card = when (live?.let(::liveState)) {
@@ -369,7 +371,7 @@ class ConnectionService : Service() {
         val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
         val requestPromotion = shown.promote && fields?.promote == true
         AgentNotifications.promotionRequested = requestPromotion
-        preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live)
+        preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live, shown.connection)
         val top = fields?.top ?: shown.card?.rows?.firstOrNull()
         val content = if (top != null) {
             AgentNotifications.open(this, top.nodeId, top.pane, "live")
@@ -389,7 +391,7 @@ class ConnectionService : Service() {
             val disconnect = PendingIntent.getService(
                 this, 1, Intent(this, ConnectionService::class.java).setAction(ACTION_DISCONNECT_ALL), PendingIntent.FLAG_IMMUTABLE,
             )
-            val words = attachedContent(ResourceTexts(this), shown.count, shown.title, shown.lock, locked, shown.fields, shown.agents, shown.needYou)
+            val words = attachedContent(ResourceTexts(this), shown.count, shown.title, shown.lock, locked, shown.fields, shown.agents, shown.needYou, shown.connection, attachedTitle(this, shown.connection))
             return builder
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(words.main.title)

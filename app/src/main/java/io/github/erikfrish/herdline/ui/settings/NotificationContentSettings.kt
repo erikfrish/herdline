@@ -44,6 +44,7 @@ import io.github.erikfrish.herdline.service.ResourceTexts
 import io.github.erikfrish.herdline.service.attachedContent
 import io.github.erikfrish.herdline.service.liveFields
 import io.github.erikfrish.herdline.service.liveLevel
+import io.github.erikfrish.herdline.service.attachedTitle
 import io.github.erikfrish.herdline.ui.components.Group
 import io.github.erikfrish.herdline.ui.components.ItemRow
 import io.github.erikfrish.herdline.ui.components.SectionHeader
@@ -100,7 +101,7 @@ private fun NotificationPreview(settings: Settings, active: NotificationCardPrev
     }
     val time = DateFormat.getTimeFormat(context)
     val projected = liveFields(ResourceLiveTexts(context), if (active == null) sample else active.card, level, locked = true, now, settings.notificationFields) { time.format(it) }?.main
-    val attached = if (projected == null && active != null) attachedContent(ResourceTexts(context), active.nodes, active.host, level, locked = true, settings.notificationFields, active.agents, active.needYou).main else null
+    val attached = if (projected == null && active != null) attachedContent(ResourceTexts(context), active.nodes, active.host, level, locked = true, settings.notificationFields, active.agents, active.needYou, active.connection, attachedTitle(context, active.connection)).main else null
     Column(Modifier.fillMaxWidth().testTag("settings:notification:preview")) {
         Text(stringResource(if (active == null) R.string.notification_preview_sample else R.string.notification_preview_actual), style = MaterialTheme.typography.labelMedium)
         Text(projected?.title ?: attached?.title.orEmpty(), style = MaterialTheme.typography.titleSmall)

@@ -43,4 +43,26 @@ class AttachedFieldsTest {
         assertFalse(several.main.title.contains("secret-host"))
         assertTrue(several.main.text!!.contains("4 agents"))
     }
+
+    @Test
+    fun anAttachedForegroundCardNeverClaimsAnUnconnectedLinkIsConnected() {
+        val connected = io.github.erikfrish.herdline.core.Connection.State.Connected("0.9.5")
+        val cases = listOf(
+            listOf(connected) to AttachedState.Connected,
+            listOf(io.github.erikfrish.herdline.core.Connection.State.Connecting) to AttachedState.Connecting,
+            listOf(connected, io.github.erikfrish.herdline.core.Connection.State.SettingUp) to AttachedState.Connecting,
+            listOf(connected, io.github.erikfrish.herdline.core.Connection.State.Disconnected("lost")) to AttachedState.Disconnected,
+            listOf(io.github.erikfrish.herdline.core.Connection.State.AuthRejected(0, "host")) to AttachedState.Disconnected,
+            emptyList<io.github.erikfrish.herdline.core.Connection.State>() to AttachedState.Disconnected,
+        )
+        for ((states, expected) in cases) {
+            val actual = attachedState(states)
+            assertEquals(expected, actual)
+            val title = actual.name
+            val card = attachedContent(t, 1, "host", LockDetail.Full, false, listOf("counts"), 3, 1, actual, title)
+            assertEquals(title, card.main.title)
+            if (actual != AttachedState.Connected) assertNull(card.main.text)
+            assertEquals(card.main, card.public)
+        }
+    }
 }

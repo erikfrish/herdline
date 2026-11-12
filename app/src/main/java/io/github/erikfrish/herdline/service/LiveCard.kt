@@ -43,7 +43,7 @@ data class LiveCard(val rows: List<LiveRow>, val staleSince: Long?) {
 }
 
 /** Actual foreground-card data and privacy, shared with the Settings preview. */
-internal data class NotificationCardPreview(val card: LiveCard?, val nodes: Int, val host: String?, val agents: Int, val needYou: Int, val level: io.github.erikfrish.herdline.data.LockDetail)
+internal data class NotificationCardPreview(val card: LiveCard?, val nodes: Int, val host: String?, val agents: Int, val needYou: Int, val level: io.github.erikfrish.herdline.data.LockDetail, val connection: AttachedState)
 
 /**
  * The card for [monitored] agents found in [nodes], most urgent first, or
