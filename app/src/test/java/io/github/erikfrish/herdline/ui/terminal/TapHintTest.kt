@@ -94,6 +94,21 @@ class TapHintTest {
     }
 
     @Test
+    fun onceOutputHidItItReturnsOnlyAfterALongerStill() {
+        val frame = frame(2, 0, 1, 2)
+        // First appearance: the short settle.
+        assertEquals(300L, tapHintSettleMs(hiddenByChange = false))
+        assertEquals(102, tapHintTop(frame, viewport(), 16, tapHintSettleMs(hiddenByChange = false)))
+        // Hidden by output: a line every 0.4 s never stays still long enough to bring it back.
+        val streamed = 400L
+        assertTrue(streamed >= tapHintSettleMs(hiddenByChange = false))
+        assertTrue(streamed < tapHintSettleMs(hiddenByChange = true))
+        // Once output pauses for the longer settle, it is placed as before.
+        assertEquals(1500L, tapHintSettleMs(hiddenByChange = true))
+        assertEquals(102, tapHintTop(frame, viewport(), 16, tapHintSettleMs(hiddenByChange = true)))
+    }
+
+    @Test
     fun theTerminalSaysTheHintOnlyWhileThePillIsHidden() {
         val sentence = "Tap to type"
         // Hidden: the terminal carries it, after what output focus hides.

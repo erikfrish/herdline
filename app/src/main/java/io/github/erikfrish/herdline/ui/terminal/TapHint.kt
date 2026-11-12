@@ -11,6 +11,22 @@ import kotlin.math.roundToInt
 /** How long the frame and the view must stay unchanged before the tap-to-type hint is placed (QF-9). */
 internal const val TAP_HINT_SETTLE_MS = 300L
 
+/**
+ * The still time before the hint returns once output has hidden it (QF9-F):
+ * over three times the 0.4 s between lines QA saw streamed, and past the
+ * gaps of common progress output, so a stream never blinks it on and off
+ * per line; it comes back once output has really paused.
+ */
+internal const val TAP_HINT_RESETTLE_MS = 1500L
+
+/**
+ * How long the frame and the view must stay unchanged before the hint is
+ * placed: [TAP_HINT_SETTLE_MS] for its first appearance, the longer
+ * [TAP_HINT_RESETTLE_MS] after a change has hidden it ([hiddenByChange]).
+ */
+internal fun tapHintSettleMs(hiddenByChange: Boolean): Long =
+    if (hiddenByChange) TAP_HINT_RESETTLE_MS else TAP_HINT_SETTLE_MS
+
 /** A rounded pixel the pill may stick past its rows; below what a glyph shows. */
 private const val ROUND_SLACK_PX = 0.5f
 
