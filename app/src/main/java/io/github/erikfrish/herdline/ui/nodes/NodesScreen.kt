@@ -68,7 +68,9 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -139,6 +141,9 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
     var help by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    // Measured, not assumed: a larger font scale makes Add node taller than 56 dp.
+    var fabHeight by remember { mutableStateOf(56.dp) }
+    val density = LocalDensity.current
 
     val shown = nodes
         .filter { node ->
@@ -180,7 +185,9 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
                     text = { Text(stringResource(R.string.add_node)) },
                     icon = { Icon(Icons.Default.Add, null) },
                     onClick = { navigation.edit(null) },
-                    modifier = Modifier.testTag("add_node"),
+                    modifier = Modifier
+                        .testTag("add_node")
+                        .onSizeChanged { fabHeight = with(density) { it.height.toDp() } },
                 )
             }
         },
@@ -189,7 +196,9 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
             EmptyNodes(Modifier.padding(padding), navigation)
             return@GlassScreen
         }
-        // The last row clears the FAB: 56 dp plus 16 dp either side.
+        // The last row clears Add node at scroll end: Scaffold sets the FAB
+        // 16 dp above the nav bar inset (in padding's bottom), then its own
+        // height, then 16 dp of air.
         val direction = LocalLayoutDirection.current
         LazyColumn(
             state = list,
@@ -197,7 +206,7 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
                 start = padding.calculateStartPadding(direction),
                 top = padding.calculateTopPadding(),
                 end = padding.calculateEndPadding(direction),
-                bottom = padding.calculateBottomPadding() + 88.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp + fabHeight + 16.dp,
             ),
             modifier = Modifier.fillMaxSize().testTag("nodes"),
         ) {
