@@ -10,14 +10,16 @@
 //! 256-602, 1647-1699`); what is shown is `convertSessionToHistoryFormats`
 //! and `partListUnionToString` from the same release's bundle.
 //!
-//! PARSER ONLY. Which file belongs to a pane (the owned launcher, the
-//! sidecar and the `hl.gemini.*` tokens) is not here yet, and the module is
-//! not in the agent lists: nothing calls it outside its tests.
+//! Which file belongs to a pane (the owned launcher, its sidecar and the
+//! `hl_gemini_*` pane tokens) is [`binding`]. The module is not in the
+//! agent lists yet: nothing calls it outside its tests.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use super::{ARGS_LIMIT, Block, Entry, Kind, RESULT_LIMIT, Usage, cap, iso_timestamp, text_block};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+
+pub(super) mod binding;
 
 /// A loaded session: what `finalize` returns, the messages in Gemini's order.
 #[derive(Debug)]
