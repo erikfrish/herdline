@@ -1,0 +1,9 @@
+Herdline 0.6.32 — Stop on another tab, Kilo files, marked dialog overflow, Grok session check
+
+- Chat: Stop on a pane read on another tab now presses Esc in that exact pane. Fixed in code, not yet proven on a device. If the key may not have reached the pane, Chat says Stop was not confirmed; if nothing was sent, it says why.
+- Chat with Kilo: the draft's files go with the prompt as data URLs, within the same limits (images 20 MiB, other files 64 MiB). A file Kilo refuses fails the whole send, in words.
+- Chat with OpenCode and Kilo: past five open permissions or questions, Chat shows the first five and says more are waiting, instead of hiding the rest.
+- Chat with Grok: when Grok's own open-session list does not name this pane's session (none, more than one, or stale), Chat refuses instead of guessing.
+- Codex: a non-remote Codex TUI is expected to bind through the existing Herdr hook; this is an inference not yet confirmed on a real run. A remote Codex TUI stays unbound.
+
+Every item above is pending QA. Not yet verified by QA.
