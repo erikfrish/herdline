@@ -427,9 +427,9 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
         let (script, limit) = match &expect {
             // OpenCode pages its own `seq` sequence, Qwen its whole active
             // chain (a tree, not a byte range), Hermes its SQLite `messages`
-            // ids, Kilo its `message` rowids, Grok its rewind-filtered update
-            // rows and Copilot its checked event log, read only, each via its
-            // module.
+            // ids, Kilo its messages' places in (time_created, id) order,
+            // Grok its rewind-filtered update rows and Copilot its checked
+            // event log, read only, each via its module.
             Some(identity) if matches!(identity.agent.as_str(), "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot") => {
                 let page = match identity.agent.as_str() {
                     "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
