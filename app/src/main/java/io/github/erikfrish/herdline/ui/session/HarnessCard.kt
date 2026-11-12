@@ -237,17 +237,21 @@ internal fun BoxScope.HarnessCardSlot(
 }
 
 /**
- * The card's rows after Terminal: Works, then Unverified, then Not in
- * Herdline yet (and Can't check now), then Not in, each group in key order.
+ * The card's rows after Terminal: what the pane's own server decides now
+ * (an OpenCode or Kilo server that is missing, or could not be asked), then
+ * Works, then Unverified, then Not in Herdline yet (and Can't check now),
+ * then Not in, each group in key order. The server's rows lead because the
+ * card's list is capped and scrolls: below the static claims they were out
+ * of view, and the card read as if Send, Stop, Steer and Questions worked.
  */
 internal fun cardRows(program: String?, live: Boolean, runtime: HarnessRuntime): List<Pair<HarnessKey, Shown>> =
     HarnessKey.entries.map { it to shown(program, it, live, runtime) }.sortedBy { (_, row) ->
         when (row) {
-            is Shown.CantCheck -> 2
-            is Shown.Claim -> when (row.cell) {
+            is Shown.CantCheck -> if (row.why == CantCheckWhy.Server) -1 else 2
+            is Shown.Claim -> when (val cell = row.cell) {
                 is Cell.Works -> 0
                 is Cell.Unverified -> 1
-                is Cell.NotYet -> 2
+                is Cell.NotYet -> if (cell.reason == Reason.NeedsServer) -1 else 2
                 is Cell.NotIn -> 3
             }
         }
