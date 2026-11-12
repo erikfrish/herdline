@@ -461,7 +461,6 @@
     <!-- CT-1 (design/CHAT-TARGET.md) -->
     <string name="chat_reading_here">正在此处阅读</string>
     <string name="chat_on_desktop">桌面焦点</string>
-    <string name="chat_desktop_elsewhere">桌面：%1$s</string>
     <string name="chat_desktop_elsewhere_spoken">正在此处阅读 %1$s。桌面焦点在 %2$s。</string>
     <string name="chat_send_route">发送到 %1$s 的终端</string>
     <string name="terminal_opening">正在为 %1$s 打开终端…</string>

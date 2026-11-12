@@ -115,7 +115,6 @@
     <!-- CT-1: the pane read here vs Herdr's shared focus (design/CHAT-TARGET.md). -->
     <string name="chat_reading_here">Reading here</string>
     <string name="chat_on_desktop">On desktop</string>
-    <string name="chat_desktop_elsewhere">Desktop: %1$s</string>
     <string name="chat_desktop_elsewhere_spoken">Reading %1$s here. The desktop is on %2$s.</string>
     <string name="chat_send_route">Sends into %1$s\'s terminal</string>
     <string name="terminal_opening">Opening Terminal for %1$s…</string>

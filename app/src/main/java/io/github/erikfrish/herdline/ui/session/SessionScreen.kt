@@ -1019,7 +1019,8 @@ fun SessionScreen(
                                     stringResource(R.string.other_tabs_changed).takeIf { changedElsewhere },
                                     stringResource(R.string.other_tab_held).takeIf { heldElsewhere },
                                 ).joinToString(", ").ifEmpty { null }
-                                val desktopText = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTabTitle(it).orEmpty()) }
+                                // The desktop's tab name alone: the monitor glyph beside it says "desktop".
+                                val desktopText = desktopOther?.let { view?.paneTabTitle(it) }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
