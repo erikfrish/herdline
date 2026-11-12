@@ -165,12 +165,25 @@ impl Default for Identity {
     }
 }
 
-/// What [`fetch`] answers: transcript lines, or the one image asked for.
+/// What [`fetch`] answers: transcript lines, the one image asked for, or a
+/// typed refusal that Chat says in its own words.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Answer {
     Page(Response),
     Media { media: MediaAnswer },
+    Refused { refused: Refused },
+}
+
+/// Why Chat will never read this session, as opposed to an error that may
+/// clear. Each one has its own text in the app; none is retried by itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Refused {
+    /// The session is stored in a format Chat does not read.
+    UnsupportedFormat { format: &'static str },
+    /// The agent keeps its sessions outside the SSH user's home folder.
+    OutsideHome,
 }
 
 #[derive(Debug, Serialize)]
@@ -383,7 +396,16 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
             },
         });
     }
-    page(exec, session, request).map(Answer::Page)
+    match page(exec, session, request) {
+        Ok(page) => Ok(Answer::Page(page)),
+        Err(Error::UnsupportedFormat(format)) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedFormat { format },
+        }),
+        Err(Error::SessionRootOutsideHome) => Ok(Answer::Refused {
+            refused: Refused::OutsideHome,
+        }),
+        Err(error) => Err(error),
+    }
 }
 
 fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {

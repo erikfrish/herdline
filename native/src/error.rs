@@ -51,6 +51,8 @@ pub enum Error {
     PaneGone,
     #[error("system random source failed: {0}")]
     Random(getrandom::Error),
+    #[error("the agent keeps this session outside the home folder")]
+    SessionRootOutsideHome,
     #[error(transparent)]
     Ssh(#[from] russh::Error),
     #[error("SSH closed before the bridge started")]

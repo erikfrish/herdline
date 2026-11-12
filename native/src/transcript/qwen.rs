@@ -70,6 +70,7 @@ fn answer(bytes: &[u8], expect: &Identity, reset: bool) -> Result<Response> {
     match head["error"].as_str() {
         None => {}
         Some("unconfined" | "foreign") => return Err(Error::TranscriptUnconfined),
+        Some("outside_home") => return Err(Error::SessionRootOutsideHome),
         Some("too_large") => return Err(Error::EntryTooLarge),
         Some(_) => return Err(Error::NoTranscript),
     }
@@ -389,8 +390,9 @@ pub(super) fn session_id(value: &str) -> bool {
 }
 
 /// Runs on the host. Reads from the qwen process's environment only
-/// `QWEN_RUNTIME_DIR` and `QWEN_HOME`, and never prints either. A base that
-/// is relative or resolves outside `$HOME` is refused, not followed. The
+/// `QWEN_RUNTIME_DIR` and `QWEN_HOME`, and never prints either. A relative
+/// base is refused as unconfined; one that resolves to `$HOME` itself or
+/// outside it is refused as outside home, and never followed. The
 /// stamp hashes the open file's device, inode, size and mtime: equal, the
 /// reply says so and carries no records.
 const PYTHON: &str = r#"import hashlib, json, os, re, stat, subprocess, sys
@@ -413,6 +415,8 @@ def identity():
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:qwen'),'kind':ref['kind']}
     return got,pane.get('agent_status','unknown'),pane.get('foreground_cwd') or pane.get('cwd')
 
+class OutsideHome(Exception): pass
+
 def base_dir(pid, home):
     wanted={}
     with open('/proc/%d/environ'%pid,'rb') as env:
@@ -427,7 +431,7 @@ def base_dir(pid, home):
     elif value.startswith('~/'): value=os.path.join(home,value[2:])
     if not value.startswith('/') or any(ord(c)<32 for c in value): return None
     base=os.path.realpath(value)
-    if base==home or os.path.commonpath([home,base])!=home: return None
+    if base==home or os.path.commonpath([home,base])!=home: raise OutsideHome()
     return base
 
 def main():
@@ -438,6 +442,7 @@ def main():
     if not isinstance(cwd,str) or not cwd.startswith('/'): return reply({'error':'no_cwd'})
     home=os.path.realpath(os.environ['HOME'])
     try: base=base_dir(int(got['pid']),home)
+    except OutsideHome: return reply({'error':'outside_home'})
     except (OSError,UnicodeDecodeError): base=None
     if base is None: return reply({'error':'unconfined'})
     chats=os.path.join(base,'projects',re.sub(r'[^a-zA-Z0-9]','-',cwd),'chats')
@@ -711,8 +716,14 @@ mod tests {
         assert!(matches!(host(&home, pid, managed, SID, 0), Err(Error::UnsupportedFormat(MANAGED))));
         qwen.kill().unwrap();
 
+        // A runtime dir outside HOME is its own refusal, so Chat can say where the session is.
         let mut away = process(&[("QWEN_RUNTIME_DIR", outside.path())]);
-        assert!(matches!(host(&home, away.id(), cwd, SID, 0), Err(Error::TranscriptUnconfined)));
+        assert!(matches!(host(&home, away.id(), cwd, SID, 0), Err(Error::SessionRootOutsideHome)));
         away.kill().unwrap();
+
+        // A relative one names no place at all: unconfined, not "outside".
+        let mut relative = process(&[("QWEN_RUNTIME_DIR", Path::new("rel/dir"))]);
+        assert!(matches!(host(&home, relative.id(), cwd, SID, 0), Err(Error::TranscriptUnconfined)));
+        relative.kill().unwrap();
     }
 }

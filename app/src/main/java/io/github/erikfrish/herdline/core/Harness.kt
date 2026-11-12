@@ -48,6 +48,12 @@ data class Harness(
     val questions: Proof,
     val subagents: Proof,
     val media: Proof,
+    /**
+     * Chat shows this program's history and never offers to type: the
+     * composer gives way to a read-only footer. Only an explicit row sets
+     * it; [SendRoute.None] alone hides nothing.
+     */
+    val readOnlyHistory: Boolean = false,
 ) {
     /** Chat reads this program's existing session at all. */
     val chat: Boolean get() = history != Proof.None
@@ -164,5 +170,19 @@ private val KNOWN: Map<String, Harness> = listOf(
         questions = Proof.None,
         subagents = Proof.None,
         media = Proof.Unverified,
+    ),
+    // qwen: transcript/qwen.rs fixture tests only (legacy chats journal,
+    // managed journals refused); no run against a real Qwen Code, nothing sends.
+    Harness(
+        "qwen",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.None,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
     ),
 ).associateBy { it.name }

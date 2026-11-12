@@ -78,6 +78,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -118,6 +119,8 @@ import io.github.erikfrish.herdline.core.TranscriptRead
 import io.github.erikfrish.herdline.core.TranscriptSteer
 import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
+import io.github.erikfrish.herdline.core.TranscriptRefusal
+import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.session.OutageStrip
@@ -177,7 +180,8 @@ fun ChatView(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    onUnavailable: ((Boolean) -> Unit)? = null,
+    /** Hears whether Chat has nothing to show, and the core's typed refusal when that is why. */
+    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)? = null,
     tabTitle: String? = null,
     dense: Boolean = false,
     /** The caller's per-connection memory, so each pane read here comes back as it was (CT-1). */
@@ -199,6 +203,8 @@ class ChatMemory {
 internal class ChatKept {
     var history by mutableStateOf<ChatHistory?>(null)
     var problem by mutableStateOf<String?>(null)
+    /** Set with [problem] when the core refused the session by type; it never clears by itself. */
+    var refusal by mutableStateOf<TranscriptRefusal?>(null)
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
     val media = ChatMedia()
@@ -212,12 +218,13 @@ private fun ChatContent(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier,
-    onUnavailable: ((Boolean) -> Unit)?,
+    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)?,
     tabTitle: String?,
     dense: Boolean,
 ) {
     var history by kept::history
     var problem by kept::problem
+    var refusal by kept::refusal
     var loadingOlder by remember { mutableStateOf(false) }
     // The item at the top of the screen when older ones were requested, and how far it was scrolled.
     var anchor by remember { mutableStateOf<Pair<String, Int>?>(null) }
@@ -244,7 +251,11 @@ private fun ChatContent(
                     // Merged into whatever is current now: a load of older entries may have finished meanwhile.
                     history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
                     problem = null
-                }.onFailure { problem = it.message ?: it.javaClass.simpleName }
+                    refusal = null
+                }.onFailure {
+                    problem = it.message ?: it.javaClass.simpleName
+                    refusal = (it as? TranscriptRefused)?.refusal
+                }
                 withTimeoutOrNull(
                     when {
                         page.isFailure -> ERROR_POLL_MS
@@ -337,8 +348,9 @@ private fun ChatContent(
     val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
     val unavailable = shown == null && problem != null
+    val refused = refusal.takeIf { unavailable }
     val report by rememberUpdatedState(onUnavailable)
-    LaunchedEffect(unavailable) { report?.invoke(unavailable) }
+    LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
     val header = if (shown?.hasOlder == true) 1 else 0
 
     fun loadOlder() {
@@ -465,7 +477,9 @@ private fun ChatContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
+                    val context = LocalContext.current
+                    val said = refused?.let { context.refusalText(it, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty()) }
+                    Text(said ?: stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
                     GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
                 }
                 shown == null -> Row(
