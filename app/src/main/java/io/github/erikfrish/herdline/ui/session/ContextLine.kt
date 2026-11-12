@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.ui.session
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,8 +33,9 @@ internal data class ContextWidths(val workspace: Int, val position: Int, val ico
  * is never cut, since a cut number misleads (A-24): it is whole or gone. The
  * desktop's name comes next, only beside n/N, then the workspace, which
  * ellipsizes first. A text span is whole, cut no narrower than its
- * [workspaceMin] / [desktopMin] (four characters and "…"), or gone. A
- * [separator] is paid by the span it parts from the icon or from n/N.
+ * [workspaceMin] / [desktopMin] (four characters and "…"), or gone. The
+ * workspace pays the [separator] that parts it from n/N; whatever is drawn
+ * just left of the icon pays the [gap] before it, never a separator.
  */
 internal fun contextWidths(
     available: Int,
@@ -42,16 +44,17 @@ internal fun contextWidths(
     position: Int,
     icon: Int,
     separator: Int,
+    gap: Int,
     desktop: Int,
     desktopMin: Int,
 ): ContextWidths {
     var room = available.coerceAtLeast(0) - icon
-    val positionCost = position + if (icon > 0) separator else 0
+    val positionCost = position + if (icon > 0) gap else 0
     val kept = if (position > 0 && positionCost <= room) position else 0
     if (kept > 0) room -= positionCost
     val desktopWidth = if (position > 0 && kept == 0) 0 else span(desktop, desktopMin, room)
     room -= desktopWidth
-    val workspaceWidth = span(workspace, workspaceMin, room - if (kept > 0 || icon > 0) separator else 0)
+    val workspaceWidth = span(workspace, workspaceMin, room - if (kept > 0) separator else if (icon > 0) gap else 0)
     return ContextWidths(workspaceWidth, kept, icon, desktopWidth)
 }
 
@@ -101,13 +104,14 @@ internal fun PlaceLine(
                     Box(Modifier.size(10.dp).drawBehind { drawUnseenMark(center, halo, markColor) }.testTag("session:place_mark"))
                 }
             }
-            Text(" · ", style = style, color = muted, maxLines = 1, softWrap = false)
+            Box(Modifier.width(IconGap))
             Icon(DesktopIcon, null, tint = muted, modifier = Modifier.size(14.dp).testTag("session:desktop_elsewhere"))
             Text(text.orEmpty(), style = style, color = muted, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         },
         modifier = modifier,
     ) { measurables, constraints ->
         val full = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val gap = IconGap.roundToPx()
         fun measured(span: String) = measurer.measure(span, style, maxLines = 1, softWrap = false).size.width
         val available = if (constraints.hasBoundedWidth) constraints.maxWidth else full.sum()
         val widths = contextWidths(
@@ -117,6 +121,7 @@ internal fun PlaceLine(
             position = full[2],
             icon = if (desktopElsewhere) full[4] else 0,
             separator = full[1],
+            gap = gap,
             desktop = if (text != null) full[5] else 0,
             // The leading space, then four characters of the name itself.
             desktopMin = if (text != null) measured(" " + shortest(desktop.orEmpty())) else 0,
@@ -126,7 +131,7 @@ internal fun PlaceLine(
             widths.workspace,
             if (widths.workspace > 0 && widths.position > 0) full[1] else 0,
             widths.position,
-            if (widths.icon > 0 && leftOfIcon) full[3] else 0,
+            if (widths.icon > 0 && leftOfIcon) gap else 0,
             widths.icon,
             widths.desktop,
         )
@@ -146,6 +151,9 @@ internal fun PlaceLine(
         }
     }
 }
+
+/** Between the desktop icon and the span drawn before it: a space, not a separator. */
+private val IconGap = 4.dp
 
 /*
  * Material Symbols `computer` for the desktop-elsewhere marker. The path is
