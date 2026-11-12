@@ -136,6 +136,8 @@ import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
+import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TabsView
@@ -155,6 +157,9 @@ import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
 import io.github.erikfrish.herdline.ui.chat.ChatMemory
 import io.github.erikfrish.herdline.ui.chat.ChatView
+import io.github.erikfrish.herdline.ui.chat.ChatType
+import io.github.erikfrish.herdline.ui.chat.chatColors
+import io.github.erikfrish.herdline.ui.chat.refusalText
 import io.github.erikfrish.herdline.ui.LocalWindowClass
 import io.github.erikfrish.herdline.ui.sessionSidebar
 import io.github.erikfrish.herdline.ui.sideComposerWidthDp
@@ -187,6 +192,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.sessionAccent
@@ -465,10 +471,15 @@ fun SessionScreen(
     // switches back by itself once a read succeeds; the stored choice stays
     // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying.
     var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
+    // Why, when the core refused the session by type: these never clear by themselves.
+    var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
     // S5: the pane read in Chat closed. Chat says so and keeps the draft; it never falls back to the desktop.
     var chatShown by remember { mutableStateOf(false) }
     LaunchedEffect(chatWanted, chatUnreadable, closed) { if (!closed) chatShown = chatWanted && !chatUnreadable }
     val chatMode = if (closed) chatShown else chatWanted && !chatUnreadable
+    // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
+    val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
+    val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
     // What is on screen: the pane read here in Chat, the desktop's in Terminal.
     val focusedPane = if (chatMode) reading?.pane?.takeIf { !closed } else desktopPane
     val viewedPane = focusedPane
@@ -481,7 +492,7 @@ fun SessionScreen(
     // Panes whose delivery is unconfirmed: their tabs carry the lock (M5).
     val held = remember(unconfirmed, node.id, node.session) { drafts.held(node.id, node.session) }
     // Terminal always uses its own editor; Chat drafts and delivery holds remain pane-bound.
-    val composerHidden = !chatMode
+    val composerHidden = !chatMode || chatReadOnly
     // Hidden, the composer measures nothing: no stale height, open space or held grid for the terminal to keep.
     LaunchedEffect(composerHidden, terminal) {
         if (composerHidden) {
@@ -614,11 +625,15 @@ fun SessionScreen(
         terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
+    /** The fallback's words: a typed refusal says its own whole text, any other cause the general one. */
+    fun chatUnreadableText(refusal: TranscriptRefusal?): String =
+        refusal?.let { context.refusalText(it, chatAgentName) } ?: context.getString(R.string.session_chat_unreadable)
+
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
-            chat && chatUnreadable -> scope.launch { snackbar.showSnackbar(context.getString(R.string.session_chat_unreadable)) }
+            chat && chatUnreadable -> scope.launch { snackbar.showSnackbar(chatUnreadableText(chatRefusal)) }
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
@@ -1037,18 +1052,19 @@ fun SessionScreen(
                                 accent,
                                 onTerminal = { showChat(false) },
                                 modifier = if (chatUnreadable) Modifier.size(0.dp) else Modifier,
-                                onUnavailable = { unreadable ->
-                                    if (unreadable && !chatUnreadable) {
+                                onUnavailable = { unreadable, refusal ->
+                                    if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
                                         // The fallback happens on its own, so it
                                         // stays long enough to be read (lab.4 G5).
                                         scope.launch {
                                             snackbar.showSnackbar(
-                                                context.getString(R.string.session_chat_unreadable),
+                                                chatUnreadableText(refusal),
                                                 duration = SnackbarDuration.Long,
                                             )
                                         }
                                     }
                                     chatUnreadable = unreadable
+                                    chatRefusal = refusal
                                 },
                                 // The tab's readable title (Titles.kt), never a pane ID.
                                 tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
@@ -1170,6 +1186,8 @@ fun SessionScreen(
                                 )
                             }
                         }
+                    } else if (chatReadOnly) {
+                        ReadOnlyFooter(chatAgentName, accent)
                     } else {
                         val density = LocalDensity.current
                         // Beside the content, the composer takes none of its height; the
@@ -1908,4 +1926,28 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable ()
             composer.forEach { it.place(composerX, composerY); composerY += it.height }
         }
     }
+}
+
+/**
+ * Where the composer is for a program whose history Chat only shows
+ * (design NIGHT-READONLY-HARNESS section 1): plain text, not tappable;
+ * the mode toggle above is the way to Terminal. One TalkBack node, no
+ * live region, no animation, never cut short.
+ */
+@Composable
+private fun ReadOnlyFooter(agent: String, accent: Color) {
+    val colors = chatColors(accent)
+    val spoken = stringResource(R.string.chat_readonly_footer_spoken, agent)
+    Text(
+        stringResource(R.string.chat_readonly_footer),
+        style = ChatType.body.copy(color = colors.muted),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.bg)
+            .navigationBarsPadding()
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 13.dp)
+            .clearAndSetSemantics { contentDescription = spoken }
+            .testTag("chat:readonly"),
+    )
 }

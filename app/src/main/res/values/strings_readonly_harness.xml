@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Where the composer is for a program whose history Chat only shows (design NIGHT-READONLY-HARNESS section 1). -->
+    <string name="chat_readonly_footer">History only. To type, switch to Terminal.</string>
+    <!-- TalkBack for the footer; %1$s is the agent's display name. -->
+    <string name="chat_readonly_footer_spoken">%1$s history, read only. To type, switch to Terminal.</string>
+    <!-- Typed refusals, used whole in place of chat_unavailable and session_chat_unreadable (section 3). -->
+    <string name="chat_refused_outside_home">%1$s keeps this session outside your home folder on the host, and Chat reads only inside it. Terminal still works: read and type there.</string>
+    <string name="chat_refused_qwen_managed">This Qwen Code session is stored as a managed session, which Chat can\'t read. Terminal still works: read and type there.</string>
+</resources>

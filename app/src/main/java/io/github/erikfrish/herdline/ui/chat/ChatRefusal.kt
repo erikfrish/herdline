@@ -1,0 +1,36 @@
+package io.github.erikfrish.herdline.ui.chat
+
+import android.content.Context
+import androidx.annotation.StringRes
+import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.TranscriptRefusal
+
+/** A refusal's string and the arguments it is formatted with. */
+internal data class RefusalWords(@StringRes val res: Int, val args: List<Any> = emptyList())
+
+/**
+ * Which words say [refusal]: the app's own strings only, never the core's
+ * message. Null for a format this app has no words for; the caller then
+ * says the general text. [agent] is the program's display name.
+ */
+internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWords? = when (refusal) {
+    TranscriptRefusal.OutsideHome -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
+    is TranscriptRefusal.UnsupportedFormat -> when (refusal.format) {
+        "managed_session_journal" -> RefusalWords(R.string.chat_refused_qwen_managed)
+        else -> null
+    }
+    // A format Chat can't name is said without a number, never as "unknown".
+    is TranscriptRefusal.UnsupportedVersion -> when (refusal.agent) {
+        "hermes" -> refusal.found?.let { RefusalWords(R.string.chat_refused_hermes_version, listOf(it, refusal.supported)) }
+            ?: RefusalWords(R.string.chat_refused_hermes_format_unknown, listOf(refusal.supported))
+        else -> null
+    }
+}
+
+/**
+ * What Chat says for a typed refusal, used whole in place of
+ * `chat_unavailable` and `session_chat_unreadable`, whose "switches back"
+ * promise is false for these causes; null as [refusalWords] is.
+ */
+fun Context.refusalText(refusal: TranscriptRefusal, agent: String): String? =
+    refusalWords(refusal, agent)?.let { getString(it.res, *it.args.toTypedArray()) }

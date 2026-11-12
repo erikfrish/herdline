@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Where a Hermes history stops at another session's turns, drawn as the compaction divider. -->
+    <string name="chat_history_boundary">The history continues in another session, which isn\'t shown here. Terminal shows the agent as it is now.</string>
+    <!-- %1$d: the state.db schema format found; %2$d: the one Chat reads, from the native reader's constant. -->
+    <string name="chat_refused_hermes_version">Chat reads Hermes history format %2$d only. This Hermes uses format %1$d, so Chat can\'t show it. Terminal still works: read and type there.</string>
+    <!-- The store names no single format (no version table, or several rows). %1$d: the one Chat reads. -->
+    <string name="chat_refused_hermes_format_unknown">Chat reads Hermes history format %1$d only, and can\'t tell which format this Hermes uses, so Chat can\'t show it. Terminal still works: read and type there.</string>
+</resources>

@@ -95,6 +95,8 @@ sealed interface ChatItem {
     /** Text the agent's harness added, such as a developer or extension message. */
     data class Note(override val key: String, val role: String, val text: String, override val timestamp: Long? = null) : ChatItem
     data class Compaction(override val key: String, val summary: String, override val timestamp: Long? = null) : ChatItem
+    /** Where the history shown stops: earlier turns belong to another session. */
+    data class Boundary(override val key: String) : ChatItem
     /** An image of a message; [fromUser] draws it in the user's turn. */
     data class Image(override val key: String, val image: TranscriptImage, val fromUser: Boolean, override val timestamp: Long? = null) : ChatItem
 }
@@ -147,6 +149,7 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
         when (entry.kind) {
             TranscriptKind.Other -> Unit
             TranscriptKind.Compaction -> items += ChatItem.Compaction("$base:c", entry.blocks.text(), at)
+            TranscriptKind.Boundary -> items += ChatItem.Boundary("$base:b")
             TranscriptKind.Message -> entry.blocks.forEachIndexed { index, block ->
                 val key = "$base:$index"
                 when (block) {

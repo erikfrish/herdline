@@ -203,7 +203,8 @@ enum class TranscriptSteer {
     Live,
 }
 
-enum class TranscriptKind { Message, Compaction, Other }
+/** [Boundary]: the history shown stops here at another session's turns, which are not shown. */
+enum class TranscriptKind { Message, Compaction, Boundary, Other }
 
 /** An assistant message's tokens and OMP's own cost estimate in USD, null when OMP has no price. */
 data class TranscriptUsage(val input: Long, val output: Long, val totalTokens: Long, val cost: Double?) {
@@ -253,6 +254,7 @@ data class TranscriptEntry(
             kind = when (json.optString("kind")) {
                 "message" -> TranscriptKind.Message
                 "compaction" -> TranscriptKind.Compaction
+                "boundary" -> TranscriptKind.Boundary
                 else -> TranscriptKind.Other
             },
             role = json.optString("role").takeUnless { json.isNull("role") || it.isEmpty() },
@@ -281,8 +283,10 @@ data class TranscriptPage(
     val hasOlder: Boolean = start > 0,
 ) {
     companion object {
+        /** Fails with [TranscriptRefused] when the core refuses the session by type. */
         fun parse(text: String): TranscriptPage {
             val json = JSONObject(text)
+            json.optJSONObject("refused")?.let { refused -> TranscriptRefusal.parse(refused)?.let { throw TranscriptRefused(it) } }
             return TranscriptPage(
                 identity = TranscriptIdentity.parse(json.getJSONObject("identity")),
                 reset = json.optBoolean("reset"),
@@ -295,6 +299,40 @@ data class TranscriptPage(
         }
     }
 }
+
+/** Why Chat will never read this session (native `Refused`); it does not clear by itself. */
+sealed interface TranscriptRefusal {
+    /** The session is stored in a [format] Chat does not read, such as `managed_session_journal`. */
+    data class UnsupportedFormat(val format: String) : TranscriptRefusal
+    /** The agent keeps its sessions outside the SSH user's home folder. */
+    data object OutsideHome : TranscriptRefusal
+    /**
+     * [agent]'s store is in a schema format the reader was not written for:
+     * [found] is that format, or null when the store names no single one;
+     * [supported] is the one the reader reads.
+     */
+    data class UnsupportedVersion(val agent: String, val found: Int?, val supported: Int) : TranscriptRefusal
+
+    companion object {
+        /** Null for a kind from a newer core: the read then fails as any other. */
+        fun parse(json: JSONObject): TranscriptRefusal? = when (json.optString("kind")) {
+            "unsupported_format" -> UnsupportedFormat(json.optString("format"))
+            "outside_home" -> OutsideHome
+            // Without a supported format there is nothing true to say: the general text.
+            "unsupported_version" -> json.optInt("supported", -1).takeIf { it >= 0 }?.let { supported ->
+                UnsupportedVersion(
+                    json.optString("agent"),
+                    json.optInt("found", -1).takeIf { !json.isNull("found") && it >= 0 },
+                    supported,
+                )
+            }
+            else -> null
+        }
+    }
+}
+
+/** A read the core refused by type; Chat says [refusal] in its own words, not the message. */
+class TranscriptRefused(val refusal: TranscriptRefusal) : java.io.IOException("chat cannot read this session: $refusal")
 
 /** The most image bytes one media read decodes (native `MAX_IMAGE`). */
 const val MAX_IMAGE_BYTES = 20L * 1024 * 1024

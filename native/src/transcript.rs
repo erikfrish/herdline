@@ -22,12 +22,14 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode` own their line/row formats; the shared
-/// OMP record parser below handles `omp` and serves as the base for `pi`.
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes` own their line/row formats; the
+/// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
+mod hermes;
 mod opencode;
 mod pi;
+mod qwen;
 mod subagents;
 
 #[cfg(test)]
@@ -128,7 +130,8 @@ pub struct Identity {
     /// `path` refs (OMP, Pi), the session ID for `id` refs (the rest). Never
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
-    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`.
+    /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
+    /// `qwen`, `hermes`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -164,12 +167,28 @@ impl Default for Identity {
     }
 }
 
-/// What [`fetch`] answers: transcript lines, or the one image asked for.
+/// What [`fetch`] answers: transcript lines, the one image asked for, or a
+/// typed refusal that Chat says in its own words.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Answer {
     Page(Response),
     Media { media: MediaAnswer },
+    Refused { refused: Refused },
+}
+
+/// Why Chat will never read this session, as opposed to an error that may
+/// clear. Each one has its own text in the app; none is retried by itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Refused {
+    /// The session is stored in a format Chat does not read.
+    UnsupportedFormat { format: &'static str },
+    /// The agent keeps its sessions outside the SSH user's home folder.
+    OutsideHome,
+    /// The agent's store is in a schema format the reader was not written
+    /// for; `found` is null when the store names no single format.
+    UnsupportedVersion { agent: &'static str, found: Option<u32>, supported: u32 },
 }
 
 #[derive(Debug, Serialize)]
@@ -290,6 +309,8 @@ pub struct Usage {
 pub enum Kind {
     Message,
     Compaction,
+    /// Where the history shown stops at another session's turns; no content.
+    Boundary,
     /// Kept without content so the branch can be walked through it.
     Other,
 }
@@ -382,7 +403,19 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
             },
         });
     }
-    page(exec, session, request).map(Answer::Page)
+    match page(exec, session, request) {
+        Ok(page) => Ok(Answer::Page(page)),
+        Err(Error::UnsupportedFormat(format)) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedFormat { format },
+        }),
+        Err(Error::SessionRootOutsideHome) => Ok(Answer::Refused {
+            refused: Refused::OutsideHome,
+        }),
+        Err(Error::UnsupportedHermes { found, supported }) => Ok(Answer::Refused {
+            refused: Refused::UnsupportedVersion { agent: "hermes", found, supported },
+        }),
+        Err(error) => Err(error),
+    }
 }
 
 fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
@@ -392,9 +425,16 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
     let mut reset = false;
     for _ in 0..MAX_READS {
         let (script, limit) = match &expect {
-            // OpenCode pages its own `seq` sequence via its module.
-            Some(identity) if identity.agent == "opencode" => {
-                match opencode::page(exec, session, &request.pane, identity, read, reset) {
+            // OpenCode pages its own `seq` sequence, Qwen its whole active
+            // chain (a tree, not a byte range), Hermes its SQLite `messages`
+            // ids read only, each via its module.
+            Some(identity) if matches!(identity.agent.as_str(), "opencode" | "qwen" | "hermes") => {
+                let page = match identity.agent.as_str() {
+                    "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
+                    "hermes" => hermes::page(exec, session, &request.pane, identity, read, reset),
+                    _ => opencode::page(exec, session, &request.pane, identity, read, reset),
+                };
+                match page {
                     Ok(page) => return Ok(page),
                     Err(error @ Error::NoTranscript) => {
                         let current = instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
@@ -501,6 +541,11 @@ fn image(
     // fetches by `seq` and rechecks the instance before and after.
     if expect.agent == "opencode" {
         return opencode::image(exec, session, pane, expect, media);
+    }
+    // Qwen's images are shown as references only, and Hermes history is read
+    // without its media: chat never fetches either, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes") {
+        return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
         Some(len) if len > 0 && len <= MAX_WINDOW => len,
@@ -1029,14 +1074,14 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let session = &pane["agent_session"];
     let agent = session["agent"]
         .as_str()
-        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode"))
+        .filter(|agent| matches!(*agent, "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes"))
         .ok_or(Error::NoTranscript)?;
     // The agent's own reported reference, held exactly as Herdr gives it:
     // the session file for `path` (OMP, Pi), the session id for `id` (the
     // rest). Resolution stays in the host script, so identity cannot drift.
     let (kind, value) = match (session["kind"].as_str(), session["value"].as_str()) {
         (Some("path"), Some(value)) if agent == "omp" || agent == "pi" => ("path", value),
-        (Some("id"), Some(value)) if session_id(value) => ("id", value),
+        (Some("id"), Some(value)) if session_id(value) && (agent != "qwen" || qwen::session_id(value)) => ("id", value),
         _ => return Err(Error::NoTranscript),
     };
     if kind == "path" && !confined(agent, value) {
@@ -1046,8 +1091,13 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     let identity = Identity {
         pane_id: text(&pane["pane_id"])?,
         terminal_id: text(&pane["terminal_id"])?,
-        // The pane's foreground process must be that agent's own name.
-        pid: foreground_pid(process, agent),
+        // The pane's foreground process must be that agent's own name; Hermes
+        // runs as either of its entry points.
+        pid: if agent == "hermes" {
+            hermes::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name))
+        } else {
+            foreground_pid(process, agent)
+        },
         path: value.to_owned(),
         agent: agent.to_owned(),
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
