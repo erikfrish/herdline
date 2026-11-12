@@ -1560,7 +1560,9 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
 private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
-    val unavailable = stringResource(R.string.chat_mode_unavailable)
+    // A stateDescription replaces the Tab's own Selected, so a selected unavailable
+    // segment says both itself.
+    val unavailable = stringResource(if (selected) R.string.chat_mode_unavailable_selected else R.string.chat_mode_unavailable)
     Box(
         Modifier
             .fillMaxHeight()
