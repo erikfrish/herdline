@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.core.RenderFrame
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Pane rows Herdr needs before Send is allowed. The native core enforces it
@@ -90,4 +92,25 @@ internal fun shortPaneReach(
     val portrait = landscape && base.windowWidthPx > base.windowHeightPx &&
         reaches(base.sharedPx + base.windowWidthPx - base.windowHeightPx - portraitExtraPx)
     return ShortPaneReach(hide, portrait)
+}
+
+/**
+ * Grid rows below which a frame with no focused pane rect is taken to leave
+ * the pane no content row: a bordered pane's top and bottom border lines.
+ * Only the fallback; [paneHasNoRoom] reads the rect when the frame has it.
+ */
+internal const val NO_ROOM_FALLBACK_ROWS = 3
+
+/**
+ * Whether raw input shows the focused pane with no row of its own (QF-6c):
+ * the content area Herdr gave it ([RenderFrame.PaneArea.rect], its inner
+ * rect) has no row inside the frame, so only Herdr's chrome is drawn. A frame
+ * that names no focused pane falls back to fewer than
+ * [NO_ROOM_FALLBACK_ROWS] grid rows. An open popup takes the input, so it is
+ * never this case.
+ */
+internal fun paneHasNoRoom(frame: RenderFrame?, rawInput: Boolean): Boolean {
+    if (!rawInput || frame == null || frame.rows <= 0 || frame.popup != null) return false
+    val rect = frame.panes.firstOrNull { it.focused }?.rect ?: return frame.rows < NO_ROOM_FALLBACK_ROWS
+    return min(frame.rows, rect.y + rect.height) - max(0, rect.y) <= 0
 }

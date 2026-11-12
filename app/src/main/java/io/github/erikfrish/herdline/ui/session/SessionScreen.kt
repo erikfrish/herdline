@@ -1101,6 +1101,24 @@ fun SessionScreen(
                                 modifier = Modifier.align(Alignment.Center).padding(24.dp).testTag("chat:pane_closed"),
                             )
                         }
+                        // QF-6c: raw input on a pane Herdr leaves no row of its own (the 2-row landscape grid,
+                        // its border on both): say so over the terminal, which shows only the border. Gone with
+                        // the first frame that gives the pane a row: keyboard down, portrait or a font change.
+                        // Raw input: the keyboard is up for the terminal, not for the composer's field.
+                        if (!chatMode && paneHasNoRoom(frame, rawInput = imeVisible && !composerField)) {
+                            PaneNoRoomNotice(
+                                offers = shortPaneOffers(
+                                    tabZoomed = null,
+                                    landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
+                                    imeVisible = imeVisible,
+                                    hideKeyboardReachesSend = true,
+                                    portraitReachesSend = true,
+                                ),
+                                accent = accent,
+                                onHideKeyboard = { terminal?.hideKeyboard() },
+                                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                            )
+                        }
                         // The pane Chat last read, kept so the fade-out still draws it after it went away.
                         var shownChatPane by remember { mutableStateOf(chatPane) }
                         if (chatPane != null) shownChatPane = chatPane
