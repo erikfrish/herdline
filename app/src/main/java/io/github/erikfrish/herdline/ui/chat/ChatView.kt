@@ -1636,6 +1636,7 @@ internal fun stopRefusalRes(reason: String): Int =
         "screen_not_stoppable" -> R.string.stop_refused_screen
         "unsettled" -> R.string.stop_refused_unsettled
         "screen_unread" -> R.string.stop_refused_screen_unread
+        "key_unsent" -> R.string.stop_refused_key_unsent
         else -> R.string.stop_refused_other
     }
 

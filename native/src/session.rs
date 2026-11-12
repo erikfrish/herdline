@@ -496,12 +496,29 @@ impl Session {
             Err(reason) => return refused(reason),
         };
         let pty::Key::Esc = key;
-        let sent = self.handle.send_input(&request.boot, pane, vec![input::esc()]);
-        drop(steers);
-        drop(holds);
-        if let Err(error) = sent {
-            tracing::warn!(%error, "stop key not sent");
-            return uncertain;
+        // Off the surface the key goes to exactly that pane through Herdr's
+        // own per-pane input, the instance fenced once more right before it;
+        // the headless client's input only reaches the surface it draws.
+        if screen.is_some() {
+            if !fenced(self.read_instance(pane).as_ref()) {
+                return refused(pty::Refusal::AgentChanged);
+            }
+            let pressed = pty::press(exec, &self.shared.session, pane, key);
+            drop(steers);
+            drop(holds);
+            match pressed {
+                pty::Press::Pressed => {}
+                pty::Press::Unsent => return refused(pty::Refusal::KeyUnsent),
+                pty::Press::Unknown => return uncertain,
+            }
+        } else {
+            let sent = self.handle.send_input(&request.boot, pane, vec![input::esc()]);
+            drop(steers);
+            drop(holds);
+            if let Err(error) = sent {
+                tracing::warn!(%error, "stop key not sent");
+                return uncertain;
+            }
         }
         let Some(before) = before else {
             return uncertain;

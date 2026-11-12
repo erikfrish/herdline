@@ -5,7 +5,9 @@
 //! frame shows its hint for it right now (Herdr's detection manifests name
 //! those hints). The frame is the one on the surface at the tap, or, for a
 //! pane off it, Herdr's own `pane.read` of that pane's visible screen; the
-//! instance is fenced by the caller before and checked again after.
+//! instance is fenced by the caller before and checked again after. A pane
+//! off the surface gets its key from Herdr's `pane.send_keys` for that
+//! pane, never from the client's surface input.
 //!
 //! The key is pressed at most once. It is never a receipt: Stop counts as
 //! done only when Herdr's status leaves working **and** the same session's
@@ -59,6 +61,9 @@ pub enum Refusal {
     /// The pane is off the surface and Herdr's own read of its screen
     /// failed or could not be read as one.
     ScreenUnread,
+    /// The pane is off the surface and Herdr answered the key for that
+    /// pane with an error (or no Herdr CLI was found): nothing went.
+    KeyUnsent,
 }
 
 #[derive(Clone, Copy)]
@@ -193,6 +198,59 @@ exec "$herdr" --session {session} pane read {pane} --source visible --format tex
         return Err(Refusal::ScreenUnread);
     }
     screen_rows(&output.tail).ok_or(Refusal::ScreenUnread)
+}
+
+/// How pressing the stop key on a pane off the surface went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Press {
+    Pressed,
+    /// Herdr refused it or never got it: no key went.
+    Unsent,
+    /// The host channel failed or gave no exit status: the key may have gone.
+    Unknown,
+}
+
+/// The host script pressing `key` in exactly `pane` by Herdr's
+/// `pane.send_keys` (`herdr pane send-keys`, key `esc`: Herdr's
+/// `parse_key_combo` reads `esc`), whatever tab the pane is on. It never
+/// goes through the headless client's surface input.
+fn press_script(session: &str, pane: &str, key: Key) -> String {
+    let Key::Esc = key;
+    format!(
+        r#"exec 2>/dev/null
+herdr=
+{HERDR_CANDIDATES}
+    if [ -n "$path" ] && [ -x "$path" ]; then herdr=$path; break; fi
+done
+[ -n "$herdr" ] || exit 4
+exec "$herdr" --session {session} pane send-keys {pane} esc </dev/null"#,
+        session = shell_quote(session),
+        pane = shell_quote(pane),
+    )
+}
+
+/// Press `key` once in `pane` off the surface; see [`press_script`].
+pub fn press(exec: &Exec, session: &str, pane: &str, key: Key) -> Press {
+    let script = press_script(session, pane, key);
+    match exec.run(format!("/bin/sh -c {}", shell_quote(&script)), SCREEN_WAIT, 4096) {
+        Ok(output) => press_outcome(output.exit_status),
+        Err(error) => {
+            tracing::warn!(%error, "stop key not sent to pane");
+            Press::Unknown
+        }
+    }
+}
+
+/// The CLI exits 0 once Herdr accepted the key, 1 when Herdr answered an
+/// error (`pane_not_found`, `invalid_key`, `pane_send_failed`), 2 on usage
+/// and the script 4 with no Herdr: those sent nothing. Anything else is not
+/// known.
+fn press_outcome(status: Option<u32>) -> Press {
+    match status {
+        Some(0) => Press::Pressed,
+        Some(1 | 2 | 4) => Press::Unsent,
+        _ => Press::Unknown,
+    }
 }
 
 /// The rows of `herdr pane read`'s output (the reply's `read.text`, printed

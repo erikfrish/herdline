@@ -150,3 +150,19 @@ fn a_chat_stop_off_the_shared_surface_decides_on_the_panes_own_read_screen() {
     assert!(on_surface(&here, "w1:p1"));
     assert_eq!(admit(&working, &here, "boot-1", "w1:p1", "omp", None), Ok(Key::Esc));
 }
+
+// QA X1 off tab: desktop on w2:t1, Chat stops OMP in w4:p2. The key goes to
+// w4:p2 by id, as Herdr's key name `esc`, and an error answer is no key.
+#[test]
+fn an_off_surface_stop_presses_esc_in_that_pane_and_an_error_sends_nothing() {
+    let script = press_script("s1", "w4:p2", Key::Esc);
+    let line = script.lines().last().unwrap();
+    assert_eq!(line, r#"exec "$herdr" --session 's1' pane send-keys 'w4:p2' esc </dev/null"#);
+    assert_eq!(press_outcome(Some(0)), Press::Pressed);
+    for unsent in [1, 2, 4] {
+        assert_eq!(press_outcome(Some(unsent)), Press::Unsent);
+    }
+    for unknown in [None, Some(124), Some(137)] {
+        assert_eq!(press_outcome(unknown), Press::Unknown);
+    }
+}
