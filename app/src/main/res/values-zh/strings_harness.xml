@@ -32,7 +32,6 @@
     <string name="harness_tested_only">只有带勾的行已在此应用版本上测试过。终端始终可用。</string>
     <string name="harness_reason_not_built">尚未实现。</string>
     <string name="harness_reason_no_source">尚无可据以实现的公开源码。</string>
-    <string name="harness_reason_upstream_unpinned">尚未在 %1$s 自己的源码中确认。</string>
     <string name="harness_reason_no_ref">Herdr 未提供此会话的标识。</string>
     <string name="harness_reason_closed">其历史记录没有公开格式。</string>
     <string name="harness_reason_server_history">其历史记录保存在 Letta 服务器上。</string>

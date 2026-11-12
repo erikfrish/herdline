@@ -126,7 +126,7 @@ sealed interface Cell {
 
 /** Why a cell is not in Herdline yet (card §2.3, `harness_reason_*`). */
 enum class Reason {
-    NotBuilt, NoSource, UpstreamUnpinned, NoRef, Closed, ServerHistory, NoControl, Lock, NoBinding, FormatUnpinned,
+    NotBuilt, NoSource, NoRef, Closed, ServerHistory, NoControl, Lock, NoBinding, FormatUnpinned,
     SendMedia, ScreenStatus, NeedsHook, NeedsServer, StaleId, Rewind, NoSessionYet, UnknownProgram, NoLiveAttach, CloudAuth,
 }
 
@@ -197,11 +197,11 @@ private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = fals
 /** Keyed by lower-case Herdr name. Columns of each card(…): H L P X S T M Q U A R. */
 private val KNOWN: Map<String, Harness> = (
     listOf(
-        routed("omp", SendRoute.Endpoint, card(V, V, V, NB, Vn(Note.QueueMissing), V, V, V, V, V, NB)),
-        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), NB, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
-        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), NB, NS, V, SM, NC, SS, NB, NB)),
-        routed("codex", SendRoute.Endpoint, card(V, V, V, NB, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB)),
-        routed("opencode", SendRoute.Api, card(V, V, V, V, no(Reason.UpstreamUnpinned, "OpenCode"), V, NB, Vn(Note.PermissionsOnly), V, NB, NB)),
+        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, NB)),
+        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
+        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
+        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB)),
+        routed("opencode", SendRoute.Api, card(V, V, V, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB)),
         routed("kilo", SendRoute.None, card(V, V, NB, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), readOnlyHistory = true),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),

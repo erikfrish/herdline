@@ -296,7 +296,6 @@ internal fun reasonText(cell: Cell.NotYet): String {
     val id = when (cell.reason) {
         Reason.NotBuilt -> R.string.harness_reason_not_built
         Reason.NoSource -> R.string.harness_reason_no_source
-        Reason.UpstreamUnpinned -> R.string.harness_reason_upstream_unpinned
         Reason.NoRef -> R.string.harness_reason_no_ref
         Reason.Closed -> R.string.harness_reason_closed
         Reason.ServerHistory -> R.string.harness_reason_server_history

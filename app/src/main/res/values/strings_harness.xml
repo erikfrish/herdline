@@ -37,7 +37,6 @@
     <string name="harness_tested_only">Only rows with a check have been tested on this app version. Terminal always works.</string>
     <string name="harness_reason_not_built">Not built yet.</string>
     <string name="harness_reason_no_source">No published source to build it from yet.</string>
-    <string name="harness_reason_upstream_unpinned">Not confirmed in %1$s\'s own source yet.</string>
     <string name="harness_reason_no_ref">Herdr doesn\'t name this session.</string>
     <string name="harness_reason_closed">No public format for its history.</string>
     <string name="harness_reason_server_history">Its history lives on the Letta server.</string>
