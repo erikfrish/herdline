@@ -159,6 +159,18 @@ class TapHintTest {
         assertEquals(10 until 190, tapHintSpanPx(bordered(), viewport()))
     }
 
+    @Test
+    fun aNoticeOverTheTerminalHidesItAndItsGoingBringsItBack() {
+        fun wanted(noticeOver: Boolean = false, typedOnce: Boolean = false, chatMode: Boolean = false) =
+            tapHintWanted(chatMode, imeVisible = false, typedOnce = typedOnce, focusApplies = false, connectedWithView = true, noticeOver = noticeOver)
+        assertTrue(wanted())
+        // A snackbar (Chat's refusal) or the no-room notice over it: not drawn.
+        assertFalse(wanted(noticeOver = true))
+        // Gone, it is wanted again only while still untyped, and never on Chat.
+        assertFalse(wanted(typedOnce = true))
+        assertFalse(wanted(chatMode = true))
+    }
+
     private companion object {
         /** The fixtures' theme background, unlike the 0 their runs carry. */
         const val THEME = 0x00FFFFFF

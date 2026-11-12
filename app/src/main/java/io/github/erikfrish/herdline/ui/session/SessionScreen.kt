@@ -224,6 +224,7 @@ import io.github.erikfrish.herdline.ui.terminal.TAP_HINT_SETTLE_MS
 import io.github.erikfrish.herdline.ui.terminal.sameLook
 import io.github.erikfrish.herdline.ui.terminal.tapHintSpanPx
 import io.github.erikfrish.herdline.ui.terminal.tapHintTop
+import io.github.erikfrish.herdline.ui.terminal.tapHintWanted
 import io.github.erikfrish.herdline.ui.terminal.terminalDescription
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
@@ -1048,8 +1049,19 @@ fun SessionScreen(
                     // tab row and its accent line: overscroll stretch and bubble
                     // shadows would otherwise spill up (lab.7 L3).
                     Box(Modifier.layoutId(ContentSlot).fillMaxSize().clipToBounds().onSizeChanged { contentPx = it.height }) {
+                        // QF-6c: raw input on a pane Herdr leaves no row of its own; its notice covers the terminal.
+                        // Raw input: the keyboard is up for the terminal, not for the composer's field.
+                        val noRoom = !chatMode && paneHasNoRoom(frame, rawInput = imeVisible && !composerField)
                         // QF-9: the tap-to-type hint, until the user first opens the keyboard, sends a key or scrolls.
-                        val hintWanted = !chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected
+                        // A-26: never under a notice over the terminal (a snackbar, as Chat's refusal, or no-room).
+                        val hintWanted = tapHintWanted(
+                            chatMode = chatMode,
+                            imeVisible = imeVisible,
+                            typedOnce = typedOnce,
+                            focusApplies = focusApplies,
+                            connectedWithView = view != null && state is Connection.State.Connected,
+                            noticeOver = snackbar.currentSnackbarData != null || noRoom,
+                        )
                         // Its top in the view, null while hidden; reset whenever it is wanted anew.
                         var hintTop by remember(hintWanted) { mutableStateOf<Int?>(null) }
                         var pillPx by remember { mutableIntStateOf(0) }
@@ -1162,8 +1174,7 @@ fun SessionScreen(
                         // QF-6c: raw input on a pane Herdr leaves no row of its own (the 2-row landscape grid,
                         // its border on both): say so over the terminal, which shows only the border. Gone with
                         // the first frame that gives the pane a row: keyboard down, portrait or a font change.
-                        // Raw input: the keyboard is up for the terminal, not for the composer's field.
-                        if (!chatMode && paneHasNoRoom(frame, rawInput = imeVisible && !composerField)) {
+                        if (noRoom) {
                             PaneNoRoomNotice(
                                 offers = shortPaneOffers(
                                     tabZoomed = null,

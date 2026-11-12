@@ -15,6 +15,22 @@ internal const val TAP_HINT_SETTLE_MS = 300L
 private const val ROUND_SLACK_PX = 0.5f
 
 /**
+ * Whether the tap-to-type hint is wanted at all (QF-9): on Terminal, the
+ * keyboard down, before the user first typed, outside output focus, connected
+ * with a view; and (A-26) with no notice over the terminal, which would sit
+ * over the pill and let its text peek out. Unwanted, it is not composed, so it
+ * leaves the TalkBack tree; wanted again, it is placed only after the settle.
+ */
+internal fun tapHintWanted(
+    chatMode: Boolean,
+    imeVisible: Boolean,
+    typedOnce: Boolean,
+    focusApplies: Boolean,
+    connectedWithView: Boolean,
+    noticeOver: Boolean,
+): Boolean = !chatMode && !imeVisible && !typedOnce && !focusApplies && connectedWithView && !noticeOver
+
+/**
  * Where the tap-to-type hint's top goes, in px from the view's top, or null
  * when it is hidden (QF-9b): until [stillMs], the time nothing changed, has
  * reached [TAP_HINT_SETTLE_MS], so a change hides it at once and output never
