@@ -50,7 +50,13 @@
     <string name="section_extra_keys">Extra keys</string>
     <string name="show_extra_keys">Show the extra keys row</string>
     <string name="extra_key_up">Move %1$s left</string>
-    <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier.</string>
+    <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier. Keep the first 14 keys in their default order to keep the default layout; added keys appear beside or above it.</string>
+    <!-- Under the key list: which layout rule the saved list gets (POSTNIGHT-KEYS 7.3). -->
+    <plurals name="extra_keys_layout_default">
+        <item quantity="one">Layout: default grid + %d extra key</item>
+        <item quantity="other">Layout: default grid + %d extra keys</item>
+    </plurals>
+    <string name="extra_keys_layout_custom">Layout: your order in two rows</string>
     <string name="extra_keys_default">Restore the default keys</string>
 
     <string name="section_notifications">Notifications &amp; privacy</string>

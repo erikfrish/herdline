@@ -1,6 +1,13 @@
 package io.github.erikfrish.herdline.ui.terminal
 
+import io.github.erikfrish.herdline.data.MemoryPrefs
+import io.github.erikfrish.herdline.data.SettingsStore
 import io.github.erikfrish.herdline.ui.session.extraKeyRowCount
+import io.github.erikfrish.herdline.ui.settings.movedUp
+import io.github.erikfrish.herdline.ui.settings.toggled
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,5 +81,66 @@ class ExtraKeyRowsTest {
         }
         // Not room for one cap and half the next: the plain 48 dp target, no cue.
         assertEquals(48f, scrollingCapWidth(70f, 5f), 0f)
+    }
+
+    @Test
+    fun keysAddedToTheDefaultSitApartAndTheGridKeepsItsRelations() {
+        // "Enable another key" from the default appends it: the grid stays 7 × 2, typing in landscape too.
+        val ids = toggled(toggled(DEFAULT_EXTRA_KEY_IDS, "tilde"), "pgup")
+        assertTrue(isDefaultBased(ids))
+        val grid = listOf(extraKeysFrom(DEFAULT_EXTRA_KEY_IDS).take(7), extraKeysFrom(DEFAULT_EXTRA_KEY_IDS).drop(7))
+        for (rowsOf in listOf(1, 2)) {
+            assertEquals(KeyPanel(grid, extraKeysFrom(listOf("tilde", "pgup"))), extraKeyPanel(extraKeysFrom(ids), rowsOf))
+        }
+        // The default itself is default-based with nothing apart.
+        assertEquals(KeyPanel(grid, emptyList()), extraKeyPanel(extraKeysFrom(DEFAULT_EXTRA_KEY_IDS)))
+    }
+
+    @Test
+    fun anyChangeInsideTheFirstFourteenIsTheUsersOwnOrder() {
+        val added = DEFAULT_EXTRA_KEY_IDS + "tilde"
+        for (ids in listOf(
+            movedUp(added, "ctrl"), // a default key moved
+            movedUp(added, "tilde"), // an extra moved into the first 14
+            toggled(added, "esc"), // a default key removed
+        )) {
+            assertFalse("$ids", isDefaultBased(ids))
+            val keys = extraKeysFrom(ids)
+            // Saved order, today's split, nothing drawn apart.
+            assertEquals(KeyPanel(extraKeyRows(keys), emptyList()), extraKeyPanel(keys))
+        }
+    }
+
+    @Test
+    fun addedKeysGoBesideOnlyWhereTheyFitWith48DpCaps() {
+        // POSTNIGHT-KEYS §7.2: (7 + c) × 48 + (6 + c − 1) × 2 + 8 + 12 ≤ panel, c = ceil(n / 2).
+        for (panel in listOf(360f, 411f, 890f)) {
+            for (n in 1..9) {
+                val c = (n + 1) / 2
+                val fits = (7 + c) * 48 + (6 + c - 1) * 2 + 8 + 12 <= panel
+                val beside = besideLayout(panel, n)
+                assertEquals("$panel dp, $n extras", fits, beside != null)
+                if (beside != null) assertTrue("$beside", beside.width >= 48f && !beside.scrolls)
+            }
+        }
+        assertNull(besideLayout(411f, 1))
+        assertNotNull(besideLayout(890f, 1))
+        // Above, at 411 dp: one extra uses the grid's caps; nine run past the edge and scroll, caps still 48 dp.
+        val grid = capLayout(411f, 7)
+        assertEquals(grid, aboveLayout(411f, 1, grid))
+        val nine = aboveLayout(411f, 9, grid)
+        assertTrue("$nine", nine.scrolls && nine.width >= 48f)
+    }
+
+    @Test
+    fun aSavedSetIsNeverRewrittenToFitALayout() {
+        // Default plus extras, and a moved default key: loaded byte for byte, whatever the panel draws.
+        for (saved in listOf((DEFAULT_EXTRA_KEY_IDS + "tilde").joinToString(","), movedUp(DEFAULT_EXTRA_KEY_IDS + "tilde", "ctrl").joinToString(","))) {
+            val prefs = MemoryPrefs().apply { values["extra_keys"] = saved }
+            val ids = SettingsStore(prefs).settings.value.extraKeys
+            extraKeyPanel(extraKeysFrom(ids))
+            assertEquals(saved.split(","), ids)
+            assertEquals(saved, prefs.values["extra_keys"])
+        }
     }
 }

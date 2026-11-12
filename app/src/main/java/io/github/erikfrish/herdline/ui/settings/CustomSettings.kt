@@ -116,6 +116,7 @@ import io.github.erikfrish.herdline.ui.glass.GlassScreen
 import io.github.erikfrish.herdline.ui.glass.IconBadge
 import io.github.erikfrish.herdline.ui.terminal.AllExtraKeys
 import io.github.erikfrish.herdline.ui.terminal.DEFAULT_EXTRA_KEY_IDS
+import io.github.erikfrish.herdline.ui.terminal.isDefaultBased
 import io.github.erikfrish.herdline.ui.chat.chatPalette
 import io.github.erikfrish.herdline.ui.theme.HerdlineTheme
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
@@ -350,6 +351,18 @@ internal fun LazyListScope.extraKeySettings(store: SettingsStore, settings: Sett
                                 }
                             }
                             Switch(position >= 0, { store.update { it.copy(extraKeys = toggled(it.extraKeys, id)) } }, Modifier.testTag("settings:key:$id"))
+                        },
+                    )
+                }
+                // Which layout rule applies to the saved list; the list itself is never rewritten (POSTNIGHT-KEYS §7.3).
+                val known = settings.extraKeys.filter(AllExtraKeys::containsKey)
+                Box(Modifier.padding(horizontal = 18.dp, vertical = 10.dp).testTag("settings:keys_layout")) {
+                    Help(
+                        if (isDefaultBased(known)) {
+                            val extra = known.size - DEFAULT_EXTRA_KEY_IDS.size
+                            pluralStringResource(R.plurals.extra_keys_layout_default, extra, extra)
+                        } else {
+                            stringResource(R.string.extra_keys_layout_custom)
                         },
                     )
                 }

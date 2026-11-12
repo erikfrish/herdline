@@ -1,6 +1,10 @@
 /* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 package io.github.erikfrish.herdline.ui.terminal
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.traversalIndex
 import android.view.KeyEvent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -198,6 +202,63 @@ internal fun capLayout(panel: Float, count: Int): CapLayout {
 
 private const val TightKeyGap = 2f
 
+/** The default grid's columns: its fourteen keys in two rows of seven. */
+private const val GridColumns = 7
+
+/** The space between the grid and the added keys beside it, a 1 dp divider in its middle. */
+private val ClusterGap = 8.dp
+
+private val DefaultExtraKeys: List<ExtraKey> = extraKeysFrom(DEFAULT_EXTRA_KEY_IDS)
+
+/**
+ * Whether saved [ids] are the default plus keys added after it: the first
+ * fourteen exactly [DEFAULT_EXTRA_KEY_IDS], in order, then any others. Such a
+ * set keeps the default grid and its relations, its extra keys drawn apart;
+ * any other set is the user's own order (POSTNIGHT-KEYS §7.1). Only a prefix
+ * check: nothing is near enough, and the saved list is never rewritten to fit.
+ */
+internal fun isDefaultBased(ids: List<String>): Boolean =
+    ids.size >= DEFAULT_EXTRA_KEY_IDS.size && ids.subList(0, DEFAULT_EXTRA_KEY_IDS.size) == DEFAULT_EXTRA_KEY_IDS
+
+/** The panel's keys: the [grid] rows, and for a default-based set the keys added after the default. */
+internal data class KeyPanel(val grid: List<List<ExtraKey>>, val extras: List<ExtraKey>)
+
+/**
+ * The panel for [keys], as saved. A default-based set ([isDefaultBased], by its
+ * keys) is the 7 × 2 default grid whatever [rowsOf] says, plus its extras;
+ * any other set is [extraKeyRows] in saved order, with no extras.
+ */
+internal fun extraKeyPanel(keys: List<ExtraKey>, rowsOf: Int = 2): KeyPanel {
+    val base = DefaultExtraKeys.size
+    if (keys.size >= base && keys.subList(0, base) == DefaultExtraKeys) {
+        return KeyPanel(listOf(keys.subList(0, GridColumns), keys.subList(GridColumns, base)), keys.drop(base))
+    }
+    return KeyPanel(extraKeyRows(keys, rowsOf), emptyList())
+}
+
+/**
+ * The cap layout when the default grid and [extras] added keys share one
+ * line, the keys in ceil(n / 2) columns two high after an 8 dp separator, or
+ * null when that does not fit [panel] dp with 48 dp caps and 2 dp gaps
+ * (POSTNIGHT-KEYS §7.2). Grid and extras share one cap width.
+ */
+internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
+    val columns = GridColumns + (extras + 1) / 2
+    val gaps = columns - 2
+    val inner = panel - KeyRowPad.value * 2 - ClusterGap.value
+    val roomy = (inner - KeyGap.value * gaps) / columns
+    if (roomy >= 48f) return CapLayout(roomy, KeyGap.value, scrolls = false)
+    val tight = (inner - TightKeyGap * gaps) / columns
+    return if (tight >= 48f - 0.01f) CapLayout(tight.coerceAtLeast(48f), TightKeyGap, scrolls = false) else null
+}
+
+/** The row of [extras] above the grid: the [grid]'s caps when they fit, else a row that scrolls and shows half a cap at the edge. */
+internal fun aboveLayout(panel: Float, extras: Int, grid: CapLayout): CapLayout {
+    val inner = panel - KeyRowPad.value * 2
+    if (extras * grid.width + (extras - 1) * grid.gap <= inner + 0.01f) return grid.copy(scrolls = false)
+    return CapLayout(scrollingCapWidth(inner, grid.gap), grid.gap, scrolls = true)
+}
+
 /** How TalkBack reads the caps whose glyphs name nothing. */
 private val Spoken: Map<String, String> = mapOf(
     "←" to "Arrow left", "↓" to "Arrow down", "↑" to "Arrow up", "→" to "Arrow right",
@@ -206,7 +267,10 @@ private val Spoken: Map<String, String> = mapOf(
 
 /**
  * The panel of keys a phone keyboard lacks, drawn as two compact rows (one
- * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
+ * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input.
+ * A default-based set ([extraKeyPanel]) keeps the default grid and shows its
+ * added keys beside it when they fit ([besideLayout]), else in one row above
+ * it ([aboveLayout]); typing in landscape they stay beside, never a third row. Ctrl and
  * Alt latch for the next key or character, as on Termux; arrows and paging
  * keys repeat while held and stop at the moment the cap is released. A latched
  * modifier fills with the session's [accent] and carries a bar under its
@@ -224,7 +288,7 @@ fun ExtraKeysRow(
     onText: (String) -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
-    /** Rows the keys split into: two, or one on a landscape phone typing (QF-6, `extraKeyRowCount`). */
+    /** Rows a custom set splits into: two, or one on a landscape phone typing (QF-6, `extraKeyRowCount`). */
     rowsOf: Int = 2,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -239,6 +303,140 @@ fun ExtraKeysRow(
         val l = accent.luminance() + 0.05f
         if (l / (ink.luminance() + 0.05f) >= 1.05f / l) ink else Color.White
     }
+    // One cap: its own press state, latch look and TalkBack switch or button.
+    val cap: @Composable (ExtraKey, Dp, Boolean) -> Unit = { key, width, scrolls ->
+        val active = key is ExtraKey.Modifier && latched and key.meta != 0
+        var down by remember { mutableStateOf(false) }
+        val scale by animateFloatAsState(if (down) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 900f), label = "key")
+        val fill by animateColorAsState(
+            when {
+                active -> accent
+                down -> onSurface.copy(alpha = 0.16f)
+                else -> onSurface.copy(alpha = 0.07f)
+            },
+            label = "keyFill",
+        )
+        val labelColor = if (active) onAccent else onSurface
+        val hit = Modifier
+            .width(width)
+            .height(KeyRowHeight)
+            .testTag("key:${key.label}")
+            .semantics {
+                contentDescription = Spoken[key.label] ?: key.label
+                if (key is ExtraKey.Modifier) {
+                    role = Role.Switch
+                    toggleableState = ToggleableState(active)
+                    stateDescription = if (active) latchOn else latchOff
+                } else {
+                    role = Role.Button
+                }
+                onClick {
+                    when (key) {
+                        is ExtraKey.Key -> onKey(key.keyCode, false)
+                        is ExtraKey.Text -> onText(key.text)
+                        is ExtraKey.Modifier -> onLatch(latched xor key.meta)
+                        is ExtraKey.Action -> key.run()
+                    }
+                    true
+                }
+            }
+        val gesture = when (key) {
+            is ExtraKey.Key -> if (key.repeats) {
+                hit.pointerInput(key, scrolls) {
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        down = true
+                        try {
+                            // In a row that scrolls, the first send (and its buzz) waits
+                            // for the release or the hold, so a drag only scrolls.
+                            if (!scrolls) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onKey(key.keyCode, false)
+                            }
+                            var held = false
+                            val repeat = scope.launch {
+                                delay(400)
+                                held = true
+                                if (scrolls) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onKey(key.keyCode, false)
+                                    delay(60)
+                                }
+                                while (true) {
+                                    onKey(key.keyCode, true)
+                                    delay(60)
+                                }
+                            }
+                            val up = try {
+                                waitForUpOrCancellation()
+                            } finally {
+                                // Up, a scroll stealing the gesture, or this row
+                                // leaving composition: the held job never outlives the hold.
+                                repeat.cancel()
+                            }
+                            if (scrolls && !held && up != null) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onKey(key.keyCode, false)
+                            }
+                        } finally {
+                            down = false
+                        }
+                    }
+                }
+            } else {
+                hit.press(key, { down = it }) { onKey(key.keyCode, false) }
+            }
+            is ExtraKey.Text -> hit.press(key, { down = it }) { onText(key.text) }
+            is ExtraKey.Modifier -> hit.press(key to latched, { down = it }) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLatch(latched xor key.meta)
+            }
+            is ExtraKey.Action -> hit.press(key, { down = it }) { key.run() }
+        }
+        Box(gesture, contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .height(if (compact) 36.dp else 40.dp)
+                    .width(width)
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(KeyShape)
+                    .background(fill)
+                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape)
+                    .drawBehind {
+                        if (!active) return@drawBehind
+                        // The latch's non-colour mark: a short bar under the label,
+                        // drawn only, so the cap keeps its size.
+                        val bar = Size(size.width * 0.4f, 2.dp.toPx())
+                        drawRoundRect(
+                            labelColor,
+                            Offset((size.width - bar.width) / 2, size.height - bar.height - 4.dp.toPx()),
+                            bar,
+                            CornerRadius(bar.height / 2),
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    key.label,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 14.sp,
+                    color = labelColor,
+                )
+            }
+        }
+    }
+    // A row of caps; one that scrolls takes a drag that starts on a cap and sends nothing.
+    val capRow: @Composable (List<ExtraKey>, CapLayout, Modifier) -> Unit = { row, layout, rowModifier ->
+        Row(
+            rowModifier.horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(layout.gap.dp),
+        ) {
+            for (key in row) cap(key, layout.width.dp, layout.scrolls)
+        }
+    }
+    val extrasLabel = stringResource(R.string.section_extra_keys)
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -247,145 +445,43 @@ fun ExtraKeysRow(
             .then(modifier)
             .testTag("extra_keys"),
     ) {
-        val panelWidth = maxWidth
-        val rows = remember(keys, rowsOf) { extraKeyRows(keys, rowsOf) }
-        Column(Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp)) {
-            for (row in rows) {
+        val panelWidth = maxWidth.value
+        val panel = remember(keys, rowsOf) { extraKeyPanel(keys, rowsOf) }
+        val padded = Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp).semantics { isTraversalGroup = true }
+        // TalkBack reads the grid row by row first, then the added keys (POSTNIGHT-KEYS §7.2).
+        val gridOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 0f }
+        val extrasOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 1f; contentDescription = extrasLabel }
+        val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)
+        when {
+            panel.extras.isEmpty() -> Column(padded) {
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target ([capLayout]).
-                val layout = capLayout(panelWidth.value, row.size)
-                // A row that scrolls: a drag that starts on a cap scrolls it and sends nothing.
-                val scrolls = layout.scrolls
-                val width = layout.width.dp
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(layout.gap.dp),
-                ) {
-                    for (key in row) {
-                        val active = key is ExtraKey.Modifier && latched and key.meta != 0
-                        var down by remember { mutableStateOf(false) }
-                        val scale by animateFloatAsState(if (down) 0.88f else 1f, spring(dampingRatio = 0.5f, stiffness = 900f), label = "key")
-                        val fill by animateColorAsState(
-                            when {
-                                active -> accent
-                                down -> onSurface.copy(alpha = 0.16f)
-                                else -> onSurface.copy(alpha = 0.07f)
-                            },
-                            label = "keyFill",
-                        )
-                        val labelColor = if (active) onAccent else onSurface
-                        val hit = Modifier
-                            .width(width)
-                            .height(KeyRowHeight)
-                            .testTag("key:${key.label}")
-                            .semantics {
-                                contentDescription = Spoken[key.label] ?: key.label
-                                if (key is ExtraKey.Modifier) {
-                                    role = Role.Switch
-                                    toggleableState = ToggleableState(active)
-                                    stateDescription = if (active) latchOn else latchOff
-                                } else {
-                                    role = Role.Button
-                                }
-                                onClick {
-                                    when (key) {
-                                        is ExtraKey.Key -> onKey(key.keyCode, false)
-                                        is ExtraKey.Text -> onText(key.text)
-                                        is ExtraKey.Modifier -> onLatch(latched xor key.meta)
-                                        is ExtraKey.Action -> key.run()
-                                    }
-                                    true
-                                }
-                            }
-                        val gesture = when (key) {
-                            is ExtraKey.Key -> if (key.repeats) {
-                                hit.pointerInput(key, scrolls) {
-                                    awaitEachGesture {
-                                        awaitFirstDown()
-                                        down = true
-                                        try {
-                                            // In a row that scrolls, the first send (and its buzz) waits
-                                            // for the release or the hold, so a drag only scrolls.
-                                            if (!scrolls) {
-                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                onKey(key.keyCode, false)
-                                            }
-                                            var held = false
-                                            val repeat = scope.launch {
-                                                delay(400)
-                                                held = true
-                                                if (scrolls) {
-                                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    onKey(key.keyCode, false)
-                                                    delay(60)
-                                                }
-                                                while (true) {
-                                                    onKey(key.keyCode, true)
-                                                    delay(60)
-                                                }
-                                            }
-                                            val up = try {
-                                                waitForUpOrCancellation()
-                                            } finally {
-                                                // Up, a scroll stealing the gesture, or this row
-                                                // leaving composition: the held job never outlives the hold.
-                                                repeat.cancel()
-                                            }
-                                            if (scrolls && !held && up != null) {
-                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                onKey(key.keyCode, false)
-                                            }
-                                        } finally {
-                                            down = false
-                                        }
-                                    }
-                                }
-                            } else {
-                                hit.press(key, { down = it }) { onKey(key.keyCode, false) }
-                            }
-                            is ExtraKey.Text -> hit.press(key, { down = it }) { onText(key.text) }
-                            is ExtraKey.Modifier -> hit.press(key to latched, { down = it }) {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onLatch(latched xor key.meta)
-                            }
-                            is ExtraKey.Action -> hit.press(key, { down = it }) { key.run() }
-                        }
-                        Box(gesture, contentAlignment = Alignment.Center) {
-                            Box(
-                                Modifier
-                                    .height(if (compact) 36.dp else 40.dp)
-                                    .width(width)
-                                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                                    .clip(KeyShape)
-                                    .background(fill)
-                                    .border(0.5.dp, onSurface.copy(alpha = if (active) 0f else 0.08f), KeyShape)
-                                    .drawBehind {
-                                        if (!active) return@drawBehind
-                                        // The latch's non-colour mark: a short bar under the label,
-                                        // drawn only, so the cap keeps its size.
-                                        val bar = Size(size.width * 0.4f, 2.dp.toPx())
-                                        drawRoundRect(
-                                            labelColor,
-                                            Offset((size.width - bar.width) / 2, size.height - bar.height - 4.dp.toPx()),
-                                            bar,
-                                            CornerRadius(bar.height / 2),
-                                        )
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    key.label,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = labelColor,
-                                )
-                            }
-                        }
-                    }
+                for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth())
+            }
+            beside != null || rowsOf == 1 -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
+                // The grid at its own width, an 8 dp separator, then the added keys two
+                // rows high, column by column. Typing in landscape with no room beside,
+                // the grid takes its narrowest and the added keys scroll beside it.
+                val grid = beside ?: CapLayout(48f, TightKeyGap, scrolls = false)
+                Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier) }
+                Box(Modifier.width(ClusterGap).height(KeyRowHeight * 2), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
                 }
+                val extras = grid.copy(scrolls = beside == null)
+                Row(
+                    extrasOrder.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(extras.gap.dp),
+                ) {
+                    for (column in panel.extras.chunked(2)) Column { for (key in column) cap(key, extras.width.dp, extras.scrolls) }
+                }
+            }
+            else -> Column(padded) {
+                // No room beside: the added keys take one row above the grid, the grid's cap
+                // width, left-aligned; only that row scrolls when it runs past the edge.
+                val grid = capLayout(panelWidth, GridColumns)
+                capRow(panel.extras, aboveLayout(panelWidth, panel.extras.size, grid), extrasOrder.fillMaxWidth())
+                Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier.fillMaxWidth()) }
             }
         }
     }
