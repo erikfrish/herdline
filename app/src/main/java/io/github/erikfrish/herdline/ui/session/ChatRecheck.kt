@@ -42,3 +42,20 @@ internal fun switchesToChat(pending: PendingChatTap?, pane: String?, tab: String
  */
 internal fun fallbackEnds(readable: Boolean, pending: PendingChatTap?, pane: String?, tab: String?): Boolean =
     readable && switchesToChat(pending, pane, tab)
+
+/**
+ * Whether a re-check of [pane] that failed answers a Chat tap: its own
+ * ([tap]), or one still [pending] on that pane and tab, which found the
+ * re-check in flight and waited on it (FOBS1-R2). That tap is then cleared and
+ * told why once, so no later read can switch to Chat for it.
+ */
+internal fun tapAnswered(tap: Boolean, pending: PendingChatTap?, pane: String, tab: String?): Boolean =
+    tap || switchesToChat(pending, pane, tab)
+
+/**
+ * The Chat tap still [pending] once the screen reads [pane] on [tab]: none
+ * after a switch away, so a tap never outlives the pane and tab it was made
+ * on, and no later re-check there can switch to Chat for it (FOBS1-R2).
+ */
+internal fun pendingAfterSwitch(pending: PendingChatTap?, pane: String?, tab: String?): PendingChatTap? =
+    pending?.takeIf { switchesToChat(it, pane, tab) }

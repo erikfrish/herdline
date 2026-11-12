@@ -493,8 +493,8 @@ fun SessionScreen(
     }
     val chatWanted = chatFor(chatPane)
     // While Chat can't read the agent's transcript, the tab shows Terminal; the stored choice stays
-    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R a good read
-    // ends the fallback only for a Chat tap still pending (fallbackEnds): never by itself.
+    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R only a
+    // re-check that came good with a Chat tap pending on it ends the fallback: never by itself.
     var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
     // Why, when the core refused the session by type: these never clear by themselves.
     var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
@@ -571,6 +571,8 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
+    // FOBS1-R2: a Chat tap never outlives the pane and tab it was made on.
+    LaunchedEffect(chatPane, tab?.id) { pendingChatTap = pendingAfterSwitch(pendingChatTap, chatPane, tab?.id) }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
@@ -696,7 +698,9 @@ fun SessionScreen(
             }
             false -> {
                 chatRefusal = kept.read.refusal
-                if (tap) {
+                // FOBS1-R2: a tap that found this re-check in flight waited on it, so its
+                // failure answers that tap too, once; a later good read never switches for it.
+                if (tapAnswered(tap, pendingChatTap, pane, tabNow)) {
                     pendingChatTap = null
                     sayChatUnreadable(chatRefusal, SnackbarDuration.Short)
                 }
@@ -1229,13 +1233,9 @@ fun SessionScreen(
                                             scope.launch { sayChatUnreadable(refusal, SnackbarDuration.Long) }
                                         }
                                         chatRefusal = refusal
-                                        if (unreadable) {
-                                            chatUnreadable = true
-                                        } else if (chatUnreadable && fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
-                                            // FOBS1-R: readable again ends the fallback only for a tap still pending.
-                                            chatUnreadable = false
-                                            pendingChatTap = null
-                                        }
+                                        // Readable again only drops the refusal, so the next Chat tap reads;
+                                        // the fallback ends on that tap's own re-check (FOBS1-R2).
+                                        if (unreadable) chatUnreadable = true
                                     },
                                     // The tab's readable title (Titles.kt), never a pane ID.
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
