@@ -29,6 +29,7 @@
     <string name="harness_state_cant_check">%1$s：暂时无法检查</string>
     <string name="harness_cant_check_offline">未连接到主机。</string>
     <string name="harness_cant_check_identity">Herdr 尚未识别此窗格中的代理。</string>
+    <string name="harness_cant_check_server">无法询问其服务器是否在运行。</string>
     <string name="harness_tested_only">只有带勾的行已在此应用版本上测试过。终端始终可用。</string>
     <string name="harness_reason_not_built">尚未实现。</string>
     <string name="harness_reason_no_source">尚无可据以实现的公开源码。</string>

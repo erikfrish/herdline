@@ -143,18 +143,45 @@ enum class Note { Typed, QueueMissing, PermissionsOnly }
 
 /** What the route reports right now, for the card's runtime replacements (card §3.4). */
 data class HarnessRuntime(
-    /** opencode/kilo: the native core answers `unusable: needs_server` (Connection.ingressNeedsServer). */
-    val noServer: Boolean = false,
+    /**
+     * opencode/kilo: the native core's answer for the program's server
+     * (Connection.ingressNeedsServer). Unknown until it answers, and after
+     * a probe that failed: never read as present.
+     */
+    val server: ServerProbe = ServerProbe.Unknown,
     /** mastracode: Herdr still reports the session as `session-init`. */
     val sessionInit: Boolean = false,
 )
+
+/** What the native core said of a program's server. */
+enum class ServerProbe {
+    /** It answered through the server. */
+    Present,
+
+    /** `unusable: needs_server`: none runs for this session. */
+    Missing,
+
+    /** No answer yet, or a probe that failed: nothing said either way. */
+    Unknown,
+}
 
 /** One card row as shown: the claim, or why it can't be checked now (card §3.3; never stored). */
 sealed interface Shown {
     data class Claim(val cell: Cell) : Shown
 
-    /** [offline]: the connection is not live; else Herdr gives no agent name for the pane. */
-    data class CantCheck(val offline: Boolean) : Shown
+    data class CantCheck(val why: CantCheckWhy) : Shown
+}
+
+/** Why a row can't be checked now. */
+enum class CantCheckWhy {
+    /** The connection is not live. */
+    Offline,
+
+    /** Herdr gives no agent name for the pane. */
+    Identity,
+
+    /** The program's server could not be asked (a [ServerProbe.Unknown]). */
+    Server,
 }
 
 /**
@@ -167,15 +194,21 @@ fun shown(program: String?, key: HarnessKey, live: Boolean, runtime: HarnessRunt
     val claim = harness?.cell(key)
     return when {
         claim is Cell.NotYet && claim.reason == Reason.UnknownProgram -> Shown.Claim(claim)
-        !live -> Shown.CantCheck(offline = true)
-        harness == null -> Shown.CantCheck(offline = false)
-        else -> Shown.Claim(replaced(harness.name.lowercase(Locale.ROOT), key, runtime) ?: claim!!)
+        !live -> Shown.CantCheck(CantCheckWhy.Offline)
+        harness == null -> Shown.CantCheck(CantCheckWhy.Identity)
+        else -> harness.name.lowercase(Locale.ROOT).let { name -> served(name, key, runtime) ?: Shown.Claim(replaced(name, key, runtime) ?: claim!!) }
     }
 }
 
+/** A server program's server keys, by what the probe said; null when the static claim stands. */
+private fun served(name: String, key: HarnessKey, runtime: HarnessRuntime): Shown? = when {
+    key !in SERVER_KEYS || name !in SERVER_PROGRAMS -> null
+    runtime.server == ServerProbe.Missing -> Shown.Claim(Cell.NotYet(Reason.NeedsServer, SERVER_PROGRAMS.getValue(name)))
+    runtime.server == ServerProbe.Unknown -> Shown.CantCheck(CantCheckWhy.Server)
+    else -> null
+}
+
 private fun replaced(name: String, key: HarnessKey, runtime: HarnessRuntime): Cell? = when {
-    runtime.noServer && key in SERVER_KEYS && name in SERVER_PROGRAMS ->
-        Cell.NotYet(Reason.NeedsServer, SERVER_PROGRAMS.getValue(name))
     runtime.sessionInit && key == HarnessKey.History && name == "mastracode" -> Cell.NotYet(Reason.NoSessionYet)
     else -> null
 }

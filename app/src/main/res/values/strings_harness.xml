@@ -34,6 +34,7 @@
     <string name="harness_state_cant_check">%1$s: can\'t check now</string>
     <string name="harness_cant_check_offline">Not connected to the host.</string>
     <string name="harness_cant_check_identity">Herdr hasn\'t named the agent in this pane.</string>
+    <string name="harness_cant_check_server">Couldn\'t ask its server whether it runs.</string>
     <string name="harness_tested_only">Only rows with a check have been tested on this app version. Terminal always works.</string>
     <string name="harness_reason_not_built">Not built yet.</string>
     <string name="harness_reason_no_source">No published source to build it from yet.</string>

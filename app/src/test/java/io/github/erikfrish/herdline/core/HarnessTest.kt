@@ -32,31 +32,44 @@ class HarnessTest {
             // 1. An unknown program says so even offline.
             assertEquals(unknown, shown("not-an-agent", key, live = false))
             // 2. Offline over a missing name; 3. a missing name while live.
-            assertEquals(Shown.CantCheck(offline = true), shown(null, key, live = false))
-            assertEquals(Shown.CantCheck(offline = false), shown(null, key, live = true))
+            assertEquals(Shown.CantCheck(CantCheckWhy.Offline), shown(null, key, live = false))
+            assertEquals(Shown.CantCheck(CantCheckWhy.Identity), shown(null, key, live = true))
             // 4. A known program shows its cell only while live.
-            assertEquals(Shown.CantCheck(offline = true), shown("omp", key, live = false))
+            assertEquals(Shown.CantCheck(CantCheckWhy.Offline), shown("omp", key, live = false))
             assertEquals(Shown.Claim(Harness.of("omp").cell(key)), shown("omp", key, live = true))
         }
     }
 
     @Test
     fun a_runtime_replacement_applies_only_to_its_program_and_keys() {
-        val server = HarnessRuntime(noServer = true)
+        val server = HarnessRuntime(server = ServerProbe.Missing)
         assertEquals(Shown.Claim(Cell.NotYet(Reason.NeedsServer, "Kilo")), shown("Kilo", HarnessKey.Stop, live = true, runtime = server))
         assertEquals(Shown.Claim(Harness.of("kilo").cell(HarnessKey.History)), shown("kilo", HarnessKey.History, live = true, runtime = server))
         assertEquals(Shown.Claim(Harness.of("omp").cell(HarnessKey.Send)), shown("omp", HarnessKey.Send, live = true, runtime = server))
         // Offline still wins over a replacement.
-        assertEquals(Shown.CantCheck(offline = true), shown("opencode", HarnessKey.Send, live = false, runtime = server))
+        assertEquals(Shown.CantCheck(CantCheckWhy.Offline), shown("opencode", HarnessKey.Send, live = false, runtime = server))
     }
 
     @Test
-    fun opencode_steer_and_queue_says_it_needs_the_server_when_none_runs() {
-        // S goes through OpenCode's server (O1-S), so without one it is not Unverified.
-        assertEquals(Cell.Unverified(), Harness.of("opencode").cell(HarnessKey.SteerQueue))
-        assertEquals(
-            Shown.Claim(Cell.NotYet(Reason.NeedsServer, "OpenCode")),
-            shown("opencode", HarnessKey.SteerQueue, live = true, runtime = HarnessRuntime(noServer = true)),
-        )
+    fun a_server_programs_server_rows_follow_what_the_probe_said() {
+        val serverKeys = listOf(HarnessKey.Send, HarnessKey.Stop, HarnessKey.SteerQueue, HarnessKey.Questions)
+        for (program in listOf("opencode", "kilo")) {
+            val claims = Harness.of(program)
+            val named = if (program == "opencode") "OpenCode" else "Kilo"
+            for (key in HarnessKey.entries) {
+                val missing = shown(program, key, live = true, runtime = HarnessRuntime(server = ServerProbe.Missing))
+                val unknown = shown(program, key, live = true, runtime = HarnessRuntime(server = ServerProbe.Unknown))
+                val present = shown(program, key, live = true, runtime = HarnessRuntime(server = ServerProbe.Present))
+                assertEquals("$program $key", Shown.Claim(claims.cell(key)), present)
+                if (key in serverKeys) {
+                    assertEquals("$program $key", Shown.Claim(Cell.NotYet(Reason.NeedsServer, named)), missing)
+                    // A failed or missing answer is never read as a running server.
+                    assertEquals("$program $key", Shown.CantCheck(CantCheckWhy.Server), unknown)
+                } else {
+                    assertEquals("$program $key", present, missing)
+                    assertEquals("$program $key", present, unknown)
+                }
+            }
+        }
     }
 }

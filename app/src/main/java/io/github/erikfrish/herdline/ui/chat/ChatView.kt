@@ -117,6 +117,7 @@ import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessRuntime
+import io.github.erikfrish.herdline.core.ServerProbe
 import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.StopRoute
 import io.github.erikfrish.herdline.core.stop
@@ -220,27 +221,33 @@ class ChatMemory {
 private val SERVER_AGENTS = setOf("opencode", "kilo")
 
 /**
- * The card's runtime row for [pane]: whether its OpenCode or Kilo runs
- * without its server, as the native core answers (Connection.ingressNeedsServer).
- * Asked once per instance the card opens on, never polled. When Chat has not
- * read the pane yet, one history read names the instance first. No answer,
- * or any other one, leaves the card's claim as it is.
+ * The card's runtime row for [pane]: what the native core says of its
+ * OpenCode or Kilo server (Connection.ingressNeedsServer). Unknown until it
+ * answers and after a failed probe. Asked again whenever the link, the boot,
+ * the pane's agent or its instance changes, never polled. When Chat has not
+ * read the pane yet, one history read names the instance first.
  */
 @Composable
 fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: String?): HarnessRuntime {
     val view by connection.view.collectAsState()
+    val linkLive = connection.state.collectAsState().value is Connection.State.Connected
     val boot = view?.boot
-    val program = pane?.let { view?.agentIn(it)?.agent }
-    val server = SERVER_AGENTS.any { it.equals(program, ignoreCase = true) }
-    val noServer by produceState(false, connection, boot, pane, server) {
-        if (pane == null || boot == null || !server) return@produceState
-        val kept = memory.of(pane)
-        if (kept.history == null) kept.recheck(connection, pane)
-        val identity = kept.history?.identity?.takeIf { it.agent in SERVER_AGENTS } ?: return@produceState
+    val agent = pane?.let { view?.agentIn(it) }
+    val server = SERVER_AGENTS.any { it.equals(agent?.agent, ignoreCase = true) }
+    val identity = pane?.let { memory.of(it).history?.identity }
+    val probe by produceState(ServerProbe.Unknown, connection, linkLive, boot, pane, agent, identity) {
+        if (pane == null || boot == null || !server || !linkLive) return@produceState
+        // Its history landing changes [identity] and asks again with it.
+        if (identity == null) {
+            memory.of(pane).recheck(connection, pane)
+            return@produceState
+        }
+        if (identity.agent !in SERVER_AGENTS) return@produceState
         val target = Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
-        value = withContext(Dispatchers.IO) { connection.ingressNeedsServer(target) }.getOrNull() == true
+        value = withContext(Dispatchers.IO) { connection.ingressNeedsServer(target) }
+            .fold({ missing -> if (missing) ServerProbe.Missing else ServerProbe.Present }, { ServerProbe.Unknown })
     }
-    return HarnessRuntime(noServer = noServer)
+    return HarnessRuntime(server = probe)
 }
 
 internal class ChatKept {

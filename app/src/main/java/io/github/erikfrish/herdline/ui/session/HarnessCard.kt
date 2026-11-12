@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.CantCheckWhy
 import io.github.erikfrish.herdline.core.Cell
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessKey
@@ -181,7 +182,13 @@ internal fun BoxScope.HarnessCardSlot(
                                 is Shown.CantCheck -> CardRow(
                                     ClockIcon,
                                     stringResource(R.string.harness_state_cant_check, name),
-                                    stringResource(if (row.offline) R.string.harness_cant_check_offline else R.string.harness_cant_check_identity),
+                                    stringResource(
+                                        when (row.why) {
+                                            CantCheckWhy.Offline -> R.string.harness_cant_check_offline
+                                            CantCheckWhy.Identity -> R.string.harness_cant_check_identity
+                                            CantCheckWhy.Server -> R.string.harness_cant_check_server
+                                        },
+                                    ),
                                 )
                                 is Shown.Claim -> when (val cell = row.cell) {
                                     is Cell.Works -> CardRow(Icons.Filled.Check, name, null)
