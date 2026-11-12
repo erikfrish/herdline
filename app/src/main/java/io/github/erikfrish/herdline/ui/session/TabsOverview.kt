@@ -96,13 +96,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import io.github.erikfrish.herdline.ui.components.SheetCloseButton
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Workspace
-import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
@@ -125,7 +123,6 @@ import io.github.erikfrish.herdline.ui.glass.GlassButton
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TabsOverview(
-    node: Node,
     host: String,
     view: ShellView?,
     state: Connection.State,
@@ -140,11 +137,11 @@ fun TabsOverview(
     onScope: (String?) -> Unit,
     actions: SwitcherActions,
     onShowList: () -> Unit,
+    /** The phone sheet's visible way out (U-1 #7). */
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
     here: String? = view?.focusedPane,
     reading: Boolean = false,
-    /** The phone sheet's visible way out (U-1 #7); null where there is no sheet to close. */
-    onClose: (() -> Unit)? = null,
     /** Rails (F2): the workspace rails in place of the rows, scrolled by this hoisted state; null for the rows. */
     rails: RailsScroll? = null,
     /** A rail's New tab tile (SPEC-TABS-RAILS §6): that rail's workspace only, never moving Herdr's focus. */
@@ -207,10 +204,13 @@ fun TabsOverview(
             return@AnimatedContent
         }
         Column(Modifier.fillMaxWidth().testTag("overview")) {
-            OverviewHeader(host, view, chosen, scoped.gone, live = state is Connection.State.Connected, actions, onShowList, onClose)
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                val fontScale = LocalDensity.current.fontScale
-                SearchField(query, onQuery, stringResource(R.string.overview_search), minHeight = maxOf(48f, 16f * fontScale + 24f).dp)
+            // The Tabs sheet's one header (H1), at the List's inset; the search pill keeps the overview's own.
+            Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
+                val toggle = TabsViewToggle(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list), "overview:as-list", onShowList)
+                TabsHeader(host, view, state, chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "overview")
+            }
+            Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
+                SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = tabsSearchMinHeight())
             }
             FlowRow(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -232,7 +232,8 @@ fun TabsOverview(
                 }
             }
             when {
-                view == null || state !is Connection.State.Connected -> Box(Modifier.padding(horizontal = 16.dp)) { HostLine(node, view, state) }
+                // The header's subtitle says connecting or disconnected, as the List's does.
+                view == null || state !is Connection.State.Connected -> Unit
                 view.workspaces.isEmpty() -> GlassButton(
                     stringResource(R.string.new_workspace),
                     onClick = actions.newWorkspace,
@@ -251,58 +252,6 @@ fun TabsOverview(
         }
     }
 }
-
-/** Title, then New tab, Show as list and Close; New tab takes its own row, right-aligned, before its label would be cut. */
-@Composable
-private fun OverviewHeader(
-    host: String,
-    view: ShellView?,
-    chosen: String?,
-    gone: Boolean,
-    live: Boolean,
-    actions: SwitcherActions,
-    onShowList: () -> Unit,
-    onClose: (() -> Unit)?,
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val sheetWidth = maxWidth
-        // Start and end padding, the title's least room, the button, then Show as list and Close.
-        val inline = sheetWidth >= 16.dp + 4.dp + HEADER_TITLE_MIN + newTabButtonWidth() + 48.dp + (if (onClose != null) 48.dp else 0.dp)
-        val newTab: @Composable () -> Unit = {
-            NewTabButton(view, live, chosen, gone, actions.newTab, menuWidth = sheetWidth, tag = "overview:new-tab")
-        }
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 8.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    if (view != null) {
-                        Text(
-                            stringResource(
-                                R.string.overview_sub,
-                                host,
-                                pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
-                                pluralStringResource(R.plurals.overview_workspaces, view.workspaces.size, view.workspaces.size),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (inline) newTab()
-                IconButton(onClick = onShowList, modifier = Modifier.testTag("overview:as-list")) {
-                    Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list))
-                }
-                if (onClose != null) SheetCloseButton(onClose, tag = "overview:close")
-            }
-            if (!inline) Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) { newTab() }
-        }
-    }
-}
-
-/** The least width a header's title keeps beside New tab; below it New tab wraps to its own row. */
-internal val HEADER_TITLE_MIN = 96.dp
 
 /** The rows: a full-span header per workspace with All chosen, then its tabs in Herdr's tab order, up to two columns. */
 @Composable

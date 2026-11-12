@@ -1522,10 +1522,11 @@ fun SessionScreen(
             ) {
                 // TB1: the overview, or today's list; either one's header switches to the other.
                 val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
+                // One qualified host label for the one header in every view (H1).
+                val sheetHost = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
                 when (settings.tabsView) {
                     TabsView.TwoColumns, TabsView.Rails -> TabsOverview(
-                        node = node,
-                        host = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title,
+                        host = sheetHost,
                         view = view,
                         state = state,
                         pins = pins[node.id].orEmpty(),
@@ -1568,6 +1569,7 @@ fun SessionScreen(
                         scope = tabsScope,
                         onScope = { tabsScope = it },
                         onClose = closeSwitcher,
+                        host = sheetHost,
                     )
                 }
             }

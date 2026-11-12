@@ -11,7 +11,6 @@
         <item quantity="one">%d workspace</item>
         <item quantity="other">%d workspaces</item>
     </plurals>
-    <string name="overview_search">Search tabs, panes, agents</string>
     <string name="overview_as_list">Show as list</string>
     <string name="overview_as_columns">Show as two columns</string>
     <string name="overview_current">Current</string>

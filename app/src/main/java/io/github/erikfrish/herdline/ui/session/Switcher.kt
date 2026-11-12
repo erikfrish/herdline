@@ -170,6 +170,8 @@ fun Switcher(
     onScope: ((String?) -> Unit)? = null,
     /** The phone sheet's visible way out (U-1 #7); null in the sidebar, which has no sheet to close. */
     onClose: (() -> Unit)? = null,
+    /** The phone sheet's host label, qualified like Two columns' (hostLabels); the sidebar's host line names [node]. */
+    host: String = node.title,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     val scoped = remember(groups, scope, onScope != null, view != null) {
@@ -273,12 +275,15 @@ fun Switcher(
     Box(modifier) {
         LazyColumn(
             Modifier.fillMaxWidth().testTag("switcher"),
-            contentPadding = PaddingValues(horizontal = 12.dp),
+            contentPadding = PaddingValues(horizontal = TABS_SHEET_INSET),
         ) {
-            // New tab · Two columns · Close in the host line, in both orders; in the sheet that header is sticky,
-            // so New tab stays in view. Before its label would be cut it takes its own row, right-aligned.
+            // The phone sheet has the toggle and Close: it takes the Tabs sheet's one header (H1). The sidebar keeps
+            // its host line with New tab, which takes its own row, right-aligned, before its label would be cut.
             val header: @Composable () -> Unit = {
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (onClose != null && onShowGrid != null) {
+                    val toggle = TabsViewToggle(GridIcon, stringResource(R.string.overview_as_columns), "switcher:as-columns", onShowGrid)
+                    TabsHeader(host, view, state, scoped.chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "switcher")
+                } else BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val listWidth = maxWidth
                     val live = state is Connection.State.Connected
                     val icons = (if (onShowGrid != null) 58.dp else 0.dp) + (if (onClose != null) 58.dp else 0.dp)
@@ -308,7 +313,9 @@ fun Switcher(
             } else {
                 item(key = "header") { header() }
             }
-            item(key = "search") { SearchField(query, onQuery, stringResource(R.string.switcher_search)) }
+            item(key = "search") {
+                SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = if (onClose != null && onShowGrid != null) tabsSearchMinHeight() else 44.dp)
+            }
             if (onScope != null && view != null) {
                 item(key = "scope") { Box(Modifier.padding(vertical = 4.dp)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) } }
             }
@@ -424,6 +431,9 @@ fun Switcher(
 
 /** How often observed "changed …" times are refreshed. */
 private const val TIME_TICK_MS = 30_000L
+
+/** The least width the sidebar host line's title keeps beside New tab; below it New tab wraps to its own row. */
+private val HEADER_TITLE_MIN = 96.dp
 
 /** The pane whose agent's observed status time a row shows: its own, or a one-pane tab's single agent's. */
 private fun SwitchTarget.agentPane(): String? = when (this) {
