@@ -171,6 +171,19 @@ data class Draft(
     }
 
     /**
+     * The draft after a withdraw of send [requestId] answered [answer]; null is no
+     * answer, so that withdraw may have taken it. Taken: [withdrawn]'s text and files.
+     * Not waiting, after an earlier withdraw without an answer: that one may be what took
+     * it, so its text and files come back too, never lost and never sent. Not waiting
+     * otherwise: it left the queue as sent and the editor keeps [editor].
+     */
+    fun afterWithdraw(requestId: String, answer: Boolean?, editor: String): Draft = when {
+        answer == null -> queued[requestId]?.let { copy(queued = queued + (requestId to it.copy(withdrawDoubt = true))) } ?: this
+        answer || queued[requestId]?.withdrawDoubt == true -> withdrawn(requestId, editor)
+        else -> steersLeft(listOf(requestId))
+    }
+
+    /**
      * This draft's text written onto another pane, bound to that pane as it
      * is now ([current], [currentAgent]): moving is the user confirming the
      * new destination. Null when [target] already holds text or files,
@@ -225,7 +238,7 @@ data class Draft(
             JSONArray(
                 queued.map { (id, send) ->
                     JSONObject().put("id", id).put("text", send.text ?: JSONObject.NULL).put("files", JSONArray(send.files.map { it.toJson() }))
-                        .put("waitingIn", send.waitingIn ?: JSONObject.NULL)
+                        .put("waitingIn", send.waitingIn ?: JSONObject.NULL).put("withdrawDoubt", send.withdrawDoubt)
                 },
             ),
         )
@@ -269,6 +282,7 @@ data class Draft(
                                 text,
                                 (0 until files.length()).mapNotNull { j -> files.optJSONObject(j)?.let(DraftAttachment::fromJson) },
                                 waitingIn = if (entry.has("waitingIn") && !entry.isNull("waitingIn")) entry.getString("waitingIn") else null,
+                                withdrawDoubt = entry.optBoolean("withdrawDoubt"),
                             )
                         }
                     }.toMap()
@@ -285,8 +299,9 @@ const val QUEUED_FILES_KEPT = 16
  * What one queued send carried: its [text] as sent (null when not recorded) and its [files].
  * [waitingIn]: the session whose server took it as a steer and lists it nowhere (Kilo), until
  * that server says it waits no more; null for every other send.
+ * [withdrawDoubt]: a withdraw of it got no answer, so it may already have been taken back.
  */
-data class QueuedSend(val text: String?, val files: List<DraftAttachment>, val waitingIn: String? = null)
+data class QueuedSend(val text: String?, val files: List<DraftAttachment>, val waitingIn: String? = null, val withdrawDoubt: Boolean = false)
 
 /**
  * The editor's text once a withdrawn request's [withdrawn] text comes back.

@@ -57,4 +57,24 @@ class PhotoWithdrawTest {
         assertEquals(QUEUED_FILES_KEPT, many.queued.size)
         assertEquals("r3", many.queued.keys.first())
     }
+
+    @Test
+    fun aWithdrawWithNoAnswerThenNotWaitingGivesTheTextBackNeverLosesIt() {
+        val sent = Draft().queuedWith("r1", "fix it", listOf(photo("p"))).queuedWith("r2", "other", emptyList())
+        // No answer: it may have been taken; nothing moves yet, and that survives a restart.
+        val doubted = Draft.fromJson(JSONObject(sent.afterWithdraw("r1", null, "").toJson().toString()))
+        assertEquals("", doubted.text)
+        assertEquals(sent.queued.keys, doubted.queued.keys)
+        // The retry hears "not waiting": the first withdraw may be what took it, so text and files come back.
+        val back = doubted.afterWithdraw("r1", false, "typed meanwhile")
+        assertEquals("typed meanwhile\n\nfix it", back.text)
+        assertEquals(listOf("p"), back.attachments.map { it.id })
+        assertEquals(setOf("r2"), back.queued.keys)
+        // Without an earlier doubt, "not waiting" means it left the queue as sent: the editor keeps its own text.
+        val left = sent.afterWithdraw("r2", false, "typed")
+        assertEquals("", left.text)
+        assertEquals(sent.queued.keys, left.queued.keys)
+        // A plain true takes it back as before.
+        assertEquals("other", sent.afterWithdraw("r2", true, "").text)
+    }
 }

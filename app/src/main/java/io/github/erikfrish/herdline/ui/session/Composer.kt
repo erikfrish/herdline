@@ -1474,19 +1474,17 @@ private fun Editor(
             withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
             // Withdrawn is taken back, not lost: its text and files into the
             // editor, after anything typed while the withdraw was on its way.
-            // Send and Steer stayed off meanwhile (draftBusy).
-            if (done.getOrNull() == false) {
-                // Already left the server's queue: no longer waiting, by its own word.
-                save(draft.steersLeft(listOf(requestId)))
-            }
-            if (done.getOrNull() == true) {
-                // A request this draft has no record of (sent before 10064) has no known text:
-                // nothing is guessed from the queue, and the user is told.
-                if (draft.queued[requestId]?.text == null) withdrawNote = R.string.ingress_withdraw_text_unknown
-                val back = draft.withdrawn(requestId, value.text)
+            // Send and Steer stayed off meanwhile (draftBusy). A withdraw with no
+            // answer is remembered: a later "not waiting" may mean it took it.
+            val answer = done.getOrNull()
+            // A request this draft has no record of (sent before 10064) has no known text:
+            // nothing is guessed from the queue, and the user is told.
+            if (answer == true && draft.queued[requestId]?.text == null) withdrawNote = R.string.ingress_withdraw_text_unknown
+            val back = draft.afterWithdraw(requestId, answer, value.text)
+            if (answer == true || (requestId in draft.queued && requestId !in back.queued)) {
                 value = TextFieldValue(back.text, TextRange(back.text.length))
-                save(back)
             }
+            save(back)
         }
     }
 
