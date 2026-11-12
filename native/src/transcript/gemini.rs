@@ -294,16 +294,20 @@ impl Conversation {
             .collect()
     }
 
-    /// What Gemini is running now and has not recorded here yet. A running
-    /// `invoke_agent` call is written to the parent only once it ends
-    /// (`agents/local-invocation`, bundle chunk-RCB6BI5H.js:352975-353051);
-    /// until then its child records itself in `chats/<session>/<child>.jsonl`
-    /// under a `subagent` header (chatRecordingService.ts:855-862). `children`
-    /// are those files' bytes by child id, as the host read them. A child
-    /// shows while the parent names it nowhere and has recorded nothing since
-    /// it started: no call with its `agentId`, no message, and no ended
-    /// `invoke_agent` call without one (a cancelled call records no id,
-    /// :353011, :353048). One trailing entry, a running row per child.
+    /// What Gemini is running now and has not recorded here yet. Its TUI
+    /// writes a turn's tool calls to the parent only once the whole batch
+    /// has ended (`useToolScheduler`'s completion, bundle
+    /// interactiveCli-HTFX4T7K.js:28069-28122), all stamped then, so
+    /// parallel `invoke_agent` children are recorded together; until then
+    /// each child records itself in `chats/<session>/<child>.jsonl` under a
+    /// `subagent` header (chatRecordingService.ts:855-862). `children` are
+    /// those files' bytes by child id, as the host read them. A child shows
+    /// while the parent names it nowhere and has recorded nothing since it
+    /// started: no call with its `agentId`, no message, and no ended
+    /// `invoke_agent` call without one. That last needs no tie to its child:
+    /// a cancelled call records no id (chunk-RCB6BI5H.js:353011, :353048),
+    /// and any final call stamped after the start ends the child's batch.
+    /// One trailing entry, a row per child.
     pub(super) fn running(&self, children: &[(&str, &[u8])]) -> Option<Entry> {
         let mut named = HashSet::new();
         let mut since = None;
@@ -366,10 +370,12 @@ impl Conversation {
     }
 }
 
-/// A running child from its own record, with when it started: only a
-/// `subagent` header naming this id in the parent's project. Its record
-/// has no agent name, so the id stands for it; the task is the query it
-/// was given, the stage its latest tool, else its latest words.
+/// A child from its own record, with when it started: only a `subagent`
+/// header naming this id in the parent's project. Its record has no agent
+/// name, so the id stands for it; the task is the query it was given, the
+/// stage its latest tool, else its latest words. A child that recorded its
+/// `complete_task` (`COMPLETE_TASK_TOOL_NAME`, chunk-RCB6BI5H.js:281013)
+/// has ended while its siblings still run.
 fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
     let head: Value = serde_json::from_slice(data.split(|&byte| byte == b'\n').next()?).ok()?;
     if string(&head, "sessionId") != Some(id) || string(&head, "kind") != Some("subagent") || string(&head, "projectHash") != Some(project) {
@@ -382,8 +388,13 @@ fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
         .iter()
         .find(|message| message["type"] == "user")
         .and_then(|message| clean(&part_text(&message["content"]), 1024));
-    let stage = child.messages.iter().rev().find(|message| message["type"] == "gemini").and_then(|message| {
-        let tool = message["toolCalls"].as_array().and_then(|calls| calls.last()).and_then(|call| {
+    let last = child.messages.iter().rev().find(|message| message["type"] == "gemini");
+    let calls = last.and_then(|message| message["toolCalls"].as_array());
+    let done = calls.is_some_and(|calls| {
+        calls.iter().any(|call| string(call, "name") == Some("complete_task") && string(call, "status") == Some("success"))
+    });
+    let stage = last.filter(|_| !done).and_then(|message| {
+        let tool = calls.and_then(|calls| calls.last()).and_then(|call| {
             string(call, "displayName").filter(|name| !name.trim().is_empty()).or_else(|| string(call, "name"))
         });
         match tool {
@@ -397,7 +408,7 @@ fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
             id: id.to_owned(),
             agent: id.to_owned(),
             agent_type: None,
-            status: "running",
+            status: if done { "completed" } else { "running" },
             task,
             stage,
             output: None,

@@ -518,6 +518,32 @@ fn a_linked_child_dir_or_file_is_never_followed_and_the_session_still_reads() {
     assert_eq!((shown(&page), running(&page)), (vec!["go".to_owned()], vec![]));
 }
 
+#[test]
+fn a_child_the_session_names_is_not_sent_and_leaves_its_place_to_the_next_newest() {
+    let host = Host::new();
+    let ids: Vec<String> = (0..9).map(|n| format!("{n:08x}-0000-4000-8000-000000000000")).collect();
+    let named = &ids[8];
+    let mut records = chat(SID, "go");
+    // Before the children started, as a batch recorded earlier is.
+    records.push(json!({"id": "m-call", "timestamp": "2026-11-12T10:00:02.000Z", "type": "gemini", "content": "",
+        "toolCalls": [{"id": "c", "name": "invoke_agent", "status": "success", "timestamp": "2026-11-12T10:00:02.000Z", "agentId": named}]}));
+    host.session("app", &name(SID), &records);
+    host.bind("w1:p1", SID, 42, GEN);
+    let expect = host.identity().unwrap().unwrap();
+    let dir = host.path(&format!(".gemini/tmp/app/chats/{SID}"));
+    fs::create_dir(&dir).unwrap();
+    // Oldest first; the named child is the newest.
+    for (n, id) in ids.iter().enumerate() {
+        let file = dir.join(format!("{id}.jsonl"));
+        fs::write(&file, child(id, "ReadFolder")).unwrap();
+        let at = std::time::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + n as u64);
+        fs::File::options().write(true).open(&file).unwrap().set_modified(at).unwrap();
+    }
+    let mut shown: Vec<_> = running(&host.read("w1:p1", &expect, 0).unwrap()).into_iter().map(|(id, _)| id).collect();
+    shown.sort();
+    assert_eq!(shown, ids[..8]);
+}
+
 /// The shipped launcher in a dir of its own, named exactly `gemini`, and a
 /// stand-in bundle that records what it ran with, then waits if asked.
 fn launcher_dir(root: &Path) -> PathBuf {
