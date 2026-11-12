@@ -348,10 +348,12 @@ Switcher:
   replacement resets the bounded read, while the same identity retains the
   original refusal. OpenCode sequence reads recover the same way. A reconnect
   is a new connection and starts over too.
-- **Confinement.** The path is checked on the phone: absolute, `.jsonl`,
-  under `/.omp/agent/sessions/`, no `.`/`..`, no control characters. It is
-  checked again on the host after `realpath`, so a symlink cannot point chat
-  elsewhere.
+- **Confinement.** Absolute session-file syntax is admitted on the phone;
+  the host resolves default or foreground-process-configured OMP/Pi roots,
+  OMP profile/XDG paths, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Every root and
+  file must canonically stay below the SSH account's HOME, and ID resolution
+  must match exactly one file. A reported path alone never authorizes an
+  arbitrary folder; configured roots require that exact process's environment.
 - **Incremental and bounded.** Chat reads byte ranges by offset: the newest
   256 KiB, then appends from the last complete line (a partial line waits),
   and older pages on request.
