@@ -9,8 +9,9 @@ use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 const SID: &str = "20261112_010203_aaaa";
 const OTHER: &str = "20261112_010203_bbbb";
 
-/// Builds `state.db` from a JSON spec: `version` rows, then sessions,
-/// messages and `state_meta` rows, each a column map. WAL, as Hermes opens it.
+/// Builds `state.db` from a JSON spec: `version` rows (no table at all when
+/// `version` is null), then sessions, messages and `state_meta` rows, each a
+/// column map. WAL, as Hermes opens it.
 const FIXTURE: &str = r#"import json, sqlite3, sys
 db, spec = sys.argv[1], json.loads(sys.argv[2])
 conn = sqlite3.connect(db)
@@ -29,7 +30,8 @@ CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT
   tool_call_uids TEXT, tool_call_uid TEXT);
 CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT);
 ''')
-for v in spec.get('version', []): conn.execute('INSERT INTO schema_version VALUES (?)', (v,))
+for v in spec.get('version') or []: conn.execute('INSERT INTO schema_version VALUES (?)', (v,))
+if spec.get('version') is None: conn.execute('DROP TABLE schema_version')
 for table in ('sessions', 'messages', 'state_meta'):
     for row in spec.get(table, []):
         cols = list(row)
@@ -230,10 +232,28 @@ fn another_schema_format_is_refused_with_both_formats() {
         );
         match host.page(SID, Read::Tail) {
             Err(Error::UnsupportedHermes { found: got, supported }) => {
-                assert_eq!(got, found.to_string());
+                assert_eq!(got, Some(found));
                 assert_eq!(supported, SCHEMA_VERSION);
             }
             other => panic!("{found}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_store_naming_no_single_format_is_refused_without_one() {
+    for version in [Value::Null, json!([SCHEMA_VERSION, SCHEMA_VERSION])] {
+        let host = Host::new(SID);
+        host.store(
+            &host.root(),
+            json!({"version": version, "sessions": [session(SID)], "messages": [message(SID, "user", "hidden")]}),
+        );
+        match host.page(SID, Read::Tail) {
+            Err(Error::UnsupportedHermes { found, supported }) => {
+                assert_eq!(found, None);
+                assert_eq!(supported, SCHEMA_VERSION);
+            }
+            other => panic!("{version}: {other:?}"),
         }
     }
 }

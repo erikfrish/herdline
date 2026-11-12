@@ -88,9 +88,10 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
         return Err(Error::EntryTooLarge);
     }
     if let Some(found) = reply.get("version") {
-        // Missing table or several rows: no single format to name.
+        // A missing table, several rows or a value no format can be: no
+        // single format to name, so None rather than a guess.
         return Err(Error::UnsupportedHermes {
-            found: found.as_i64().map_or_else(|| "unknown".to_owned(), |n| n.to_string()),
+            found: found.as_u64().and_then(|n| u32::try_from(n).ok()),
             supported: SCHEMA_VERSION,
         });
     }

@@ -67,9 +67,11 @@ pub enum Error {
     UnknownMethod(String),
     #[error("chat cannot read this session's format: {0}")]
     UnsupportedFormat(&'static str),
-    /// A Hermes `state.db` in a schema format the reader was not written for.
-    #[error("Chat reads Hermes history format {supported} only; this Hermes uses format {found}")]
-    UnsupportedHermes { found: String, supported: u32 },
+    /// A Hermes `state.db` in a schema format the reader was not written for;
+    /// `found` is None when the store names no single format. Chat shows its
+    /// own text per case, never this one.
+    #[error("unsupported Hermes history format (this reader reads {supported})")]
+    UnsupportedHermes { found: Option<u32>, supported: u32 },
     #[error("host key {fingerprint} of {host} is not trusted")]
     UntrustedHostKey {
         hop: usize,
