@@ -170,6 +170,15 @@ class MainActivity : ComponentActivity() {
 private const val START = "hosts"
 
 /**
+ * The form routes (the node editor and import) in [old] that [next] no longer
+ * holds. A form that left the stack, by Back, Save, Discard or a jump to
+ * another destination, must open empty next time, so its saved state is
+ * dropped; every other route keeps its state for when it is shown again.
+ */
+internal fun formsLeaving(old: List<String>, next: List<String>): Set<String> =
+    old.filter { (it == "import" || it.startsWith("edit:")) && it !in next }.toSet()
+
+/**
  * The navigation shell.
  *
  * History is a small saveable back stack of route strings: root destinations
@@ -197,24 +206,29 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
     val windowClass = rememberWindowClass()
     val wide = windowClass != WindowClass.Compact
 
+    fun replace(next: List<String>) {
+        formsLeaving(stack, next).forEach(saved::removeState)
+        stack = next
+    }
+
     fun push(route: String) {
         stack = stack + route
     }
 
     fun pop() {
-        if (stack.size > 1) stack = stack.dropLast(1)
+        if (stack.size > 1) replace(stack.dropLast(1))
     }
 
     fun switch(destination: String) {
         // Settings from a session (the rail at wide widths) sits above it, so Back returns there.
         if (destination == "settings" && stack.last().startsWith("session:")) return push("session-settings")
         // M3 root destinations: Back from a non-start destination goes to Hosts.
-        stack = listOf(START) + listOfNotNull(destination.takeIf { it != START })
+        replace(listOf(START) + listOfNotNull(destination.takeIf { it != START }))
     }
 
     fun openSession(nodeId: String, pane: String?) {
         if (pane != null) opened.value = nodeId to pane
-        stack = listOf(START, "session:$nodeId")
+        replace(listOf(START, "session:$nodeId"))
     }
 
     // The notification intent is remembered once it has opened its session:
@@ -317,7 +331,7 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
                         dark = dark,
                         onLeave = {
                             opened.value = null
-                            stack = listOf(START)
+                            replace(listOf(START))
                         },
                         onSettings = { push("session-settings") },
                     )
