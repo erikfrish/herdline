@@ -1,0 +1,7 @@
+Herdline 0.6.34 (experimental) — What works here shows the server first, and Send says when the pane has no server
+
+- What works here: for OpenCode and Kilo, the rows about the pane's own server now come first on the card. Before, on a pane without its server, such as opencode --standalone, those rows were below the visible part of the card. Pending QA.
+- Chat with OpenCode and Kilo: on a pane without its own server, a refused Send now says that no agent server is running, or that Chat can't tell which server is this session's. Before, it gave a reason about the terminal program. Nothing is sent and the draft stays. Pending QA.
+- Everything listed for 0.6.33 is in this build unchanged. Pending QA.
+
+Nothing above is verified by QA or on a device yet.
