@@ -1190,3 +1190,19 @@ fn another_home_or_a_file_outside_home_is_refused_as_outside_home() {
     let (status, out) = host.run(tail(link.to_str().unwrap()));
     assert!(matches!(parse_reply(status, &out), Err(Error::SessionRootOutsideHome)));
 }
+
+#[test]
+fn page_and_blob_store_follow_the_same_profile() {
+    let hash = sha(PNG);
+    let text = image_line("u", &format!("blob:sha256:{hash}"));
+    let parsed = entries("omp", text.as_bytes(), 0);
+    // `--profile` is the system prompt here: omp runs the default profile,
+    // so its page and its blobs are both the default ones.
+    let (host, identity, _omp) =
+        Host::with_session(&text, &["--system-prompt", "--profile", "x"], &[]);
+    let (status, bytes) = host.run(tail(&identity.path));
+    assert_eq!(parse_reply(status, &bytes).unwrap().file.unwrap().data, text.as_bytes());
+    host.store(".omp/profiles/x/agent/blobs");
+    fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
+    assert_eq!(host.media(&identity, &at(&parsed, 0, 1, Some(&hash))), png());
+}

@@ -1,12 +1,11 @@
-"""Resolve only the current pane's session within known process-configured roots."""
+"""Resolve only the current pane's session within known process-configured
+roots; with --blob-store, the blob store of an OMP process instead."""
 import glob
 import json
 import os
 import re
 import subprocess
 import sys
-
-herdr, session, pane, wanted, home = sys.argv[1:]
 
 class OutsideHome(ValueError):
     """A root or file the agent uses lies outside this user's home."""
@@ -78,6 +77,83 @@ def profile_flag(argv):
             index += 1
     return profile
 
+def process(pid):
+    """The root variables of `pid`'s environment and its arguments."""
+    env = {}
+    for field in open('/proc/%d/environ' % pid, 'rb').read(262144).split(b'\0'):
+        key, separator, data = field.partition(b'=')
+        if separator and key in WANTED:
+            env[key.decode()] = data.decode(errors='replace')
+    argv = [part.decode(errors='replace') for part in open('/proc/%d/cmdline' % pid, 'rb').read(65536).split(b'\0')]
+    if argv and argv[-1] == '':
+        argv.pop()
+    return env, argv
+
+def normalize_profile(name):
+    name = (name or '').strip()
+    if name == 'default': return ''
+    if name and (not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', name) or name.endswith('.') or re.match(r'^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$', name, re.I)):
+        raise ValueError('profile')
+    return name
+
+def omp_agent(env, argv, config):
+    """The profile an OMP process with `env` and `argv` runs, and its
+    PI_CODING_AGENT_DIR as OMP keeps it. The session roots and the blob
+    store both come from here, so they never disagree."""
+    profile = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
+    # The program, and for a bun or node launch its script, are not
+    # omp's arguments (process.argv.slice(2)).
+    start = 0 if not argv else 2 if os.path.basename(argv[0]) in ('bun', 'node') else 1
+    flag = profile_flag(argv[start:])
+    if flag is not None:
+        profile = flag
+    profile = normalize_profile(profile)
+    override = env.get('PI_CODING_AGENT_DIR')
+    if not profile and override:
+        try:
+            inherited = normalize_profile(env.get('PI_PROFILE'))
+        except ValueError:
+            inherited = ''
+        # dirs.ts:133-139 compares the raw value to path.join(os.homedir(),
+        # config, 'profiles', p, 'agent'): no symlink is resolved.
+        derived = os.path.normpath(os.path.join(env.get('HOME') or home, config.lstrip('/'), 'profiles', inherited, 'agent')) if inherited else None
+        if override == derived:
+            override = None
+    return profile, override
+
+def blob_store(pid):
+    """pi-utils getBlobsDir(), agentSubdir(undefined, 'blobs', 'data')
+    (18.18.8): the profile's agent dir, or without one PI_CODING_AGENT_DIR,
+    else ~/.omp/agent; an existing $XDG_DATA_HOME/omp (with a profile,
+    .../profiles/<name>) takes its place. What it cannot pin down exactly
+    (no /proc, another HOME, PI_CONFIG_DIR, a relative value) raises
+    ValueError; a store outside HOME, OutsideHome."""
+    env, argv = process(pid)
+    if not env.get('HOME') or os.path.realpath(env['HOME']) != home:
+        raise ValueError('home')
+    if env.get('PI_CONFIG_DIR'):
+        raise ValueError('config')
+    profile, override = omp_agent(env, argv, '.omp')
+    xdg = env.get('XDG_DATA_HOME') or ''
+    if xdg and not os.path.isabs(xdg):
+        raise ValueError('relative')
+    if profile:
+        root = os.path.join(home, '.omp', 'profiles', profile, 'agent')
+        if xdg and os.path.exists(os.path.join(xdg, 'omp', 'profiles', profile)):
+            root = os.path.join(xdg, 'omp', 'profiles', profile)
+    elif not override or override == os.path.join(home, '.omp', 'agent'):
+        root = os.path.join(home, '.omp', 'agent')
+        if xdg and os.path.exists(os.path.join(xdg, 'omp')):
+            root = os.path.join(xdg, 'omp')
+    elif os.path.isabs(override):
+        root = override
+    else:
+        raise ValueError('relative')
+    store = os.path.realpath(os.path.join(root, 'blobs'))
+    if not store.startswith(home + '/'):
+        raise OutsideHome()
+    return store
+
 def report(*args):
     result = subprocess.run([herdr, '--session', session, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
     if result.returncode or len(result.stdout) > 65536:
@@ -96,17 +172,10 @@ def resolve():
     argv = []
     if isinstance(pid, int) and pid > 0:
         try:
-            for field in open('/proc/%d/environ' % pid, 'rb').read(262144).split(b'\0'):
-                key, separator, data = field.partition(b'=')
-                if separator and key in WANTED:
-                    env[key.decode()] = data.decode(errors='replace')
-            argv = [part.decode(errors='replace') for part in open('/proc/%d/cmdline' % pid, 'rb').read(65536).split(b'\0')]
-            if argv and argv[-1] == '':
-                argv.pop()
+            env, argv = process(pid)
         except OSError:
             # Default roots require no environment guess. Configured roots do.
-            env = {}
-            argv = []
+            pass
     if env.get('HOME') and os.path.realpath(env['HOME']) != home:
         raise OutsideHome()
     def absolute(path):
@@ -135,34 +204,10 @@ def resolve():
     if agent in ('omp', 'pi') and kind == 'path':
         default = os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent')
         add(os.path.join(default, 'sessions'))
-        override = env.get('PI_CODING_AGENT_DIR')
         if agent == 'omp':
             config = env.get('PI_CONFIG_DIR') or '.omp'
             base = configured(os.path.join(home, config.lstrip('/')))
-            profile = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
-            # The program, and for a bun or node launch its script, are not
-            # omp's arguments (process.argv.slice(2)).
-            start = 0 if not argv else 2 if os.path.basename(argv[0]) in ('bun', 'node') else 1
-            flag = profile_flag(argv[start:])
-            if flag is not None:
-                profile = flag
-            def normalize_profile(name):
-                name = (name or '').strip()
-                if name == 'default': return ''
-                if name and (not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', name) or name.endswith('.') or re.match(r'^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$', name, re.I)):
-                    raise ValueError('profile')
-                return name
-            profile = normalize_profile(profile)
-            if not profile and override:
-                try:
-                    inherited = normalize_profile(env.get('PI_PROFILE'))
-                except ValueError:
-                    inherited = ''
-                # dirs.ts:133-139 compares the raw value to path.join(os.homedir(),
-                # config, 'profiles', p, 'agent'): no symlink is resolved.
-                derived = os.path.normpath(os.path.join(env.get('HOME') or home, config.lstrip('/'), 'profiles', inherited, 'agent')) if inherited else None
-                if override == derived:
-                    override = None
+            profile, override = omp_agent(env, argv, config)
             if base:
                 config_root = os.path.join(base, 'profiles', profile) if profile else base
                 sessions = configured(os.path.join(config_root, 'agent', 'sessions'))
@@ -177,8 +222,8 @@ def resolve():
             if not profile and override:
                 sessions = configured(os.path.join(override, 'sessions'))
                 if sessions: add(sessions)
-        elif override:
-            sessions = configured(os.path.join(override, 'sessions'))
+        elif env.get('PI_CODING_AGENT_DIR'):
+            sessions = configured(os.path.join(env['PI_CODING_AGENT_DIR'], 'sessions'))
             if sessions: add(sessions)
         candidates = [value]
     elif agent == 'claude' and kind == 'id':
@@ -200,9 +245,21 @@ def resolve():
         raise ValueError('ambiguous or missing')
     return valid[0]
 
-try:
-    print(resolve())
-except OutsideHome:
-    sys.exit(11)
-except Exception:
-    sys.exit(3)
+if sys.argv[1] == '--blob-store':
+    # Run by the media read's shell: 3 is unconfined, any other failure an
+    # unknown store, never a guessed one.
+    home = sys.argv[3]
+    try:
+        print(blob_store(int(sys.argv[2])))
+    except OutsideHome:
+        sys.exit(3)
+    except Exception:
+        sys.exit(9)
+else:
+    herdr, session, pane, wanted, home = sys.argv[1:]
+    try:
+        print(resolve())
+    except OutsideHome:
+        sys.exit(11)
+    except Exception:
+        sys.exit(3)

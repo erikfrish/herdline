@@ -530,14 +530,16 @@ User, assistant and tool-result images are read through the existing
   are read in one exec. Both reports must name the instance the request was
   made for (pane, terminal, OMP pid, session file), else `instance_changed`.
 - **The blob store is the OMP process's own.** It is resolved from that
-  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does: the
-  last `--profile` before `--`, else `OMP_PROFILE` when set, else
-  `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a profile
-  `PI_CODING_AGENT_DIR`, else `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a
-  profile `…/profiles/<name>`) takes its place when it exists. What cannot be
-  pinned down is refused as `unknown_store`, never guessed: no `/proc` (e.g.
-  macOS hosts), another `HOME`, `PI_CONFIG_DIR`, relative paths, unusual
-  profile names. The store must resolve inside `$HOME`, and a blob that
+  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does, by the
+  same resolver and profile rules as the session roots (Confinement, above):
+  the `--profile` omp's `extractProfileFlags` takes, else `OMP_PROFILE` when
+  set, else `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a
+  profile `PI_CODING_AGENT_DIR` (unless derived from `PI_PROFILE`), else
+  `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`)
+  takes its place when it exists. What cannot be pinned down is refused as
+  `unknown_store`, never guessed: no `/proc` (e.g. macOS hosts), another
+  `HOME`, `PI_CONFIG_DIR`, relative paths, profile names OMP rejects. The
+  store must resolve inside `$HOME`, and a blob that
   links out of it is refused (`unconfined`). XDG existence is checked at read
   time, not when OMP started.
 - **Bounds.** At most 20 MiB of decoded image; a larger blob or inline image

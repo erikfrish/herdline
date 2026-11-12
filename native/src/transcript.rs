@@ -931,7 +931,7 @@ printf '\n@@file %s %s\n@@data\n' "$size" "$start"
 tail -c +$((start + 1)) "$real" | head -c "$len"
 "#,
         path = shell_quote(path),
-        resolver = include_str!("transcript/resolve_session.py"),
+        resolver = RESOLVER,
     ));
     let Some(blob) = blob else {
         return script;
@@ -958,46 +958,22 @@ head -c "$bytes" "$blob"
     script
 }
 
-/// Sets `$home` and `$store`: the blob store OMP process `pid` writes to,
-/// resolved as pi-utils `getBlobsDir()` does, `agentSubdir(undefined,
-/// "blobs", "data")` (18.18.8). The profile is the last `--profile` in its
-/// arguments before `--`, else `OMP_PROFILE` when set at all, else
-/// `PI_PROFILE`; its agent directory is `~/.omp/profiles/<name>/agent`, or
-/// without one `PI_CODING_AGENT_DIR`, else `~/.omp/agent`. Without an
-/// override, `$XDG_DATA_HOME/omp` (with a profile, `…/profiles/<name>`)
-/// takes its place when it exists. Whatever this cannot pin down exactly (no
-/// `/proc`, another `HOME`, `PI_CONFIG_DIR`, a relative or unusual value)
-/// is refused rather than guessed, and the store must resolve inside `$HOME`.
+/// The session resolver, run on the host. It also resolves the blob store,
+/// so a session root and the store follow the same profile rules.
+const RESOLVER: &str = include_str!("transcript/resolve_session.py");
+
+/// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
+/// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
+/// session roots. Exit 3 is a store outside `$HOME`; any other failure,
+/// python missing or nothing printed included, is an unknown store, never
+/// a guessed one.
 fn blob_store(pid: u32) -> String {
     format!(
-        r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
-env=/proc/{pid}/environ
-[ -r "$env" ] && [ -r /proc/{pid}/cmdline ] || exit {EXIT_NO_STORE}
-has() {{ tr '\0' '\n' < "$env" | grep -q "^$1="; }}
-val() {{ tr '\0' '\n' < "$env" | sed -n "s/^$1=//p" | head -n 1; }}
-own=$(realpath -- "$(val HOME)") || exit {EXIT_NO_STORE}
-[ "$own" = "$home" ] || exit {EXIT_NO_STORE}
-[ -z "$(val PI_CONFIG_DIR)" ] || exit {EXIT_NO_STORE}
-if has OMP_PROFILE; then profile=$(val OMP_PROFILE); else profile=$(val PI_PROFILE); fi
-flag=$(tr '\0' '\n' < /proc/{pid}/cmdline | awk '$0 == "--" {{ exit }} $0 == "--profile" {{ getline v; p = v; s = 1; next }} index($0, "--profile=") == 1 {{ p = substr($0, 11); s = 1 }} END {{ if (s) print "=" p }}')
-[ -n "$flag" ] && profile=${{flag#=}}
-profile=$(printf '%s' "$profile" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-case "$profile" in default) profile= ;; *[!A-Za-z0-9_-]* | -*) exit {EXIT_NO_STORE} ;; esac
-xdg=$(val XDG_DATA_HOME)
-case "$xdg" in '' | /*) ;; *) exit {EXIT_NO_STORE} ;; esac
-if [ -n "$profile" ]; then
-    root=$home/.omp/profiles/$profile/agent
-    [ -n "$xdg" ] && [ -e "$xdg/omp/profiles/$profile" ] && root=$xdg/omp/profiles/$profile
-else
-    root=$(val PI_CODING_AGENT_DIR)
-    case "$root" in
-        '' | "$home/.omp/agent") root=$home/.omp/agent; [ -n "$xdg" ] && [ -e "$xdg/omp" ] && root=$xdg/omp ;;
-        /*) ;;
-        *) exit {EXIT_NO_STORE} ;;
-    esac
-fi
-store=$(realpath -- "$root/blobs") || exit {EXIT_NO_MEDIA}
-case "$store" in "$home"/*) ;; *) exit {EXIT_UNCONFINED} ;; esac
+        r#"store=$(python3 - --blob-store {pid} "$home" <<'HERDLINE_RESOLVE'
+{RESOLVER}
+HERDLINE_RESOLVE
+) || {{ status=$?; [ "$status" -eq {EXIT_UNCONFINED} ] && exit {EXIT_UNCONFINED}; exit {EXIT_NO_STORE}; }}
+[ -n "$store" ] || exit {EXIT_NO_STORE}
 "#
     )
 }
