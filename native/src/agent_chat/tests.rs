@@ -372,3 +372,33 @@ fn question_ids_are_the_ones_the_servers_make() {
     assert!(!valid_form_id("per_1") && !valid_form_id("frm_1/../x") && !valid_form_id("frm_1 x") && !valid_form_id(&format!("frm_{}", "a".repeat(130))));
     assert!(!valid_permission_id("frm_1"));
 }
+
+/// The pane root a control step gets ([`PANE_ROOT`]) is the shell_pid of
+/// the very report the gate verified, 0 when Herdr names none; a changed
+/// instance never runs the step.
+#[test]
+fn a_step_gets_the_pane_root_from_the_report_the_gate_verified() {
+    let home = tempfile::tempdir().expect("home");
+    let bin = home.path().join(".local/bin");
+    std::fs::create_dir_all(&bin).expect("bin");
+    let herdr = bin.join("herdr");
+    std::fs::write(&herdr, "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n").expect("herdr");
+    std::fs::set_permissions(&herdr, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("mode");
+    let instance = codex();
+    let pane = json!({"result": {"pane": {"agent": "codex", "pane_id": "w1:p1", "terminal_id": "term_1",
+        "agent_session": {"agent": "codex", "kind": "id", "source": "herdr:codex", "value": instance.path}}}});
+    std::fs::write(home.path().join("pane.json"), pane.to_string()).expect("pane");
+    let exec = Exec::local(vec![
+        ("HOME".into(), home.path().display().to_string()),
+        ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
+    ]);
+    let step = format!("{PANE_ROOT} sh -c 'printf \"root=%s\\n\" \"$HERDLINE_PANE_ROOT\"'");
+    let gate = |shell: Value, pid: u32| {
+        let process = json!({"result": {"process_info": {"foreground_processes": [{"name": "codex", "pid": pid}], "pane_id": "w1:p1", "shell_pid": shell}}});
+        std::fs::write(home.path().join("proc.json"), process.to_string()).expect("proc");
+        host_gate(&exec, "lab", &instance, &step, None).expect("word")
+    };
+    assert_eq!(gate(json!(7), 42), "root=7");
+    assert_eq!(gate(Value::Null, 42), "root=0");
+    assert_eq!(gate(json!(7), 43), "refused_changed");
+}

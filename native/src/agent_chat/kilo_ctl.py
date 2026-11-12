@@ -7,13 +7,13 @@ takes them. Prints one line: a word, or a word, a tab and a JSON payload.
 Kilo's Stop, permissions and questions stay in opencode_ctl.py.
 
 Discovery is opencode_ctl.py's Kilo rule, and no process environment is
-read but the pane's verified foreground pid (HERDLINE_PANE_PID): exactly
-one of $HOME/.local/state/kilo/daemon.json or
+read but the pane's root pid (HERDLINE_PANE_ROOT): exactly one of
+$HOME/.local/state/kilo/daemon.json or
 $HOME/.local/share/kilo/state/daemon.json (kilo core/src/global.ts:25-26,
 kilocode/daemon/daemon.ts:97-99), this uid's, 0600, a loopback http url,
-a live pid that is the pane's foreground agent or runs under it (else
-'no_server': never another pane's server), Basic auth from its username
-and password.
+a live pid in the pane's process tree, the TUI's sibling daemon included
+(else 'no_server': never another pane's server), Basic auth from its
+username and password.
 
 Routes, pinned to Kilo v7.8.27 (03a6f07),
 packages/opencode/src/server/routes/instance/httpapi/groups:
@@ -124,20 +124,18 @@ def registration():
 
 
 def in_pane(pid):
-    """Whether `pid` is the pane's foreground agent or runs under it (as opencode_ctl.py)."""
+    """Whether `pid` runs in the pane's process tree (as opencode_ctl.py)."""
     try:
-        pane = int(os.environ.get('HERDLINE_PANE_PID', ''))
+        root = int(os.environ.get('HERDLINE_PANE_ROOT', ''))
     except ValueError:
         return False
-    if pane <= 1:
+    if root <= 1:
         return False
     for _ in range(64):
-        if pid == pane:
-            return True
-        if pid <= 1:
-            return False
         pid = parent(pid)
-        if pid is None:
+        if pid == root:
+            return True
+        if pid is None or pid <= 1:
             return False
     return False
 

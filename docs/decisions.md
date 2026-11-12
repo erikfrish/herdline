@@ -681,11 +681,16 @@ only to their private, already-running loopback server registration under
 this user's default state directories (OpenCode `service*.json`, Kilo
 `daemon.json`, mode 0600, own uid, live pid): no automatic service start,
 HTTP redirects or environment proxy routing. The registered server must be
-the pane's own: its pid is the pane's verified foreground agent pid or a
-descendant of it. Another pane's server on the same data root (QA 10067
-U6: a `serve --service` beside an `opencode --standalone`, whose own server
-listens on stdio only) is never asked, for any op, and answers
-`no_server`, as a bare TUI that registers nothing does. An unknown
+the pane's own: its pid runs in the pane's process tree, under the pane's
+root process (Herdr's `shell_pid` in the same report the gate verified),
+read from pid ancestry only, never another process's environment or
+command line. Kilo's daemon started in the pane beside its TUI (`kilo
+daemon start --foreground &`, then `kilo`) is the TUI's sibling under that
+shell and counts as the pane's own (QA 10068 prep-kilo). Another pane's
+server on the same data root (QA 10067 U6: a `serve --service` beside an
+`opencode --standalone`, whose own server listens on stdio only) is never
+asked, for any op, and answers `no_server`, as a bare TUI that registers
+nothing does, and as a pane Herdr reports no shell for. An unknown
 acknowledgement after POST remains uncertain; discovery failure before
 POST is a refusal.
 

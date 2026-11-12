@@ -18,13 +18,17 @@ A server registered elsewhere (a custom XDG_STATE_HOME) is not found, and a
 bare TUI registers nothing: its worker has no port (kilo cli/cmd/tui.ts:
 435-450). Both answer 'no_server'.
 
-The registered server must also be the pane's own: its pid is the pane's
-foreground agent pid (HERDLINE_PANE_PID, which the native gate has just
-verified against Herdr's pane report) or a descendant of it. A server of
-another pane on the same data root, such as a `serve --service` next to an
-`opencode --standalone` whose own server listens on stdio only, answers
-'no_server' before any request: nothing is asked of a server outside the
-pane, for any op (QA 10067 U6).
+The registered server must also be the pane's own: its pid runs in the
+pane's process tree, under the pane's root process (HERDLINE_PANE_ROOT:
+Herdr's shell_pid from the same pane report the native gate has just
+verified the instance against). Only pid ancestry is read (/proc/<pid>/stat
+or ps), never another process's environment or command line. Kilo's daemon
+started in the pane beside its TUI is the TUI's sibling under that shell,
+and the pane's own (QA 10068 prep-kilo). A server of another pane on the
+same data root, such as a `serve --service` next to an `opencode
+--standalone` whose own server listens on stdio only, answers 'no_server'
+before any request: nothing is asked of a server outside the pane, for any
+op (QA 10067 U6).
 
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:
@@ -159,20 +163,18 @@ def registration():
 
 
 def in_pane(pid):
-    """Whether `pid` is the pane's foreground agent or runs under it."""
+    """Whether `pid` runs in the pane's process tree, under its root."""
     try:
-        pane = int(os.environ.get('HERDLINE_PANE_PID', ''))
+        root = int(os.environ.get('HERDLINE_PANE_ROOT', ''))
     except ValueError:
         return False
-    if pane <= 1:
+    if root <= 1:
         return False
     for _ in range(64):
-        if pid == pane:
-            return True
-        if pid <= 1:
-            return False
         pid = parent(pid)
-        if pid is None:
+        if pid == root:
+            return True
+        if pid is None or pid <= 1:
             return False
     return False
 

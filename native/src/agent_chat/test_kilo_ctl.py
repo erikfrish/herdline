@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from test_opencode_ctl import Server, register, sibling
+from test_opencode_ctl import Server, register, sleeper
 
 SCRIPT = Path(__file__).with_name('kilo_ctl.py')
 DIRECTORY = '/srv/project'
@@ -18,10 +18,11 @@ QUERY = '?directory=%2Fsrv%2Fproject'
 SESSION = ('GET', '/session/ses_test')
 
 
-def run(home, op, payload='{}', pane=None):
+def run(home, op, payload='{}', root=None):
     # No XDG_STATE_HOME: discovery uses the defaults under HOME only. The
-    # pane's foreground agent is this test process unless `pane` says else.
-    env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid() if pane is None else pane)}
+    # pane's root process is this test's parent, so the daemon registered
+    # as this test process is the pane's own, unless `root` says else.
+    env = {'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_ROOT': str(os.getppid() if root is None else root)}
     return subprocess.check_output([sys.executable, '-B', str(SCRIPT), op, 'ses_test', payload], env=env, text=True, timeout=10).strip()
 
 
@@ -82,7 +83,7 @@ class Send(Daemon):
             body = json.dumps({'id': 'msg_one', 'text': 'look'})
             return subprocess.check_output(
                 ['/bin/sh', '-c', '"$0" -B - send ses_test "$1" media 3<&0 < "$2"', sys.executable, body, str(script)],
-                input=json.dumps({'records': records, 'target': bound}), env={'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_PID': str(os.getpid())},
+                input=json.dumps({'records': records, 'target': bound}), env={'HOME': home, 'PATH': '/usr/bin:/bin', 'HERDLINE_PANE_ROOT': str(os.getppid())},
                 text=True, timeout=10).strip()
 
         self.assertEqual(send([record]), 'queued')
@@ -107,19 +108,33 @@ class Send(Daemon):
         self.assertEqual(send([record]), 'media\tattachment_missing')
         self.assertEqual(self.posts(server), [])
 
-    def test_another_panes_daemon_is_never_asked(self):
-        # QA 10067 U6's rule for Kilo: daemon.json names a server that is not
-        # the pane's agent nor under it, so every op is no_server, unasked.
+    def test_only_a_daemon_in_the_panes_own_tree_is_asked(self):
+        # QA 10067 U6's rule for Kilo: daemon.json names a server outside the
+        # pane's tree (this test process, under another root), so every op
+        # is no_server, unasked.
         home, server = self.serve({
             ('GET', '/session/status' + QUERY): (200, {}),
             ('POST', '/session/ses_test/prompt_async'): (204, None),
         })
-        other = sibling()
+        other = sleeper()
         self.addCleanup(other.wait)
         self.addCleanup(other.kill)
+        body = json.dumps({'id': 'msg_one', 'text': 'x'})
         for op in ('send', 'status', 'state', 'withdraw', 'children'):
-            self.assertEqual(run(home, op, json.dumps({'id': 'msg_one', 'text': 'x'}), pane=other.pid), 'no_server', op)
+            self.assertEqual(run(home, op, body, root=other.pid), 'no_server', op)
         self.assertEqual(server.seen, [])
+        # QA 10068 prep-kilo: `kilo daemon start --foreground &`, then `kilo`,
+        # in one pane: the daemon is the TUI's sibling under the pane's shell
+        # (this test process), not its child, and is the pane's own.
+        tui, daemon = sleeper(), sleeper()
+        for process in (tui, daemon):
+            self.addCleanup(process.wait)
+            self.addCleanup(process.kill)
+        register(Path(home) / '.local/state/kilo/daemon.json', {'pid': daemon.pid, 'url': server.url, 'username': 'kilo', 'password': 'test-only'})
+        self.assertEqual(run(home, 'send', body, root=os.getpid()), 'queued')
+        self.assertEqual(self.posts(server), [('POST', '/session/ses_test/prompt_async', {'messageID': 'msg_one', 'parts': [
+            {'type': 'text', 'text': 'x'},
+        ]})])
 
     # schema/src/session-status-event.ts:11-47: busy, retry, offline,
     # scheduled are all at work or waiting; only idle starts a turn.

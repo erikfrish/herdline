@@ -556,8 +556,8 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
         ("", "")
     };
     format!(
-        "HERDLINE_PANE_PID={} python3 - {op} {} {}{fd} <<'HERDLINE_KILO_CTL'\n{helper}{}\nHERDLINE_KILO_CTL",
-        pane_pid(&request.instance),
+        "{} python3 - {op} {} {}{fd} <<'HERDLINE_KILO_CTL'\n{helper}{}\nHERDLINE_KILO_CTL",
+        PANE_ROOT,
         shell_quote(&request.instance.path),
         shell_quote(&payload),
         include_str!("agent_chat/kilo_ctl.py"),
@@ -566,8 +566,8 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
 
 /// The OpenCode/Kilo control script for one `op` on this exact session:
 /// only the already-running server registered under this user's default
-/// state directory, which must know the session and be the pane's own
-/// (its pid the pane's verified foreground pid or under it, [`pane_pid`]).
+/// state directory, which must know the session and run in the pane's own
+/// process tree ([`PANE_ROOT`]).
 /// No other process environment is read. The CLI's default api path can
 /// autostart a service, so discovery and HTTP stay explicit here.
 ///
@@ -583,22 +583,23 @@ fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str, me
         ("", "")
     };
     format!(
-        "HERDLINE_PANE_PID={} python3 - {flavor} {op} {} {}{fd} <<'HERDLINE_OPENCODE_CTL'\n{helper}{}\nHERDLINE_OPENCODE_CTL",
-        pane_pid(instance),
+        "{} python3 - {flavor} {op} {} {}{fd} <<'HERDLINE_OPENCODE_CTL'\n{helper}{}\nHERDLINE_OPENCODE_CTL",
+        PANE_ROOT,
         shell_quote(&instance.path),
         shell_quote(payload),
         include_str!("agent_chat/opencode_ctl.py"),
     )
 }
 
-/// The pane's foreground agent pid, as the gate verifies it against Herdr's
-/// report before the step runs; 0 when Herdr reports none. The control
-/// scripts use only a registered server whose pid is this one or runs
-/// under it, and answer `no_server` otherwise, 0 included (QA 10067 U6:
-/// another pane's `serve --service` on the same data root took a send).
-fn pane_pid(instance: &Identity) -> u32 {
-    instance.pid.unwrap_or(0)
-}
+/// The pane's root process, as the gate read it from Herdr's report of this
+/// very pane (`process_info.shell_pid`) once the instance passed, for the
+/// step's environment; 0 when Herdr reports none. The control scripts use
+/// only a registered server that runs under it, anywhere in the pane's own
+/// process tree, and answer `no_server` otherwise, 0 included. QA 10067 U6:
+/// another pane's `serve --service` on the same data root took a send.
+/// QA 10068 prep-kilo: Kilo's daemon started in the pane beside the TUI is
+/// the TUI's sibling under the shell, not its child, and is the pane's own.
+const PANE_ROOT: &str = r#"HERDLINE_PANE_ROOT="$root""#;
 
 /// What an OpenCode send with files writes to the host command's stdin: the
 /// staged records whole and the target they must all be bound to, as
@@ -621,7 +622,8 @@ fn media_input(request: &Request) -> Result<Vec<u8>> {
 /// the real session and pane, then the tiny embedded verifier that must read
 /// that report as exactly `expect` (its pane id, terminal id, foreground
 /// pid under the report's own agent name, session id and session ref), and
-/// only after it passes, `step`'s own single word. A report the verifier
+/// only after it passes, `step`'s own single word, with `$root` the pane's
+/// root pid from that same report ([`PANE_ROOT`]). A report the verifier
 /// rejects prints its own refusal word and `step` never runs.
 fn host_gate(exec: &Exec, herdr_session: &str, expect: &Identity, step: &str, input: Option<Vec<u8>>) -> Result<String> {
     let pane = expect.pane_id.as_str();
@@ -632,7 +634,7 @@ fn host_gate(exec: &Exec, herdr_session: &str, expect: &Identity, step: &str, in
 t=$(mktemp -d) || {{ printf 'local\n'; exit 0; }}
 ( {report} ) < /dev/null > "$t/report"
 command -v python3 >/dev/null || {{ rm -rf "$t"; printf 'refused_unknown\n'; exit 0; }}
-python3 - "$t/report" {pane_id} {terminal_id} {pid} {path} {agent} {source} {kind} <<'PY'
+root=$(python3 - "$t/report" {pane_id} {terminal_id} {pid} {path} {agent} {source} {kind} <<'PY'
 import json, sys
 
 report = open(sys.argv[1], "rb").read()
@@ -657,11 +659,14 @@ try:
     if source is None:
         source = "herdr:" + agent
     pid = None
-    for entry in proc.get("result", {{}}).get("process_info", {{}}).get("foreground_processes") or []:
+    info = proc.get("result", {{}}).get("process_info", {{}})
+    for entry in info.get("foreground_processes") or []:
         if entry.get("name") == agent:
             found = entry.get("pid")
             pid = found if isinstance(found, int) and found > 0 else None
             break
+    shell = info.get("shell_pid")
+    root = shell if isinstance(shell, int) and not isinstance(shell, bool) and shell > 1 else 0
 except Exception:
     sys.exit(2)
 
@@ -678,8 +683,11 @@ ok = (
     and source == want[5]
     and kind == want[6]
 )
+if ok:
+    print(root)
 sys.exit(0 if ok else 3)
 PY
+)
 v=$?
 rm -rf "$t"
 if [ "$v" -eq 0 ]; then
