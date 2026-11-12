@@ -100,22 +100,25 @@ def omp_agent(env, argv, config):
     """The profile an OMP process with `env` and `argv` runs, and its
     PI_CODING_AGENT_DIR as OMP keeps it. The session roots and the blob
     store both come from here, so they never disagree."""
-    profile = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
+    from_env = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
     # The program, and for a bun or node launch its script, are not
     # omp's arguments (process.argv.slice(2)).
     start = 0 if not argv else 2 if os.path.basename(argv[0]) in ('bun', 'node') else 1
     flag = profile_flag(argv[start:])
-    if flag is not None:
-        profile = flag
-    profile = normalize_profile(profile)
+    profile = normalize_profile(from_env if flag is None else flag)
     override = env.get('PI_CODING_AGENT_DIR')
     if not profile and override:
-        try:
-            inherited = normalize_profile(env.get('PI_PROFILE'))
-        except ValueError:
-            inherited = ''
-        # dirs.ts:133-139 compares the raw value to path.join(os.homedir(),
-        # config, 'profiles', p, 'agent'): no symlink is resolved.
+        def safe(name):
+            try:
+                return normalize_profile(name)
+            except ValueError:
+                return ''
+        # dirs.ts:518-522: OMP drops a PI_CODING_AGENT_DIR derived from the
+        # environment's profile, else PI_PROFILE's, even when a flag (as
+        # --profile default) then runs without one. dirs.ts:133-139 compares
+        # the raw value to path.join(os.homedir(), config, 'profiles', p,
+        # 'agent'): no symlink is resolved.
+        inherited = safe(from_env) or safe(env.get('PI_PROFILE'))
         derived = os.path.normpath(os.path.join(env.get('HOME') or home, config.lstrip('/'), 'profiles', inherited, 'agent')) if inherited else None
         if override == derived:
             override = None

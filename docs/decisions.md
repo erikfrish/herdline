@@ -357,6 +357,8 @@ Switcher:
   - The profile is the one omp 18.18.8 takes itself (`extractProfileFlags`):
     a string flag's value, an argument after `--` or after a first-token
     subcommand is never `--profile`. `~` is never expanded, as in OMP.
+    Under `bun run <script>`, a subcommand right after the script is not
+    seen as one; harmless, as it can only name a HOME-bounded profile root.
   - Only the environment the process started with is seen. A root OMP picks
     up later (a project `.env` via `refreshDirsFromEnv`, `setProfile`) is
     not authorized and refuses, never guessed.
@@ -534,7 +536,7 @@ User, assistant and tool-result images are read through the existing
   same resolver and profile rules as the session roots (Confinement, above):
   the `--profile` omp's `extractProfileFlags` takes, else `OMP_PROFILE` when
   set, else `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a
-  profile `PI_CODING_AGENT_DIR` (unless derived from `PI_PROFILE`), else
+  profile `PI_CODING_AGENT_DIR` (unless derived from the environment's profile), else
   `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`)
   takes its place when it exists. What cannot be pinned down is refused as
   `unknown_store`, never guessed: no `/proc` (e.g. macOS hosts), another

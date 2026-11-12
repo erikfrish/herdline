@@ -1206,3 +1206,16 @@ fn page_and_blob_store_follow_the_same_profile() {
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(host.media(&identity, &at(&parsed, 0, 1, Some(&hash))), png());
 }
+
+#[test]
+fn an_agent_dir_derived_from_the_environment_profile_is_dropped_under_profile_default() {
+    let host = Host::new("unused");
+    let derived = format!("{}/.omp/profiles/w/agent", host.home.path().display());
+    let variables = [("OMP_PROFILE", "w".to_owned()), ("PI_CODING_AGENT_DIR", derived)];
+    let _omp = launch(&host, false, &["--profile", "default"], &variables);
+    assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
+    assert!(matches!(
+        read_reported(&host, ".omp/profiles/w/agent/sessions/p/s.jsonl").1,
+        Err(Error::TranscriptUnconfined)
+    ));
+}
