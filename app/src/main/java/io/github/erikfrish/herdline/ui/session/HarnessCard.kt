@@ -22,6 +22,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,7 +34,10 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.HorizontalAlignmentLine
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -43,6 +51,8 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessItem
 import io.github.erikfrish.herdline.core.worksHere
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Why Chat is off for the pane's program, over the top edge of the box it
@@ -54,11 +64,18 @@ import io.github.erikfrish.herdline.core.worksHere
  * Open Terminal, on a pane or tab switch, or when the program changes.
  *
  * [program] is the Herdr name exactly as reported, null for a shell.
+ * [keyboardUp]: while the IME is up and the slot cannot hold the padding,
+ * title and both buttons, the card is not placed at all (QA N1-g: landscape,
+ * font 1.3, the header gone, a 46 dp slot with nothing above it). It is kept,
+ * not dropped, and comes back whole when the keyboard goes: hidden beats a
+ * card whose buttons are out of the frame, and growing it would cover the
+ * extra keys the user just opened the keyboard to use.
  */
 @Composable
 internal fun BoxScope.HarnessCardSlot(
     program: String?,
     tabName: String,
+    keyboardUp: Boolean,
     onTerminal: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -76,12 +93,29 @@ internal fun BoxScope.HarnessCardSlot(
     }
     val rows = Harness.of(program.orEmpty()).worksHere()
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    // Announced once per card (the caller keys it): after the keyboard has come up while
+    // it is open it may have been hidden, and its return must not read it again.
+    val keyboardAtOpen = remember { keyboardUp }
+    var announce by remember { mutableStateOf(true) }
+    LaunchedEffect(keyboardUp) { if (keyboardUp != keyboardAtOpen) announce = false }
     Surface(
         modifier = Modifier
             .align(Alignment.TopCenter)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            .semantics { paneTitle = title },
+            .layout { measurable, constraints ->
+                val card = measurable.measure(constraints)
+                // Both lines move with the scroll, so their distance is the head's height.
+                val top = card[HeadTop]
+                val bottom = card[HeadBottom]
+                val need = if (top == AlignmentLine.Unspecified || bottom == AlignmentLine.Unspecified) 0 else bottom - top + 2 * 16.dp.roundToPx()
+                if (keyboardUp && constraints.hasBoundedHeight && need > constraints.maxHeight) {
+                    layout(0, 0) {}
+                } else {
+                    layout(card.width, card.height) { card.place(0, 0) }
+                }
+            }
+            .semantics { if (announce) paneTitle = title },
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -101,7 +135,7 @@ internal fun BoxScope.HarnessCardSlot(
                             title,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            modifier = Modifier.semantics { if (announce) liveRegion = LiveRegionMode.Polite },
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             FilledTonalButton(
@@ -153,7 +187,7 @@ internal fun BoxScope.HarnessCardSlot(
                     val full = restPart.maxIntrinsicHeight(outer.maxWidth)
                     restPart.measure(loose.copy(minHeight = full, maxHeight = full))
                 }
-                layout(outer.maxWidth, head.height + gap + rest.height) {
+                layout(outer.maxWidth, head.height + gap + rest.height, mapOf(HeadTop to 0, HeadBottom to head.height)) {
                     head.place(0, 0)
                     rest.place(0, head.height + gap)
                 }
@@ -179,6 +213,10 @@ private val MinScrollRegion = 48.dp
 
 /** The card's height while the split fits, as a share of its slot, so the terminal stays in view. */
 private const val CardCap = 0.6f
+
+/** The head's (title and buttons) top and bottom, read by the slot to decide whether the card is placed. */
+private val HeadTop = HorizontalAlignmentLine(::min)
+private val HeadBottom = HorizontalAlignmentLine(::max)
 
 /*
  * Material Symbols `schedule` (outlined), path data copied from
