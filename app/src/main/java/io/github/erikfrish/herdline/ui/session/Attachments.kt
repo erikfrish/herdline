@@ -73,17 +73,17 @@ import kotlinx.coroutines.withContext
 /**
  * Whether the composer offers to attach files: the draft may be edited, its
  * target is an agent whose route carries files and whose instance was read
- * (OMP turns a pasted path into `[Image #N]`; OpenCode takes them as the
- * prompt's files; a staged file is bound to that instance), and the draft
+ * (OMP turns a pasted path into `[Image #N]`; OpenCode and Kilo take them as
+ * the prompt's files; a staged file is bound to that instance), and the draft
  * has room for another.
  */
 internal fun attachOffered(busy: Boolean, target: Connection.ComposerTarget?, count: Int, max: Int): Boolean =
     !busy && target?.instance != null && carriesFiles(target.agent) && count < max
 
-/** The agents a delivery carries staged files to: OMP by its pasted paths, OpenCode as prompt files. */
+/** The agents a delivery carries staged files to: OMP by its pasted paths, OpenCode and Kilo as prompt files. */
 internal fun carriesFiles(agent: String?): Boolean = agent?.lowercase(Locale.ROOT) in FILE_AGENTS
 
-private val FILE_AGENTS = setOf("omp", "opencode")
+private val FILE_AGENTS = setOf("omp", "opencode", "kilo")
 
 /** Why the + menu's attach items are disabled; the first that applies is named. */
 internal enum class AttachBlock { NotConnected, Held, Sending, Rebind, NeedsAgent, Full }

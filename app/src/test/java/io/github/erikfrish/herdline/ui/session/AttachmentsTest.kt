@@ -54,14 +54,17 @@ class AttachmentsTest {
         assertEquals(20L * 1024 * 1024, AttachmentKind.FILE.limitFor("OpenCode"))
         assertEquals(20L * 1024 * 1024, AttachmentKind.IMAGE.limitFor("opencode"))
         assertEquals(64L * 1024 * 1024, AttachmentKind.FILE.limitFor("omp"))
+        // Kilo v7.8.27 caps no data: file part: the native limit holds.
+        assertEquals(64L * 1024 * 1024, AttachmentKind.FILE.limitFor("kilo"))
     }
 
     @Test
-    fun filesAreOfferedOnlyForAnIdleOmpOrOpenCodeWhoseInstanceWasRead() {
+    fun filesAreOfferedOnlyForAnIdleOmpOpenCodeOrKiloWhoseInstanceWasRead() {
         assertTrue(attachOffered(busy = false, omp, count = 0, max = 10))
         assertTrue(attachOffered(busy = false, omp.copy(agent = "OMP"), count = 9, max = 10))
         assertTrue(attachOffered(busy = false, omp.copy(agent = "opencode"), count = 0, max = 10))
-        assertFalse(attachOffered(busy = false, omp.copy(agent = "kilo"), 0, 10))
+        assertTrue(attachOffered(busy = false, omp.copy(agent = "Kilo"), 0, 10))
+        assertFalse(attachOffered(busy = false, omp.copy(agent = "codex"), 0, 10))
         assertFalse(attachOffered(busy = true, omp, 0, 10))
         assertFalse(attachOffered(busy = false, omp.copy(instance = null), 0, 10))
         assertFalse(attachOffered(busy = false, omp.copy(agent = "claude"), 0, 10))

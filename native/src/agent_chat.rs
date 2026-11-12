@@ -56,12 +56,15 @@
 //! been admitted, so a send reads it as [`uncertain`]: kept by the caller,
 //! never sent again.
 //!
-//! OpenCode files: the staged records and their target go on the command's
-//! stdin to `agent_chat/opencode_media.py`, embedded in the control script,
-//! which reads, checks and encodes each one on the host and sends them as
-//! the prompt's `files` in the same process. Any refusal of it refuses the
-//! whole send in words before the prompt: nothing dropped, nothing typed.
-//! At most [`attach::MAX_FILES`], each at most [`attach::OPENCODE_LIMIT`].
+//! OpenCode and Kilo files: the staged records and their target go on the
+//! command's stdin to `agent_chat/opencode_media.py`, embedded in the
+//! control script (`opencode_ctl.py` or `kilo_ctl.py`), which reads, checks
+//! and encodes each one on the host and sends them with the prompt in the
+//! same process (Kilo as data: file parts, never a host path). Any refusal
+//! of it refuses the whole send in words before the prompt: nothing
+//! dropped, nothing typed. At most [`attach::MAX_FILES`], each at most
+//! [`attach::OPENCODE_LIMIT`] for OpenCode and its kind's limit for Kilo,
+//! whose pinned v7.8.27 source caps no data: file part.
 
 use crate::{
     Error, Result, attach, composer,
@@ -168,12 +171,12 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             return Ok(refused(reason).to_string());
         }
         // Codex takes a staged image as its own `localImage` input, so a
-        // photo alone is a message. OpenCode takes any staged file as a
-        // prompt file next to the text, read and sent on the host
-        // ([`control_step`]); a prompt of files alone is not pinned, so
-        // its text stays required.
+        // photo alone is a message. OpenCode and Kilo take any staged file
+        // as a prompt file next to the text, read and sent on the host
+        // ([`control_step`], [`kilo_step`]); a prompt of files alone is not
+        // pinned, so its text stays required.
         let images = engine == Engine::Codex && request.attachments.iter().all(|a| a.kind == attach::Kind::Image);
-        let files = engine == Engine::OpenCode;
+        let files = matches!(engine, Engine::OpenCode | Engine::Kilo);
         if text.trim().is_empty() && !(images && !request.attachments.is_empty()) {
             return Ok(refused(composer::Refusal::EmptyText).to_string());
         }
@@ -190,7 +193,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             if request.attachments.len() > attach::MAX_FILES {
                 return Ok(refused(composer::Refusal::AttachmentTooMany).to_string());
             }
-            if request.attachments.iter().any(|a| a.size > attach::OPENCODE_LIMIT) {
+            if engine == Engine::OpenCode && request.attachments.iter().any(|a| a.size > attach::OPENCODE_LIMIT) {
                 return Ok(refused(composer::Refusal::AttachmentTooLarge).to_string());
             }
         }
@@ -205,7 +208,12 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     let mut media = None;
     let step = match engine {
         Engine::Codex => codex_step(&request, &text),
-        Engine::Kilo if !control => kilo_step(&request, &text),
+        Engine::Kilo if !control => {
+            if request.op == Op::Send && !request.attachments.is_empty() {
+                media = Some(media_input(&request)?);
+            }
+            kilo_step(&request, &text, media.is_some())
+        }
         Engine::OpenCode | Engine::Kilo => {
             let message = format!("msg_{}", request.id);
             let (op, payload) = match request.op {
@@ -507,7 +515,10 @@ HERDLINE_CODEX_CTL"#,
 /// Kilo's v1 server script for a send, a status check, the state or the
 /// children of this exact session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
 /// `control_reply`'s: the same discovery rule and the same boundary.
-fn kilo_step(request: &Request, text: &str) -> String {
+///
+/// With `media`, as in [`control_step`]: `opencode_media.py` in the same
+/// namespace, [`media_input`] on fd 3.
+fn kilo_step(request: &Request, text: &str, media: bool) -> String {
     let message = format!("msg_{}", request.id);
     let (op, payload) = match request.op {
         Op::Send => ("send", json!({"id": message, "text": text}).to_string()),
@@ -516,8 +527,13 @@ fn kilo_step(request: &Request, text: &str) -> String {
         Op::Children => ("children", String::from("{}")),
         _ => unreachable!("answered as unsupported or served by control_step"),
     };
+    let (helper, fd) = if media {
+        (concat!(include_str!("agent_chat/opencode_media.py"), "\n"), " media 3<&0")
+    } else {
+        ("", "")
+    };
     format!(
-        "python3 - {op} {} {} <<'HERDLINE_KILO_CTL'\n{}\nHERDLINE_KILO_CTL",
+        "python3 - {op} {} {}{fd} <<'HERDLINE_KILO_CTL'\n{helper}{}\nHERDLINE_KILO_CTL",
         shell_quote(&request.instance.path),
         shell_quote(&payload),
         include_str!("agent_chat/kilo_ctl.py"),

@@ -1,12 +1,13 @@
-"""OpenCode 2.2.7 (fedc6f20) PromptInput files from Herdline staging only.
+"""Prompt files from Herdline staging only, for OpenCode or Kilo.
 
-Wire: packages/schema/src/prompt-input.ts:9-18 {uri, source?, name?};
-packages/core/src/session/prompt.ts:97-151 materializes a data URI and
-:240-260 requires canonical base64; MAX_ATTACHMENT_BYTES is 20 MiB.
-This is not Kilo v1's {type, mime, filename, url} format.
+OpenCode 2.2.7 (fedc6f20) wire: packages/schema/src/prompt-input.ts:9-18
+{uri, source?, name?}; packages/core/src/session/prompt.ts:97-151 materializes
+a data URI and :240-260 requires canonical base64; MAX_ATTACHMENT_BYTES is
+20 MiB. Kilo v1 takes {type, mime, filename, url}: kilo_ctl.py turns these
+same verified data URIs into that shape, under the native limits it names.
 
-Integration: embed this module in opencode_ctl.py's host command and call
-prepare(staged_records, bound_target). The native caller checks the same
+Integration: embed this module in opencode_ctl.py's or kilo_ctl.py's host
+command and call prepare(staged_records, bound_target). The native caller checks the same
 pane/session identity before this and again before sending. The full existing
 Attachment records must travel with the request; paths alone do not authorize
 media. Returned bytes are verified snapshots, not file URIs the server could
@@ -69,7 +70,7 @@ def _private(node, directory=False):
         raise MediaRefusal('attachment_target')
 
 
-def _bytes(record, root):
+def _bytes(record, root, limit):
     path, name = record.get('path'), record.get('name')
     if not isinstance(path, str) or not isinstance(name, str) or not NAME.fullmatch(name):
         raise MediaRefusal('attachment_target')
@@ -90,12 +91,12 @@ def _bytes(record, root):
         size = record.get('size')
         if type(size) is not int or size < 0 or before.st_size != size:
             raise MediaRefusal('attachment_missing')
-        if size > MAX_BYTES:
+        if size > limit:
             raise MediaRefusal('too_large')
         digest = record.get('sha256')
         if not isinstance(digest, str) or not SHA.fullmatch(digest):
             raise MediaRefusal('attachment_target')
-        data = handle.read(MAX_BYTES + 1)
+        data = handle.read(limit + 1)
         after = os.fstat(handle.fileno())
         if len(data) != size or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
             raise MediaRefusal('attachment_missing')
@@ -123,20 +124,22 @@ def _mime(data, record):
     return mime or mimetypes.guess_type(record['name'], strict=True)[0] or 'application/octet-stream'
 
 
-def prepare(staged_records, bound_target, home=None):
+def prepare(staged_records, bound_target, home=None, agent='opencode', limits=None):
     """Return complete PromptInput.files, or raise MediaRefusal before sending.
 
     bound_target is {node, session, boot, pane, instance}; instance is the exact
-    existing TranscriptIdentity, with agent opencode. HOME is the exec shell's
+    existing TranscriptIdentity, with this `agent`. HOME is the exec shell's
     own, never the agent process's environment. `home` lets the integration
-    supply that same verified shell root explicitly.
+    supply that same verified shell root explicitly. `limits` is the most
+    bytes per kind; OpenCode's own cap holds for both kinds by default.
     """
+    limits = limits or {'image': MAX_BYTES, 'file': MAX_BYTES}
     if not isinstance(staged_records, list) or len(staged_records) > MAX_FILES:
         raise MediaRefusal('too_large')
     if not isinstance(bound_target, dict) or any(key not in bound_target for key in BOUND_KEYS):
         raise MediaRefusal('attachment_target')
     instance = bound_target['instance']
-    if not isinstance(instance, dict) or instance.get('agent') != 'opencode':
+    if not isinstance(instance, dict) or instance.get('agent') != agent:
         raise MediaRefusal('attachment_needs_agent')
     if not staged_records:
         return []
@@ -159,7 +162,7 @@ def prepare(staged_records, bound_target, home=None):
                 raise MediaRefusal('attachment_target')
             if record.get('kind') not in ('image', 'file'):
                 raise MediaRefusal('unsupported_type')
-            data = _bytes(record, root)
+            data = _bytes(record, root, limits[record['kind']])
             mime = _mime(data, record)
             parts.append({'uri': 'data:' + mime + ';base64,' + base64.b64encode(data).decode('ascii'),
                           'name': record['name'], 'source': {'type': 'inline'}})

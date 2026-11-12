@@ -1,5 +1,7 @@
 """Consumer transport proof: kilo_ctl.py against an isolated HTTP server
 shaped as Kilo v7.8.27's v1 routes (see kilo_ctl.py for each file:line)."""
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -38,18 +40,71 @@ class Daemon(unittest.TestCase):
 
 class Send(Daemon):
     # session.ts:361 prompt_async; schema/src/v1/session.ts:442-466 parts.
-    def test_an_idle_session_takes_text_and_host_files_as_parts(self):
+    def test_an_idle_session_takes_text_and_never_a_path_from_the_payload(self):
         home, server = self.serve({
             ('GET', '/session/status' + QUERY): (200, {'ses_other': {'type': 'busy'}}),
             ('POST', '/session/ses_test/prompt_async'): (204, None),
         })
-        sent = {'id': 'msg_one', 'text': 'look', 'files': [{'path': '/tmp/up/a b.png', 'mime': 'image/png', 'filename': 'a b.png'}]}
+        # A path in the payload authorizes nothing: only fd 3's staged records do.
+        sent = {'id': 'msg_one', 'text': 'look', 'files': [{'path': '/etc/passwd', 'mime': 'text/plain'}]}
         self.assertEqual(run(home, 'send', json.dumps(sent)), 'queued')
         self.assertEqual(self.posts(server), [('POST', '/session/ses_test/prompt_async', {'messageID': 'msg_one', 'parts': [
             {'type': 'text', 'text': 'look'},
-            {'type': 'file', 'mime': 'image/png', 'url': 'file:///tmp/up/a%20b.png', 'filename': 'a b.png'},
         ]})])
         self.assertEqual(server.seen[-1][3], 'Basic a2lsbzp0ZXN0LW9ubHk=')
+
+    def test_staged_files_go_as_data_parts_or_the_whole_send_is_refused(self):
+        # As agent_chat.rs kilo_step composes it: the media helper, then
+        # this script, with {records, target} on fd 3.
+        source = SCRIPT.with_name('opencode_media.py').read_text() + '\n' + SCRIPT.read_text()
+        home, server = self.serve({
+            ('GET', '/session/status' + QUERY): (200, {}),
+            ('POST', '/session/ses_test/prompt_async'): (204, None),
+        })
+        folder = Path(home) / '.cache/herdline/attachments/ABCDEFGHIJ'
+        folder.mkdir(parents=True)
+        folder.parent.chmod(0o700)
+        folder.chmod(0o700)
+        png = b'\x89PNG\r\n\x1a\nfixture-pixels'
+        staged = folder / 'shot.png'
+        staged.write_bytes(png)
+        staged.chmod(0o600)
+        instance = {'pane_id': 'w1:p1', 'terminal_id': 't1', 'pid': os.getpid(), 'path': 'ses_test',
+                    'agent': 'kilo', 'source': 'herdr:kilo', 'kind': 'id'}
+        target = {'node': 'n', 'session': 'qa', 'boot': 'b1', 'pane': 'w1:p1', 'instance': instance}
+        record = {**target, 'kind': 'image', 'name': 'shot.png', 'path': str(staged), 'size': len(png),
+                  'sha256': hashlib.sha256(png).hexdigest()}
+        script = Path(home) / 'ctl.py'
+        script.write_text(source)
+
+        def send(records, bound=target):
+            body = json.dumps({'id': 'msg_one', 'text': 'look'})
+            return subprocess.check_output(
+                ['/bin/sh', '-c', '"$0" -B - send ses_test "$1" media 3<&0 < "$2"', sys.executable, body, str(script)],
+                input=json.dumps({'records': records, 'target': bound}), env={'HOME': home, 'PATH': '/usr/bin:/bin'},
+                text=True, timeout=10).strip()
+
+        self.assertEqual(send([record]), 'queued')
+        # The session and its idleness are asked again after the files are read.
+        self.assertEqual([(m, p) for m, p, _, _ in server.seen],
+                         [SESSION, ('GET', '/session/status' + QUERY), SESSION, ('GET', '/session/status' + QUERY),
+                          ('POST', '/session/ses_test/prompt_async')])
+        image = {'type': 'file', 'mime': 'image/png', 'filename': 'shot.png',
+                 'url': 'data:image/png;base64,' + base64.b64encode(png).decode()}
+        self.assertEqual(server.seen[-1][2]['parts'], [{'type': 'text', 'text': 'look'}, image])
+        # Kilo's synchronous 400 for an attachment refuses the whole send in words.
+        server.routes[('POST', '/session/ses_test/prompt_async')] = (400, {'_tag': 'InvalidRequestError', 'message': 'x', 'kind': 'attachment'})
+        self.assertEqual(send([record]), 'media\tunsupported_type')
+        server.routes[('POST', '/session/ses_test/prompt_async')] = (204, None)
+        server.seen.clear()
+        # A record for another pane, a target that is not Kilo, a file
+        # changed since staging: no prompt at all.
+        self.assertEqual(send([{**record, 'pane': 'w1:p2'}]), 'media\tattachment_target')
+        self.assertEqual(send([{**record, 'instance': {**instance, 'agent': 'opencode'}}],
+                              {**target, 'instance': {**instance, 'agent': 'opencode'}}), 'media\tattachment_needs_agent')
+        staged.write_bytes(b'\x89PNG\r\n\x1a\nother--pixels')
+        self.assertEqual(send([record]), 'media\tattachment_missing')
+        self.assertEqual(self.posts(server), [])
 
     # schema/src/session-status-event.ts:11-47: busy, retry, offline,
     # scheduled are all at work or waiting; only idle starts a turn.
@@ -60,9 +115,9 @@ class Send(Daemon):
                 self.assertEqual(run(home, 'send', json.dumps({'id': 'msg_one', 'text': 'x'})), 'busy')
                 self.assertEqual(self.posts(server), [])
 
-    def test_a_relative_file_an_unshaped_id_or_nothing_to_send_asks_nothing(self):
+    def test_files_without_text_an_unshaped_id_or_nothing_to_send_asks_nothing(self):
         home, server = self.serve({('GET', '/session/status' + QUERY): (200, {})})
-        for sent in ({'id': 'msg_one', 'files': [{'path': 'a.png', 'mime': 'image/png'}]},
+        for sent in ({'id': 'msg_one', 'files': [{'path': '/srv/a.png', 'mime': 'image/png'}]},
                      {'id': 'one', 'text': 'x'},
                      {'id': 'msg_one', 'text': ''}):
             with self.subTest(sent):

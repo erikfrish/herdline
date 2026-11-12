@@ -1,8 +1,11 @@
 """One call to the already-running local Kilo server, v1 routes only.
 
 argv: op (send | status | state | questions | answer | children), session
-id, payload JSON. Prints one line: a word, or a word, a tab and a JSON
-payload. Kilo's Stop and permission dialogs stay in opencode_ctl.py.
+id, payload JSON, and `media` for a send with staged files: then
+opencode_media.py is part of this script and {records, target} come on
+fd 3, as opencode_ctl.py takes them. Prints one line: a word, or a word, a
+tab and a JSON payload. Kilo's Stop and permission dialogs stay in
+opencode_ctl.py.
 
 Discovery is opencode_ctl.py's Kilo rule, and no process environment is
 read: exactly one of $HOME/.local/state/kilo/daemon.json or
@@ -16,10 +19,12 @@ packages/opencode/src/server/routes/instance/httpapi/groups:
   session's own directory routes the instance routes below.
 - POST /session/:id/prompt_async {messageID, parts} -> 204 (session.ts:361);
   a bad attachment or an unknown session is a synchronous 400/404 before
-  anything is admitted (handlers/session.ts:315-324, 354-359). Parts are
+  anything is admitted (handlers/session.ts:315-324, 354-359); for a file
+  that is a data: raster Kilo cannot decode (kilocode/session/attachment.ts
+  precheck, InvalidRequestError kind attachment, errors.ts:3-11). Parts are
   TextPartInput {type: text, text} and FilePartInput {type: file, mime,
-  filename?, url} (schema/src/v1/session.ts:442-466); a file: url is read
-  from the host's disk (session/prompt.ts:1079-1081). messageID starts with
+  filename?, url} (schema/src/v1/session.ts:442-466); files go as data: URLs
+  (session/prompt.ts:1039-1070), never a host path. messageID starts with
   msg (schema/src/v1/session.ts:17-20).
 - GET /session/status?directory= -> {sessionID: {type}} (session.ts:153);
   an absent session is idle (session/status.ts:72); types idle, retry,
@@ -42,11 +47,16 @@ import urllib.parse
 import urllib.request
 
 op, session, payload = sys.argv[1], sys.argv[2], sys.argv[3]
+MEDIA = sys.argv[4:] == ['media']
 LIMIT = 65536
 MAX_QUESTIONS = 5
 MAX_TEXT = 4000
 MAX_CHILDREN = 50
-MAX_FILES = 10
+# Kilo v7.8.27 pins no cap on a data: file part it is sent: a raster is
+# resized by Image.normalize (image/image.ts:172-215), text/plain is decoded
+# whole (session/prompt.ts:1039-1057), anything else is kept as given. The
+# native limits hold (attach::IMAGE_LIMIT, attach::FILE_LIMIT).
+FILE_LIMITS = {'image': 20 * 1024 * 1024, 'file': 64 * 1024 * 1024}
 
 
 class NoServer(Exception):
@@ -137,23 +147,27 @@ def status(base, headers, directory):
     return kind
 
 
-def parts(sent):
-    """The prompt's parts: its text, then each file the host already holds."""
+def parts(sent, files):
+    """The prompt's parts: its text, then each verified staged file as a
+    FilePartInput whose url is its data: URI. Never a host path: a file:
+    url is read by Kilo after the 204 (session/prompt.ts:1079-1081, 1243-1330),
+    behind its own read permission, where a failure is a note, not a refusal."""
     out = []
     if text(sent.get('text')):
         out.append({'type': 'text', 'text': sent['text']})
-    files = sent.get('files', [])
-    if not isinstance(files, list) or len(files) > MAX_FILES:
-        return None
     for file in files:
-        path, mime = file.get('path') if isinstance(file, dict) else None, file.get('mime') if isinstance(file, dict) else None
-        if not isinstance(path, str) or not os.path.isabs(path) or not isinstance(mime, str) or '/' not in mime:
-            return None
-        part = {'type': 'file', 'mime': mime, 'url': 'file://' + urllib.parse.quote(os.path.normpath(path))}
-        if isinstance(file.get('filename'), str):
-            part['filename'] = file['filename']
-        out.append(part)
+        uri = file['uri']
+        out.append({'type': 'file', 'mime': uri[len('data:'):uri.index(';base64,')], 'filename': file['name'], 'url': uri})
     return out or None
+
+
+def refused_attachment(error):
+    """A 400 naming an attachment (InvalidRequestError kind, errors.ts:3-11)."""
+    try:
+        found = json.loads(error.read(LIMIT + 1))
+    except Exception:
+        return False
+    return isinstance(found, dict) and found.get('kind') == 'attachment'
 
 
 def open_questions(base, headers, directory):
@@ -249,12 +263,38 @@ def main():
                 return 'invalid'
         if op == 'send':
             sent = json.loads(payload)
-            message_id, body = sent.get('id'), parts(sent)
-            if not isinstance(message_id, str) or not message_id.startswith('msg') or body is None:
+            message_id = sent.get('id')
+            if not isinstance(message_id, str) or not message_id.startswith('msg') or not text(sent.get('text')):
                 return 'invalid'
             # A prompt starts a turn; a session at work is never sent one here.
             if status(base, headers, directory) != 'idle':
                 return 'busy'
+            files = []
+            if MEDIA:
+                # The staged records and their target, on the command's own
+                # stdin (fd 3): read, checked and encoded here, in the
+                # process that sends them.
+                with os.fdopen(3, 'rb') as handle:
+                    raw = handle.read(LIMIT + 1)
+                if len(raw) > LIMIT:
+                    return 'local'
+                given = json.loads(raw)
+                target = given['target']
+                try:
+                    files = prepare(given['records'], target, agent='kilo', limits=FILE_LIMITS)
+                except MediaRefusal as refusal:
+                    return 'media\t' + refusal.code
+                # Reading the files took time: the session, its idleness and
+                # the agent process are asked again just before the prompt.
+                if directory_of(base, headers) != directory:
+                    return 'local'
+                if status(base, headers, directory) != 'idle':
+                    return 'busy'
+                try:
+                    os.kill(target['instance']['pid'], 0)
+                except ProcessLookupError:
+                    return 'gone'
+            body = parts(sent, files)
         if op not in ('send', 'answer'):
             return 'local'
     except urllib.error.HTTPError as error:
@@ -268,7 +308,10 @@ def main():
             try:
                 call(base, headers, 'POST', path, {'messageID': message_id, 'parts': body}, timeout=30)
             except urllib.error.HTTPError as error:
-                # Refused before anything was admitted (handlers/session.ts:358-359).
+                # Refused before anything was admitted (handlers/session.ts:358-359):
+                # a file Kilo cannot take refuses the whole send, in its words.
+                if error.code == 400 and files and refused_attachment(error):
+                    return 'media\tunsupported_type'
                 if error.code in (400, 404):
                     return 'invalid' if error.code == 400 else 'gone'
                 raise

@@ -260,10 +260,11 @@ private val KNOWN: Map<String, Harness> = (
         // and the session's children (by title, the cut list marked) go to the already-running server
         // (native agent_chat, opencode_ctl.py + opencode_media.py, pinned v2.2.7 fedc6f2); unit tests only.
         routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, NB), queue = true, steer = true),
-        // kilo: text Send, status, state and the session's children (by title) through its v1 server
-        // (kilo_ctl.py, pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer,
-        // queue, withdraw, promote or files.
-        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, NB, V, V, V, NB)),
+        // kilo: text Send with staged files (verified data: file parts, the native per-kind limits), status,
+        // state and the session's children (by title) through its v1 server (kilo_ctl.py + opencode_media.py,
+        // pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer, queue,
+        // withdraw or promote.
+        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, V, V, V, V, NB)),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.

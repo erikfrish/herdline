@@ -86,7 +86,7 @@ The + menu leads with **Attach image** (the system Photo Picker, images
 only) and **Attach file** (`OpenMultipleDocuments`, any type), each with
 its limit as a help line. While the draft can't take files they stay,
 disabled, and the help line names why: not connected, the draft is held or
-sending, the pane must be confirmed again, the pane has no OMP or OpenCode whose
+sending, the pane must be confirmed again, the pane has no OMP, OpenCode or Kilo whose
 instance was read, or the draft already holds its 10 files
 (`attachBlock`; null exactly where files may be attached).
 
@@ -216,6 +216,22 @@ dropping a file or falling back to the pane: `attachment_too_many`,
 `attachment_too_large`, `attachment_unsupported` (an image that is not PNG,
 JPEG, GIF or WebP), `attachment_target`, `attachment_missing`,
 `attachment_needs_agent`.
+
+## Kilo
+
+A Kilo Send (Auto only: Kilo takes no Steer or Queue) carries the draft's
+staged files through the same `opencode_media.py` checks, embedded in
+`kilo_ctl.py`, as v1 FilePartInput `{type: "file", mime, filename, url}` with
+the verified bytes as a `data:` URL (pinned v7.8.27 03a6f07
+`schema/src/v1/session.ts:442-466`, `session/prompt.ts:1039-1070`), never a
+host path: a `file:` URL is read by Kilo after it has answered 204, behind its
+own read permission, where a failure becomes a note in the transcript. Kilo
+pins no size cap on such a part (a raster is resized, text is read whole), so
+the native limits hold: 10 files, images 20 MiB, other files 64 MiB. The
+session, its idleness and the agent process are asked again after the files
+are read. A raster Kilo cannot decode is its synchronous 400 (kind
+`attachment`) and refuses the whole send as `attachment_unsupported`; the
+other refusals are OpenCode's.
 
 ## JNI contract
 
