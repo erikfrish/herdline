@@ -55,33 +55,41 @@ def resolve():
         default = os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent')
         add(os.path.join(default, 'sessions'))
         override = env.get('PI_CODING_AGENT_DIR')
-        if override:
-            add(os.path.join(absolute(override), 'sessions'))
         if agent == 'omp':
             config = env.get('PI_CONFIG_DIR') or '.omp'
-            if os.path.isabs(config):
-                base = absolute(config)
-            else:
-                if any(part in ('.', '..') for part in config.split('/')):
-                    raise ValueError('config')
-                base = absolute(os.path.join(home, config))
+            base = absolute(os.path.join(home, config.lstrip('/')))
             profile = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
             for index, arg in enumerate(argv):
                 if arg == '--': break
                 if arg == '--profile' and index + 1 < len(argv): profile = argv[index + 1]
                 elif arg.startswith('--profile='): profile = arg[len('--profile='):]
-            profile = (profile or '').strip().lower()
-            if profile == 'default': profile = ''
-            if profile and (not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', profile) or profile in ('.', '..')):
-                raise ValueError('profile')
+            def normalize_profile(name):
+                name = (name or '').strip()
+                if name == 'default': return ''
+                if name and (not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', name) or name.endswith('.') or re.match(r'^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$', name, re.I)):
+                    raise ValueError('profile')
+                return name
+            profile = normalize_profile(profile)
+            if not profile and override:
+                try:
+                    inherited = normalize_profile(env.get('PI_PROFILE'))
+                except ValueError:
+                    inherited = ''
+                derived = os.path.join(base, 'profiles', inherited, 'agent') if inherited else None
+                if override == derived:
+                    override = None
             config_root = os.path.join(base, 'profiles', profile) if profile else base
             add(os.path.join(config_root, 'agent', 'sessions'))
             xdg = env.get('XDG_DATA_HOME')
-            if xdg:
+            if xdg and (profile or not override):
                 app = os.path.join(absolute(xdg), 'omp')
                 xdg_root = os.path.join(app, 'profiles', profile) if profile else app
                 if os.path.isdir(xdg_root):
                     add(os.path.join(xdg_root, 'sessions'))
+            if not profile and override:
+                add(os.path.join(absolute(override), 'sessions'))
+        elif override:
+            add(os.path.join(absolute(override), 'sessions'))
         candidates = [value]
     elif agent == 'claude' and kind == 'id':
         add(os.path.join(absolute(env.get('CLAUDE_CONFIG_DIR') or os.path.join(home, '.claude')), 'projects'))

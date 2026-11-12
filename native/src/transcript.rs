@@ -394,8 +394,11 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                 match opencode::page(exec, session, &request.pane, identity, read, reset) {
                     Ok(page) => return Ok(page),
                     Err(error @ Error::NoTranscript) => {
-                        let current = instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
-                        if expect.as_ref() == Some(&current) { return Err(error); }
+                        let current =
+                            instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
+                        if expect.as_ref() == Some(&current) {
+                            return Err(error);
+                        }
                         expect = Some(current);
                         read = Read::Tail;
                         window = FIRST_WINDOW;
@@ -1065,7 +1068,9 @@ fn foreground_pid(process: &Value, name: &str) -> Option<u32> {
 /// Syntax admission only: the host resolves the actual process-configured
 /// session root and checks canonical containment before reading any bytes.
 fn confined(agent: &str, path: &str) -> bool {
-    if !matches!(agent, "omp" | "pi") { return false; }
+    if !matches!(agent, "omp" | "pi") {
+        return false;
+    }
     path.len() <= PATH_LIMIT
         && path.starts_with('/')
         && path.ends_with(".jsonl")

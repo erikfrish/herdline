@@ -794,39 +794,201 @@ fn rfc3339_dates_use_real_calendar_zones_and_fractional_seconds() {
 fn configured_session_roots_are_read_only_when_the_foreground_process_names_them() {
     let id = "11111111-2222-4333-8444-555555555555";
     let cases = [
-        ("omp", "OMP_PROFILE", "work", ".omp/profiles/work/agent/sessions/p/s.jsonl"),
-        ("omp", "PI_CODING_AGENT_DIR", "custom-agent", "custom-agent/sessions/p/s.jsonl"),
-        ("omp", "XDG_DATA_HOME", "data", "data/omp/sessions/p/s.jsonl"),
-        ("pi", "PI_CODING_AGENT_DIR", "pi-state", "pi-state/sessions/p/s.jsonl"),
-        ("claude", "CLAUDE_CONFIG_DIR", "claude-state", "claude-state/projects/p/11111111-2222-4333-8444-555555555555.jsonl"),
-        ("codex", "CODEX_HOME", "codex-state", "codex-state/sessions/rollout-test-11111111-2222-4333-8444-555555555555.jsonl"),
+        (
+            "omp",
+            "OMP_PROFILE",
+            "work",
+            ".omp/profiles/work/agent/sessions/p/s.jsonl",
+        ),
+        (
+            "omp",
+            "PI_CODING_AGENT_DIR",
+            "custom-agent",
+            "custom-agent/sessions/p/s.jsonl",
+        ),
+        (
+            "omp",
+            "XDG_DATA_HOME",
+            "data",
+            "data/omp/sessions/p/s.jsonl",
+        ),
+        (
+            "omp",
+            "PI_CONFIG_DIR",
+            "custom-config",
+            "custom-config/agent/sessions/p/s.jsonl",
+        ),
+        (
+            "pi",
+            "PI_CODING_AGENT_DIR",
+            "pi-state",
+            "pi-state/sessions/p/s.jsonl",
+        ),
+        (
+            "claude",
+            "CLAUDE_CONFIG_DIR",
+            "claude-state",
+            "claude-state/projects/p/11111111-2222-4333-8444-555555555555.jsonl",
+        ),
+        (
+            "codex",
+            "CODEX_HOME",
+            "codex-state",
+            "codex-state/sessions/rollout-test-11111111-2222-4333-8444-555555555555.jsonl",
+        ),
     ];
     for (agent, variable, setting, relative) in cases {
         let host = Host::new("unused");
         let file = host.home.path().join(relative);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(&file, "{\"type\":\"session\",\"id\":\"configured\"}\n").unwrap();
-        let setting = if variable == "OMP_PROFILE" { setting.to_owned() } else { host.home.path().join(setting).to_string_lossy().into_owned() };
-        let child = Command::new("/bin/sh").args(["-c", "read line"]).env("HOME", host.home.path()).env(variable, setting)
-            .stdin(std::process::Stdio::piped()).spawn().unwrap();
+        let setting = if variable == "OMP_PROFILE" || variable == "PI_CONFIG_DIR" {
+            setting.to_owned()
+        } else {
+            host.home
+                .path()
+                .join(setting)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let child = Command::new("/bin/sh")
+            .args(["-c", "read line"])
+            .env_clear()
+            .env("HOME", host.home.path())
+            .env(variable, setting)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         let process = Omp(child);
-        let reference = if agent == "omp" || agent == "pi" { file.to_str().unwrap() } else { id };
+        let reference = if agent == "omp" || agent == "pi" {
+            file.to_str().unwrap()
+        } else {
+            id
+        };
         let mut pane: Value = serde_json::from_str(&pane_json(reference)).unwrap();
         pane["result"]["pane"]["agent"] = agent.into();
         pane["result"]["pane"]["agent_session"] = serde_json::json!({"agent":agent,"source":format!("herdr:{agent}"),"kind":if agent=="omp"||agent=="pi" {"path"} else {"id"},"value":reference});
         fs::write(host.home.path().join("pane.json"), pane.to_string()).unwrap();
-        fs::write(host.home.path().join("proc.json"), PROCESS.replace("omp", agent).replace("\"pid\":42", &format!("\"pid\":{}", process.0.id()))).unwrap();
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS
+                .replace("omp", agent)
+                .replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
+        )
+        .unwrap();
         let (status, bytes) = host.run(tail(reference));
         let reply = parse_reply(status, &bytes).unwrap();
-        assert_eq!(reply.file.unwrap().data, fs::read(&file).unwrap(), "{agent}/{variable}");
+        assert_eq!(
+            reply.file.unwrap().data,
+            fs::read(&file).unwrap(),
+            "{agent}/{variable}"
+        );
         // A valid configured root does not authorize another file under HOME.
         let outside = host.home.path().join("not-an-agent-store/s.jsonl");
         fs::create_dir_all(outside.parent().unwrap()).unwrap();
         fs::write(&outside, "{}\n").unwrap();
-        pane["result"]["pane"]["agent_session"]["value"] = outside.to_string_lossy().into_owned().into();
-        pane["result"]["pane"]["agent_session"]["kind"] = "path".into();
+        let unconfined = if agent == "omp" || agent == "pi" {
+            outside
+        } else {
+            fs::remove_file(&file).unwrap();
+            std::os::unix::fs::symlink(&outside, &file).unwrap();
+            file
+        };
+        let reported = if agent == "omp" || agent == "pi" {
+            unconfined.to_str().unwrap()
+        } else {
+            id
+        };
+        pane["result"]["pane"]["agent_session"]["value"] = reported.into();
         fs::write(host.home.path().join("pane.json"), pane.to_string()).unwrap();
-        let (status, bytes) = host.run(tail(outside.to_str().unwrap()));
-        assert!(matches!(parse_reply(status, &bytes), Err(Error::TranscriptUnconfined)), "{agent}/{variable}");
+        let (status, bytes) = host.run(tail(reported));
+        assert!(
+            matches!(
+                parse_reply(status, &bytes),
+                Err(Error::TranscriptUnconfined)
+            ),
+            "{agent}/{variable}"
+        );
+    }
+}
+
+#[test]
+fn configured_session_roots_do_not_follow_overrides_the_agent_ignores() {
+    let cases: &[(&[&str], &[(&str, &str)], &str, &str)] = &[
+        (
+            &["--profile", "qa", "--profile=work"],
+            &[
+                ("OMP_PROFILE", "other"),
+                ("PI_CODING_AGENT_DIR", "{home}/ignored"),
+            ],
+            ".omp/profiles/work/agent/sessions/p/s.jsonl",
+            "ignored/sessions/p/s.jsonl",
+        ),
+        (
+            &["--profile", "default"],
+            &[
+                ("OMP_PROFILE", "work"),
+                ("PI_CODING_AGENT_DIR", "{home}/custom"),
+                ("XDG_DATA_HOME", "{home}/data"),
+            ],
+            "custom/sessions/p/s.jsonl",
+            "data/omp/sessions/p/s.jsonl",
+        ),
+        (
+            &[],
+            &[
+                ("OMP_PROFILE", ""),
+                ("PI_PROFILE", "work"),
+                ("PI_CODING_AGENT_DIR", "{home}/.omp/profiles/work/agent"),
+            ],
+            ".omp/agent/sessions/p/s.jsonl",
+            ".omp/profiles/work/agent/sessions/p/s.jsonl",
+        ),
+    ];
+    for (args, variables, allowed, refused) in cases {
+        let host = Host::new("unused");
+        let home = host.home.path().to_str().unwrap();
+        let variables: Vec<_> = variables
+            .iter()
+            .map(|(key, value)| (*key, value.replace("{home}", home)))
+            .collect();
+        let child = Command::new("/bin/sh")
+            .args(["-c", "read -r line", "omp"])
+            .args(*args)
+            .env_clear()
+            .env("HOME", home)
+            .envs(variables.iter().map(|(key, value)| (*key, value)))
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let process = Omp(child);
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
+        )
+        .unwrap();
+        for (relative, accepted) in [(*allowed, true), (*refused, false)] {
+            let file = host.home.path().join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, "{\"type\":\"session\",\"id\":\"precedence\"}\n").unwrap();
+            let path = file.to_str().unwrap();
+            fs::write(host.home.path().join("pane.json"), pane_json(path)).unwrap();
+            let (status, bytes) = host.run(tail(path));
+            if accepted {
+                assert_eq!(
+                    parse_reply(status, &bytes).unwrap().file.unwrap().data,
+                    fs::read(&file).unwrap(),
+                    "{relative}"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        parse_reply(status, &bytes),
+                        Err(Error::TranscriptUnconfined)
+                    ),
+                    "{relative}"
+                );
+            }
+        }
     }
 }
