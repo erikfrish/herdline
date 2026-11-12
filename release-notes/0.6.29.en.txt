@@ -1,0 +1,6 @@
+Herdline 0.6.29 — Withdraw gives back exactly what you sent; Android settings always opens
+
+- Withdrawing a queued Steer now puts back exactly the text you sent with it. A photo sent without text comes back as the photo alone, with an empty editor, instead of the placeholder "[Image]". A request sent before this version has no record of its text: its photos come back, and a note says the text could not be restored.
+- Settings › Live Update: where Android has no page for promoted notifications, "Open Android settings" now opens Herdline's notification settings instead of doing nothing. If neither page exists, a message says where to look.
+
+Not yet verified by QA.
