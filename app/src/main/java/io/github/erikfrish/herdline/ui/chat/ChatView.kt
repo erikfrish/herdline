@@ -225,7 +225,8 @@ private val SERVER_AGENTS = setOf("opencode", "kilo")
  * OpenCode or Kilo server (Connection.ingressNeedsServer). Unknown until it
  * answers and after a failed probe. Asked again whenever the link, the boot,
  * the pane's agent or its instance changes, never polled. When Chat has not
- * read the pane yet, one history read names the instance first.
+ * read the pane yet, one history read names the instance first. Grok's
+ * ambiguous-session refusal, once a read returned it, is said on the card.
  */
 @Composable
 fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: String?): HarnessRuntime {
@@ -247,7 +248,8 @@ fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: Str
         value = withContext(Dispatchers.IO) { connection.ingressNeedsServer(target) }
             .fold({ missing -> if (missing) ServerProbe.Missing else ServerProbe.Present }, { ServerProbe.Unknown })
     }
-    return HarnessRuntime(server = probe)
+    // The same typed refusal Chat words as ambiguous (ChatRefusal.refusalWords): the card says it too.
+    return HarnessRuntime(server = probe, ambiguousSession = ambiguousSession(pane?.let { memory.of(it).read.refusal }))
 }
 
 internal class ChatKept {

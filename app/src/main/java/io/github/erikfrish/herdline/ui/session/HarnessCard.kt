@@ -335,7 +335,6 @@ internal fun reasonText(cell: Cell.NotYet): String {
         Reason.InputUnproved -> R.string.harness_reason_input_unproved
         Reason.AmbiguousSession -> R.string.harness_reason_ambiguous_session
         Reason.ServerUnattachable -> R.string.harness_reason_server_unattachable
-        Reason.LocalUnread -> R.string.harness_reason_local_unread
     }
     return if (cell.subject != null) stringResource(id, cell.subject) else stringResource(id)
 }

@@ -180,6 +180,34 @@ fn a_gemini_pane_is_named_only_by_its_binding_never_by_a_reported_ref() {
     assert_eq!((identity.agent.as_str(), identity.path.as_str(), identity.pid, status.as_str()), ("gemini", id, Some(42), "blocked"));
 }
 
+#[test]
+fn a_letta_pane_is_named_only_by_herdrs_letta_ref_beside_its_one_foreground_letta() {
+    let mut pane: Value = serde_json::from_str(&pane_json("x")).unwrap();
+    pane["result"]["pane"]["agent"] = "letta".into();
+    pane["result"]["pane"]["agent_session"] =
+        serde_json::json!({"agent": "letta", "kind": "id", "source": "herdr:letta", "value": "agent-1:conv-2"});
+    let letta = |pids: &[u64]| {
+        let list: Vec<Value> = pids.iter().map(|pid| serde_json::json!({"name": "letta", "pid": pid})).collect();
+        serde_json::json!({"result": {"process_info": {"foreground_processes": list}}})
+    };
+    let (identity, status) = identity(&pane, &letta(&[42])).unwrap();
+    assert_eq!(
+        (identity.agent.as_str(), identity.path.as_str(), identity.pid, identity.source.as_str(), status.as_str()),
+        ("letta", "agent-1:conv-2", Some(42), "herdr:letta", "blocked")
+    );
+    // No letta in the foreground, or two: none is guessed.
+    let omp: Value = serde_json::from_str(PROCESS).unwrap();
+    assert!(matches!(identity_of(&pane, &omp), Err(Error::NoTranscript)));
+    assert!(matches!(identity_of(&pane, &letta(&[42, 43])), Err(Error::NoTranscript)));
+    // A ref Herdr did not give as its own Letta id is refused in words.
+    pane["result"]["pane"]["agent_session"]["source"] = "hook".into();
+    assert!(matches!(identity_of(&pane, &letta(&[42])), Err(Error::UnsupportedFormat("letta_local_format"))));
+}
+
+fn identity_of(pane: &Value, process: &Value) -> Result<Identity> {
+    identity(pane, process).map(|(identity, _)| identity)
+}
+
 /// Reads `bytes[start..start + len]` of `content` like the host does.
 fn file(content: &[u8], start: u64, len: u64) -> File<'_> {
     let from = usize::try_from(start).unwrap().min(content.len());

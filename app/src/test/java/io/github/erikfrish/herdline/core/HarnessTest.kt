@@ -72,4 +72,23 @@ class HarnessTest {
             }
         }
     }
+
+    @Test
+    fun letta_offers_its_read_only_history_and_names_why_nothing_else() {
+        val letta = Harness.of("Letta")
+        assertTrue(letta.chat)
+        assertEquals(SendRoute.None, letta.send)
+        val read = setOf(HarnessKey.History, HarnessKey.Live, HarnessKey.Tools)
+        val attach = setOf(HarnessKey.Send, HarnessKey.Stop, HarnessKey.SteerQueue, HarnessKey.Questions)
+        for (key in HarnessKey.entries) {
+            val expected = when (key) {
+                in read -> Cell.Unverified()
+                in attach -> Cell.NotYet(Reason.ServerUnattachable, "Letta")
+                HarnessKey.Media -> Cell.NotYet(Reason.SendMedia)
+                HarnessKey.Status -> Cell.NotYet(Reason.ScreenStatus)
+                else -> Cell.NotYet(Reason.NotBuilt)
+            }
+            assertEquals("letta $key", expected, letta.cell(key))
+        }
+    }
 }

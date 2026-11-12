@@ -136,7 +136,7 @@ sealed interface Cell {
 enum class Reason {
     NotBuilt, NoSource, NoRef, Closed, NoControl, Lock, FormatUnpinned,
     SendMedia, ScreenStatus, NeedsHook, NeedsServer, StaleId, Rewind, NoSessionYet, UnknownProgram, NoLiveAttach, CloudAuth,
-    BlindKey, NoSocket, InputUnproved, AmbiguousSession, ServerUnattachable, LocalUnread,
+    BlindKey, NoSocket, InputUnproved, AmbiguousSession, ServerUnattachable,
 }
 
 /** The missing half of an Unverified two-verb cell (card §2.4, `harness_note_*`). */
@@ -272,10 +272,10 @@ private val KNOWN: Map<String, Harness> = (
             val attach = no(Reason.NoLiveAttach, "Droid")
             unread("droid", card(cloud, cloud, attach, attach, attach, cloud, cloud, attach, SS, cloud, cloud))
         },
-        // letta: no codec for its local history yet, no safe attach to its server mode (card §8, letta-code 5eb817d6).
-        no(Reason.LocalUnread, "Letta").let { local ->
-            val attach = no(Reason.ServerUnattachable, "Letta")
-            unread("letta", card(local, local, attach, attach, attach, local, local, attach, SS, local, local))
+        // letta: its exact local conversation, read only (native transcript/letta, letta-code 0.34.54
+        // 5eb817d6); fixtures only. No safe attach to its server mode (card §8); no media fetch (SM).
+        no(Reason.ServerUnattachable, "Letta").let { attach ->
+            routed("letta", SendRoute.None, card(V, V, attach, attach, attach, V, SM, attach, SS, NB, NB), readOnlyHistory = true)
         },
     ) +
         listOf("cline", "maki", "muse").map { unread(it, sessionless(no(Reason.NoRef), stop = NB, steer = NB)) } +

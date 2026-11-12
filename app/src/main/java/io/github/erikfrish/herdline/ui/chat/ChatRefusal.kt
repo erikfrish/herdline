@@ -25,7 +25,7 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
         "mastracode_store_outside_home", "kimi_store_outside_home" ->
             RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
         // Not a form Chat can't read: the store holds no one session Chat can stand behind.
-        "grok_session_ambiguous" -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
+        GROK_SESSION_AMBIGUOUS -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
         "copilot_session_mismatch" -> RefusalWords(R.string.chat_refused_mismatch, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
@@ -36,6 +36,13 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
 }
+
+/** Grok's store holds no one session Chat can stand behind: Chat refuses, and the card says so. */
+private const val GROK_SESSION_AMBIGUOUS = "grok_session_ambiguous"
+
+/** Whether [refusal] is the one [refusalWords] words as an ambiguous session. */
+internal fun ambiguousSession(refusal: TranscriptRefusal?): Boolean =
+    (refusal as? TranscriptRefusal.UnsupportedFormat)?.format == GROK_SESSION_AMBIGUOUS
 
 /**
  * What Chat says for a typed refusal, used whole in place of

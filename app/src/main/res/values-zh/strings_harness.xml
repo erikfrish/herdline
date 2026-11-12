@@ -62,5 +62,4 @@
     <string name="harness_reason_input_unproved">尚未证实可以安全地向 %1$s 输入。</string>
     <string name="harness_reason_ambiguous_session">无法确定哪个 %1$s 会话属于此窗格。</string>
     <string name="harness_reason_server_unattachable">%1$s 的默认 TUI 没有控制通道，Herdline 也无法找到或安全连接其独立的服务器模式。</string>
-    <string name="harness_reason_local_unread">Herdline 尚不读取 %1$s 的本地历史记录，其云端历史记录需要 Herdline 没有的账号登录。</string>
 </resources>

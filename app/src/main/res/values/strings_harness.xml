@@ -68,5 +68,4 @@
     <string name="harness_reason_input_unproved">Safe input into %1$s isn\'t proven yet.</string>
     <string name="harness_reason_ambiguous_session">Can\'t tell which %1$s session belongs to this pane.</string>
     <string name="harness_reason_server_unattachable">%1$s\'s default TUI has no control channel, and Herdline can\'t find or safely attach to its separate server mode.</string>
-    <string name="harness_reason_local_unread">Herdline doesn\'t read %1$s\'s local history yet, and its cloud history needs an account sign-in Herdline doesn\'t have.</string>
 </resources>
