@@ -1182,12 +1182,21 @@ fn another_home_or_a_file_outside_home_is_refused_as_outside_home() {
         Err(Error::SessionRootOutsideHome)
     ));
     // A session file that links out of HOME, with no process environment.
+    // Herdr must name the link itself (another value is a changed session,
+    // unconfined), and no foreground PID means no host process is read.
     let host = Host::new("unused");
     let secret = elsewhere.path().join("secret.jsonl");
     fs::write(&secret, "{}\n").unwrap();
     let link = host.sessions().join("evil.jsonl");
     std::os::unix::fs::symlink(&secret, &link).unwrap();
-    let (status, out) = host.run(tail(link.to_str().unwrap()));
+    let link = link.to_str().unwrap();
+    fs::write(host.home.path().join("pane.json"), pane_json(link)).unwrap();
+    fs::write(
+        host.home.path().join("proc.json"),
+        PROCESS.replace(r#"{"name":"omp","pid":42}"#, ""),
+    )
+    .unwrap();
+    let (status, out) = host.run(tail(link));
     assert!(matches!(parse_reply(status, &out), Err(Error::SessionRootOutsideHome)));
 }
 
