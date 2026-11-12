@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_rejected_fallback_text">%1$s 拒绝了本设备的密钥。请输入一次密码，或把公钥加入主机上的 ~/.ssh/authorized_keys。</string>
+</resources>

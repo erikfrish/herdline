@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="key_rejected_fallback_text">%1$s rejected this phone\'s key. Enter the password to sign in instead.</string>
-</resources>
