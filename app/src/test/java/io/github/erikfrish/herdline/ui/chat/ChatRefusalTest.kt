@@ -3,7 +3,6 @@ package io.github.erikfrish.herdline.ui.chat
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ChatRefusalTest {
@@ -26,7 +25,10 @@ class ChatRefusalTest {
     }
 
     @Test
-    fun another_agents_version_refusal_falls_back_to_the_general_text() {
-        assertNull(refusalWords(TranscriptRefusal.UnsupportedVersion("qwen", 2, 1), "Qwen Code"))
+    fun another_agents_version_refusal_says_the_general_refusal_never_a_switch_back() {
+        assertEquals(
+            RefusalWords(R.string.chat_refused_general, listOf("Qwen Code")),
+            refusalWords(TranscriptRefusal.UnsupportedVersion("qwen", 2, 1), "Qwen Code"),
+        )
     }
 }
