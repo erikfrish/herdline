@@ -57,4 +57,15 @@ class ChatRecheckTest {
         assertFalse(tapAnswered(tap = false, pending = tap, pane = "w1:p3", tab = "w1:t1"))
         assertFalse(tapAnswered(tap = false, pending = tap, pane = "w1:p2", tab = "w1:t2"))
     }
+
+    @Test
+    fun a_switch_away_ends_a_pending_tap_and_staying_keeps_it() {
+        val tap = PendingChatTap("w1:p2", "w1:t1")
+        assertEquals(tap, pendingAfterSwitch(tap, "w1:p2", "w1:t1"))
+        assertEquals(null, pendingAfterSwitch(tap, "w1:p2", "w1:t2"))
+        assertEquals(null, pendingAfterSwitch(tap, "w1:p3", "w1:t1"))
+        // Away and back: gone, so a later good re-check there never switches for it.
+        val back = pendingAfterSwitch(pendingAfterSwitch(tap, "w1:p2", "w1:t2"), "w1:p2", "w1:t1")
+        assertFalse(switchesToChat(back, "w1:p2", "w1:t1"))
+    }
 }

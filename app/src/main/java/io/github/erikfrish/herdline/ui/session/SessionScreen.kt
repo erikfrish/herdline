@@ -571,6 +571,8 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
+    // FOBS1-R2: a Chat tap never outlives the pane and tab it was made on.
+    LaunchedEffect(chatPane, tab?.id) { pendingChatTap = pendingAfterSwitch(pendingChatTap, chatPane, tab?.id) }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
