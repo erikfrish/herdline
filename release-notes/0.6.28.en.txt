@@ -1,0 +1,9 @@
+Herdline 0.6.28 — Answer OpenCode and Kilo permissions, stop their turns, no reads of agent processes
+
+- OpenCode and Kilo: when the agent asks for a permission, Chat shows the request and you can choose Allow once, Always allow or Reject. While it works, Stop ends the turn. This needs the agent's own server already running on the host (a Kilo daemon, or OpenCode's service); a bare terminal session has none, and Chat says so.
+- Finding transcripts and sessions no longer reads the agent's environment, command line or working directory on the host. Herdline uses what Herdr reports, your own shell's settings and the default folders. An agent started with its own custom folder is not guessed at: Chat says it cannot find the session.
+- On a direct Chat line, the Steer notice now says what Steer does there: it queues your text and images for the running agent.
+- Notifications: on Android 16, Herdline now reports whether the live update may be promoted from Android 16.0 on, not only from 16.1. The request itself is unchanged.
+- Extra keys: keys you add wrap above the grid and never scroll. Tabs: the New tab button has a visible outline.
+
+Not yet verified by QA.
