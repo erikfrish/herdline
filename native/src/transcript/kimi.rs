@@ -22,10 +22,38 @@ const AMBIGUOUS: &str = "kimi_session_ambiguous";
 const UNREADABLE: &str = "kimi_store_unreadable";
 const TOO_LARGE: &str = "kimi_session_too_large";
 const VERSION: &str = "kimi_wire_version";
-/// The pane's foreground process is not named `kimi` (a `node` launch, say),
-/// so there is no process whose environment and directory bind the store.
+/// The pane's foreground process is none [`foreground_pid`] accepts, so
+/// there is no process whose environment and directory bind the store.
 const UNNAMED: &str = "kimi_process_unnamed";
 const REFUSALS: [&str; 6] = [OUTSIDE_HOME, AMBIGUOUS, UNREADABLE, TOO_LARGE, VERSION, UNNAMED];
+
+/// Herdr's name is the process's comm (herdr platform/linux.rs:385-387), and
+/// Kimi Code sets `process.title = 'kimi-code'` first thing (cli/main.ts:181,
+/// constant/app.ts:7), so a running Kimi reads `kimi-code`; Herdr knows it as
+/// `kimi` or `kimi-code` (detect/mod.rs:213).
+const PROCESS_NAMES: [&str; 2] = ["kimi", "kimi-code"];
+/// The npm package's entry, as Herdr matches a `node` launch (detect/mod.rs:723-731).
+const NODE_ENTRY: [&str; 5] = ["node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"];
+
+/// The pane's Kimi Code process: the first foreground process named
+/// [`PROCESS_NAMES`], else the first `node` whose script (its first argument
+/// after argv\[0\] that is no option) ends in [`NODE_ENTRY`], ASCII case
+/// folded as Herdr compares. The host script's `identity()` picks the same.
+pub(super) fn foreground_pid(process: &Value) -> Option<u32> {
+    let all = process["result"]["process_info"]["foreground_processes"].as_array()?;
+    let pid = |process: &Value| process["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok());
+    let named = all.iter().find(|process| PROCESS_NAMES.iter().any(|name| process["name"] == *name));
+    named.and_then(pid).or_else(|| all.iter().find(|process| process["name"] == "node" && node_entry(&process["argv"])).and_then(pid))
+}
+
+fn node_entry(argv: &Value) -> bool {
+    let Some(script) = argv.as_array().and_then(|argv| argv.iter().skip(1).filter_map(Value::as_str).find(|arg| !arg.starts_with('-'))) else {
+        return false;
+    };
+    let parts: Vec<&str> = script.split(['/', '\\']).filter(|part| !part.is_empty()).collect();
+    parts.len() >= NODE_ENTRY.len()
+        && parts[parts.len() - NODE_ENTRY.len()..].iter().zip(NODE_ENTRY).all(|(part, entry)| part.eq_ignore_ascii_case(entry))
+}
 
 /// The protocol this reader is pinned to (migration.ts:19-20).
 const WIRE: &str = "1.5";
@@ -1131,6 +1159,23 @@ SID=re.compile(r'session_[A-Za-z0-9._-]{1,500}')
 
 class Refused(Exception): pass
 
+# Herdr's name is the process's comm (platform/linux.rs:385-387). Kimi Code
+# sets process.title to kimi-code first thing (cli/main.ts:181,
+# constant/app.ts:7), so comm reads kimi-code once main() runs; Herdr knows
+# it as kimi or kimi-code (detect/mod.rs:213), or as node running the npm
+# package's entry (:723-731). Anything else is refused.
+NAMES=('kimi','kimi-code')
+ENTRY=(b'node_modules',b'@moonshot-ai',b'kimi-code',b'dist',b'main.mjs')
+
+# kimi.rs foreground_pid: the first argument after argv[0] that is no option,
+# its last five path parts, ASCII case folded as Herdr compares them.
+def node_kimi(argv):
+    if not isinstance(argv,list): return False
+    script=next((a for a in argv[1:] if isinstance(a,str) and not a.startswith('-')),None)
+    if script is None: return False
+    parts=[part.encode('utf-8','surrogatepass').lower() for part in re.split(r'[/\\]',script) if part]
+    return tuple(parts[-len(ENTRY):])==ENTRY
+
 def identity():
     result=subprocess.run(['/bin/sh','-c',report],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=20)
     raw=result.stdout
@@ -1140,7 +1185,8 @@ def identity():
     try: process=json.loads(proc).get('result',{}).get('process_info',{})
     except ValueError: process={}
     ref=pane['agent_session']
-    pid=next((p.get('pid') for p in process.get('foreground_processes',[]) if p.get('name')=='kimi'),None)
+    fg=process.get('foreground_processes',[])
+    pid=next((p.get('pid') for p in fg if p.get('name') in NAMES),None) or next((p.get('pid') for p in fg if p.get('name')=='node' and node_kimi(p.get('argv'))),None)
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:kimi'),'kind':ref['kind']}
     return got,pane.get('agent_status','unknown')
 
@@ -1228,8 +1274,8 @@ def read_all(fd,size):
     return b''.join(chunks)
 
 # session-store.ts:324-338 readState (state.json, then the legacy
-# session-meta/state.json) and sessionMetadataService.ts:311-326: cwd, else
-# the legacy workDir.
+# session-meta/state.json) and sessionMetadataService.ts:317-320: cwd ??
+# workDir, so only a missing or null cwd falls back.
 def bound_cwd(sdir):
     for path in (os.path.join(sdir,'state.json'),os.path.join(sdir,'session-meta','state.json')):
         try: fd,st=regular(path,1048576)
@@ -1239,8 +1285,8 @@ def bound_cwd(sdir):
         try: state=json.loads(raw)
         except ValueError: continue
         if not isinstance(state,dict): continue
-        for key in ('cwd','workDir'):
-            if isinstance(state.get(key),str) and state[key]: return state[key]
+        value=state['cwd'] if state.get('cwd') is not None else state.get('workDir')
+        if isinstance(value,str) and value: return value
         break
     raise Refused('kimi_store_unreadable')
 

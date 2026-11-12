@@ -220,8 +220,8 @@ fn a_newer_protocol_it_may_read_counts_unknown_records_in_one_row() {
 
 struct Host {
     home: tempfile::TempDir,
-    /// What the pane's foreground process is named.
-    process: &'static str,
+    /// Herdr's process-info report for the pane.
+    process: Value,
 }
 
 impl Host {
@@ -229,10 +229,15 @@ impl Host {
         Self::with(sid, "kimi")
     }
 
-    /// A pane whose Herdr report names Kimi on `sid` with `process` in the
-    /// foreground, an environment file read instead of `/proc` and a working
-    /// directory link to `$HOME/work`.
-    fn with(sid: &str, process: &'static str) -> Self {
+    /// A pane whose Herdr report names Kimi on `sid` with a process named
+    /// `name` in the foreground, an environment file read instead of `/proc`
+    /// and a working directory link to `$HOME/work`.
+    fn with(sid: &str, name: &str) -> Self {
+        Self::running(sid, json!({"name": name, "pid": 42}))
+    }
+
+    /// As [`Host::with`], with `process` as the one foreground process.
+    fn running(sid: &str, process: Value) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
         fs::create_dir_all(&bin).unwrap();
@@ -245,11 +250,8 @@ impl Host {
             "terminal_id": "term_1",
         }, "type": "pane_info"}});
         fs::write(home.path().join("pane.json"), pane.to_string()).unwrap();
-        fs::write(
-            home.path().join("proc.json"),
-            format!(r#"{{"result":{{"process_info":{{"foreground_processes":[{{"name":"{process}","pid":42}}],"pane_id":"w1:p1","shell_pid":7}}}}}}"#),
-        )
-        .unwrap();
+        let process = json!({"result": {"process_info": {"foreground_processes": [process], "pane_id": "w1:p1", "shell_pid": 7}}});
+        fs::write(home.path().join("proc.json"), process.to_string()).unwrap();
         let herdr = bin.join("herdr");
         fs::write(
             &herdr,
@@ -293,7 +295,7 @@ impl Host {
         Identity {
             pane_id: "w1:p1".into(),
             terminal_id: "term_1".into(),
-            pid: (self.process == "kimi").then_some(42),
+            pid: foreground_pid(&self.process),
             path: sid.into(),
             agent: "kimi".into(),
             source: "herdr:kimi".into(),
@@ -413,9 +415,54 @@ fn an_id_kimi_would_not_look_up_is_no_transcript() {
     assert!(session_id(SID));
 }
 
+/// Kimi Code retitles itself `kimi-code` (cli/main.ts:181), and Herdr names a
+/// process by its comm, so a real run reads as `kimi-code`, or as `node`
+/// running the npm entry before the title is set.
 #[test]
-fn a_foreground_process_not_named_kimi_is_refused() {
-    let host = Host::with(SID, "node");
-    host.session("bucket1", &two_turns());
-    assert_eq!(refused(host.page()), UNNAMED);
+fn kimi_code_by_either_name_or_as_node_on_its_entry_is_read() {
+    let entry = "/home/u/.npm-global/lib/node_modules/@moonshot-ai/kimi-code/dist/main.mjs";
+    for process in [
+        json!({"name": "kimi", "pid": 42}),
+        json!({"name": "kimi-code", "pid": 42}),
+        json!({"name": "node", "pid": 42, "argv": ["node", "--no-warnings", entry, "--session", SID]}),
+        json!({"name": "node", "pid": 42, "argv": ["/usr/bin/node", "/opt/Node_Modules/@Moonshot-AI/Kimi-Code/dist/MAIN.mjs"]}),
+    ] {
+        let host = Host::running(SID, process.clone());
+        host.session("bucket1", &two_turns());
+        assert_eq!(host.expect(SID).pid, Some(42), "{process}");
+        assert_eq!(texts(&host.page().unwrap().entries), ["one", "first", "two", "second"], "{process}");
+    }
+}
+
+#[test]
+fn any_other_foreground_process_is_refused() {
+    for process in [
+        json!({"name": "node", "pid": 42}),
+        json!({"name": "node", "pid": 42, "argv": ["node", "/home/u/app/dist/main.mjs"]}),
+        json!({"name": "node", "pid": 42, "argv": ["node", "/x/node_modules/@moonshot-ai/kimi-code/dist/main.mjs.bak"]}),
+        json!({"name": "kimi code", "pid": 42}),
+        json!({"name": "bash", "pid": 42}),
+    ] {
+        let host = Host::running(SID, process.clone());
+        host.session("bucket1", &two_turns());
+        assert_eq!(host.expect(SID).pid, None, "{process}");
+        assert_eq!(refused(host.page()), UNNAMED, "{process}");
+    }
+}
+
+/// sessionMetadataService.ts:317-320 `cwd ?? workDir`: only a missing or
+/// null cwd falls back to the legacy workDir.
+#[test]
+fn the_bound_directory_is_cwd_and_only_a_missing_one_falls_back_to_work_dir() {
+    let host = Host::new(SID);
+    let dir = host.session("bucket1", &two_turns());
+    let work = host.path("work");
+    for state in [json!({"workDir": work}), json!({"cwd": null, "workDir": work})] {
+        fs::write(dir.join("state.json"), state.to_string()).unwrap();
+        assert_eq!(texts(&host.page().unwrap().entries), ["one", "first", "two", "second"], "{state}");
+    }
+    for state in [json!({"cwd": "", "workDir": work}), json!({"cwd": 7, "workDir": work})] {
+        fs::write(dir.join("state.json"), state.to_string()).unwrap();
+        assert_eq!(refused(host.page()), UNREADABLE, "{state}");
+    }
 }

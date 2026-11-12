@@ -1088,10 +1088,12 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         pane_id: text(&pane["pane_id"])?,
         terminal_id: text(&pane["terminal_id"])?,
         // The pane's foreground process must be that agent's own name; Hermes
-        // and Kilo each run as either of two.
+        // and Kilo each run as either of two, Kimi Code as either of two or
+        // as node running its npm entry.
         pid: match agent {
             "hermes" => hermes::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
             "kilo" => kilo::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
+            "kimi" => kimi::foreground_pid(process),
             _ => foreground_pid(process, agent),
         },
         path: value.to_owned(),
