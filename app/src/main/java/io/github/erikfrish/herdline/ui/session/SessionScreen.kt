@@ -1194,7 +1194,7 @@ fun SessionScreen(
                                     landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
                                     imeVisible = imeVisible,
                                     hideKeyboardReachesSend = true,
-                                    portraitReachesSend = true,
+                                    portraitReachesSend = imeVisible,
                                 ),
                                 accent = accent,
                                 // Zoom is shared with the desktop: only ever turn it on here, as the composer's.
