@@ -1129,27 +1129,36 @@ pub(crate) fn claude_blocker(row: &str) -> bool {
     .any(|marker| row.contains(marker))
 }
 
-/// Claude's own mode footer rows below its editor's lower rule, exactly as
-/// QA captured them from Claude 2.1.322 (`herdr pane read --raw`, ANSI
-/// stripped, a 30-column pane, so each is cut at the pane edge), one per
-/// shift+tab mode: auto, manual, accept edits and plan (10074 C9,
-/// FAIL-claude-send-drawn-under.json `below_lower_rule_captures`).
-const CLAUDE_FOOTERS: [&str; 4] = [
-    "⏵⏵ auto mode on (shift+tab",
-    "⏸ manual mode on · ? for …",
-    "⏵⏵ accept edits on",
-    "⏸ plan mode on (shift+tab",
+/// Claude's own mode footer rows below its editor's lower rule, one per
+/// shift+tab mode, as QA captured them whole from Claude 2.1.322 in 80- and
+/// 144-column panes (10074 C9, FAIL-claude-send-drawn-under.json
+/// `below_lower_rule_captures_wide`), each with the marker and mode words
+/// any cut of it must keep.
+const CLAUDE_FOOTERS: [(&str, &str); 4] = [
+    ("⏵⏵ auto mode on (shift+tab to cycle)", "⏵⏵ auto mode on"),
+    ("⏸ manual mode on · ? for shortcuts", "⏸ manual mode on"),
+    ("⏵⏵ accept edits on (shift+tab to cycle)", "⏵⏵ accept edits on"),
+    ("⏸ plan mode on (shift+tab to cycle)", "⏸ plan mode on"),
 ];
 
-/// Below Claude's lower rule only blank rows and a captured
-/// [CLAUDE_FOOTERS] row, compared whole after trimming. Anything else (a
-/// slash-command or file list, a wider pane's longer footer, a mode not
-/// captured) is unknown, so the box is not read as safe.
+/// Below Claude's lower rule only blank rows and its own mode footer: a
+/// [CLAUDE_FOOTERS] row whole, or cut short where a narrow pane ends it
+/// (keeping at least its marker and mode words, nothing after the cut but
+/// an optional `…`, as the 30-column captures show). Anything else (a
+/// slash-command or file list, text after the footer, a mode not captured)
+/// is unknown, so the box is not read as safe.
 fn claude_footer(rows: &[String], bottom: usize) -> bool {
-    rows[bottom + 1..]
-        .iter()
-        .map(|row| row.trim())
-        .all(|row| row.is_empty() || CLAUDE_FOOTERS.contains(&row))
+    rows[bottom + 1..].iter().all(|row| {
+        let row = row.trim();
+        let (cut, ellipsis) = match row.strip_suffix('…') {
+            Some(cut) => (cut.trim_end(), true),
+            None => (row, false),
+        };
+        row.is_empty()
+            || CLAUDE_FOOTERS.iter().any(|&(full, kept)| {
+                cut.starts_with(kept) && full.starts_with(cut) && !(ellipsis && cut == full)
+            })
+    })
 }
 
 /// Claude (Claude Code) editor between its two plain rules. The empty shape

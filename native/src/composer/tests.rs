@@ -1028,18 +1028,42 @@ const CLAUDE_NO_PROMPT: &str = "\
 ────────────────────────────────────────
 ";
 
-// QA 10074 C9, real Claude 2.1.322 idle in a 30x20 pane, read with
-// `herdr pane read --raw`, ANSI stripped, untrimmed: the box rows and the
-// one row under its lower rule, per shift+tab mode.
-const CLAUDE_CAPTURED_FOOTERS: [&str; 4] = [
-    "  ⏵⏵ auto mode on (shift+tab",
-    "  ⏸ manual mode on · ? for …",
-    "  ⏵⏵ accept edits on ",
-    "  ⏸ plan mode on (shift+tab ",
+// QA 10074 C9, real Claude 2.1.322 idle, read with `herdr pane read --raw`,
+// ANSI stripped, untrimmed: the one row under its lower rule per shift+tab
+// mode (auto, manual, accept edits, plan) at each captured pane width.
+// The 30-column rows are cut by the pane; 80 and 144 show them whole.
+const CLAUDE_CAPTURED_FOOTERS: [(usize, [&str; 4]); 3] = [
+    (
+        30,
+        [
+            "  ⏵⏵ auto mode on (shift+tab",
+            "  ⏸ manual mode on · ? for …",
+            "  ⏵⏵ accept edits on ",
+            "  ⏸ plan mode on (shift+tab ",
+        ],
+    ),
+    (
+        80,
+        [
+            "  ⏵⏵ auto mode on (shift+tab to cycle)",
+            "  ⏸ manual mode on · ? for shortcuts",
+            "  ⏵⏵ accept edits on (shift+tab to cycle)",
+            "  ⏸ plan mode on (shift+tab to cycle)",
+        ],
+    ),
+    (
+        144,
+        [
+            "  ⏵⏵ auto mode on (shift+tab to cycle)",
+            "  ⏸ manual mode on · ? for shortcuts",
+            "  ⏵⏵ accept edits on (shift+tab to cycle)",
+            "  ⏸ plan mode on (shift+tab to cycle)",
+        ],
+    ),
 ];
 
-fn claude_captured(prompt: &str, below: &[&str]) -> Vec<String> {
-    let rule = "─".repeat(30);
+fn claude_captured(cols: usize, prompt: &str, below: &[&str]) -> Vec<String> {
+    let rule = "─".repeat(cols);
     [rule.as_str(), prompt, rule.as_str()]
         .into_iter()
         .chain(below.iter().copied())
@@ -1047,13 +1071,17 @@ fn claude_captured(prompt: &str, below: &[&str]) -> Vec<String> {
         .collect()
 }
 
-// Not captured, so unknown: a slash-command list over the footer, a wider
-// pane's longer footer, a footer with more after it, a mode never seen.
-const CLAUDE_UNKNOWN_BELOW: [&[&str]; 4] = [
+// Not Claude's own footer: a slash-command list over it, more after the
+// footer (cut or whole), a cut inside the mode words, an ellipsis after
+// the whole row, a mode never captured.
+const CLAUDE_UNKNOWN_BELOW: [&[&str]; 7] = [
     &["  /clear    Clear conversation history", "  ⏵⏵ auto mode on (shift+tab"],
-    &["  ⏵⏵ auto mode on (shift+tab to cycle)"],
     &["  ⏵⏵ auto mode on (shift+tab · 3 files"],
-    &["  ⏵⏵ bypass permissions on (shift+tab"],
+    &["  ⏵⏵ auto mode on (shift+tab to cycle) · 3 files"],
+    &["  ⏸ plan mode on (shift+tab to cycle)x"],
+    &["  ⏵⏵ auto mode o…"],
+    &["  ⏸ manual mode on · ? for shortcuts…"],
+    &["  ⏵⏵ bypass permissions on (shift+tab to cycle)"],
 ];
 
 #[test]
@@ -1086,13 +1114,18 @@ fn claude_editor_takes_the_bare_prompt_and_fails_closed_on_the_rest() {
 
 #[test]
 fn claude_editor_reads_through_its_captured_mode_footers_only() {
-    for footer in CLAUDE_CAPTURED_FOOTERS {
-        // The captured empty prompt row: `❯`, a no-break space, a space.
-        assert_eq!(claude_editor(&claude_captured("❯\u{a0} ", &[footer])), Ok(Editor::Empty), "{footer}");
-        assert_eq!(claude_editor(&claude_captured("❯ Qaclaudeturnone", &[footer, ""])), Ok(Editor::Draft), "{footer}");
+    for (cols, footers) in CLAUDE_CAPTURED_FOOTERS {
+        for footer in footers {
+            // The captured empty prompt row: `❯`, a no-break space, a space.
+            let empty = claude_captured(cols, "❯\u{a0} ", &[footer]);
+            assert_eq!(claude_editor(&empty), Ok(Editor::Empty), "{cols}: {footer}");
+            let draft = claude_captured(cols, "❯ Qaclaudeturnone", &[footer, ""]);
+            assert_eq!(claude_editor(&draft), Ok(Editor::Draft), "{cols}: {footer}");
+        }
     }
     for below in CLAUDE_UNKNOWN_BELOW {
-        assert_eq!(claude_editor(&claude_captured("❯\u{a0} ", below)), Err(Unseen::ListBelow), "{below:?}");
+        let screen = claude_captured(80, "❯\u{a0} ", below);
+        assert_eq!(claude_editor(&screen), Err(Unseen::ListBelow), "{below:?}");
     }
 }
 
