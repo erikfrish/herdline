@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The cap label's form (POSTNIGHT-KEYS §8.2): full while its measured width
+ * The cap label's form: full while its measured width
  * fits the cap less 1 dp a side, else short for its whole group, the keycap
  * glyph unless the font lacks one of the group's. Measurement itself is QA's.
  */

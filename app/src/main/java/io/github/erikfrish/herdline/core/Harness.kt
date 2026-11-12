@@ -4,7 +4,7 @@ import java.util.Locale
 
 /**
  * What the app does for each program Herdr reports in a pane, and what the
- * "What works here" card says about it (design/POSTNIGHT-HARNESS-CARD.md).
+ * "What works here" card says about it.
  *
  * Two separate facts per program, never mixed:
  * - the route ([chat], [send], [readOnlyHistory]): only this gates a control;
@@ -132,7 +132,7 @@ enum class HarnessKey { History, Live, Send, Stop, SteerQueue, Tools, Media, Que
 
 /** What the card says about one (program, key). */
 sealed interface Cell {
-    /** Proved by QA on an exact APK: "qa/EVIDENCE/<dir>/RESULTS.md:<line> @ <versionCode>". */
+    /** Proved by QA on an exact APK: [evidence] names the recorded result and the versionCode it was on. */
     data class Works(val evidence: String) : Cell {
         init {
             require(evidence.isNotBlank()) { "Works needs its QA evidence" }

@@ -686,9 +686,9 @@ root process (Herdr's `shell_pid` in the same report the gate verified),
 read from pid ancestry only, never another process's environment or
 command line. Kilo's daemon started in the pane beside its TUI (`kilo
 daemon start --foreground &`, then `kilo`) is the TUI's sibling under that
-shell and counts as the pane's own (QA 10068 prep-kilo). Another pane's
-server on the same data root (QA 10067 U6: a `serve --service` beside an
-`opencode --standalone`, whose own server listens on stdio only) is never
+shell and counts as the pane's own. Another pane's server on the same data
+root (a `serve --service` beside an `opencode --standalone`, whose own
+server listens on stdio only) is never
 asked, for any op, and answers `no_server`, as a bare TUI that registers
 nothing does, and as a pane Herdr reports no shell for. An unknown
 acknowledgement after POST remains uncertain; discovery failure before

@@ -940,7 +940,7 @@ private fun Editor(
     }
 
     // An empty draft follows the pane; a written one keeps its binding, and
-    // one written before the instance was read stays held until Rebind (R1D).
+    // one written before the instance was read stays held until Rebind.
     LaunchedEffect(boot, agentNow, instanceNow, draft.blank) {
         draft.followed(boot, agentNow, instanceNow)?.let(::save)
     }
@@ -1671,7 +1671,7 @@ private fun Editor(
             stringResource(R.string.composer_agent_restarted, check?.agent ?: draft.agent ?: ""),
             rebind,
         )
-        // R1D: written before this pane's session was read; Rebind binds it to the one read now.
+        // Written before this pane's session was read; Rebind binds it to the one read now.
         binding == Binding.InstanceUnknown && steadyUnknown -> Notice(
             stringResource(R.string.composer_instance_unknown),
             rebind.takeIf { draft.instance == null && readInstance != null },

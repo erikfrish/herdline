@@ -276,7 +276,7 @@ class OpenCode(unittest.TestCase):
             self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'})), 'no_server')
 
     def test_only_the_panes_own_server_is_ever_asked(self):
-        # QA 10067 U6: `opencode --standalone` (its server on stdio only, no
+        # `opencode --standalone` (its server on stdio only, no
         # registration) in one pane, another pane's `serve --service` on the
         # same data root. The service runs as this test process; the
         # standalone pane's root is a process this one does not run under.
@@ -299,7 +299,7 @@ class OpenCode(unittest.TestCase):
                 # No root reported: no pane tree, no server.
                 self.assertEqual(run(home, 'opencode', 'send', body, root=0), 'no_server')
                 self.assertEqual(service.seen, [], 'no request may reach another pane\'s server')
-                # QA 10068 prep-kilo: a server started in the pane beside the
+                # A server started in the pane beside the
                 # agent is the agent's sibling under the pane's shell (this
                 # test process): the pane's own, used.
                 daemon = sleeper()

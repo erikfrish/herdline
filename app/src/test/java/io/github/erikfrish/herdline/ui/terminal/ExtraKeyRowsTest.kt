@@ -113,7 +113,7 @@ class ExtraKeyRowsTest {
 
     @Test
     fun everyAddedKeyShowsWithoutScrollingBesideOrWrappedAbove() {
-        // POSTNIGHT-KEYS §7.2: beside iff (7 + c) × 48 + (6 + c − 1) × 2 + 8 + 12 ≤ panel, c = ceil(n / 2).
+        // Beside iff (7 + c) × 48 + (6 + c − 1) × 2 + 8 + 12 ≤ panel, c = ceil(n / 2).
         val all = DEFAULT_EXTRA_KEY_IDS + AllExtraKeys.keys.filter { it !in DEFAULT_EXTRA_KEY_IDS }
         val extras = extraKeyPanel(extraKeysFrom(all)).extras
         assertEquals(8, extras.size) // every key the app has: the most a default-based set can add

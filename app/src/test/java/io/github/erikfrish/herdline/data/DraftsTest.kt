@@ -187,7 +187,7 @@ class DraftsTest {
         val sent = SentRecord("old", "r1", submit = true, SentState.Confirmed, at = 1)
         val moved = written.copy(selectionStart = 3, selectionEnd = 3).movedOnto(Draft(sent = sent), "boot-2", "claude", now = 9)
         assertEquals(Draft("fix the build", 3, 3, "boot-2", "claude", 9, sent), moved)
-        // Onto a chat agent its session is not known yet: held until Rebind (R1D).
+        // Onto a chat agent its session is not known yet: held until Rebind.
         assertEquals(Binding.InstanceUnknown, moved?.binding("boot-2", "claude", unread))
         assertNull(written.movedOnto(Draft(text = "theirs"), "boot-1", "omp", now = 9))
     }

@@ -109,7 +109,7 @@ class Send(Daemon):
         self.assertEqual(self.posts(server), [])
 
     def test_only_a_daemon_in_the_panes_own_tree_is_asked(self):
-        # QA 10067 U6's rule for Kilo: daemon.json names a server outside the
+        # The pane's-own-server rule for Kilo: daemon.json names a server outside the
         # pane's tree (this test process, under another root), so every op
         # is no_server, unasked.
         home, server = self.serve({
@@ -123,7 +123,7 @@ class Send(Daemon):
         for op in ('send', 'status', 'state', 'withdraw', 'children'):
             self.assertEqual(run(home, op, body, root=other.pid), 'no_server', op)
         self.assertEqual(server.seen, [])
-        # QA 10068 prep-kilo: `kilo daemon start --foreground &`, then `kilo`,
+        # `kilo daemon start --foreground &`, then `kilo`,
         # in one pane: the daemon is the TUI's sibling under the pane's shell
         # (this test process), not its child, and is the pane's own.
         tui, daemon = sleeper(), sleeper()

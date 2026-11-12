@@ -353,7 +353,7 @@ internal fun LazyListScope.extraKeySettings(store: SettingsStore, settings: Sett
                         },
                     )
                 }
-                // Which layout rule applies to the saved list; the list itself is never rewritten (POSTNIGHT-KEYS §7.3).
+                // Which layout rule applies to the saved list; the list itself is never rewritten.
                 val known = settings.extraKeys.filter(AllExtraKeys::containsKey)
                 Box(Modifier.padding(horizontal = 18.dp, vertical = 10.dp).testTag("settings:keys_layout")) {
                     Help(

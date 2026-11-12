@@ -11,7 +11,7 @@
     <string name="harness_works_here">What works here</string>
     <string name="harness_item_terminal">%1$s</string>
     <string name="harness_chat_state">Not connected for this program</string>
-    <!-- "What works here" (design/POSTNIGHT-HARNESS-CARD.md §2). %1$s is the program as Herdr names it. -->
+    <!-- "What works here". %1$s is the program as Herdr names it. -->
     <string name="harness_card_title_works">What works for %1$s here</string>
     <string name="harness_key_history">Chat history</string>
     <string name="harness_key_live">Live updates</string>

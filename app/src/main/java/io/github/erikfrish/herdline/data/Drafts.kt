@@ -56,7 +56,7 @@ data class SentRecord(
  * [instance] is null for a plain terminal, for a draft just moved onto
  * another pane, and for one written before the instance could be read;
  * such a draft, once written, stays held for a chat agent until the user
- * rebinds it (R1D); an empty one follows the pane.
+ * rebinds it; an empty one follows the pane.
  */
 data class Draft(
     val text: String = "",
@@ -92,7 +92,7 @@ data class Draft(
         blank -> Binding.Bound
         boot != null && boot != current -> Binding.BootChanged
         !agent.equals(currentAgent, ignoreCase = true) -> Binding.AgentChanged
-        // R1D: written for a chat agent before its session could be read, so
+        // Written for a chat agent before its session could be read, so
         // no session vouches for it; held until the user rebinds it. A plain
         // terminal or a program without a session reader has no instance.
         instance == null -> if (isChatAgent(agent)) Binding.InstanceUnknown else Binding.Bound
@@ -111,7 +111,7 @@ data class Draft(
      * nothing changes. An empty draft follows the pane, so the text written
      * next is bound to the agent the user saw. A written one never changes
      * binding here, nor gains an instance it lacks: the first one read may
-     * already be a later session than the one it was written for (R1D).
+     * already be a later session than the one it was written for.
      */
     fun followed(current: String?, currentAgent: String?, now: InstanceRead): Draft? {
         if (current == null || !blank) return null

@@ -67,7 +67,7 @@ import kotlin.math.sin
 
 /**
  * What works for the pane's program, over the top edge of the box it is
- * placed in (design/POSTNIGHT-HARNESS-CARD.md): Terminal, then one row per
+ * placed in: Terminal, then one row per
  * [HarnessKey] by what the card can say about it.
  *
  * Like AgentBannerSlot it is an overlay: the box's other children keep

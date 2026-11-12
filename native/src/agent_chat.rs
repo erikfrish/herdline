@@ -595,10 +595,10 @@ fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str, me
 /// very pane (`process_info.shell_pid`) once the instance passed, for the
 /// step's environment; 0 when Herdr reports none. The control scripts use
 /// only a registered server that runs under it, anywhere in the pane's own
-/// process tree, and answer `no_server` otherwise, 0 included. QA 10067 U6:
-/// another pane's `serve --service` on the same data root took a send.
-/// QA 10068 prep-kilo: Kilo's daemon started in the pane beside the TUI is
-/// the TUI's sibling under the shell, not its child, and is the pane's own.
+/// process tree, and answer `no_server` otherwise, 0 included. Without it,
+/// another pane's `serve --service` on the same data root could take a send.
+/// Kilo's daemon started in the pane beside the TUI is the TUI's sibling
+/// under the shell, not its child, and is the pane's own.
 const PANE_ROOT: &str = r#"HERDLINE_PANE_ROOT="$root""#;
 
 /// What an OpenCode send with files writes to the host command's stdin: the

@@ -220,7 +220,7 @@ private val DefaultExtraKeys: List<ExtraKey> = extraKeysFrom(DEFAULT_EXTRA_KEY_I
  * Whether saved [ids] are the default plus keys added after it: the first
  * fourteen exactly [DEFAULT_EXTRA_KEY_IDS], in order, then any others. Such a
  * set keeps the default grid and its relations, its extra keys drawn apart;
- * any other set is the user's own order (POSTNIGHT-KEYS §7.1). Only a prefix
+ * any other set is the user's own order. Only a prefix
  * check: nothing is near enough, and the saved list is never rewritten to fit.
  */
 internal fun isDefaultBased(ids: List<String>): Boolean =
@@ -245,8 +245,8 @@ internal fun extraKeyPanel(keys: List<ExtraKey>, rowsOf: Int = 2): KeyPanel {
 /**
  * The cap layout when the default grid and [extras] added keys share one
  * line, the keys in ceil(n / 2) columns two high after an 8 dp separator, or
- * null when that does not fit [panel] dp with 48 dp caps and 2 dp gaps
- * (POSTNIGHT-KEYS §7.2). Grid and extras share one cap width.
+ * null when that does not fit [panel] dp with 48 dp caps and 2 dp gaps.
+ * Grid and extras share one cap width.
  */
 internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
     val columns = GridColumns + (extras + 1) / 2
@@ -261,7 +261,7 @@ internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
 /**
  * The added keys' rows above the grid, seven a row on the grid's columns, so
  * they wrap instead of scrolling. With 22 keys in [AllExtraKeys] a
- * default-based set has at most 8 extras, so two rows at most (POSTNIGHT-KEYS §7.2).
+ * default-based set has at most 8 extras, so two rows at most.
  */
 internal fun extraRowsAbove(extras: List<ExtraKey>): List<List<ExtraKey>> = extras.chunked(GridColumns)
 
@@ -271,7 +271,7 @@ private val Spoken: Map<String, String> = mapOf(
     "⏎" to "Enter", "⌫" to "Backspace",
 )
 
-/** Keys that change form together, so a pair never reads "⇱ … End" (POSTNIGHT-KEYS §8.3). */
+/** Keys that change form together, so a pair never reads "⇱ … End". */
 internal enum class LabelGroup { Modifiers, LineEnds, Pages, Editing }
 
 /** A key's short form: its keycap [glyph], and the [alt] text where the font lacks it. */
@@ -503,7 +503,7 @@ fun ExtraKeysRow(
         val panelWidth = maxWidth.value
         val panel = remember(keys, rowsOf) { extraKeyPanel(keys, rowsOf) }
         val padded = Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp).semantics { isTraversalGroup = true }
-        // TalkBack reads the grid row by row first, then the added keys (POSTNIGHT-KEYS §7.2).
+        // TalkBack reads the grid row by row first, then the added keys.
         val gridOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 0f }
         val extrasOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 1f; contentDescription = extrasLabel }
         val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)

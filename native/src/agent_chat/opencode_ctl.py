@@ -24,11 +24,11 @@ Herdr's shell_pid from the same pane report the native gate has just
 verified the instance against). Only pid ancestry is read (/proc/<pid>/stat
 or ps), never another process's environment or command line. Kilo's daemon
 started in the pane beside its TUI is the TUI's sibling under that shell,
-and the pane's own (QA 10068 prep-kilo). A server of another pane on the
+and the pane's own. A server of another pane on the
 same data root, such as a `serve --service` next to an `opencode
 --standalone` whose own server listens on stdio only, answers 'no_server'
 before any request: nothing is asked of a server outside the pane, for any
-op (QA 10067 U6).
+op.
 
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:

@@ -94,8 +94,8 @@ internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone
         NewTabTarget.None -> stringResource(R.string.new_tab)
     }
     val enabled = target != NewTabTarget.None
-    // The tonal container is about 1.1:1 on the sheet, so the outline is the 3:1 boundary
-    // (POSTNIGHT-TABS-NEWTAB §9). Disabled dims it like the label: inactive controls are exempt.
+    // The tonal container is about 1.1:1 on the sheet, so the outline is the 3:1 boundary.
+    // Disabled dims it like the label: inactive controls are exempt.
     val outline = MaterialTheme.colorScheme.outline.let { if (enabled) it else it.copy(alpha = 0.38f) }
     Box {
         FilledTonalButton(
