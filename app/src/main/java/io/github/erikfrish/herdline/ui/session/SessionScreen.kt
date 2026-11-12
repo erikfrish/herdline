@@ -895,7 +895,8 @@ fun SessionScreen(
                         ?: armedWindow(pane?.id, suggestion, shown.rows)
                 }
                 val hiddenRows = if (focusApplies) outputWindow?.hidden ?: 0 else 0
-                SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding()) {
+                // The terminal hears the column's height under the header as it is measured, before its own layout.
+                SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
                     val headerColor = accent.copy(alpha = if (dark) 0.14f else 0.1f).compositeOver(chromeColor)
                     Box {
@@ -1128,6 +1129,8 @@ fun SessionScreen(
                             // all the way down and no sheet holding the grid. Its grid goes once from that one.
                             val chatSettled = chatMode && view != null && !imeVisible && imeBottom == 0 && !switcherOpen &&
                                 (composerHidden || composerPane != null)
+                            // Until the session's view is in, the mode is not known: neither mode's grid goes yet.
+                            val terminalShown = view != null && !chatMode
                             // A screen-reader user who skips the strip still hears that rows are hidden.
                             val windowDescription = if (hiddenRows > 0) pluralStringResource(R.plurals.output_focus_strip_description, hiddenRows, hiddenRows) else null
                             AndroidView(
@@ -1161,7 +1164,7 @@ fun SessionScreen(
                                     view.latchedMeta = latched
                                     view.windowKey = windowKey
                                     // Terminal on screen owns Herdr's grid; under Chat one grid goes per visit, Chat's settled one.
-                                    view.sharesGrid = !chatMode
+                                    view.sharesGrid = terminalShown
                                     view.chatSettled = chatSettled
                                     view.scheme = scheme
                                     view.frame = frame
@@ -2244,9 +2247,10 @@ private data class OutageWords(val title: String, val detail: String, val retryi
  * the content, or, with a [side] width, into a column of that width at the
  * bottom right, beside the content, which then keeps the full height (J2).
  * One tree for both, so the terminal view and the draft survive the switch.
+ * [onRoom] hears the height under the header, before the content is measured.
  */
 @Composable
-private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable () -> Unit) {
+private fun SessionColumn(side: Dp?, modifier: Modifier, onRoom: (Int) -> Unit, content: @Composable () -> Unit) {
     Layout(content, modifier) { measurables, constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight
@@ -2262,6 +2266,7 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable ()
             }
         }
         val left = max(0, height - top)
+        onRoom(left)
         val sidePx = side?.roundToPx()?.coerceAtMost(width)
         val composerWidth = sidePx ?: width
         var composerHeight = 0

@@ -232,6 +232,20 @@ class TerminalView(context: Context) : View(context) {
             reportChat()
         }
 
+    /**
+     * The height of the session's column under its header, set as it is
+     * measured, before this view is laid out in it. Chat's one grid takes
+     * its rows: under Chat this view is only the space the composer leaves,
+     * which is not the pane's.
+     */
+    var chatRoomPx = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            turn.roomPx = value
+            reportChat()
+        }
+
     private val turn = GridTurn()
 
     /** Chat's one grid, once the layout under way is done; a report before then takes it instead. */
@@ -347,6 +361,7 @@ class TerminalView(context: Context) : View(context) {
     fun setTypefaces(faces: TerminalTypefaces) {
         if (faces == typefaces) return
         typefaces = faces
+        turn.fonts = true
         regular = faces.regular
         bold = faces.bold
         italic = faces.italic
@@ -409,7 +424,7 @@ class TerminalView(context: Context) : View(context) {
         val keep = !chat && keepsRows(keepRows, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
         // A new width or cell size is never chrome: keepsRows checks both.
         val chrome = !chat && !fit && !windowMoved && keepsRows(true, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
-        val rows = gridRows(height, cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
+        val rows = gridRows(turn.heightPx(height), cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
         val grid = intArrayOf(cols, rows, cellWidth.toInt(), cellHeight.toInt())
         if (!owed && !chat && grid.contentEquals(lastGrid)) return
         owed = false

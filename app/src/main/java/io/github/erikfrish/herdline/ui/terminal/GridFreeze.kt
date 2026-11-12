@@ -67,11 +67,13 @@ internal class GridFreeze {
 
 /**
  * Whose layout Herdr's grid follows. Terminal on screen owns it: each grid
- * it lays out goes. Under Chat one goes per visit, that of Chat's settled
- * layout ([settled]: the mode and pane resolved, the keyboard down), so a
- * grid Terminal or a first unsettled layout gave never sticks under Chat,
- * and the keyboard, a notice or the composer's height there never resize
- * the pane.
+ * it lays out goes. Under Chat one goes per visit, once Chat's layout has
+ * settled ([settled]: the mode and pane resolved, the keyboard down) and
+ * the terminal's own font is in ([fonts]), so neither a grid Terminal or a
+ * first layout gave nor one counted in the fallback font's cells sticks
+ * under Chat. That grid takes the rows of the session's column under its
+ * header ([roomPx]), the composer's height included, so the keyboard, a
+ * notice or the composer there never resize the pane.
  */
 internal class GridTurn {
     var terminal = true
@@ -79,6 +81,12 @@ internal class GridTurn {
 
     /** Under Chat: whether its layout has settled, as the screen says. */
     var settled = false
+
+    /** Whether the terminal's own font is set, so its cells are the ones it draws. */
+    var fonts = false
+
+    /** The height of the session's column under its header, as last laid out; 0 before. */
+    var roomPx = 0
 
     /** Under Chat: its one grid is still to go. */
     private var owed = false
@@ -91,10 +99,13 @@ internal class GridTurn {
     }
 
     /** Whether the grid laid out now goes to Herdr. */
-    fun reports(): Boolean = terminal || (owed && settled)
+    fun reports(): Boolean = terminal || chatDue()
 
     /** Whether Chat's one grid is due now, to report once its layout is done. */
-    fun chatDue(): Boolean = !terminal && owed && settled
+    fun chatDue(): Boolean = !terminal && owed && settled && fonts && roomPx > 0
+
+    /** The height whose rows the grid takes: the view's in Terminal, the column's under Chat. */
+    fun heightPx(viewPx: Int): Int = if (terminal) viewPx else roomPx
 
     /** A grid went to Herdr. */
     fun reported() {
