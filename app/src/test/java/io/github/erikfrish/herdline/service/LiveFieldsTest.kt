@@ -17,6 +17,7 @@ class LiveFieldsTest {
         override fun many(count: Int) = "$count live tasks"
         override fun minutes(count: Int) = "$count min"
         override fun total(elapsed: String) = "$elapsed total"
+        override fun spokenMinutes(count: Int) = "$count minutes"
         override fun staleAt(time: String) = "Last seen $time"
         override fun agents(count: Int, needYou: Int) = "$count agents · $needYou need input"
         override fun more(count: Int) = "+$count more"
@@ -64,9 +65,15 @@ class LiveFieldsTest {
         assertEquals("status:Working · agent-p1", b.main.title)
         assertEquals("secret-tab", b.main.text)
         assertEquals(since, b.main.since)
+        assertTrue(b.main.spoken.endsWith("4 minutes"))
+        assertFalse(fields(card, LockDetail.NamesOnly).main.spoken.contains("minutes"))
         val unknown = fields(LiveCard(listOf(row(start = null)), null), LockDetail.Full)
         assertNull(unknown.main.since)
+        assertFalse(unknown.main.spoken.contains("minutes"))
         assertFalse(words(unknown.main).contains("0 min"))
+        val brief = fields(LiveCard(listOf(row(start = now - 30_000L)), null), LockDetail.StateOnly)
+        assertFalse(brief.main.spoken.contains("minutes"))
+        assertFalse(words(brief.main).contains("0 min"))
         val empty = fields(card, LockDetail.Full, emptyList())
         assertEquals("Herdline", empty.main.title)
         assertNull(empty.main.text)
@@ -96,6 +103,7 @@ class LiveFieldsTest {
         assertTrue(fields(card, LockDetail.NamesOnly).main.title.startsWith("2 live tasks"))
         assertFalse(words(fields(card, LockDetail.NamesOnly).main).contains("3 agents"))
         assertFalse(fields(LiveCard(listOf(row(), row(AgentStatus.Idle, pane = "p2")), null), LockDetail.NamesOnly).main.title.contains("live tasks"))
+        assertTrue(words(fields(card, LockDetail.Full).main).contains("3 agents · 1 need input"))
         val many = fields(LiveCard((1..8).map { row(pane = "p$it") }, null), LockDetail.Full)
         assertEquals(6, many.main.big!!.lines().size)
         assertTrue(many.main.big!!.endsWith("+3 more"))
@@ -105,6 +113,7 @@ class LiveFieldsTest {
     fun nonLivePinsNeverCreatePromotedCardAndWorkingOutranksDone() {
         for (status in listOf(AgentStatus.Blocked, AgentStatus.Idle, AgentStatus.Unknown))
             assertNull(liveFields(t, LiveCard(listOf(row(status)), null), LockDetail.Full, true, now) { "12:00" })
+        assertNull(liveFields(t, null, LockDetail.Full, true, now) { "12:00" })
         val f = fields(LiveCard(listOf(row(AgentStatus.Done), row(pane = "p2")), null), LockDetail.Full)
         assertEquals(LiveState.Working, f.state)
         assertEquals("p2", f.top.pane)
@@ -112,6 +121,8 @@ class LiveFieldsTest {
         val done = fields(LiveCard(listOf(row(AgentStatus.Done)), null), LockDetail.Full)
         assertNull(done.main.since)
         assertTrue(words(done.main).contains("4 min total"))
+        assertTrue(done.unpin)
+        assertTrue(f.unpin)
     }
 
     @Test
@@ -119,8 +130,13 @@ class LiveFieldsTest {
         val working = LiveCard(listOf(row(), row(AgentStatus.Idle, pane = "p2")), null)
         assertEquals(setOf(MonitorKey("n", "p1"), MonitorKey("n", "p2")), dismissedPins(working))
         assertTrue(dismissedPins(LiveCard(listOf(row(AgentStatus.Idle)), null)).isEmpty())
+        assertTrue(dismissedPins(LiveCard(listOf(row(AgentStatus.Blocked)), null)).isEmpty())
+        assertTrue(dismissedPins(null).isEmpty())
         assertEquals(LockDetail.Hidden, pinPreset(null, LockDetail.Hidden))
         assertEquals(LockDetail.StateOnly, pinPreset(null, null))
+        assertEquals(LockDetail.Full, pinPreset(LockDetail.Full, LockDetail.Hidden))
+        assertEquals(LockDetail.Hidden, liveLevel(null, LockDetail.Hidden))
+        assertEquals(LockDetail.Full, liveLevel(null, LockDetail.Full))
         assertEquals(LockDetail.StateOnly, liveLevel(LockDetail.StateOnly, LockDetail.Full))
     }
 }

@@ -174,11 +174,12 @@ private fun face(
     val stale = card.staleSince?.let { if (lock == LockDetail.NamesOnly) t.notLive() else t.staleAt(time(it)) }
     val text = listOfNotNull(stale, detail).joinToString(" · ").ifBlank { null }
     val big = if (card.rows.size > 1) (listOfNotNull(stale) + card.rows.take(5).map { parts(it).joinToString(" · ") }.filter { it.isNotBlank() } + listOfNotNull(card.rows.size.takeIf { it > 5 && lock == LockDetail.Full && "counts" in allowed }?.let { t.more(it - 5) })).joinToString("\n").ifBlank { null } else text
+    val spokenTime = since?.let { minutes(now - it) }?.let(t::spokenMinutes)
     return LiveFace(
         if ("state" in allowed) glyph else LiveGlyph.Live,
         title, text, big,
         if ("state" in allowed) (if (card.needYou > 0 && state != LiveState.Disconnected && "counts" in allowed) t.needYou(card.needYou) else word) else "",
-        since, listOfNotNull(title.replace(" · ", ", "), text?.replace(" · ", ", ")).joinToString(", "),
+        since, listOfNotNull(title.replace(" · ", ", "), text?.replace(" · ", ", "), spokenTime).joinToString(", "),
     )
 }
 
@@ -202,6 +203,7 @@ internal interface LiveTexts {
     fun many(count: Int): String
     fun minutes(count: Int): String
     fun total(elapsed: String): String
+    fun spokenMinutes(count: Int): String
     fun staleAt(time: String): String
     fun agents(count: Int, needYou: Int): String
     fun more(count: Int): String
@@ -219,6 +221,7 @@ internal class ResourceLiveTexts(private val context: Context) : LiveTexts {
     override fun many(count: Int) = res.getQuantityString(R.plurals.live_title_many, count, count)
     override fun minutes(count: Int) = res.getQuantityString(R.plurals.live_minutes, count, count)
     override fun total(elapsed: String) = context.getString(R.string.live_total, elapsed)
+    override fun spokenMinutes(count: Int) = res.getQuantityString(R.plurals.live_minutes_spoken, count, count)
     override fun staleAt(time: String) = context.getString(R.string.notification_last_seen, time)
     override fun agents(count: Int, needYou: Int) = res.getQuantityString(R.plurals.notification_agents_count, count, count) + (if (needYou > 0) " · " + needYou(needYou) else "")
     override fun more(count: Int) = context.getString(R.string.notification_more, count)

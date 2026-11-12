@@ -367,6 +367,8 @@ class ConnectionService : Service() {
         val locked = LockGate.isDeviceLocked(this)
         val time = DateFormat.getTimeFormat(this)
         val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
+        val requestPromotion = shown.promote && fields?.promote == true
+        AgentNotifications.promotionRequested = requestPromotion
         preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live)
         val top = fields?.top ?: shown.card?.rows?.firstOrNull()
         val content = if (top != null) {
@@ -408,7 +410,7 @@ class ConnectionService : Service() {
             .setVisibility(AgentNotifications.visibility(shown.live))
         main.liveTime(builder)
         main.big?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
-        builder.setRequestPromotedOngoing(shown.promote && fields.promote)
+        builder.setRequestPromotedOngoing(requestPromotion)
         if (fields.unpin) {
             val unpin = PendingIntent.getService(
                 this, 3, Intent(this, ConnectionService::class.java).setAction(ACTION_UNPIN), PendingIntent.FLAG_IMMUTABLE,
@@ -419,7 +421,7 @@ class ConnectionService : Service() {
         val publicBuilder = AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_LIVE, NoteContent(public.title, public.text), glyphIcon(public.glyph))
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setRequestPromotedOngoing(shown.promote && fields.promote)
+            .setRequestPromotedOngoing(requestPromotion)
         // The lock screen's own time and chip, as its level permits (NB-C4).
         public.liveTime(publicBuilder)
         public.big?.let { publicBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
@@ -448,6 +450,7 @@ class ConnectionService : Service() {
         preview.value = null
         LockGate.onLockChange = null
         AgentNotifications.card = Promotion.NoCard
+        AgentNotifications.promotionRequested = false
         // The lost notes belong to connections that are gone.
         lost.values.toList().forEach(::cancelLost)
         // Nothing keeps the process alive now: the notes left in the shade

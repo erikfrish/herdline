@@ -106,11 +106,13 @@ object AgentNotifications {
     /** What the service last did with the live card, for [promotion]. */
     @Volatile
     internal var card: Promotion = Promotion.NoCard
+    @Volatile
+    internal var promotionRequested: Boolean = false
 
     internal data class PromotionDetails(val requested: Boolean, val allowed: Boolean?, val eligible: Boolean?, val shown: Boolean?)
 
     internal fun promotionDetails(context: Context): PromotionDetails {
-        val requested = card == Promotion.Requested
+        val requested = promotionRequested
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA || Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1) return PromotionDetails(requested, null, null, null)
         val manager = context.getSystemService(NotificationManager::class.java)
         val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification

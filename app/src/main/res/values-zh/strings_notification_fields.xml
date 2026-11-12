@@ -25,4 +25,5 @@
     <string name="notification_no">否</string>
     <string name="notification_promotion_unavailable">此 Android 版本不支持</string>
     <string name="notification_promotion_details">请求实时展示：%1$s · 系统允许：%2$s · 符合条件：%3$s · 已实时展示：%4$s。Android 实时展示不代表已显示于 Samsung Now Bar。</string>
+    <string name="notification_requires_state">在仅状态、名称或完整详情中显示</string>
 </resources>

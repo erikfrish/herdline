@@ -25,4 +25,5 @@
     <string name="notification_no">no</string>
     <string name="notification_promotion_unavailable">Not available on this Android version</string>
     <string name="notification_promotion_details">Promotion requested: %1$s · allowed by system: %2$s · eligible: %3$s · shown as live: %4$s. Android promotion does not prove Samsung Now Bar placement.</string>
+    <string name="notification_requires_state">Shown with State only, Names or Full detail</string>
 </resources>

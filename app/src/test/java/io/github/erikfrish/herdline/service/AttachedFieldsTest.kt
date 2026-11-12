@@ -39,5 +39,8 @@ class AttachedFieldsTest {
         val hidden = attachedContent(t, 1, "secret-host", LockDetail.Full, false, emptyList(), 3, 1)
         assertNull(hidden.main.text)
         assertFalse(hidden.main.title.contains("secret-host"))
+        val several = attachedContent(t, 3, "secret-host", LockDetail.Full, false, listOf("host", "counts"), 4, 1)
+        assertFalse(several.main.title.contains("secret-host"))
+        assertTrue(several.main.text!!.contains("4 agents"))
     }
 }

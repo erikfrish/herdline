@@ -67,6 +67,7 @@ internal fun LazyListScope.notificationContentSettings(store: SettingsStore, set
                 val help = when (id) {
                     "agent" -> R.string.notification_requires_names
                     "elapsed" -> R.string.notification_requires_elapsed
+                    "state" -> R.string.notification_requires_state
                     else -> R.string.notification_requires_full
                 }
                 ItemRow(title = label, detail = if (allowed) null else stringResource(help), onClick = if (allowed) toggle else null, trailing = {
