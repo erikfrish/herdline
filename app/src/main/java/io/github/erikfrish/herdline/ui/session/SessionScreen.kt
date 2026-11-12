@@ -1256,9 +1256,14 @@ fun SessionScreen(
             }
         }
         if (switcherOpen && !wide) {
+            val switcherSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            // U-1 #7: the header's Close slides the sheet out as a swipe does; Back, the scrim and swipe-down are unchanged.
+            val closeSwitcher: () -> Unit = {
+                scope.launch { switcherSheet.hide() }.invokeOnCompletion { if (!switcherSheet.isVisible) switcherOpen = false }
+            }
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                sheetState = switcherSheet,
                 containerColor = menuColor(),
                 modifier = Modifier.testTag("switcher:sheet"),
             ) {
@@ -1284,6 +1289,7 @@ fun SessionScreen(
                         modifier = Modifier.fillMaxWidth(),
                         here = focusedPane,
                         reading = chatMode,
+                        onClose = closeSwitcher,
                     )
                     TabsView.List -> Switcher(
                         node = node,
@@ -1306,6 +1312,7 @@ fun SessionScreen(
                         appliesStartFilter = false,
                         scope = tabsScope,
                         onScope = { tabsScope = it },
+                        onClose = closeSwitcher,
                     )
                 }
             }
