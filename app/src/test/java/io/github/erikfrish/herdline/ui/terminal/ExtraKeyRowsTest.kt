@@ -70,6 +70,38 @@ class ExtraKeyRowsTest {
     }
 
     @Test
+    fun sevenCapsDrawnInWholePixelsStayInsideTheRowAtEveryDensity() {
+        // 1080 px at 2.625 px/dp, a 1048 px row: caps of 138.5 px drawn as 139 ran 3 px past it.
+        for (density in listOf(2f, 2.625f, 2.75f, 3f, 3.5f)) {
+            for (px in 900..1600 step 7) {
+                val room = px - 2 * kotlin.math.round(6f * density).toInt()
+                val row = snapped(capLayout(px / density, 7), density, room, 7)
+                if (row.scrolls) continue
+                val cap = kotlin.math.round(row.width * density).toInt()
+                val gap = kotlin.math.round(row.gap * density).toInt()
+                assertTrue("$density $px: $cap $gap", 7 * cap + 6 * gap <= room)
+                assertTrue("$density $px: $cap", cap >= kotlin.math.floor(48f * density + 0.001f).toInt())
+            }
+        }
+        val qa = snapped(capLayout(1080 / 2.625f, 7), 2.625f, 1048, 7)
+        assertEquals(138, kotlin.math.round(qa.width * 2.625f).toInt())
+    }
+
+    @Test
+    fun theGridAndTheKeysBesideItDrawnInWholePixelsStayInsideTheRow() {
+        for (density in listOf(2f, 2.625f, 3f)) {
+            for (px in 1400..2600 step 11) {
+                val layout = besideLayout(px / density, 4) ?: continue
+                val room = px - 2 * kotlin.math.round(6f * density).toInt() - kotlin.math.round(8f * density).toInt()
+                val row = snapped(layout, density, room, 9, gaps = 7)
+                val cap = kotlin.math.round(row.width * density).toInt()
+                val gap = kotlin.math.round(row.gap * density).toInt()
+                assertTrue("$density $px: $cap $gap", 9 * cap + 7 * gap <= room)
+            }
+        }
+    }
+
+    @Test
     fun aScrollingRowEndsOnHalfACapAndNeverShrinksATarget() {
         // 640 dp landscape and a 457 dp split, less the 6 dp padding a side; 5 dp gaps.
         for (viewport in listOf(628f, 445f)) {

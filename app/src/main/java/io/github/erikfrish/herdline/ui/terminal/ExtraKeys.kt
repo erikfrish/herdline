@@ -66,6 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.erikfrish.herdline.R
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.ui.platform.LocalDensity
@@ -207,6 +208,26 @@ internal fun capLayout(panel: Float, count: Int): CapLayout {
 }
 
 private const val TightKeyGap = 2f
+
+/**
+ * [layout] in the whole pixels it is drawn in at [density] px per dp. Each cap
+ * and gap is laid out as a whole pixel, rounded on its own, so seven caps of
+ * 138.5 px each became 139 px and the row ran 3 px past its viewport, cutting
+ * the last cap's edge. A row that does not scroll keeps its [count] caps and
+ * [gaps] gaps within [room] px: the caps give up their fraction, and where a
+ * 48 dp cap leaves no more, the gaps give up a pixel. A cap is never narrower
+ * than 48 dp.
+ */
+internal fun snapped(layout: CapLayout, density: Float, room: Int, count: Int, gaps: Int = count - 1): CapLayout {
+    // A hair of slack, so a width that is whole in pixels is not lost to float rounding.
+    fun whole(dp: Float) = floor(dp * density + 0.001f).toInt()
+    var gap = (layout.gap * density).roundToInt()
+    val min = whole(48f)
+    if (layout.scrolls) return CapLayout(whole(layout.width).coerceAtLeast(min) / density, gap / density, scrolls = true)
+    val cap = minOf(whole(layout.width), (room - gap * gaps) / count).coerceAtLeast(min)
+    if (gaps > 0 && cap * count + gap * gaps > room) gap = ((room - cap * count) / gaps).coerceAtLeast(0)
+    return CapLayout(cap / density, gap / density, scrolls = false)
+}
 
 /** The default grid's columns: its fourteen keys in two rows of seven. */
 private const val GridColumns = 7
@@ -511,11 +532,17 @@ fun ExtraKeysRow(
         // TalkBack reads the grid row by row first, then the added keys.
         val gridOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 0f }
         val extrasOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 1f; contentDescription = extrasLabel }
-        val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)
-        val grid = capLayout(panelWidth, GridColumns)
+        // The rows' width in whole pixels, inside the padding as it is drawn.
+        val room = constraints.maxWidth - 2 * with(density) { KeyRowPad.roundToPx() }
+        val row: (Int) -> CapLayout = { count -> snapped(capLayout(panelWidth, count), density.density, room, count) }
+        val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)?.let { layout ->
+            val columns = GridColumns + (panel.extras.size + 1) / 2
+            snapped(layout, density.density, room - with(density) { ClusterGap.roundToPx() }, columns, gaps = columns - 2)
+        }
+        val grid = row(GridColumns)
         // Every cap this panel draws, and the narrowest of them: one form per group panel-wide.
         val widths = when {
-            panel.extras.isEmpty() -> panel.grid.map { capLayout(panelWidth, it.size).width }
+            panel.extras.isEmpty() -> panel.grid.map { row(it.size).width }
             beside != null -> listOf(beside.width)
             else -> listOf(grid.width)
         }
@@ -537,7 +564,7 @@ fun ExtraKeysRow(
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target ([capLayout]).
-                for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth(), shown)
+                for (line in panel.grid) capRow(line, row(line.size), Modifier.fillMaxWidth(), shown)
             }
             beside != null -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
                 // The grid, an 8 dp separator, then the added keys two rows high, column by column.
