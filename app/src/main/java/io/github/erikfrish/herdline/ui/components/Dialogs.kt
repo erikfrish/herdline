@@ -124,10 +124,11 @@ fun HelpDialog(onDismiss: () -> Unit) {
 /**
  * Asks for the password of every node on a route that signs in with one and
  * has none saved, jump hosts included. [onConnect] receives the passwords and
- * whether to save them.
+ * whether to save them. [reason], when given, says why it opened on its own
+ * (a rejected device key), above the fields.
  */
 @Composable
-fun PasswordsDialog(hops: List<Node>, onConnect: (Map<String, String>, Boolean) -> Unit, onDismiss: () -> Unit) {
+fun PasswordsDialog(hops: List<Node>, onConnect: (Map<String, String>, Boolean) -> Unit, onDismiss: () -> Unit, reason: String? = null) {
     val secrets = remember { mutableStateMapOf<String, String>() }
     var remember by remember { mutableStateOf(true) }
     val focus = remember { FocusRequester() }
@@ -137,6 +138,7 @@ fun PasswordsDialog(hops: List<Node>, onConnect: (Map<String, String>, Boolean) 
         title = { Text(stringResource(R.string.passwords_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (reason != null) Text(reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 hops.forEachIndexed { index, node ->
                     GlassField(
                         secrets[node.id].orEmpty(), { secrets[node.id] = it },

@@ -249,6 +249,8 @@ fun SessionScreen(
         }
     }
     var askPasswords by remember { mutableStateOf<List<Node>?>(null) }
+    // The host whose device key was rejected when the password dialog opened for it, so the dialog says why.
+    var askKeyRejectedBy by remember { mutableStateOf<String?>(null) }
     var terminal by remember { mutableStateOf<TerminalView?>(null) }
     // What the terminal view last drew, for the composer's checks (HG-VIS);
     // a new connection starts with none, which the native core refuses.
@@ -339,7 +341,10 @@ fun SessionScreen(
         // One automatic try per hop per attachment; a cancel or wrong
         // password surfaces sign-in again but never loops on its own.
         if (!app.claimPasswordFallback(node.id, hop.id)) return@LaunchedEffect
-        if (!app.fallbackWithSavedPassword(node, hop, dark)) askPasswords = listOf(hop)
+        if (!app.fallbackWithSavedPassword(node, hop, dark)) {
+            askKeyRejectedBy = rejection.host
+            askPasswords = listOf(hop)
+        }
     }
 
     LaunchedEffect(scheme, state) { connection.setTheme(scheme.toJson().toString()) }
@@ -1052,12 +1057,19 @@ fun SessionScreen(
                             }
                         }
                         if (!lostLive) {
+                            val passwordUsed = rejected != null && app.usedPassword(node.id, rejected.id)
                             StateCard(
                                 state = state,
                                 accent = accent,
-                                rejectedPassword = rejected != null && (Routes.fallbackEligible(rejected) || app.usedPassword(node.id, rejected.id)),
+                                passwordUsed = passwordUsed,
+                                signIn = rejected != null && (Routes.fallbackEligible(rejected) || passwordUsed),
                                 onRetry = ::retry,
-                                onSignIn = { rejected?.let { askPasswords = listOf(it) } },
+                                onSignIn = {
+                                    rejected?.let {
+                                        askKeyRejectedBy = (state as? Connection.State.AuthRejected)?.host?.takeUnless { passwordUsed }
+                                        askPasswords = listOf(it)
+                                    }
+                                },
                                 onTrust = { trusted ->
                                     app.nodes.trust(trusted.host, trusted.fingerprint)
                                     retry()
@@ -1263,13 +1275,16 @@ fun SessionScreen(
     askPasswords?.let { hops ->
         PasswordsDialog(
             hops = hops,
+            reason = askKeyRejectedBy?.let { stringResource(R.string.key_rejected_fallback_text, it) },
             onConnect = { secrets, remember ->
                 askPasswords = null
+                askKeyRejectedBy = null
                 if (setupAfterPasswords) app.setupHerdr(node, secrets, dark, remember) else app.reconnect(node, secrets, dark, remember)
                 setupAfterPasswords = false
             },
             onDismiss = {
                 askPasswords = null
+                askKeyRejectedBy = null
                 setupAfterPasswords = false
             },
         )
@@ -1631,7 +1646,10 @@ private fun PaneAction(label: String, on: Boolean, accent: Color, tag: String, o
 private fun StateCard(
     state: Connection.State,
     accent: Color,
-    rejectedPassword: Boolean,
+    // What was rejected (the body) and what can be done (the action) differ: a rejected
+    // device key still offers its password, but only a password actually sent was rejected as one.
+    passwordUsed: Boolean,
+    signIn: Boolean,
     onRetry: () -> Unit,
     onSignIn: () -> Unit,
     onTrust: (Connection.State.UntrustedHostKey) -> Unit,
@@ -1642,7 +1660,7 @@ private fun StateCard(
         is Connection.State.Connecting, is Connection.State.Connected -> return
         is Connection.State.Disconnected -> stringResource(R.string.disconnected) to state.reason
         is Connection.State.AuthRejected -> stringResource(R.string.sign_in_rejected) to stringResource(
-            if (rejectedPassword) R.string.password_rejected_text else R.string.key_rejected_text,
+            if (passwordUsed) R.string.password_rejected_text else R.string.key_rejected_text,
             state.host,
         )
         is Connection.State.Incompatible -> {
@@ -1736,7 +1754,7 @@ private fun StateCard(
                 GlassButton(stringResource(R.string.nodes), onClick = onLeave, modifier = Modifier.weight(1f))
                 val (label, action) = when (state) {
                     is Connection.State.UntrustedHostKey -> stringResource(R.string.trust_and_connect) to { onTrust(state) }
-                    is Connection.State.AuthRejected -> if (rejectedPassword) {
+                    is Connection.State.AuthRejected -> if (signIn) {
                         stringResource(R.string.enter_password) to onSignIn
                     } else {
                         stringResource(R.string.reconnect) to onRetry
