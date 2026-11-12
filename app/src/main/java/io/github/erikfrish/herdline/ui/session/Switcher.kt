@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -274,14 +275,30 @@ fun Switcher(
             Modifier.fillMaxWidth().testTag("switcher"),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
+            // New tab · Two columns · Close in the host line, in both orders; in the sheet that header is sticky,
+            // so New tab stays in view. Before its label would be cut it takes its own row, right-aligned.
             val header: @Composable () -> Unit = {
-                HostLine(node, view, state) {
-                    if (onShowGrid != null) {
-                        IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-columns")) {
-                            Icon(GridIcon, stringResource(R.string.overview_as_columns), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val listWidth = maxWidth
+                    val live = state is Connection.State.Connected
+                    val icons = (if (onShowGrid != null) 58.dp else 0.dp) + (if (onClose != null) 58.dp else 0.dp)
+                    // Avatar and gaps, the host text's least room, then the button and the icons.
+                    val inline = listWidth >= 28.dp + 10.dp + HEADER_TITLE_MIN + 10.dp + newTabButtonWidth() + icons
+                    val newTab: @Composable () -> Unit = {
+                        NewTabButton(view, live, scoped.chosen, scoped.gone, actions.newTab, menuWidth = listWidth, tag = "switcher:new-tab")
                     }
-                    if (onClose != null) SheetCloseButton(onClose, tag = "switcher:close")
+                    Column {
+                        HostLine(node, view, state) {
+                            if (inline) newTab()
+                            if (onShowGrid != null) {
+                                IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-columns")) {
+                                    Icon(GridIcon, stringResource(R.string.overview_as_columns), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (onClose != null) SheetCloseButton(onClose, tag = "switcher:close")
+                        }
+                        if (!inline) Box(Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.CenterEnd) { newTab() }
+                    }
                 }
             }
             // In the sheet the header stays on top while the list scrolls, so Close is always in view
@@ -385,7 +402,8 @@ fun Switcher(
             if (browsing && !revealed && hiding.count > 0) {
                 item(key = "hidden") { HiddenFooter(hiding.count) { showHidden = true } }
             }
-            if (browsing) {
+            // A host with no workspace offers New workspace even while a search or filter is on.
+            if (browsing || (view != null && view.workspaces.isEmpty())) {
                 item(key = "new") {
                     GlassButton(
                         stringResource(R.string.new_workspace),

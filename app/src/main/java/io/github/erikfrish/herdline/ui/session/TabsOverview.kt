@@ -97,6 +97,7 @@ import io.github.erikfrish.herdline.ui.components.StatusGlyph
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.glass.GlassMenuItem
+import io.github.erikfrish.herdline.ui.glass.GlassButton
 
 /**
  * The phone Tabs sheet's compact overview (TB1): a header, search, a
@@ -169,8 +170,7 @@ fun TabsOverview(
             return@AnimatedContent
         }
         Column(Modifier.fillMaxWidth().testTag("overview")) {
-            val newTabIn = view?.workspaces?.firstOrNull { it.id == (chosen ?: view.focusedWorkspace) }?.takeUnless { scoped.gone }
-            OverviewHeader(host, view, newTabIn, actions, onShowList, onClose)
+            OverviewHeader(host, view, chosen, scoped.gone, live = state is Connection.State.Connected, actions, onShowList, onClose)
             Box(Modifier.padding(horizontal = 16.dp)) {
                 val fontScale = LocalDensity.current.fontScale
                 SearchField(query, onQuery, stringResource(R.string.overview_search), minHeight = maxOf(48f, 16f * fontScale + 24f).dp)
@@ -196,6 +196,12 @@ fun TabsOverview(
             }
             when {
                 view == null || state !is Connection.State.Connected -> Box(Modifier.padding(horizontal = 16.dp)) { HostLine(node, view, state) }
+                view.workspaces.isEmpty() -> GlassButton(
+                    stringResource(R.string.new_workspace),
+                    onClick = actions.newWorkspace,
+                    icon = Icons.Default.Add,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 48.dp).testTag("overview:new-workspace"),
+                )
                 scoped.gone -> ScopeGone { onScope(null) }
                 sections.isEmpty() -> NoneMatch {
                     onQuery("")
@@ -208,42 +214,57 @@ fun TabsOverview(
     }
 }
 
+/** Title, then New tab, Show as list and Close; New tab takes its own row, right-aligned, before its label would be cut. */
 @Composable
-private fun OverviewHeader(host: String, view: ShellView?, newTabIn: Workspace?, actions: SwitcherActions, onShowList: () -> Unit, onClose: (() -> Unit)?) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 8.dp).heightIn(min = 56.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            if (view != null) {
-                Text(
-                    stringResource(
-                        R.string.overview_sub,
-                        host,
-                        pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
-                        pluralStringResource(R.plurals.overview_workspaces, view.workspaces.size, view.workspaces.size),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+private fun OverviewHeader(
+    host: String,
+    view: ShellView?,
+    chosen: String?,
+    gone: Boolean,
+    live: Boolean,
+    actions: SwitcherActions,
+    onShowList: () -> Unit,
+    onClose: (() -> Unit)?,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val sheetWidth = maxWidth
+        // Start and end padding, the title's least room, the button, then Show as list and Close.
+        val inline = sheetWidth >= 16.dp + 4.dp + HEADER_TITLE_MIN + newTabButtonWidth() + 48.dp + (if (onClose != null) 48.dp else 0.dp)
+        val newTab: @Composable () -> Unit = {
+            NewTabButton(view, live, chosen, gone, actions.newTab, menuWidth = sheetWidth, tag = "overview:new-tab")
+        }
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    if (view != null) {
+                        Text(
+                            stringResource(
+                                R.string.overview_sub,
+                                host,
+                                pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
+                                pluralStringResource(R.plurals.overview_workspaces, view.workspaces.size, view.workspaces.size),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (inline) newTab()
+                IconButton(onClick = onShowList, modifier = Modifier.testTag("overview:as-list")) {
+                    Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list))
+                }
+                if (onClose != null) SheetCloseButton(onClose, tag = "overview:close")
             }
+            if (!inline) Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) { newTab() }
         }
-        IconButton(
-            onClick = { newTabIn?.let(actions.newTab) },
-            enabled = newTabIn != null,
-            modifier = Modifier.testTag("overview:new-tab"),
-        ) {
-            Icon(Icons.Default.Add, stringResource(R.string.new_tab))
-        }
-        IconButton(onClick = onShowList, modifier = Modifier.testTag("overview:as-list")) {
-            Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list))
-        }
-        if (onClose != null) SheetCloseButton(onClose, tag = "overview:close")
     }
 }
+
+/** The least width a header's title keeps beside New tab; below it New tab wraps to its own row. */
+internal val HEADER_TITLE_MIN = 96.dp
 
 /** The rows: a full-span header per workspace with All chosen, then its tabs in Herdr's tab order, up to two columns. */
 @Composable
@@ -498,14 +519,9 @@ internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen
             }
             HorizontalDivider()
             for (workspace in view.workspaces) {
-                val tabs = view.tabsOf(workspace.id).size
                 ScopeItem(
                     name = workspaceName(workspace, suffixes[workspace.id]),
-                    detail = listOfNotNull(
-                        workspace.branch?.takeIf { it.isNotBlank() },
-                        if (workspace.linkedWorktree) stringResource(R.string.overview_linked_worktree) else null,
-                        pluralStringResource(R.plurals.overview_tabs, tabs, tabs),
-                    ).joinToString(" · "),
+                    detail = workspaceDetail(view, workspace),
                     selected = workspace.id == chosen,
                     leading = { StatusGlyph(workspace.status, 10.dp, slot = 24.dp) },
                 ) {
@@ -517,8 +533,19 @@ internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen
     }
 }
 
+/** A workspace's menu line: its branch, a linked worktree, then its tab count. */
 @Composable
-private fun ScopeItem(name: String, detail: String, selected: Boolean, leading: @Composable () -> Unit, onClick: () -> Unit) {
+internal fun workspaceDetail(view: ShellView, workspace: Workspace): String {
+    val tabs = view.tabsOf(workspace.id).size
+    return listOfNotNull(
+        workspace.branch?.takeIf { it.isNotBlank() },
+        if (workspace.linkedWorktree) stringResource(R.string.overview_linked_worktree) else null,
+        pluralStringResource(R.plurals.overview_tabs, tabs, tabs),
+    ).joinToString(" · ")
+}
+
+@Composable
+internal fun ScopeItem(name: String, detail: String, selected: Boolean, leading: @Composable () -> Unit, onClick: () -> Unit) {
     DropdownMenuItem(
         text = {
             Column(Modifier.padding(vertical = 8.dp)) {
