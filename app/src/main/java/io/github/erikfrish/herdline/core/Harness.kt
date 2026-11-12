@@ -256,10 +256,10 @@ private val KNOWN: Map<String, Harness> = (
         routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
         routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
         routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB), steer = true),
-        // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw and steer-a-queued-entry
-        // go to the already-running server (native agent_chat, opencode_ctl.py + opencode_media.py, pinned
-        // v2.2.7 fedc6f2); unit tests only.
-        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, NB, NB), queue = true, steer = true),
+        // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw, steer-a-queued-entry
+        // and the session's children (by title, the cut list marked) go to the already-running server
+        // (native agent_chat, opencode_ctl.py + opencode_media.py, pinned v2.2.7 fedc6f2); unit tests only.
+        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, NB), queue = true, steer = true),
         // kilo: text Send, status, state and the session's children (by title) through its v1 server
         // (kilo_ctl.py, pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer,
         // queue, withdraw, promote or files.

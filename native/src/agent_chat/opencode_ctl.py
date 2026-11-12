@@ -1,7 +1,7 @@
 """One call to a discovered, already-running local OpenCode or Kilo server.
 
 argv: flavor (opencode | kilo), op (send | state | status | withdraw |
-promote | dialogs | submit | abort), session id, payload JSON, and `media`
+promote | dialogs | submit | abort | children), session id, payload JSON, and `media`
 for an OpenCode send with staged files: then opencode_media.py is part of
 this script and {records, target} come on fd 3; prepare() turns them into
 the prompt's files or a MediaRefusal ('media\t<code>') before anything is
@@ -23,6 +23,11 @@ Routes, pinned to source:
   GET /api/session/:id (session.ts:234); POST /api/session/:id/prompt
   {id, text, delivery?, files?} -> {data: Inbox.User} (session.ts:339;
   files are PromptInput {uri, name?, source?}, schema/prompt-input.ts:9-18);
+  GET /api/session?parentID=&limit= -> {data: [Session.Info], cursor:
+  {previous?, next?}} (session.ts:114-120, :128-145), then ?cursor=&limit=
+  with the opaque cursor.next only: it carries the filters (core/src/
+  session.ts:125-131) and is made for every non-empty page, the last one
+  too (:403-427), so only an empty page ends the list;
   GET /api/session/active -> {data: {id: {type}}}, absent = inactive
   (session.ts:222); GET /api/session/:id/inbox -> {data: [Inbox.Info]} in
   enqueue order (session.ts:542); DELETE /api/session/:id/inbox/:inboxID,
@@ -62,6 +67,11 @@ DELIVERIES = ('steer', 'queue')
 # Shown in the queue panel only; a withdraw restores the app's own record.
 MAX_QUEUED = 20
 MAX_QUEUED_TEXT = 2000
+# Children shown by title; one more read says whether there are others.
+MAX_CHILDREN = 50
+MAX_CHILD_TITLE = 200
+# Small pages keep each reply far inside LIMIT.
+CHILD_PAGE = 10
 KILO_OPS = ('dialogs', 'submit', 'cancel', 'abort')
 # One form or question set per dialog: five stay inside the 64 KiB reply.
 MAX_DIALOG = 12000
@@ -536,6 +546,36 @@ def state(base, headers):
     return {'idle': not active(base, headers), 'queued': queued[:MAX_QUEUED]}
 
 
+def children(base, headers):
+    """The sessions this one started, most recently updated first as the
+    server orders them, and whether more than MAX_CHILDREN exist. Only the returned
+    cursor is followed, never decoded or made here; an entry naming another
+    parent, or one seen twice, is no list at all."""
+    found, seen = [], set()
+    query = 'parentID=' + quoted(session)
+    while len(found) <= MAX_CHILDREN:
+        want = min(CHILD_PAGE, MAX_CHILDREN + 1 - len(found))
+        page = call(base, headers, 'GET', '/api/session?' + query + '&limit=' + str(want))
+        data, cursor = page['data'], page['cursor']
+        if not isinstance(data, list) or not isinstance(cursor, dict) or len(data) > want:
+            raise ValueError('not SessionsResponse')
+        if not data:
+            return found, False
+        for entry in data:
+            if not isinstance(entry, dict) or entry.get('parentID') != session:
+                raise ValueError('another parent')
+            child, title = entry.get('id'), entry.get('title', '')
+            if not isinstance(child, str) or not child or child in seen or not isinstance(title, str):
+                raise ValueError('not a child')
+            seen.add(child)
+            found.append({'id': child, 'title': title[:MAX_CHILD_TITLE]})
+        following = cursor.get('next')
+        if not isinstance(following, str) or not following:
+            raise ValueError('a page without its next cursor')
+        query = 'cursor=' + quoted(following)
+    return found[:MAX_CHILDREN], True
+
+
 def listed(base, headers, inbox_id):
     return entry_of(base, headers, inbox_id) is not None
 
@@ -580,6 +620,9 @@ def main():
             message_id = json.loads(payload)['id']
             found = listed(base, headers, message_id) or in_history(base, headers, message_id)
             return 'accepted' if found else 'unknown'
+        if op == 'children':
+            listed_children, more = children(base, headers)
+            return ('children_more' if more else 'children') + '\t' + json.dumps(listed_children, separators=(',', ':'))
         if op in ('withdraw', 'promote'):
             inbox_id = json.loads(payload)['id']
             if not listed(base, headers, inbox_id):

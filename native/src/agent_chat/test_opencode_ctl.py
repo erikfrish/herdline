@@ -104,6 +104,39 @@ class OpenCode(unittest.TestCase):
                 target.close()
                 service.close()
 
+    def test_children_follow_only_the_returned_cursor_to_an_empty_page(self):
+        def kid(n, parent='ses_test'):
+            return {'id': 'ses_k%02d' % n, 'parentID': parent, 'title': 'Kid %d' % n, 'status': 'ignored'}
+
+        def pages(total):
+            # Opaque cursors the fake made; a short last page still has next.
+            routes, query, at = {}, 'parentID=ses_test', 0
+            while True:
+                want = min(10, 51 - at)
+                data = [kid(n) for n in range(at, min(at + want, total))]
+                routes[('GET', '/api/session?%s&limit=%d' % (query, want))] = (200, {'data': data, 'cursor': {'previous': 'p', 'next': 'opaque%d' % at} if data else {}})
+                if not data or at + want > 50:
+                    return routes
+                at += len(data)
+                query = 'cursor=opaque%d' % (at - len(data))
+
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}), **pages(12)})
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': os.getpid(), 'password': 'test-only'})
+                word, listed = run(home, 'opencode', 'children').split('\t')
+                self.assertEqual(word, 'children')
+                self.assertEqual(json.loads(listed), [{'id': 'ses_k%02d' % n, 'title': 'Kid %d' % n} for n in range(12)])
+                # The short page's next is followed: only the empty page ends it.
+                self.assertEqual(service.seen[-1][1], '/api/session?cursor=opaque10&limit=10')
+                service.routes.update(pages(60))
+                word, listed = run(home, 'opencode', 'children').split('\t')
+                self.assertEqual((word, len(json.loads(listed))), ('children_more', 50))
+                service.routes[('GET', '/api/session?parentID=ses_test&limit=10')] = (200, {'data': [kid(0, 'ses_other')], 'cursor': {'next': 'x'}})
+                self.assertEqual(run(home, 'opencode', 'children'), 'local', 'another parent is no list')
+            finally:
+                service.close()
+
     def test_allow_once_and_stop_reach_only_this_session(self):
         with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
             asked = {'id': PERMISSION, 'sessionID': 'ses_test', 'action': 'bash', 'resources': ['rm -rf build']}

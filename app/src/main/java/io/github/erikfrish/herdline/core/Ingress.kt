@@ -32,8 +32,11 @@ data class IngressSubagent(val parentCallId: String?, val child: TranscriptSubag
 /** OMP's queue as the extension reports it, and whether the agent is idle. */
 data class IngressState(val idle: Boolean, val queued: List<IngressQueued>, val subagents: List<IngressSubagent> = emptyList())
 
-/** One session this one started, as its program's server lists it (Kilo): its id and title, no state claimed. */
+/** One session this one started, as its program's server lists it (Kilo, OpenCode): its id and title, no state claimed. */
 data class IngressChild(val id: String, val title: String)
+
+/** The sessions listed, and [more] when the server holds others beyond them. */
+data class IngressChildren(val sessions: List<IngressChild>, val more: Boolean)
 
 /** What one send through the endpoint amounts to. */
 sealed interface IngressSend {
@@ -155,14 +158,15 @@ internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
 }
 
 /** The sessions [ingressChildren][Connection.ingressChildren] listed; anything but a live list fails. */
-internal fun ingressChildrenOutcome(call: () -> String): Result<List<IngressChild>> {
+internal fun ingressChildrenOutcome(call: () -> String): Result<IngressChildren> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val children = reply.optJSONArray("children")
     if (reply.optString("endpoint") != "live" || children == null) {
         return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
     }
     return try {
-        Result.success((0 until children.length()).map { children.getJSONObject(it).let { c -> IngressChild(c.getString("id"), c.getString("title")) } })
+        val sessions = (0 until children.length()).map { children.getJSONObject(it).let { c -> IngressChild(c.getString("id"), c.getString("title")) } }
+        Result.success(IngressChildren(sessions, reply.optBoolean("more", false)))
     } catch (error: JSONException) {
         Result.failure(IOException("children unreadable", error))
     }

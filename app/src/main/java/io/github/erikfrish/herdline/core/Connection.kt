@@ -553,7 +553,7 @@ class Connection(val node: Node) {
     }
 
     /** The sessions exactly [target]'s session started, as its server lists them; it changes nothing. Blocks on the host. */
-    fun ingressChildren(target: ComposerTarget): Result<List<IngressChild>> {
+    fun ingressChildren(target: ComposerTarget): Result<IngressChildren> {
         val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
         return ingressChildrenOutcome {
             Native.ingress(session, ingressRequest("children", target, UUID.randomUUID().toString()).toString())

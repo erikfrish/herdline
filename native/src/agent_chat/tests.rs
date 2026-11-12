@@ -159,7 +159,7 @@ fn opencode_inbox_answers_read_as_the_live_endpoint_kotlin_parses() {
 }
 
 #[test]
-fn kilo_children_are_named_by_id_and_title_or_not_at_all() {
+fn children_are_named_by_id_and_title_or_not_at_all() {
     let list = r#"children	[{"id":"ses_kid","title":"Explore"},{"id":"ses_two","title":""}]"#;
     assert_eq!(
         control_reply(list, Op::Children, ID, "").unwrap(),
@@ -181,6 +181,10 @@ fn kilo_children_are_named_by_id_and_title_or_not_at_all() {
     assert_eq!(unavailable("server_discovery"), control_reply("discovery", Op::Children, ID, "").unwrap());
     let many = format!("children\t[{}]", vec![r#"{"id":"ses_a","title":"a"}"#; MAX_CHILDREN + 1].join(","));
     assert!(control_reply(&many, Op::Children, ID, "").is_err());
+    // OpenCode's list with others beyond it says so; a short one cannot.
+    let first = format!("children_more\t[{}]", vec![r#"{"id":"ses_a","title":"a"}"#; MAX_CHILDREN].join(","));
+    assert_eq!(control_reply(&first, Op::Children, ID, "").unwrap()["more"], json!(true));
+    assert!(control_reply(r#"children_more	[{"id":"ses_a","title":"a"}]"#, Op::Children, ID, "").is_err());
 }
 
 #[test]

@@ -149,8 +149,10 @@ class IngressTest {
     @Test
     fun childrenComeOnlyFromALiveListOfIdsAndTitles() {
         val children = ingressChildrenOutcome { """{"endpoint":"live","children":[{"id":"ses_kid","title":"Explore"}]}""" }.getOrThrow()
-        assertEquals(listOf(IngressChild("ses_kid", "Explore")), children)
-        // OpenCode's list is not built: unsupported, never an empty list read as no children.
+        assertEquals(IngressChildren(listOf(IngressChild("ses_kid", "Explore")), more = false), children)
+        // A cut list says so: never shown as the whole.
+        assertTrue(ingressChildrenOutcome { """{"endpoint":"live","children":[],"more":true}""" }.getOrThrow().more)
+        // Unsupported is no list, never an empty one read as no children.
         assertTrue(ingressChildrenOutcome { """{"endpoint":"unsupported","missing":["children"]}""" }.isFailure)
         assertTrue(ingressChildrenOutcome { """{"endpoint":"live","children":[{"id":"ses_kid"}]}""" }.isFailure)
         assertTrue(ingressChildrenOutcome { throw IOException("gone") }.isFailure)
