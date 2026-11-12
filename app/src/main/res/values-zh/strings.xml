@@ -389,7 +389,7 @@
     <string name="attachment_reason_opencode_too_large">对 OpenCode 来说过大：每个文件最多 20 MiB。未上传。</string>
     <string name="attachment_reason_bad_name">无法使用此文件名。未上传。</string>
     <string name="attachment_reason_target_changed">上传时连接已变化。未上传。</string>
-    <string name="attachment_reason_needs_agent">文件只能发送给 OMP 或 OpenCode 代理。未上传。</string>
+    <string name="attachment_reason_needs_agent">文件只能发送给接受附件的代理。未上传。</string>
     <string name="attachment_reason_staging_unsafe">主机的上传文件夹不是私有的。未上传。</string>
     <string name="attachment_reason_mismatch">上传的内容已损坏，已被删除。</string>
     <string name="attachment_reason_no_tools">主机缺少接收文件所需的工具。</string>
@@ -397,7 +397,7 @@
     <string name="attachment_reason_unreadable">无法在此手机上读取文件。请重新选择。</string>
     <string name="attachment_reason_failed">上传失败。点按重试。</string>
     <string name="reason_attachment_target">有附件是为其他窗格上传的。未发送任何内容。</string>
-    <string name="reason_attachment_needs_agent">文件只能发送给 OMP 或 OpenCode 代理。未发送任何内容。</string>
+    <string name="reason_attachment_needs_agent">文件只能发送给接受附件的代理。未发送任何内容。</string>
     <string name="reason_attachment_steer">引导消息不能携带文件。未发送任何内容。</string>
     <string name="reason_attachment_missing">已上传的文件已不在主机上。请重新上传。</string>
     <string name="reason_attachment_too_many">OpenCode 一条消息最多接受 10 个文件。请移除一些。未发送任何内容。</string>

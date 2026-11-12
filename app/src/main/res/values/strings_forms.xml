@@ -41,10 +41,10 @@
     <string name="form_result_not_open">This question was already answered or closed. Nothing was sent again.</string>
     <string name="form_result_invalid">The agent did not accept these answers. Check the fields and submit again.</string>
     <string name="form_result_kind_mismatch">This question changed on the computer. Nothing was sent.</string>
-    <string name="form_result_failed">Answer not confirmed (%1$s). It may already have reached OMP. Nothing is resent.</string>
+    <string name="form_result_failed">Answer not confirmed (%1$s). It may already have reached the agent. Nothing is resent.</string>
     <string name="form_answered">Answered</string>
     <string name="form_timed_out_label">Timed out</string>
-    <string name="form_timed_out">OMP submitted the form defaults after the timeout; this was not a user choice.</string>
+    <string name="form_timed_out">The agent submitted the form defaults after the timeout; this was not a user choice.</string>
     <string name="form_answer_spoken">%1$s: %2$s</string>
     <string name="form_answer_none_spoken">%1$s: no answer</string>
     <string name="form_image_external">Image not shown: Herdline does not load pictures from the network or files.</string>

@@ -140,7 +140,7 @@
     <string name="attachment_reason_opencode_too_large">Too large for OpenCode: it takes files up to 20 MiB each. Not uploaded.</string>
     <string name="attachment_reason_bad_name">The file name can\'t be used. Not uploaded.</string>
     <string name="attachment_reason_target_changed">The connection changed while uploading. Not uploaded.</string>
-    <string name="attachment_reason_needs_agent">Files go only to an OMP or OpenCode agent. Not uploaded.</string>
+    <string name="attachment_reason_needs_agent">Files go only to an agent that accepts attachments. Not uploaded.</string>
     <string name="attachment_reason_staging_unsafe">The host\'s upload folder isn\'t private. Not uploaded.</string>
     <string name="attachment_reason_mismatch">The upload arrived damaged and was removed.</string>
     <string name="attachment_reason_no_tools">The host lacks the tools to receive files.</string>
@@ -148,7 +148,7 @@
     <string name="attachment_reason_unreadable">Can\'t read the file on this phone. Pick it again.</string>
     <string name="attachment_reason_failed">Upload failed. Tap to try again.</string>
     <string name="reason_attachment_target">An attachment was uploaded for another pane. Nothing sent.</string>
-    <string name="reason_attachment_needs_agent">Files can be sent only to an OMP or OpenCode agent. Nothing sent.</string>
+    <string name="reason_attachment_needs_agent">Files can be sent only to an agent that accepts attachments. Nothing sent.</string>
     <string name="reason_attachment_steer">A steer can\'t carry files. Nothing sent.</string>
     <string name="reason_attachment_missing">An uploaded file is gone from the host. Upload it again.</string>
     <string name="reason_attachment_too_many">OpenCode takes at most 10 files in one message. Remove some. Nothing sent.</string>
