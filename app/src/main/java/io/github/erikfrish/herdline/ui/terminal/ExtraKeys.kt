@@ -168,6 +168,15 @@ private fun stacksUpOverDown(rows: List<List<ExtraKey>>): Boolean {
 
 private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
 
+/**
+ * A cap label's style, drawn and measured alike. It sets the whole style, so
+ * the theme's body line height (24 sp, 126 px at font scale 2.0) is not
+ * inherited: under it the text box outgrew a 36 dp cap, the glyph sat low in
+ * that taller line and lost its bottom, while the fit rule ([fitsFull])
+ * measured the font's own line and passed it.
+ */
+private val KeyLabelStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+
 /** Every row a hand can thumb without peeking, whatever the cap shrinks to. */
 private val KeyRowHeight = 48.dp
 
@@ -490,12 +499,11 @@ fun ExtraKeysRow(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                // The measured form ([labelFor]); the clip is only a guard, a short form always fits.
+                // The measured form ([labelFor]) in the measured style; the clip is only a guard.
                 Text(
                     shown,
-                    fontFamily = FontFamily.Monospace,
+                    style = KeyLabelStyle,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 14.sp,
                     color = labelColor,
                     maxLines = 1,
                     softWrap = false,
@@ -549,7 +557,7 @@ fun ExtraKeysRow(
         val capHeight = if (compact) 36.dp else 40.dp
         val short = remember(panel, widths, capHeight, density) {
             // Bold, the latched weight, so a latch never flips the form.
-            val style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            val style = KeyLabelStyle.copy(fontWeight = FontWeight.Bold)
             val capWidthPx = with(density) { (widths.minOrNull() ?: 0f).dp.toPx() }
             val capHeightPx = with(density) { capHeight.toPx() }
             val inset = with(density) { 1.dp.toPx() }
