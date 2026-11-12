@@ -7,4 +7,6 @@
     <!-- Typed refusals, used whole in place of chat_unavailable and session_chat_unreadable (section 3). -->
     <string name="chat_refused_outside_home">%1$s keeps this session outside your home folder on the host, and Chat reads only inside it. Terminal still works: read and type there.</string>
     <string name="chat_refused_qwen_managed">This Qwen Code session is stored as a managed session, which Chat can\'t read. Terminal still works: read and type there.</string>
+    <!-- Any other typed refusal, said as one: %1$s is the agent's display name. -->
+    <string name="chat_refused_general">%1$s keeps this session in a form Chat can\'t read. Terminal still works: read and type there.</string>
 </resources>

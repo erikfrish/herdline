@@ -10,27 +10,30 @@ internal data class RefusalWords(@StringRes val res: Int, val args: List<Any> = 
 
 /**
  * Which words say [refusal]: the app's own strings only, never the core's
- * message. Null for a format this app has no words for; the caller then
- * says the general text. [agent] is the program's display name.
+ * message. A cause this app has no words of its own for gets the general
+ * refusal, never the "switches back" texts, which are false for every typed
+ * refusal. [agent] is the program's display name.
  */
-internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWords? = when (refusal) {
+internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWords = when (refusal) {
     TranscriptRefusal.OutsideHome -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
     is TranscriptRefusal.UnsupportedFormat -> when (refusal.format) {
         "managed_session_journal" -> RefusalWords(R.string.chat_refused_qwen_managed)
-        else -> null
+        // Kilo's store resolved outside the home folder: the same cause as OutsideHome.
+        "kilo_store_outside_home" -> RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
+        else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
     // A format Chat can't name is said without a number, never as "unknown".
     is TranscriptRefusal.UnsupportedVersion -> when (refusal.agent) {
         "hermes" -> refusal.found?.let { RefusalWords(R.string.chat_refused_hermes_version, listOf(it, refusal.supported)) }
             ?: RefusalWords(R.string.chat_refused_hermes_format_unknown, listOf(refusal.supported))
-        else -> null
+        else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
 }
 
 /**
  * What Chat says for a typed refusal, used whole in place of
  * `chat_unavailable` and `session_chat_unreadable`, whose "switches back"
- * promise is false for these causes; null as [refusalWords] is.
+ * promise is false for these causes.
  */
-fun Context.refusalText(refusal: TranscriptRefusal, agent: String): String? =
-    refusalWords(refusal, agent)?.let { getString(it.res, *it.args.toTypedArray()) }
+fun Context.refusalText(refusal: TranscriptRefusal, agent: String): String =
+    refusalWords(refusal, agent).let { getString(it.res, *it.args.toTypedArray()) }

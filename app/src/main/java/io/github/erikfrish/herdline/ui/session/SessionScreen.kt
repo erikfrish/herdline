@@ -166,11 +166,11 @@ import io.github.erikfrish.herdline.ui.chat.ChatMemory
 import io.github.erikfrish.herdline.ui.chat.ChatView
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
-import io.github.erikfrish.herdline.ui.chat.refusalText
 import io.github.erikfrish.herdline.ui.LocalWindowClass
 import io.github.erikfrish.herdline.ui.sessionSidebar
 import io.github.erikfrish.herdline.ui.sideComposerWidthDp
 import io.github.erikfrish.herdline.ui.components.PasswordsDialog
+import io.github.erikfrish.herdline.ui.components.HelpDialog
 import io.github.erikfrish.herdline.ui.components.ConnectionGlyph
 import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.glass.GlassButton
@@ -212,6 +212,7 @@ import io.github.erikfrish.herdline.ui.theme.color
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.max
+import java.util.Locale
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
 private val MergedHeaderHeight: Dp = 480.dp
@@ -490,6 +491,13 @@ fun SessionScreen(
     val chatMode = if (closed) chatShown else chatWanted && !chatUnreadable
     // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
+    // D3-5: the Herdr agent kinds whose transcript has loaded on this connection, kept as long as
+    // chatMemory. A kind never read here is most likely one the host has no session integration for.
+    val readKinds = remember(connection) { mutableSetOf<String>() }
+    val chatKind = chatPane?.let { view?.agentIn(it)?.agent }?.lowercase(Locale.ROOT)
+    val chatLoaded = chatPane?.let { chatMemory.of(it).history } != null
+    LaunchedEffect(chatKind, chatLoaded) { if (chatLoaded && chatKind != null) readKinds += chatKind }
+    var help by remember { mutableStateOf(false) }
     val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
     // What is on screen: the pane read here in Chat, the desktop's in Terminal.
     val focusedPane = if (chatMode) reading?.pane?.takeIf { !closed } else desktopPane
@@ -636,15 +644,26 @@ fun SessionScreen(
         terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
-    /** The fallback's words: a typed refusal says its own whole text, any other cause the general one. */
-    fun chatUnreadableText(refusal: TranscriptRefusal?): String =
-        refusal?.let { context.refusalText(it, chatAgentName) } ?: context.getString(R.string.session_chat_unreadable)
+    /**
+     * Says why Chat fell back to Terminal: a typed refusal its own words, a kind
+     * read here before the passing text, a kind never read here what the host
+     * lacks, with Help. That one has an action, so it is held Long, not Indefinite.
+     */
+    suspend fun sayChatUnreadable(refusal: TranscriptRefusal?, duration: SnackbarDuration) {
+        val notice = unreadableNotice(refusal, chatAgentName, chatKind != null && chatKind in readKinds)
+        val text = context.getString(notice.words.res, *notice.words.args.toTypedArray())
+        if (!notice.help) {
+            snackbar.showSnackbar(text, duration = duration)
+        } else if (snackbar.showSnackbar(text, actionLabel = context.getString(R.string.help), duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+            help = true
+        }
+    }
 
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
-            chat && chatUnreadable -> scope.launch { snackbar.showSnackbar(chatUnreadableText(chatRefusal)) }
+            chat && chatUnreadable -> scope.launch { sayChatUnreadable(chatRefusal, SnackbarDuration.Short) }
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
@@ -1092,12 +1111,7 @@ fun SessionScreen(
                                         if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
                                             // The fallback happens on its own, so it
                                             // stays long enough to be read (lab.4 G5).
-                                            scope.launch {
-                                                snackbar.showSnackbar(
-                                                    chatUnreadableText(refusal),
-                                                    duration = SnackbarDuration.Long,
-                                                )
-                                            }
+                                            scope.launch { sayChatUnreadable(refusal, SnackbarDuration.Long) }
                                         }
                                         chatUnreadable = unreadable
                                         chatRefusal = refusal
@@ -1398,6 +1412,7 @@ fun SessionScreen(
             onDismiss = { pinFor = null },
         )
     }
+    if (help) HelpDialog(onDismiss = { help = false })
     askPasswords?.let { hops ->
         PasswordsDialog(
             hops = hops,
