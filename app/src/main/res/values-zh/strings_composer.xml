@@ -25,6 +25,7 @@
     <string name="composer_offline">草稿已保留 · 离线时不会发送任何内容</string>
     <string name="composer_uncertain">未确认：它可能已在窗格中。没有重新发送。</string>
     <string name="composer_in_pane">已在窗格的输入框中，但会话历史中还没有。未确认已发送；没有重新发送。</string>
+    <string name="composer_steer_entered">已作为引导输入：OMP 会在下一步接收。尚未确认；没有重新发送。</string>
     <string name="composer_offline_held">离线 · 上次投递未确认 · 不会发送任何内容</string>
     <string name="composer_check_description">检查窗格中是否有这条消息</string>
     <string name="composer_locked_line">已锁定：未确认。解锁后可编辑。</string>

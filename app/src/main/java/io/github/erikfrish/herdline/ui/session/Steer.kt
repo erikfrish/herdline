@@ -1,5 +1,7 @@
 package io.github.erikfrish.herdline.ui.session
 
+import androidx.annotation.StringRes
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.data.SentRecord
 import io.github.erikfrish.herdline.data.SentState
@@ -103,13 +105,23 @@ internal const val STEER_ENTER_WINDOW_MS = 2_000L
  * never Sent: with [historyFrom], the end of the session's history read
  * before the paste, it waits as [SentState.InPane] for a user entry with
  * that very text after it (the P1 watch); without one it stays Uncertain.
+ * Either way it is marked [SentRecord.steer]: Enter took it out of the box.
  */
 internal fun steerEntered(text: String, receipt: String, historyFrom: Long?, now: Long): SentRecord =
     if (historyFrom != null) {
-        SentRecord(text, receipt, true, SentState.InPane, now, historyFrom = historyFrom)
+        SentRecord(text, receipt, true, SentState.InPane, now, historyFrom = historyFrom, steer = true)
     } else {
-        SentRecord(text, receipt, true, SentState.Uncertain, now)
+        SentRecord(text, receipt, true, SentState.Uncertain, now, steer = true)
     }
+
+/**
+ * The words for an [SentState.InPane] record: a steer is no longer in the
+ * input box but waits in OMP's own queue for its next step; a typed send
+ * still sits in the box.
+ */
+@StringRes
+internal fun inPaneNotice(sent: SentRecord?): Int =
+    if (sent?.steer == true) R.string.composer_steer_entered else R.string.composer_in_pane
 
 /** The receipt this phase waits on, if any. */
 internal val SteerPhase.awaiting: String?

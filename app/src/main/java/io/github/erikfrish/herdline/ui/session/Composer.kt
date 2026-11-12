@@ -1657,9 +1657,9 @@ private fun Editor(
             }.takeIf { !checking },
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
         )
-        // P1: in the pane's input box, not yet in the session's history.
+        // P1: in the pane's input box (a steer: in OMP's queue), not yet in the session's history.
         draft.sent?.state == SentState.InPane -> Notice(
-            stringResource(R.string.composer_in_pane),
+            stringResource(inPaneNotice(draft.sent)),
             NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
             warning = inPaneWatched,

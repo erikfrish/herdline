@@ -32,6 +32,8 @@
     <string name="composer_offline">Draft kept · nothing sends while offline</string>
     <string name="composer_uncertain">Not confirmed: it may already be in the pane. Nothing was resent.</string>
     <string name="composer_in_pane">In the pane\'s input box, not yet in the session\'s history. Not confirmed as sent; nothing was resent.</string>
+    <!-- An OMP steer was typed into the pane and Enter pressed while the agent worked. It now waits in OMP's own queue until the agent's next step; Herdline confirms it only when it appears in the session history. "Not confirmed yet" must stay: it may still never arrive. Keep "nothing was resent" as in composer_in_pane. -->
+    <string name="composer_steer_entered">Entered as a steer: OMP takes it at its next step. Not confirmed yet; nothing was resent.</string>
     <string name="composer_offline_held">Offline · last delivery not confirmed · nothing sends</string>
     <string name="composer_check_description">Check the pane for the message</string>
     <string name="composer_locked_line">Locked: not confirmed. Unlock to edit.</string>

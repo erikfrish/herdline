@@ -1,5 +1,6 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Connection.DeliveryUpdate
 import io.github.erikfrish.herdline.core.Connection.SteerEnter
 import io.github.erikfrish.herdline.core.Connection.SteerStart
@@ -224,6 +225,25 @@ class SteerFlowTest {
         assertEquals(SentState.Uncertain, blind.sent?.state)
         assertTrue(blind.unsettled)
         assertFalse(blind.mayDeliver(Binding.Bound))
+    }
+
+    @Test
+    fun anEnteredSteerReadBackSaysItWaitsInOmpNotInTheInputBox() {
+        val stored = Draft(sent = steerEntered("fix it", "E", historyFrom = 4096, now = 1))
+        val back = Draft.fromJson(JSONObject(stored.toJson().toString())).sent!!
+        assertEquals(SentState.InPane, back.state)
+        assertEquals(R.string.composer_steer_entered, inPaneNotice(back))
+    }
+
+    @Test
+    fun aTypedSendInThePaneStillSaysItIsInTheInputBox() {
+        // A Chat PTY send with Enter (P1): submit alone never makes it a steer.
+        val typed = SentRecord("fix it", "R", true, SentState.InPane, 1, historyFrom = 4096)
+        val back = Draft.fromJson(JSONObject(Draft(sent = typed).toJson().toString())).sent!!
+        assertEquals(R.string.composer_in_pane, inPaneNotice(back))
+        // Stored before the steer mark existed: read as typed.
+        val old = JSONObject(Draft(sent = typed).toJson().toString()).apply { getJSONObject("sent").remove("steer") }
+        assertEquals(R.string.composer_in_pane, inPaneNotice(Draft.fromJson(old).sent!!))
     }
 
     @Test
