@@ -35,6 +35,7 @@ class SettingsResetTest {
         notifyDone = false,
         notifyConnection = false,
         liveActivity = false,
+        notificationFields = listOf("host"),
         lockDetail = LockDetail.Full,
         iconVariant = IconVariant.Mono,
     )
@@ -67,6 +68,7 @@ class SettingsResetTest {
         "notifyDone" to { it.notifyDone },
         "notifyConnection" to { it.notifyConnection },
         "liveActivity" to { it.liveActivity },
+        "notificationFields" to { it.notificationFields },
         "lockDetail" to { it.lockDetail },
         "iconVariant" to { it.iconVariant },
     )
@@ -77,7 +79,7 @@ class SettingsResetTest {
         ResetScope.Terminal to setOf("font", "fontSize", "vibrateOnBell", "keepScreenOn", "extraKeys", "showExtraKeys"),
         ResetScope.Composer to setOf("terminalSuggestions"),
         ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "tabsView", "hideShells", "hideIdleDone", "composerMenu", "sheetSections"),
-        ResetScope.Notifications to setOf("notifyAttention", "notifyDone", "notifyConnection", "liveActivity", "lockDetail"),
+        ResetScope.Notifications to setOf("notifyAttention", "notifyDone", "notifyConnection", "liveActivity", "notificationFields", "lockDetail"),
     )
 
     @Test

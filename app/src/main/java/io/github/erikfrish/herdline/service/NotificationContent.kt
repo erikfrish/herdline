@@ -54,18 +54,16 @@ internal interface NoteTexts {
     fun agentAttention(): String
     fun agentDone(): String
     fun agentsSummary(): String
+    fun connected(): String
+    fun agentCounts(count: Int, needYou: Int): String
 }
 
 /** The foreground notification while no live update shows: connecting, attached, reconnecting or offline, or a pin that is not live. */
-internal fun attachedContent(t: NoteTexts, count: Int, host: String?, lock: LockDetail, locked: Boolean): Redacted {
-    val generic = t.attachedHosts(count)
-    val named = if (count == 1 && host != null) t.attachedTo(host) else generic
-    val permitted = NoteContent(if (lock.showsNames) named else generic)
-    val full = NoteContent(named, t.attachedDetail())
-    return Redacted(
-        main = if (locked && !lock.showsNames) permitted else full,
-        public = if (lock == LockDetail.Full) full else permitted,
-    )
+internal fun attachedContent(t: NoteTexts, count: Int, host: String?, lock: LockDetail, locked: Boolean, fields: List<String> = io.github.erikfrish.herdline.data.NotificationFields.DEFAULT, agents: Int? = null, needYou: Int = 0): Redacted {
+    val title = if ("host" in fields && lock == LockDetail.Full && count == 1 && !host.isNullOrBlank()) t.connected() + " · " + host else t.connected()
+    val text = agents?.takeIf { "counts" in fields && lock == LockDetail.Full && (it > 1 || needYou > 0) }?.let { t.agentCounts(it, needYou) }
+    val content = NoteContent(if (lock == LockDetail.Hidden) "Herdline" else title, text)
+    return Redacted(content, content)
 }
 
 /**
@@ -122,4 +120,6 @@ internal class ResourceTexts(private val context: Context) : NoteTexts {
     override fun agentAttention() = context.getString(R.string.lock_agent_attention)
     override fun agentDone() = context.getString(R.string.lock_agent_done)
     override fun agentsSummary() = context.getString(R.string.lock_agents_summary)
+    override fun connected() = context.getString(R.string.notification_connected)
+    override fun agentCounts(count: Int, needYou: Int) = ResourceLiveTexts(context).agents(count, needYou)
 }

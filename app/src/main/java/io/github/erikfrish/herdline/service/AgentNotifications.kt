@@ -23,7 +23,6 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.data.IconVariant
-import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.ui.MainActivity
 
@@ -37,9 +36,6 @@ enum class Promotion {
 
     /** The card is stale and is not offered for promotion. */
     Stale,
-
-    /** Custom selected-icon content: ordinary notification, not offered for promotion. */
-    Custom,
 
     /** Android before 16 has no promoted notifications: an ordinary ongoing card. */
     Unsupported,
@@ -111,6 +107,16 @@ object AgentNotifications {
     @Volatile
     internal var card: Promotion = Promotion.NoCard
 
+    internal data class PromotionDetails(val requested: Boolean, val allowed: Boolean?, val eligible: Boolean?, val shown: Boolean?)
+
+    internal fun promotionDetails(context: Context): PromotionDetails {
+        val requested = card == Promotion.Requested
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA || Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1) return PromotionDetails(requested, null, null, null)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification
+        return PromotionDetails(requested, manager.canPostPromotedNotifications(), posted?.hasPromotableCharacteristics(), posted?.let { it.flags and Notification.FLAG_PROMOTED_ONGOING != 0 } ?: false)
+    }
+
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         OBSOLETE_CHANNELS.forEach(manager::deleteNotificationChannel)
@@ -118,7 +124,7 @@ object AgentNotifications {
             listOf(
                 NotificationChannel(CHANNEL_ATTENTION, context.getString(R.string.channel_attention), NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(CHANNEL_DONE, context.getString(R.string.channel_done), NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(CHANNEL_CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CHANNEL_CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW).apply { description = context.getString(R.string.attached_detail) },
                 NotificationChannel(CHANNEL_LIVE, context.getString(R.string.channel_live), NotificationManager.IMPORTANCE_LOW),
             ),
         )
@@ -354,7 +360,6 @@ object AgentNotifications {
     internal fun publicOf(context: Context, channel: String, content: NoteContent, icon: Int = R.drawable.ic_notification): NotificationCompat.Builder =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(icon)
-            .setLargeIcon(IconVariants.currentIcon(context))
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setSubText(content.subText)
@@ -417,7 +422,6 @@ object AgentNotifications {
         if (children.put(note.key.tag, ChildPost(words, lock, note.at, variant)) || force) {
             val child = NotificationCompat.Builder(context, channel)
                 .setSmallIcon(icon)
-                .setLargeIcon(IconVariants.icon(context, variant))
                 .setWhen(note.at)
                 .setShowWhen(true)
                 .setCategory(if (attention) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
@@ -441,7 +445,6 @@ object AgentNotifications {
         if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock, variant)) || force) {
             val summary = NotificationCompat.Builder(context, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setLargeIcon(IconVariants.icon(context, variant))
                 .setGroup(group(nodeId))
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)

@@ -886,7 +886,6 @@ private fun promotionText(state: Promotion): Int = when (state) {
     Promotion.Off -> R.string.promotion_off
     Promotion.NoCard -> R.string.promotion_no_card
     Promotion.Stale -> R.string.promotion_stale
-    Promotion.Custom -> R.string.promotion_custom
     Promotion.Unsupported -> R.string.promotion_unsupported
     Promotion.NotAllowed -> R.string.promotion_not_allowed
     Promotion.NotPromotable -> R.string.promotion_not_promotable

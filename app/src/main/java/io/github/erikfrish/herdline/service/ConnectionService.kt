@@ -23,12 +23,10 @@ import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AppLanguages
 import io.github.erikfrish.herdline.data.IconVariant
-import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.data.Settings
 import io.github.erikfrish.herdline.ui.MainActivity
 import io.github.erikfrish.herdline.ui.session.notificationBody
-import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -69,6 +67,9 @@ class ConnectionService : Service() {
         val live: LockDetail,
         val promote: Boolean,
         val variant: IconVariant = IconVariant.Default,
+        val fields: List<String> = io.github.erikfrish.herdline.data.NotificationFields.DEFAULT,
+        val agents: Int = 0,
+        val needYou: Int = 0,
         val minute: Long = 0,
     )
 
@@ -110,7 +111,7 @@ class ConnectionService : Service() {
         }
         val live = liveLevel(app.settings.liveLockDetail.value, settings.lockDetail)
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
-            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant)
+            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant, fields = settings.notificationFields)
         shown = state
         ServiceCompat.startForeground(
             this,
@@ -268,12 +269,15 @@ class ConnectionService : Service() {
                     live = level,
                     promote = settings.liveActivity,
                     variant = settings.iconVariant,
+                    fields = settings.notificationFields,
+                    agents = snapshots.sumOf { it.view?.agents?.size ?: 0 },
+                    needYou = snapshots.sumOf { snapshot -> snapshot.view?.agents?.count { it.status == AgentStatus.Blocked } ?: 0 },
                     minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
                 )
                 AgentNotifications.card = when (live?.let(::liveState)) {
                     null -> Promotion.NoCard
                     LiveState.Disconnected -> Promotion.Stale
-                    else -> Promotion.Custom
+                    else -> Promotion.Requested
                 }
                 if (next != shown && next.count > 0) {
                     shown = next
@@ -337,7 +341,6 @@ class ConnectionService : Service() {
         val words = lostContent(ResourceTexts(this), connection.node.title, lock)
         val notification = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_CONNECTION)
             .setSmallIcon(R.drawable.ic_notification)
-            .setLargeIcon(IconVariants.currentIcon(this))
             .setContentTitle(words.main.title)
             .setContentText(words.main.text)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -363,7 +366,8 @@ class ConnectionService : Service() {
         // permitted words whatever Android's own redaction is (D10, lab.6 I1).
         val locked = LockGate.isDeviceLocked(this)
         val time = DateFormat.getTimeFormat(this)
-        val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis()) { time.format(it) }
+        val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
+        preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live)
         val top = fields?.top ?: shown.card?.rows?.firstOrNull()
         val content = if (top != null) {
             AgentNotifications.open(this, top.nodeId, top.pane, "live")
@@ -376,7 +380,6 @@ class ConnectionService : Service() {
         )
         val builder = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_LIVE)
             .setOngoing(true)
-            .setLargeIcon(IconVariants.icon(this, shown.variant))
             .setOnlyAlertOnce(true)
             .setContentIntent(content)
             .setDeleteIntent(dismiss)
@@ -384,7 +387,7 @@ class ConnectionService : Service() {
             val disconnect = PendingIntent.getService(
                 this, 1, Intent(this, ConnectionService::class.java).setAction(ACTION_DISCONNECT_ALL), PendingIntent.FLAG_IMMUTABLE,
             )
-            val words = attachedContent(ResourceTexts(this), shown.count, shown.title, shown.lock, locked)
+            val words = attachedContent(ResourceTexts(this), shown.count, shown.title, shown.lock, locked, shown.fields, shown.agents, shown.needYou)
             return builder
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(words.main.title)
@@ -404,12 +407,8 @@ class ConnectionService : Service() {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setVisibility(AgentNotifications.visibility(shown.live))
         main.liveTime(builder)
-        if (Build.VERSION.SDK_INT >= API_METRIC_STYLE && main.metrics.isNotEmpty()) {
-            builder.setStyle(metricStyle(main.metrics))
-        } else {
-            main.big?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
-        }
-        builder.liveArtwork(this, shown.variant, main.title, main.text)
+        main.big?.let { builder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
+        builder.setRequestPromotedOngoing(shown.promote && fields.promote)
         if (fields.unpin) {
             val unpin = PendingIntent.getService(
                 this, 3, Intent(this, ConnectionService::class.java).setAction(ACTION_UNPIN), PendingIntent.FLAG_IMMUTABLE,
@@ -419,9 +418,11 @@ class ConnectionService : Service() {
         val public = fields.public
         val publicBuilder = AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_LIVE, NoteContent(public.title, public.text), glyphIcon(public.glyph))
             .setOngoing(true)
-            .liveArtwork(this, shown.variant, public.title, public.text)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setRequestPromotedOngoing(shown.promote && fields.promote)
         // The lock screen's own time and chip, as its level permits (NB-C4).
         public.liveTime(publicBuilder)
+        public.big?.let { publicBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
         builder.setPublicVersion(publicBuilder.build())
         return builder.build()
     }
@@ -437,20 +438,6 @@ class ConnectionService : Service() {
         since?.let { builder.setWhen(it).setShowWhen(true).setUsesChronometer(true) } ?: builder.setShowWhen(false)
     }
 
-    private fun metricStyle(metrics: List<LiveMetric>): NotificationCompat.MetricStyle {
-        val style = NotificationCompat.MetricStyle()
-        metrics.forEach { metric ->
-            val value = when (metric) {
-                is LiveMetric.Elapsed -> NotificationCompat.Metric.TimeDifference.forStopwatch(
-                    Instant.ofEpochMilli(metric.since),
-                    NotificationCompat.Metric.TimeDifference.FORMAT_CHRONOMETER,
-                )
-                is LiveMetric.Count -> NotificationCompat.Metric.FixedInt(metric.count)
-            }
-            style.addMetric(NotificationCompat.Metric(value, metric.label))
-        }
-        return style.setCriticalMetric(0)
-    }
 
     override fun onDestroy() {
         watcher?.cancel()
@@ -458,6 +445,7 @@ class ConnectionService : Service() {
         card?.cancel()
         card = null
         shown = null
+        preview.value = null
         LockGate.onLockChange = null
         AgentNotifications.card = Promotion.NoCard
         // The lost notes belong to connections that are gone.
@@ -476,8 +464,7 @@ class ConnectionService : Service() {
         private const val ACTION_UNPIN = "io.github.erikfrish.herdline.UNPIN"
 
 
-        /** MetricStyle is new in Android 17 (API 37). */
-        private const val API_METRIC_STYLE = 37
+        internal val preview = MutableStateFlow<NotificationCardPreview?>(null)
 
         fun update(context: Context) {
             val app = context.applicationContext as HerdlineApp

@@ -81,4 +81,18 @@ class SettingsStoreTest {
             assertEquals(custom, customPrefs.values["extra_keys"])
         }
     }
+
+    @Test
+    fun notificationContentKeepsItsOrderAndPrivacyAcrossRestartAndReset() {
+        val prefs = MemoryPrefs()
+        val store = SettingsStore(prefs)
+        store.chooseLiveLockDetail(LockDetail.NamesOnly)
+        store.update { it.copy(notificationFields = listOf("host", "state", "host", "unknown"), lockDetail = LockDetail.Full) }
+        val reloaded = SettingsStore(prefs)
+        assertEquals(listOf("host", "state"), reloaded.settings.value.notificationFields)
+        assertEquals(LockDetail.NamesOnly, reloaded.liveLockDetail.value)
+        reloaded.update { it.copy(notificationFields = NotificationFields.DEFAULT) }
+        assertEquals(LockDetail.Full, reloaded.settings.value.lockDetail)
+        assertEquals(LockDetail.NamesOnly, reloaded.liveLockDetail.value)
+    }
 }

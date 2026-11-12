@@ -99,6 +99,8 @@ data class Settings(
     val notifyDone: Boolean = true,
     val notifyConnection: Boolean = true,
     val liveActivity: Boolean = true,
+    /** Visible notification fields, in the user's order; privacy still caps them. */
+    val notificationFields: List<String> = NotificationFields.DEFAULT,
     val lockDetail: LockDetail = LockDetail.Hidden,
     val iconVariant: IconVariant = IconVariant.Default,
 ) {
@@ -145,6 +147,7 @@ data class Settings(
                 notifyDone = d.notifyDone,
                 notifyConnection = d.notifyConnection,
                 liveActivity = d.liveActivity,
+                notificationFields = d.notificationFields,
                 lockDetail = d.lockDetail,
             )
         }
@@ -235,6 +238,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             notifyDone = prefs.getBoolean("notify_done", d.notifyDone),
             notifyConnection = prefs.getBoolean("notify_connection", d.notifyConnection),
             liveActivity = prefs.getBoolean("live_activity", d.liveActivity),
+            notificationFields = ids("notification_fields")?.let(NotificationFields::normalized) ?: d.notificationFields,
             lockDetail = enumOf("lock_detail", d.lockDetail),
             iconVariant = enumOf("icon_variant", d.iconVariant),
         )
@@ -245,7 +249,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
 
     fun update(change: (Settings) -> Settings) {
         // Insert without Enter keeps its route whatever the caller wrote (parent Q-2).
-        val next = change(_settings.value).let { it.copy(composerMenu = ComposerMenu.repaired(it.composerMenu)) }
+        val next = change(_settings.value).let { it.copy(composerMenu = ComposerMenu.repaired(it.composerMenu), notificationFields = NotificationFields.normalized(it.notificationFields)) }
         prefs.edit()
             .putString("theme_mode", next.themeMode.name)
             .putString("app_theme", next.appTheme)
@@ -276,6 +280,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putBoolean("notify_done", next.notifyDone)
             .putBoolean("notify_connection", next.notifyConnection)
             .putBoolean("live_activity", next.liveActivity)
+            .putString("notification_fields", next.notificationFields.joinToString(","))
             .putString("lock_detail", next.lockDetail.name)
             .putString("icon_variant", next.iconVariant.name)
             .apply()
