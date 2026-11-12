@@ -1,0 +1,7 @@
+Herdline 0.6.12 — the tap hint shows again, clearer extra keys, one chip per waiting program
+
+The "Tap the terminal to type" hint shows again. In 0.6.9 to 0.6.11 the frame around a pane kept it hidden. It now looks for room only inside the pane you are using.
+
+When the row of extra keys is too wide to fit, it now ends on half a key at the edge, so it is clear the row scrolls. Keys buzz only when they actually send something.
+
+On a host card, two panes of the same program waiting for input now show as one chip with a count, such as "pi needs input ×2", instead of two identical chips. TalkBack reads it as "pi needs input, 2 panes".
