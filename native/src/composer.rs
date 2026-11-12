@@ -1129,11 +1129,34 @@ pub(crate) fn claude_blocker(row: &str) -> bool {
     .any(|marker| row.contains(marker))
 }
 
+/// Claude's own mode footer rows below its editor's lower rule, exactly as
+/// QA captured them from Claude 2.1.322 (`herdr pane read --raw`, ANSI
+/// stripped, a 30-column pane, so each is cut at the pane edge), one per
+/// shift+tab mode: auto, manual, accept edits and plan (10074 C9,
+/// FAIL-claude-send-drawn-under.json `below_lower_rule_captures`).
+const CLAUDE_FOOTERS: [&str; 4] = [
+    "⏵⏵ auto mode on (shift+tab",
+    "⏸ manual mode on · ? for …",
+    "⏵⏵ accept edits on",
+    "⏸ plan mode on (shift+tab",
+];
+
+/// Below Claude's lower rule only blank rows and a captured
+/// [CLAUDE_FOOTERS] row, compared whole after trimming. Anything else (a
+/// slash-command or file list, a wider pane's longer footer, a mode not
+/// captured) is unknown, so the box is not read as safe.
+fn claude_footer(rows: &[String], bottom: usize) -> bool {
+    rows[bottom + 1..]
+        .iter()
+        .map(|row| row.trim())
+        .all(|row| row.is_empty() || CLAUDE_FOOTERS.contains(&row))
+}
+
 /// Claude (Claude Code) editor between its two plain rules. The empty shape
 /// is exactly one bare `❯` prompt row with nothing after it: Claude's dim
 /// ghost suggestions show as unknown text behind the prompt and read as a
-/// draft, never as empty. A blocker anywhere owns input; a row below the
-/// lower rule that Claude does not leave blank is not known to be safe.
+/// draft, never as empty. A blocker anywhere owns input; below the lower
+/// rule only Claude's own mode footer ([claude_footer]) is known to be safe.
 pub fn claude_editor(rows: &[String]) -> Result<Editor, Unseen> {
     if rows.iter().any(|row| claude_blocker(row)) {
         return Err(Unseen::DialogOpen);
@@ -1144,7 +1167,9 @@ pub fn claude_editor(rows: &[String]) -> Result<Editor, Unseen> {
         return Err(Unseen::TopMissing);
     }
     let (top, bottom) = Program::Claude.rule_box(rows).ok_or(Unseen::None)?;
-    if rows[bottom + 1..].iter().any(|row| !row.trim().is_empty()) {
+    if !claude_footer(rows, bottom) {
+        // Not Claude's own footer below the rule: its autocomplete list, a
+        // picker or anything unknown — Enter would answer it.
         return Err(Unseen::ListBelow);
     }
     let mut inside = rows[top + 1..bottom]

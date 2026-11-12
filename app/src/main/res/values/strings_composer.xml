@@ -77,7 +77,7 @@
     <string name="composer_remote_draft">OMP\'s input box already has text. Append adds yours after it, without Enter.</string>
     <string name="composer_clear_in_terminal">Clear in Terminal</string>
     <string name="composer_clear_in_terminal_description">Open Terminal to clear the input box</string>
-    <string name="reason_editor_list_below">Something is drawn under OMP\'s input box. Check it in Terminal, then send again.</string>
+    <string name="reason_editor_list_below">Something is drawn under the input box. Check it in Terminal, then send again.</string>
     <string name="reason_editor_dialog_open">OMP is asking a question: answer it in Terminal. Nothing sent.</string>
     <string name="reason_editor_covered">Something is drawn over OMP\'s input box. Close it in Terminal, then send again. Nothing sent.</string>
     <string name="reason_editor_top_missing">The top of OMP\'s input box isn\'t on screen. Hide the keyboard or use a smaller text size, then send again. Nothing sent.</string>

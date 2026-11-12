@@ -1028,6 +1028,34 @@ const CLAUDE_NO_PROMPT: &str = "\
 ────────────────────────────────────────
 ";
 
+// QA 10074 C9, real Claude 2.1.322 idle in a 30x20 pane, read with
+// `herdr pane read --raw`, ANSI stripped, untrimmed: the box rows and the
+// one row under its lower rule, per shift+tab mode.
+const CLAUDE_CAPTURED_FOOTERS: [&str; 4] = [
+    "  ⏵⏵ auto mode on (shift+tab",
+    "  ⏸ manual mode on · ? for …",
+    "  ⏵⏵ accept edits on ",
+    "  ⏸ plan mode on (shift+tab ",
+];
+
+fn claude_captured(prompt: &str, below: &[&str]) -> Vec<String> {
+    let rule = "─".repeat(30);
+    [rule.as_str(), prompt, rule.as_str()]
+        .into_iter()
+        .chain(below.iter().copied())
+        .map(str::to_owned)
+        .collect()
+}
+
+// Not captured, so unknown: a slash-command list over the footer, a wider
+// pane's longer footer, a footer with more after it, a mode never seen.
+const CLAUDE_UNKNOWN_BELOW: [&[&str]; 4] = [
+    &["  /clear    Clear conversation history", "  ⏵⏵ auto mode on (shift+tab"],
+    &["  ⏵⏵ auto mode on (shift+tab to cycle)"],
+    &["  ⏵⏵ auto mode on (shift+tab · 3 files"],
+    &["  ⏵⏵ bypass permissions on (shift+tab"],
+];
+
 #[test]
 fn pi_editor_reads_only_the_captured_shape_as_empty() {
     assert_eq!(pi_editor(&rows(PI_EMPTY)), Ok(Editor::Empty));
@@ -1054,6 +1082,18 @@ fn claude_editor_takes_the_bare_prompt_and_fails_closed_on_the_rest() {
         Err(Unseen::ListBelow)
     );
     assert_eq!(claude_editor(&rows(CLAUDE_NO_PROMPT)), Err(Unseen::None));
+}
+
+#[test]
+fn claude_editor_reads_through_its_captured_mode_footers_only() {
+    for footer in CLAUDE_CAPTURED_FOOTERS {
+        // The captured empty prompt row: `❯`, a no-break space, a space.
+        assert_eq!(claude_editor(&claude_captured("❯\u{a0} ", &[footer])), Ok(Editor::Empty), "{footer}");
+        assert_eq!(claude_editor(&claude_captured("❯ Qaclaudeturnone", &[footer, ""])), Ok(Editor::Draft), "{footer}");
+    }
+    for below in CLAUDE_UNKNOWN_BELOW {
+        assert_eq!(claude_editor(&claude_captured("❯\u{a0} ", below)), Err(Unseen::ListBelow), "{below:?}");
+    }
 }
 
 fn instance() -> Identity {
