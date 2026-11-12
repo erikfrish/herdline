@@ -328,9 +328,35 @@ private fun ChatContent(
     val images = remember(identity) {
         identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
     }
-    val dialogTarget = remember(connection, view?.boot, identity, pane) {
+    // OpenCode and Kilo ask through their own server: read it only while the agent waits on the user.
+    val serverAgent = identity?.agent == "opencode" || identity?.agent == "kilo"
+    val asked = status == AgentStatus.Blocked
+    val dialogTarget = remember(connection, view?.boot, identity, pane, serverAgent && asked) {
         val boot = view?.boot
-        if (boot == null || identity == null || identity.agent != "omp") null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+        val reads = identity?.agent == "omp" || serverAgent && asked
+        if (boot == null || identity == null || !reads) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    // Stop reaches OpenCode and Kilo through the same server.
+    val stopTarget = remember(connection, view?.boot, identity, pane) {
+        val boot = view?.boot
+        if (boot == null || identity == null || !serverAgent) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    var stopping by remember(stopTarget) { mutableStateOf(false) }
+    var stopProblem by remember(stopTarget) { mutableStateOf(false) }
+    fun stop() {
+        val target = stopTarget ?: return
+        if (!linkLive || stopping) return
+        stopping = true
+        stopProblem = false
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { connection.ingressAbort(target) }
+                stopProblem = result.isFailure
+                if (result.getOrNull() == true) wake.trySend(Unit)
+            } finally {
+                stopping = false
+            }
+        }
     }
     // The endpoint's live children, folded into the task calls that spawned them.
     var liveSubagents by remember(dialogTarget) { mutableStateOf<List<IngressSubagent>>(emptyList()) }
@@ -363,9 +389,11 @@ private fun ChatContent(
                     dialogProblem = error.message
                 }
                 // The live state names each child under the tool call that spawned it; a read
-                // that fails keeps the last one.
-                withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
-                    liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
+                // that fails keeps the last one. Only OMP's endpoint has one.
+                if (target.agent == "omp") {
+                    withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
+                        liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
+                    }
                 }
                 delay(BUSY_POLL_MS)
             }
@@ -601,7 +629,15 @@ private fun ChatContent(
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
                         status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") { LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem) } }
-                        status == AgentStatus.Working -> item(key = "working") { LiveGap { WorkingRow(workingOn(items), colors) } }
+                        status == AgentStatus.Working -> item(key = "working") {
+                            LiveGap {
+                                WorkingRow(
+                                    workingOn(items), colors,
+                                    onStop = if (stopTarget != null && linkLive) ({ stop() }) else null,
+                                    stopping = stopping, stopProblem = stopProblem,
+                                )
+                            }
+                        }
                         // Herdr has no agent error state; a turn that ended on a failed tool is the error chat can see.
                         failure != null -> item(key = "error") { LiveGap { ErrorRow(failure, colors, onTerminal) } }
                         else -> Unit
@@ -1344,8 +1380,9 @@ private fun StateRow(bar: Color, border: Color, fill: Color, tag: String, conten
     }
 }
 
+/** [onStop], when the agent's own server can stop this turn (OpenCode, Kilo). */
 @Composable
-private fun WorkingRow(what: String?, colors: ChatColors) {
+private fun WorkingRow(what: String?, colors: ChatColors, onStop: (() -> Unit)? = null, stopping: Boolean = false, stopProblem: Boolean = false) {
     StateRow(colors.working, colors.border, Color.Transparent, "chat:working") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.working)
@@ -1354,8 +1391,15 @@ private fun WorkingRow(what: String?, colors: ChatColors) {
                 style = ChatType.body.copy(color = colors.text),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            if (onStop != null) {
+                FilledTonalButton(onClick = onStop, enabled = !stopping, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop")) {
+                    Text(stringResource(R.string.chat_stop))
+                }
+            }
         }
+        if (stopProblem) Text(stringResource(R.string.chat_stop_failed), style = ChatType.meta.copy(color = colors.muted))
     }
 }
 

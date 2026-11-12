@@ -558,6 +558,18 @@ class Connection(val node: Node) {
         return ingressSubmitOutcome(dialogId) { Native.ingress(session, request.toString()) }
     }
 
+    /**
+     * Stop the turn running on exactly [target]'s instance, through the
+     * agent's own server (OpenCode, Kilo). True when one was stopped, false
+     * when none was running. Blocks on the host.
+     */
+    fun ingressAbort(target: ComposerTarget): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressAbortOutcome {
+            Native.ingress(session, ingressRequest("abort", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
     private fun ingressSession(target: ComposerTarget): Long? {
         val session = live()
         if (session == 0L || target.nodeId != node.id || target.session != node.session || target.instance == null) {

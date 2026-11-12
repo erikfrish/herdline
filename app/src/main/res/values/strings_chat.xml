@@ -79,6 +79,8 @@
     <string name="chat_truncated">Shortened for chat; the terminal has the rest</string>
     <string name="chat_working">Working</string>
     <string name="chat_working_on">Working · %1$s</string>
+    <string name="chat_stop">Stop</string>
+    <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
     <string name="chat_blocked_title">Waiting for you in the terminal</string>
     <string name="chat_blocked_tool">%1$s is waiting for an answer. Chat cannot answer dialogs; answer it in the terminal.</string>
     <string name="chat_blocked_other">The agent is waiting for input. Chat cannot answer dialogs; answer it in the terminal.</string>

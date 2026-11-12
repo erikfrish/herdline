@@ -153,6 +153,16 @@ internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<
     return Result.success(result)
 }
 
+/** Stop's answer: whether a running turn was stopped. Anything less fails. */
+internal fun ingressAbortOutcome(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    val aborted = reply.opt("aborted")
+    if (reply.optString("endpoint") != "live" || aborted !is Boolean) {
+        return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
+    }
+    return Result.success(aborted)
+}
+
 private fun liveOutcome(id: String, reply: JSONObject): IngressSend {
     val state = parseIngressState(reply.optJSONObject("state"))
     val reason = reply.optString("reason")

@@ -28,6 +28,12 @@
 //! explicitly discovered, already-running local service. The default CLI API
 //! command may autostart a service, so it is not used for delivery.
 //!
+//! OpenCode and Kilo control (`agent_chat/opencode_ctl.py`): the session's
+//! open permission requests as dialogs, the user's reply to one, and Stop.
+//! Only a server already registered under this user's default state
+//! directories is used; a bare TUI has none and answers `no_server`. Kilo
+//! text keeps the validated PTY route.
+//!
 //! Every call runs as one command. First the transcript's own pane report,
 //! then the tiny embedded verifier, which must read that report as exactly
 //! the instance the request names (its pane, terminal, foreground pid,
@@ -42,7 +48,8 @@
 //!
 //! OpenCode's check ops answer that no wire path here serves them. Kotlin
 //! then keeps the receipt it holds exactly as it was, and nothing is
-//! invented to make a queue look readable.
+//! invented to make a queue look readable. Questions, file parts, status
+//! and children are not served here.
 
 use crate::{
     Error, Result, attach, composer,
@@ -67,6 +74,9 @@ const MAX_TEXT_BYTES: usize = composer::MAX_TEXT_BYTES;
 enum Engine {
     Codex,
     OpenCode,
+    /// Kilo, the OpenCode fork: control ops through its daemon; text
+    /// through the PTY route, as before.
+    Kilo,
     /// Pi, Claude Code, or any name not recognized: report [`absent`], so
     /// the caller's validated PTY route (`composer::deliver`) takes over
     /// instead of a guessed unguarded input.
@@ -81,12 +91,24 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     if engine == Engine::Pty {
         return Ok(absent().to_string());
     }
-    if !matches!(request.op, Op::Send | Op::Status | Op::State | Op::Withdraw) {
-        // Dialogs and their submissions are OMP-only snapshots; these
-        // engines have no dialog surface we know. Target not supported, so
-        // the reply is a truthful absence, not a request Kotlin may treat
-        // as sent.
-        return Ok(unsupported_op(request.op).to_string());
+    let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::Abort);
+    match engine {
+        // Dialogs and Stop have no Codex path here: a truthful absence of
+        // that op, not a request Kotlin may treat as done.
+        Engine::Codex if control => return Ok(unsupported_op(request.op).to_string()),
+        // Kilo text and its checks stay on the validated PTY route.
+        Engine::Kilo if !control => return Ok(absent().to_string()),
+        _ => {}
+    }
+    let mut submitted = None;
+    if request.op == Op::DialogSubmit {
+        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_permission_id(id)).ok_or(Error::BadReply)?;
+        let decision = request.answer.as_ref().and_then(|answer| answer["data"]["decision"].as_str());
+        let Some(decision) = decision.filter(|d| DECISIONS.contains(d)) else {
+            // Nothing left the phone: the answer is not one the server takes.
+            return Ok(submit_result(dialog_id, "invalid").to_string());
+        };
+        submitted = Some(json!({"dialogId": dialog_id, "decision": decision}).to_string());
     }
     let text = composer::clean(&request.text);
     if request.op == Op::Send {
@@ -125,11 +147,22 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     // past it the engine step (or `bound` when there is no step to run).
     let step = match engine {
         Engine::Codex => codex_step(&request, &text),
+        Engine::OpenCode | Engine::Kilo if control => {
+            let op = match request.op {
+                Op::Dialogs => "dialogs",
+                Op::DialogSubmit => "submit",
+                _ => "abort",
+            };
+            control_step(engine, op, &request.instance, submitted.as_deref().unwrap_or("{}"))
+        }
         Engine::OpenCode => match request.op {
-            Op::Send => opencode_step(&request.instance, &text, &request.id),
+            Op::Send => {
+                let body = json!({"id": format!("msg_{}", request.id), "text": text}).to_string();
+                control_step(engine, "send", &request.instance, &body)
+            }
             _ => String::from("printf 'bound\\n'"),
         },
-        Engine::Pty => unreachable!("routed to the PTY above"),
+        Engine::Kilo | Engine::Pty => unreachable!("routed to the PTY above"),
     };
     let word = match host_gate(exec, herdr_session, &request.instance, &step) {
         Ok(word) => word,
@@ -146,6 +179,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     };
     let answer = match (engine, word.split_once('\t')) {
         (Engine::Codex, Some((word, payload))) => codex_reply(word, payload, request.op, &request.id)?,
+        _ if control => control_reply(&word, request.op, request.dialog_id.as_deref().unwrap_or(""))?,
         _ => reply(word.as_str(), request.op, engine, &request.id)?,
     };
     Ok(answer.to_string())
@@ -215,7 +249,7 @@ fn reply(word: &str, op: Op, engine: Engine, id: &str) -> Result<Value> {
             Op::Status => unavailable("status"),
             Op::State => unavailable("queue"),
             Op::Withdraw => unavailable("withdraw"),
-            Op::Send | Op::Dialogs | Op::DialogSubmit => return Err(Error::BadReply),
+            Op::Send | Op::Dialogs | Op::DialogSubmit | Op::Abort => return Err(Error::BadReply),
         },
         // The pane report is not this instance now, or could not be read as
         // one: both fail closed, before any CLI ran.
@@ -238,6 +272,54 @@ fn reply(word: &str, op: Op, engine: Engine, id: &str) -> Result<Value> {
     })
 }
 
+/// The answers a permission request takes, as both servers name them
+/// (opencode `schema/src/permission.ts:42`, kilo `schema/src/v1/permission.ts`).
+const DECISIONS: [&str; 3] = ["once", "always", "reject"];
+
+/// The reply for one line of the OpenCode/Kilo control script: dialogs,
+/// one dialog's result, or Stop's answer, in the shapes Kotlin reads for
+/// OMP. Words said before any change was asked are definite; anything else
+/// is a failure, which keeps a submit uncertain on the phone.
+fn control_reply(line: &str, op: Op, dialog_id: &str) -> Result<Value> {
+    let (word, payload) = line.split_once('\t').unwrap_or((line, ""));
+    Ok(match (word, op) {
+        // No server registered under this user's defaults (a bare TUI, or a
+        // custom state directory): nothing here reaches the agent.
+        ("no_server", _) => unavailable("no_server"),
+        ("local", _) => unavailable("local"),
+        ("auth", _) => unavailable("server_auth"),
+        ("gone" | "refused_changed", _) => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
+        ("refused_unknown", _) => unavailable(refusal_name(composer::Refusal::InstanceUnknown)),
+        ("dialogs", Op::Dialogs) => {
+            let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
+            let named = dialogs.as_array().is_some_and(|all| {
+                all.iter().all(|d| d["dialogId"].as_str().is_some_and(valid_permission_id) && d["kind"] == "permission")
+            });
+            if !named {
+                return Err(Error::BadReply);
+            }
+            json!({"endpoint": "live", "dialogs": dialogs})
+        }
+        ("submitted" | "not_open" | "invalid", Op::DialogSubmit) => submit_result(dialog_id, word),
+        ("aborted", Op::Abort) => match payload {
+            "true" => json!({"endpoint": "live", "aborted": true}),
+            "false" => json!({"endpoint": "live", "aborted": false}),
+            _ => return Err(Error::BadReply),
+        },
+        _ => return Err(Error::BadReply),
+    })
+}
+
+fn submit_result(dialog_id: &str, result: &str) -> Value {
+    json!({"endpoint": "live", "dialogId": dialog_id, "result": result})
+}
+
+/// A permission request id as both servers make them (`per` + an ascending
+/// id): never a path or a shell-relevant byte.
+fn valid_permission_id(id: &str) -> bool {
+    id.len() <= 128 && id.starts_with("per") && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 /// The refusal word for a failed binding: what the app already shows for
 /// an instance that moved on versus one it could not read.
 fn refusal_name(reason: composer::Refusal) -> &'static str {
@@ -251,6 +333,7 @@ fn engine(instance: &Identity) -> Engine {
     match instance.agent.as_str() {
         "codex" => Engine::Codex,
         "opencode" => Engine::OpenCode,
+        "kilo" => Engine::Kilo,
         _ => Engine::Pty,
     }
 }
@@ -279,7 +362,7 @@ fn codex_step(request: &Request, text: &str) -> String {
         Op::Status => "status",
         Op::State => "state",
         Op::Withdraw => "withdraw",
-        Op::Dialogs | Op::DialogSubmit => unreachable!("dialogs are OMP-only"),
+        Op::Dialogs | Op::DialogSubmit | Op::Abort => unreachable!("answered as unsupported"),
     };
     let deliver = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
@@ -301,17 +384,18 @@ HERDLINE_CODEX_CTL"#,
     )
 }
 
-/// Send only to the already-running service registered under this user's
-/// default OpenCode state directory, which must know this exact session.
-/// No process environment is read. The CLI's default api path can autostart
-/// a service, so discovery and HTTP admission stay explicit here.
-fn opencode_step(instance: &Identity, text: &str, id: &str) -> String {
-    let body = json!({"id": format!("msg_{id}"), "text": text}).to_string();
+/// The OpenCode/Kilo control script for one `op` on this exact session:
+/// only the already-running server registered under this user's default
+/// state directory, which must know the session. No process environment is
+/// read. The CLI's default api path can autostart a service, so discovery
+/// and HTTP stay explicit here.
+fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str) -> String {
+    let flavor = if engine == Engine::Kilo { "kilo" } else { "opencode" };
     format!(
-        "python3 - {} {} <<'HERDLINE_OPENCODE_SEND'\n{}\nHERDLINE_OPENCODE_SEND",
+        "python3 - {flavor} {op} {} {} <<'HERDLINE_OPENCODE_CTL'\n{}\nHERDLINE_OPENCODE_CTL",
         shell_quote(&instance.path),
-        shell_quote(&body),
-        include_str!("agent_chat/opencode_send.py"),
+        shell_quote(payload),
+        include_str!("agent_chat/opencode_ctl.py"),
     )
 }
 
@@ -439,6 +523,7 @@ fn unsupported_op(op: Op) -> Value {
     let op = match op {
         Op::Dialogs => "dialogs",
         Op::DialogSubmit => "dialog_submit",
+        Op::Abort => "abort",
         Op::Send | Op::Status | Op::State | Op::Withdraw => unreachable!("handled"),
     };
     json!({"endpoint": "unsupported", "missing": [op]})

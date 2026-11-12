@@ -54,6 +54,9 @@ pub enum Op {
     Dialogs,
     /// The user's answer to one open dialog, named by its exact id.
     DialogSubmit,
+    /// Stop the instance's running turn. OMP's endpoint has no such op;
+    /// OpenCode and Kilo answer it through their own server.
+    Abort,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -156,6 +159,10 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
+    if request.op == Op::Abort {
+        // The extension speaks no stop: say so, nothing was sent.
+        return Ok(json!({"endpoint": "unsupported", "missing": ["abort"]}).to_string());
+    }
     let send = request.op == Op::Send;
     if send {
         request.text = composer::clean(&request.text);
@@ -217,6 +224,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
             .to_string(),
             _ => return Err(Error::BadReply),
         },
+        Op::Abort => unreachable!("answered above"),
     };
     if line.len() > LINE_MAX {
         return Ok(refused(Refusal::TooLarge));
@@ -598,6 +606,7 @@ fn answer_reply(op: Op, id: &str, dialog_id: Option<&str>, answer: &Value) -> Op
                 reply.insert("state".into(), state);
             }
         }
+        Op::Abort => return None,
     }
     Some(Value::Object(reply).to_string())
 }

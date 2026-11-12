@@ -43,6 +43,8 @@ fn engines_route_by_the_agent_the_instance_names() {
     let mut instance = codex();
     instance.agent = "claude".to_owned();
     assert_eq!(Engine::Pty, engine(&instance));
+    instance.agent = "kilo".to_owned();
+    assert_eq!(Engine::Kilo, engine(&instance));
 }
 
 #[test]
@@ -172,6 +174,10 @@ fn the_unsupported_answers_name_what_is_missing() {
         unsupported_op(Op::Dialogs).to_string()
     );
     assert_eq!(
+        r#"{"endpoint":"unsupported","missing":["abort"]}"#,
+        unsupported_op(Op::Abort).to_string()
+    );
+    assert_eq!(
         r#"{"endpoint":"unsupported","missing":["attachments"]}"#,
         unsupported_type().to_string()
     );
@@ -264,4 +270,27 @@ fn the_codex_step_runs_the_daemon_client_with_quoted_arguments() {
         shell_quote("it's $(rm -rf ~)"),
         shell_quote("[]"),
     )));
+}
+
+#[test]
+fn control_replies_keep_the_omp_dialog_shapes_and_fail_closed() {
+    let dialog = r#"[{"dialogId":"per_1","kind":"permission"}]"#;
+    assert_eq!(
+        control_reply(&format!("dialogs\t{dialog}"), Op::Dialogs, "").unwrap(),
+        json!({"endpoint": "live", "dialogs": [{"dialogId": "per_1", "kind": "permission"}]})
+    );
+    // A dialog the phone could not answer by name is no dialog snapshot.
+    assert!(control_reply(r#"dialogs	[{"dialogId":"../x","kind":"permission"}]"#, Op::Dialogs, "").is_err());
+    assert!(control_reply(r#"dialogs	[{"dialogId":"per_1","kind":"question"}]"#, Op::Dialogs, "").is_err());
+    assert_eq!(
+        control_reply("not_open", Op::DialogSubmit, "per_1").unwrap(),
+        json!({"endpoint": "live", "dialogId": "per_1", "result": "not_open"})
+    );
+    assert_eq!(control_reply("aborted\tfalse", Op::Abort, "").unwrap(), json!({"endpoint": "live", "aborted": false}));
+    assert_eq!(control_reply("no_server", Op::Abort, "").unwrap(), unavailable("no_server"));
+    assert_eq!(control_reply("gone", Op::DialogSubmit, "per_1").unwrap(), unavailable("agent_restarted"));
+    // An answer that may have been admitted is never read as a result.
+    assert!(control_reply("doubt", Op::DialogSubmit, "per_1").is_err());
+    // A word from another op is not this op's answer.
+    assert!(control_reply("submitted", Op::Abort, "").is_err());
 }

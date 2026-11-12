@@ -50,6 +50,8 @@
     <string name="chat_truncated">已为聊天缩短；完整内容在终端中</string>
     <string name="chat_working">工作中</string>
     <string name="chat_working_on">工作中 · %1$s</string>
+    <string name="chat_stop">停止</string>
+    <string name="chat_stop_failed">未确认停止，请查看终端。</string>
     <string name="chat_blocked_title">正在终端中等你</string>
     <string name="chat_blocked_tool">%1$s 正在等待回答。聊天无法回答对话框，请在终端中回答。</string>
     <string name="chat_blocked_other">代理正在等待输入。聊天无法回答对话框，请在终端中回答。</string>

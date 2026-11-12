@@ -653,14 +653,15 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   Send still refuses `dialog_open` while any dialog is open. The forms UI is
   `core/ChatDialog.kt` and `ui/chat/ChatForms.kt`.
 - **Native ↔ Kotlin.** `Native.ingress(session, json)`; the request is
-  `{op: send|status|state|withdraw|dialogs|dialog_submit, node, session,
+  `{op: send|status|state|withdraw|dialogs|dialog_submit|abort, node, session,
   boot, pane, agent, instance:{pane_id, terminal_id, pid, path}, id, text?,
   attachments?, deliverAs?: auto|steer, dialogId?, answer?}`. Replies:
   `{"endpoint":"absent"}`, `{"endpoint":"unsupported","missing":[…]}`,
   `{"endpoint":"unusable","reason"}`, `{"endpoint":"live", "id", "outcome",
   "reason"?, "state"?}` (send, status), `{"endpoint":"live","state"}`,
   `{"endpoint":"live","id","withdrawn"}`, `{"endpoint":"live","dialogs"}`,
-  `{"endpoint":"live","dialogId","result"}`, and the core's own
+  `{"endpoint":"live","dialogId","result"}`, `{"endpoint":"live","aborted"}`,
+  and the core's own
   `{"outcome":"refused","reason"}` before anything left (`unsettled` while a
   PTY delivery holds the pane, attachment reasons). A send whose call fails
   after it may have left is uncertain; the other ops fail.
@@ -671,16 +672,26 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
 - **Recovery.** An endpoint send writes ahead a Queued record with receipt
   `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
 
-### Codex and OpenCode input binding
+### Codex, OpenCode and Kilo input binding
 
 Control-API input requires a positive foreground PID as well as the exact
 pane, terminal and session reference. A retained session identity without
-its foreground process does not authorize a send. OpenCode connects only
-to its private, already-running loopback service registration: no automatic
-service start, HTTP redirects or environment proxy routing. An unknown
-acknowledgement after POST remains uncertain; discovery failure before POST
-is a refusal. The real loopback transport boundary is exercised with
-`python native/src/agent_chat/test_opencode_send.py`.
+its foreground process does not authorize a send. OpenCode and Kilo connect
+only to their private, already-running loopback server registration under
+this user's default state directories (OpenCode `service*.json`, Kilo
+`daemon.json`, mode 0600, own uid, live pid): no automatic service start,
+HTTP redirects or environment proxy routing. A bare TUI registers nothing
+and answers `no_server`. An unknown acknowledgement after POST remains
+uncertain; discovery failure before POST is a refusal.
+
+Over that server, Chat reads the session's open permission requests while
+the agent is Blocked, as dialogs with an Allow once / Always allow / Reject
+choice, sends the user's explicit reply to exactly one open request, and
+offers Stop while it works (OpenCode `interrupt`, Kilo `abort`). Kilo text
+keeps the PTY route. Codex answers `abort` and dialogs as unsupported. Not
+served: questions and forms, file parts, session status and children. The
+real loopback transport boundary is exercised with
+`python3 -B native/src/agent_chat/test_opencode_ctl.py`.
 
 
 ### Questions and submitted answers
