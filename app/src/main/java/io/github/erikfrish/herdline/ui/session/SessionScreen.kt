@@ -966,6 +966,7 @@ fun SessionScreen(
                                             onLatchCleared = { latched = it },
                                             // A tap on a pane in the mirror is a choice on this phone: read there, as Terminal focuses it.
                                             onPaneTapped = { readHere(it) },
+                                            onUsed = { typedOnce = true },
                                         )
                                         terminal = view
                                     }
@@ -987,8 +988,9 @@ fun SessionScreen(
                         }
                         if (!chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected) {
                             // An overlay, so it never changes the terminal's height: the extra keys have no room to
-                            // spare. It sits over the bottom row, often the prompt, so it lasts only until the first
-                            // keyboard. No input: a tap falls through to the terminal, which opens the keyboard.
+                            // spare. It sits over the bottom row, often the prompt, so it lasts only until the user
+                            // first opens the keyboard, sends a key or scrolls. Opaque, as OutputFocusStrip is: a
+                            // translucent pill let glyphs through and lost contrast. No input: a tap falls through.
                             Text(
                                 stringResource(R.string.terminal_tap_to_type),
                                 style = MaterialTheme.typography.bodySmall,
@@ -999,7 +1001,7 @@ fun SessionScreen(
                                     .align(Alignment.BottomCenter)
                                     .padding(bottom = 6.dp)
                                     .clip(CircleShape)
-                                    .background(chromeColor.copy(alpha = 0.85f))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
                                     .clearAndSetSemantics {}
                                     .testTag("session:tap_to_type"),
@@ -1118,7 +1120,7 @@ fun SessionScreen(
                                     background = chromeColor,
                                     onLatch = { latched = it; terminal?.latchedMeta = it },
                                     onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
-                                    onText = { connection.text(focusedPane, it) },
+                                    onText = { typedOnce = true; connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
                                 )
                             }
@@ -1322,6 +1324,8 @@ private fun terminalListener(
     windowDrag: (Int) -> Int,
     onLatchCleared: (Int) -> Unit,
     onPaneTapped: (String) -> Unit,
+    /** Any key, text or scroll the user sent from the terminal: they found their way in. */
+    onUsed: () -> Unit,
 ) = object : TerminalView.Listener {
     private fun pane() = view.frame?.panes?.firstOrNull { it.focused }?.id
 
@@ -1341,15 +1345,25 @@ private fun terminalListener(
     override fun onTap(pane: RenderFrame.PaneArea?, column: Int, row: Int) =
         connection.touch(pane?.id ?: "", Native.TOUCH_TAP, column, row)
 
-    override fun onScroll(pane: RenderFrame.PaneArea?, column: Int, row: Int, up: Boolean, lines: Int) =
+    override fun onScroll(pane: RenderFrame.PaneArea?, column: Int, row: Int, up: Boolean, lines: Int) {
+        onUsed()
         connection.touch(pane?.id ?: "", if (up) Native.TOUCH_SCROLL_UP else Native.TOUCH_SCROLL_DOWN, column, row, lines)
+    }
 
-    override fun onKey(keyCode: Int, metaState: Int, unicode: Int, repeat: Boolean) =
-        connection.key(pane(), keyCode, metaState, unicode, repeat)
+    override fun onKey(keyCode: Int, metaState: Int, unicode: Int, repeat: Boolean): Boolean {
+        onUsed()
+        return connection.key(pane(), keyCode, metaState, unicode, repeat)
+    }
 
-    override fun onText(text: String) = connection.text(pane(), text)
+    override fun onText(text: String) {
+        onUsed()
+        connection.text(pane(), text)
+    }
 
-    override fun onChord(codepoint: Int, metaState: Int) = connection.chord(pane(), codepoint, metaState)
+    override fun onChord(codepoint: Int, metaState: Int) {
+        onUsed()
+        connection.chord(pane(), codepoint, metaState)
+    }
 
     override fun onCopy(startColumn: Int, startRow: Int, endColumn: Int, endRow: Int) {
         val text = connection.selectionText(startColumn, startRow, endColumn, endRow)
@@ -1367,7 +1381,10 @@ private fun terminalListener(
 
     override fun onModifiersConsumed() = onLatchCleared(0)
 
-    override fun onWindowDrag(towardBottom: Int) = windowDrag(towardBottom)
+    override fun onWindowDrag(towardBottom: Int): Int {
+        onUsed()
+        return windowDrag(towardBottom)
+    }
 }
 
 /**
