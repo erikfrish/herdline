@@ -176,7 +176,7 @@ class TerminalView(context: Context) : View(context) {
      * it animates, and the orientation. Set in the Compose update pass, so a
      * change reaches this view before the layout it causes. While it stays
      * the same, a new view height comes only from transient chrome (a
-     * composer or receipt notice, the sent confirmation, the pane bar, the
+     * composer or receipt notice, the sent confirmation, the
      * short-window header), and the grid keeps its rows: each resize refuses
      * Send until Herdr draws it, and the chrome then comes or goes again.
      */

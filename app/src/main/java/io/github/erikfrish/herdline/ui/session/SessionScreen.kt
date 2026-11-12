@@ -814,6 +814,8 @@ fun SessionScreen(
         // its latest lines; the composer still names the target. Back restores both.
         val short = maxHeight < MergedHeaderHeight
         val typingShort = short && imeVisible
+        // Hoisted so the terminal's window key sees the bar come or go (OBS-Z1).
+        val paneBar = paneBarShown(typingShort, tab?.let { t -> view?.panesOf(t.id)?.size }, wide)
         val hostView = LocalView.current
         DisposableEffect(typingShort, hostView) {
             val window = generateSequence(hostView.context) { (it as? ContextWrapper)?.baseContext }
@@ -1020,24 +1022,22 @@ fun SessionScreen(
                                     tabRow()
                                 }
                                 val shown = view
-                                if (!typingShort && shown != null && tab != null) {
+                                if (paneBar && shown != null && tab != null) {
                                     val panes = shown.panesOf(tab.id)
                                     // Phone: a split tab's panes only. Wide: also the pane toolbar, so
-                                    // splitting and zooming are reachable from any tab.
-                                    if (panes.size > 1 || wide) {
-                                        PaneBar(
-                                            panes = panes,
-                                            view = shown,
-                                            focused = focusedPane,
-                                            zoomed = tab.zoomed,
-                                            accent = accent,
-                                            toolbar = wide,
-                                            onPane = ::choosePane,
-                                            onZoom = { focusedPane?.let(connection::toggleZoom) },
-                                            onSplit = { direction -> focusedPane?.let { connection.split(it, direction) } },
-                                            onClosePane = { focusedPane?.let { prompt = Prompt.ClosePane(it) } },
-                                        )
-                                    }
+                                    // splitting and zooming are reachable from any tab (paneBarShown).
+                                    PaneBar(
+                                        panes = panes,
+                                        view = shown,
+                                        focused = focusedPane,
+                                        zoomed = tab.zoomed,
+                                        accent = accent,
+                                        toolbar = wide,
+                                        onPane = ::choosePane,
+                                        onZoom = { focusedPane?.let(connection::toggleZoom) },
+                                        onSplit = { direction -> focusedPane?.let { connection.split(it, direction) } },
+                                        onClosePane = { focusedPane?.let { prompt = Prompt.ClosePane(it) } },
+                                    )
                                 }
                             }
                     }
@@ -1071,8 +1071,8 @@ fun SessionScreen(
                         // A reconnect is a new Connection: rebuild the view so its
                         // listener never feeds a closed one.
                         key(connection) {
-                            // The window's size and the keyboard as it animates: what may resize the grid.
-                            val windowKey = listOf(windowPx, WindowInsets.ime.getBottom(LocalDensity.current), orientation)
+                            // The window's size, the keyboard as it animates and the pane bar: what may resize the grid.
+                            val windowKey = sessionWindowKey(windowPx, WindowInsets.ime.getBottom(LocalDensity.current), orientation, paneBar)
                             // A screen-reader user who skips the strip still hears that rows are hidden.
                             val windowDescription = if (hiddenRows > 0) pluralStringResource(R.plurals.output_focus_strip_description, hiddenRows, hiddenRows) else null
                             AndroidView(
