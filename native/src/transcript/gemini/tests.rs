@@ -1,7 +1,8 @@
-//! FIXTURE-ONLY: every session line here is synthetic, written in the record
-//! shapes of gemini-cli v0.68.0 (5a5c7180,
-//! `packages/core/src/services/chatRecordingTypes.ts`), not captured from a
-//! real Gemini. They pin what the parser does with such lines, as
+//! Session lines here are synthetic, written in the record shapes of
+//! gemini-cli v0.68.0 (5a5c7180,
+//! `packages/core/src/services/chatRecordingTypes.ts`), except
+//! `subagent.jsonl`, captured from a real Gemini 0.68.0 against a mock
+//! provider. They pin what the parser does with such lines, as
 //! `createJsonlRecordAccumulator` and `convertSessionToHistoryFormats` do.
 
 use super::*;
@@ -198,4 +199,63 @@ fn shown_text_follows_geminis_resumed_view() {
             ("assistant".to_owned(), "a[Function Call: ls][Thought: true]".to_owned(), 1),
         ]
     );
+}
+
+/// Captured, not synthetic: a real Gemini 0.68.0 session against a mock
+/// provider, whose `invoke_agent` ran `codebase_investigator`; the child's
+/// own record was `chats/b9ea73fe-…/ae28e145-21fb-4335-bf70-eed21c8ab79c.jsonl`.
+const SUBAGENT_RUN: &[u8] = include_bytes!("subagent.jsonl");
+
+fn children(data: &[u8]) -> Vec<Subagent> {
+    fold(data)
+        .unwrap()
+        .entries()
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .filter_map(|block| match block {
+            Block::ToolResult { subagents, .. } => Some(subagents.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+#[test]
+fn a_finished_invoke_agent_names_its_child_session_with_its_report() {
+    assert_eq!(
+        children(SUBAGENT_RUN),
+        vec![Subagent {
+            id: "ae28e145-21fb-4335-bf70-eed21c8ab79c".into(),
+            agent: "codebase_investigator".into(),
+            agent_type: None,
+            status: "completed",
+            task: Some("Investigate the work dir".into()),
+            stage: None,
+            output: Some(
+                "{\n  \"SummaryOfFindings\": \"mock findings\",\n  \"ExplorationTrace\": [\n    \"listed the work dir\"\n  ],\n  \"RelevantLocations\": []\n}".into()
+            ),
+            error: None,
+            duration_ms: None,
+            requests: None,
+            exit_code: None,
+        }]
+    );
+}
+
+#[test]
+fn a_child_left_running_ends_as_its_call_did_and_a_failure_keeps_its_error() {
+    let call = |id: &str, status: &str, state: &str, activity: Value| {
+        json!({"id": id, "name": "invoke_agent", "args": {"agent_name": "x", "prompt": "p"}, "status": status,
+               "timestamp": "t", "resultDisplay": {"isSubagentProgress": true, "agentName": "x", "state": state,
+               "recentActivity": activity}})
+    };
+    let turn = json!({"id": "m2", "timestamp": "2026-11-12T10:00:02.000Z", "type": "gemini", "content": "", "toolCalls": [
+        call("c1", "cancelled", "running", json!([])),
+        call("c2", "success", "error", json!([{"id": "a", "type": "thought", "content": "Error: quota", "status": "error"}])),
+        call("c3", "success", "paused", json!([])),
+        {"id": "c4", "name": "read_file", "status": "success", "timestamp": "t", "resultDisplay": {"agentName": "x", "state": "completed"}}
+    ]});
+    let found = children(&jsonl(&[header(), user("m1", "go"), turn]));
+    let shown: Vec<_> = found.iter().map(|child| (child.id.as_str(), child.status, child.error.as_deref())).collect();
+    assert_eq!(shown, vec![("c1", "cancelled", None), ("c2", "failed", Some("Error: quota"))]);
 }

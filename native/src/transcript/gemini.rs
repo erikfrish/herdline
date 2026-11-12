@@ -14,6 +14,7 @@
 //! `hl_gemini_*` pane tokens) is [`binding`]; transcript.rs asks it first
 //! for every pane Herdr names `gemini`.
 
+use super::subagents::{OUTPUT_LIMIT, Subagent, text as child_text};
 use super::{ARGS_LIMIT, Block, Entry, Kind, RESULT_LIMIT, Usage, cap, iso_timestamp, text_block};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -383,8 +384,45 @@ fn tool(call: &Value, blocks: &mut Vec<Block>) {
         exit_code: None,
         answers: Vec::new(),
         timed_out: false,
-        subagents: Vec::new(),
+        subagents: subagent(call, status).into_iter().collect(),
     });
+}
+
+/// The child an `invoke_agent` call ran, from its final `SubagentProgress`
+/// display (`agents/local-invocation`, bundle chunk-RCB6BI5H.js:352975-353051):
+/// its `state`, else the call's own final status when the display was last
+/// written still running. The id is the child's session id (`agentId`, the
+/// name of its `chats/<parent>/<id>.jsonl`), else the call's; the error is
+/// the activity Gemini appended for it.
+fn subagent(call: &Value, status: &str) -> Option<Subagent> {
+    let display = call.get("resultDisplay").filter(|display| display["isSubagentProgress"] == true)?;
+    let state = match (string(display, "state")?, status) {
+        ("running", "cancelled") | ("cancelled", _) => "cancelled",
+        ("running", "error") | ("error", _) => "failed",
+        ("running", _) => "running",
+        ("completed", _) => "completed",
+        _ => return None,
+    };
+    let id = string(call, "agentId")
+        .or_else(|| string(call, "id"))
+        .filter(|id| !id.trim().is_empty() && id.len() <= 256)?;
+    let error = display["recentActivity"]
+        .as_array()
+        .and_then(|activity| activity.iter().rev().find(|item| item["type"] == "thought" && item["status"] == "error"))
+        .and_then(|item| child_text(item, "content", OUTPUT_LIMIT));
+    Some(Subagent {
+        id: id.to_owned(),
+        agent: child_text(display, "agentName", 128).unwrap_or_else(|| id.to_owned()),
+        agent_type: None,
+        status: state,
+        task: child_text(&call["args"], "prompt", 1024),
+        stage: None,
+        output: child_text(display, "result", OUTPUT_LIMIT),
+        error,
+        duration_ms: None,
+        requests: None,
+        exit_code: None,
+    })
 }
 
 /// What the person saw (`resultDisplay`: its text, or a file edit's diff),
