@@ -949,7 +949,7 @@ fun SessionScreen(
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
                                 // One changed set for the strip and the place button, whichever is on screen.
-                                val unseenTabs = rememberUnseenTabs(tabs, tab?.id)
+                                val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
                                 // Only where it has room: a short window's merged row, and the wide layout.
                                 val tabRow = @Composable {
                                     if (tabs.isNotEmpty()) {

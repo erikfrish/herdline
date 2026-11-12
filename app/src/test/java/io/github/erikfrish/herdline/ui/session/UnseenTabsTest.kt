@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Tab
+import androidx.compose.runtime.saveable.SaverScope
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -37,5 +38,16 @@ class UnseenTabsTest {
     @Test
     fun aClosedTabLosesItsMark() {
         assertEquals(emptySet<String>(), nextUnseen(mapOf("t1" to AgentStatus.Done), emptyList(), selectedId = null, unseen = setOf("t1")))
+    }
+
+    @Test
+    fun aMarkSurvivesSavedStateAndStillClearsWhenSelected() {
+        val seen = SeenTabs(mapOf("t1" to AgentStatus.Done, "t2" to AgentStatus.Working), setOf("t1"))
+        val saved = with(SeenTabsSaver) { SaverScope { true }.save(seen) }!!
+        val back = SeenTabsSaver.restore(saved)!!
+        val now = listOf(tab("t1", AgentStatus.Done), tab("t2", AgentStatus.Done))
+        // Restored: t1 stays marked, and t2's restored Working makes its Done a change.
+        assertEquals(setOf("t1", "t2"), nextUnseen(back.statuses, now, selectedId = null, unseen = back.unseen))
+        assertEquals(setOf("t2"), nextUnseen(back.statuses, now, selectedId = "t1", unseen = back.unseen))
     }
 }

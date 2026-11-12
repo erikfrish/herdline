@@ -33,6 +33,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,20 +104,36 @@ internal fun nextUnseen(before: Map<String, AgentStatus>, now: List<Tab>, select
     }
 
 /** What [rememberUnseenTabs] last applied: each tab's status and the marked tabs. */
-private class SeenTabs {
-    var statuses: Map<String, AgentStatus> = emptyMap()
-    var unseen: Set<String> = emptySet()
-}
+internal class SeenTabs(
+    var statuses: Map<String, AgentStatus> = emptyMap(),
+    var unseen: Set<String> = emptySet(),
+)
+
+/**
+ * [SeenTabs] as saved state: tab ids with their status names, then the
+ * marked ids, so a font or locale change or a process death keeps the
+ * marks. A status name this build doesn't know drops that tab's status.
+ */
+internal val SeenTabsSaver: Saver<SeenTabs, Any> = Saver(
+    save = { arrayListOf(ArrayList(it.statuses.keys), ArrayList(it.statuses.values.map(AgentStatus::name)), ArrayList(it.unseen)) },
+    restore = { saved ->
+        @Suppress("UNCHECKED_CAST")
+        val (ids, names, unseen) = saved as List<List<String>>
+        val statuses = ids.zip(names).mapNotNull { (id, name) -> AgentStatus.entries.firstOrNull { it.name == name }?.let { id to it } }
+        SeenTabs(statuses.toMap(), unseen.toSet())
+    },
+)
 
 /**
  * The tabs marked changed since the user looked ([nextUnseen]), tracked over
- * recompositions. Kept by the session header, so the strip and the place
- * button show one and the same set, whichever of them is on screen.
+ * recompositions and saved state, per [node] and [session]. Kept by the
+ * session header, so the strip and the place button show one and the same
+ * set, whichever of them is on screen.
  */
 @Composable
-internal fun rememberUnseenTabs(tabs: List<Tab>, selectedId: String?): Set<String> {
+internal fun rememberUnseenTabs(tabs: List<Tab>, selectedId: String?, node: String, session: String): Set<String> {
     // Plain fields, written after each applied composition, so a discarded one changes nothing.
-    val seen = remember { SeenTabs() }
+    val seen = rememberSaveable(node, session, saver = SeenTabsSaver) { SeenTabs() }
     val unseen = nextUnseen(seen.statuses, tabs, selectedId, seen.unseen)
     SideEffect {
         seen.statuses = tabs.associate { it.id to it.status }
