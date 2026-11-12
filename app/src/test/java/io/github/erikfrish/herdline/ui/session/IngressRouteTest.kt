@@ -95,6 +95,29 @@ class IngressRouteTest {
         assertNull(sendPrecheckCode(null, IngressProbe.Unusable("needs_server")))
     }
 
+    /** The words Chat shows above the field: the queue panel's status line, then the composer's notice. */
+    private fun shown(probe: IngressProbe, refused: String?): List<Int> = listOfNotNull(
+        (besideRefusal(queuePanel(probe), refused) as? QueuePanel.Unusable)?.let { unusableRes(it.reason) },
+        refused?.let(::reasonRes),
+    )
+
+    @Test
+    fun aSendRefusedForAMissingServerSaysItOnceInTheSendTimeWords() {
+        // QA m123 (Kilo, server killed): the panel's status and the refused Send's notice stacked.
+        for (cause in listOf("needs_server", "server_discovery")) {
+            val probe = IngressProbe.Unusable(cause)
+            val refused = ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = cause))
+            assertEquals(cause, listOf(reasonRes(cause)), shown(probe, refused))
+            // No Send yet: the panel's status stays as it was.
+            assertEquals(cause, listOf(unusableRes(cause)), shown(probe, null))
+        }
+        // Another cause behind the panel keeps it: the refusal names something else.
+        assertEquals(
+            listOf(R.string.ingress_unusable, R.string.reason_needs_server),
+            shown(IngressProbe.Unusable("stale"), "needs_server"),
+        )
+    }
+
     @Test
     fun acceptedSettlesUncertainHoldsAndNothingSentGivesTheEarlierRecordBack() {
         val accepted = sentAfterIngress(IngressSend.Accepted("id-1", "accepted", null), before, "hi", 9)

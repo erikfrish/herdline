@@ -128,6 +128,18 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
 }
 
 /**
+ * [panel] beside the composer's notice of a Send refused for [refused]. A server the session
+ * does not run, or one that can't be told apart, is said once: by the send-time notice, which
+ * also says nothing was sent, so the panel's status of the same cause goes. Without such a
+ * refusal, or for any other code, the panel stays as it is.
+ */
+internal fun besideRefusal(panel: QueuePanel, refused: String?): QueuePanel =
+    if (panel is QueuePanel.Unusable && refused in SERVER_CAUSES && panel.reason == refused) QueuePanel.Hidden else panel
+
+/** The unusable-endpoint causes both the panel and a refused Send name in their own words. */
+private val SERVER_CAUSES = setOf("needs_server", "server_discovery")
+
+/**
  * The panel for a program whose server lists no waiting steer (Kilo): [probe]'s own, except that
  * while it reads session [session] at work, the steers this app recorded as waiting there show,
  * by the text each carried. Nothing else is guessed: an idle read shows none, since nothing

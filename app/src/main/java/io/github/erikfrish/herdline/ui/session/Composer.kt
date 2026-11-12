@@ -1815,7 +1815,7 @@ private fun Editor(
                 reasonText(code ?: ""),
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
-            else -> Notice(reasonText(code ?: ""))
+            else -> Notice(reasonText(code ?: ""), cause = code)
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
         value.text.isEmpty() && confirmationShown -> draft.sent?.let { sent ->
@@ -1841,8 +1841,12 @@ private fun Editor(
     }
 
     if (reading) {
+        // A refused Send's notice already says why, in the send-time words: the panel's status of the same cause goes.
         IngressQueuePanel(
-            if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
+            besideRefusal(
+                if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
+                refusal?.takeIf { it == notice?.cause },
+            ),
             withdrawing,
             withdrawNote,
             ::withdraw,
@@ -2441,13 +2445,14 @@ private const val DISABLED_ALPHA = 0.38f
 /**
  * One notice in the single slot above the field: one sentence, ≤2 actions.
  * [warning] is false for a confirmation or a step in progress, which says
- * nothing is wrong.
+ * nothing is wrong. [cause] is the refusal code a plain reason notice says.
  */
 private data class Notice(
     val text: String,
     val first: NoticeAction? = null,
     val second: NoticeAction? = null,
     val warning: Boolean = true,
+    val cause: String? = null,
 )
 
 /**
