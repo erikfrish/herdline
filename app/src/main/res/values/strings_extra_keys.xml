@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- How TalkBack reads a latched (On) or released (Off) Ctrl / Alt extra key. -->
 <resources>
+    <!-- How TalkBack reads a latched (On) or released (Off) Ctrl / Alt extra key. -->
     <string name="extra_key_latch_on">On</string>
     <string name="extra_key_latch_off">Off</string>
+    <!-- How TalkBack reads the extra keys whose caps show only a glyph (← ↓ ↑ → ⏎ ⌫). Keys with a printed name (Ctrl, Home, …) are read as printed. -->
+    <string name="extra_key_spoken_left">Arrow left</string>
+    <string name="extra_key_spoken_down">Arrow down</string>
+    <string name="extra_key_spoken_up">Arrow up</string>
+    <string name="extra_key_spoken_right">Arrow right</string>
+    <string name="extra_key_spoken_enter">Enter</string>
+    <string name="extra_key_spoken_backspace">Backspace</string>
 </resources>

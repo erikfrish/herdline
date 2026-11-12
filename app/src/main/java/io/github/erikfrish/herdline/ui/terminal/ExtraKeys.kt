@@ -265,10 +265,14 @@ internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
  */
 internal fun extraRowsAbove(extras: List<ExtraKey>): List<List<ExtraKey>> = extras.chunked(GridColumns)
 
-/** How TalkBack reads the caps whose glyphs name nothing. */
-private val Spoken: Map<String, String> = mapOf(
-    "←" to "Arrow left", "↓" to "Arrow down", "↑" to "Arrow up", "→" to "Arrow right",
-    "⏎" to "Enter", "⌫" to "Backspace",
+/**
+ * How TalkBack reads the caps whose glyphs name nothing, by label, so every
+ * cap with the glyph reads the same; any other cap reads its label as printed.
+ */
+internal val SpokenNames: Map<String, Int> = mapOf(
+    "←" to R.string.extra_key_spoken_left, "↓" to R.string.extra_key_spoken_down,
+    "↑" to R.string.extra_key_spoken_up, "→" to R.string.extra_key_spoken_right,
+    "⏎" to R.string.extra_key_spoken_enter, "⌫" to R.string.extra_key_spoken_backspace,
 )
 
 /** Keys that change form together, so a pair never reads "⇱ … End". */
@@ -365,12 +369,13 @@ fun ExtraKeysRow(
             label = "keyFill",
         )
         val labelColor = if (active) onAccent else onSurface
+        val spoken = SpokenNames[key.label]?.let { stringResource(it) } ?: key.label
         val hit = Modifier
             .width(width)
             .height(KeyRowHeight)
             .testTag("key:${key.label}")
             .semantics {
-                contentDescription = Spoken[key.label] ?: key.label
+                contentDescription = spoken
                 if (key is ExtraKey.Modifier) {
                     role = Role.Switch
                     toggleableState = ToggleableState(active)
