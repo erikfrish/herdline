@@ -222,6 +222,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
 import io.github.erikfrish.herdline.ui.terminal.TAP_HINT_SETTLE_MS
 import io.github.erikfrish.herdline.ui.terminal.sameLook
+import io.github.erikfrish.herdline.ui.terminal.tapHintSettleMs
 import io.github.erikfrish.herdline.ui.terminal.tapHintSpanPx
 import io.github.erikfrish.herdline.ui.terminal.tapHintTop
 import io.github.erikfrish.herdline.ui.terminal.tapHintWanted
