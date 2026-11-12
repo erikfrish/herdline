@@ -158,59 +158,6 @@ class Status(Daemon):
         self.assertEqual(run(home, 'state'), 'gone')
 
 
-ASKED = {'id': 'que_one', 'sessionID': 'ses_test', 'questions': [
-    {'question': 'Which?', 'header': 'Pick', 'options': [{'label': 'A', 'description': 'a'}, {'label': 'B', 'description': 'b'}], 'custom': False},
-    {'question': 'Which ones?', 'header': 'Many', 'options': [{'label': 'X', 'description': 'x'}, {'label': 'Y', 'description': 'y'}], 'multiple': True},
-]}
-
-
-class Questions(Daemon):
-    # question.ts:22 list, :32 reply; schema/src/v1/question.ts:51-73.
-    def routes(self):
-        return {
-            ('GET', '/question' + QUERY): (200, [ASKED, dict(ASKED, id='que_other', sessionID='ses_other')]),
-            ('POST', '/question/que_one/reply' + QUERY): (200, True),
-        }
-
-    def test_only_this_session_questions_are_listed(self):
-        home, _ = self.serve(self.routes())
-        word, _, payload = run(home, 'questions').partition('\t')
-        self.assertEqual(word, 'questions')
-        found = json.loads(payload)
-        self.assertEqual([entry['id'] for entry in found], ['que_one'])
-        self.assertEqual([(q['multiple'], q['custom']) for q in found[0]['questions']], [(False, False), (True, True)])
-
-    def test_a_question_past_the_shown_five_is_marked_never_hidden(self):
-        routes = self.routes()
-        routes[('GET', '/question' + QUERY)] = (200, [dict(ASKED, id='que_%d' % n) for n in range(6)])
-        home, server = self.serve(routes)
-        word, _, payload = run(home, 'questions').partition('\t')
-        self.assertEqual((word, [entry['id'] for entry in json.loads(payload)]), ('questions_more', ['que_%d' % n for n in range(5)]))
-        server.routes[('GET', '/question' + QUERY)] = (200, [dict(ASKED, id='que_%d' % n) for n in range(5)])
-        self.assertEqual(run(home, 'questions').partition('\t')[0], 'questions')
-
-    def test_an_answer_per_question_is_replied_in_order(self):
-        home, server = self.serve(self.routes())
-        answers = [['A'], ['X', 'typed']]
-        self.assertEqual(run(home, 'answer', json.dumps({'id': 'que_one', 'answers': answers})), 'answered')
-        self.assertEqual(self.posts(server), [('POST', '/question/que_one/reply' + QUERY, {'answers': answers})])
-
-    def test_an_answer_the_question_cannot_take_is_never_sent(self):
-        home, server = self.serve(self.routes())
-        for answers in ([['A']], [['A', 'B'], ['X']], [['typed'], ['X']], [['A'], []]):
-            with self.subTest(answers):
-                self.assertEqual(run(home, 'answer', json.dumps({'id': 'que_one', 'answers': answers})), 'invalid')
-        self.assertEqual(run(home, 'answer', json.dumps({'id': 'que_other', 'answers': [['A'], ['X']]})), 'not_open')
-        self.assertEqual(self.posts(server), [])
-
-    # question handler: Question.NotFoundError -> 404, nothing changed.
-    def test_a_question_answered_meanwhile_is_not_open(self):
-        routes = self.routes()
-        routes[('POST', '/question/que_one/reply' + QUERY)] = (404, {'name': 'QuestionNotFoundError'})
-        home, _ = self.serve(routes)
-        self.assertEqual(run(home, 'answer', json.dumps({'id': 'que_one', 'answers': [['A'], ['X']]})), 'not_open')
-
-
 class Children(Daemon):
     # session.ts:176 children -> [Session.Info].
     def test_a_list_is_only_this_sessions_children_and_a_cut_one_says_so(self):

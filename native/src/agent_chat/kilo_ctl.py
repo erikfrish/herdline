@@ -1,11 +1,10 @@
 """One call to the already-running local Kilo server, v1 routes only.
 
-argv: op (send | status | state | questions | answer | children), session
-id, payload JSON, and `media` for a send with staged files: then
-opencode_media.py is part of this script and {records, target} come on
-fd 3, as opencode_ctl.py takes them. Prints one line: a word, or a word, a
-tab and a JSON payload. Kilo's Stop and permission dialogs stay in
-opencode_ctl.py.
+argv: op (send | status | state | children), session id, payload JSON,
+and `media` for a send with staged files: then opencode_media.py is part
+of this script and {records, target} come on fd 3, as opencode_ctl.py
+takes them. Prints one line: a word, or a word, a tab and a JSON payload.
+Kilo's Stop, permissions and questions stay in opencode_ctl.py.
 
 Discovery is opencode_ctl.py's Kilo rule, and no process environment is
 read: exactly one of $HOME/.local/state/kilo/daemon.json or
@@ -30,11 +29,6 @@ packages/opencode/src/server/routes/instance/httpapi/groups:
   an absent session is idle (session/status.ts:72); types idle, retry,
   busy, offline, scheduled (schema/src/session-status-event.ts:11-47).
 - GET /session/:id/message/:messageID -> {info, parts} (session.ts:223).
-- GET /question?directory= -> [Question.Request] (question.ts:22); POST
-  /question/:id/reply?directory= {answers} -> boolean (question.ts:32);
-  Request {id, sessionID, questions: [{question, header, options: [{label,
-  description}], multiple?, custom?}]}, each answer the selected labels
-  (schema/src/v1/question.ts:16-73).
 - GET /session/:id/children -> [Session.Info] (session.ts:176).
 """
 import base64
@@ -49,8 +43,6 @@ import urllib.request
 op, session, payload = sys.argv[1], sys.argv[2], sys.argv[3]
 MEDIA = sys.argv[4:] == ['media']
 LIMIT = 65536
-MAX_QUESTIONS = 5
-MAX_TEXT = 4000
 MAX_CHILDREN = 50
 # Kilo v7.8.27 pins no cap on a data: file part it is sent: a raster is
 # resized by Image.normalize (image/image.ts:172-215), text/plain is decoded
@@ -170,49 +162,6 @@ def refused_attachment(error):
     return isinstance(found, dict) and found.get('kind') == 'attachment'
 
 
-def open_questions(base, headers, directory):
-    found = call(base, headers, 'GET', '/question?directory=' + quoted(directory))
-    if not isinstance(found, list):
-        raise ValueError('not a list')
-    return [entry for entry in found if isinstance(entry, dict) and entry.get('sessionID') == session and isinstance(entry.get('id'), str) and entry['id'].startswith('que') and isinstance(entry.get('questions'), list)]
-
-
-def labels(question):
-    options = question.get('options') if isinstance(question, dict) else None
-    return [text(option.get('label')) for option in options if isinstance(option, dict)] if isinstance(options, list) else []
-
-
-def shown(entry):
-    questions = []
-    for question in entry['questions']:
-        if not isinstance(question, dict):
-            continue
-        questions.append({
-            'header': text(question.get('header'))[:200],
-            'question': text(question.get('question'))[:MAX_TEXT],
-            'options': [{'label': text(option.get('label'))[:200], 'description': text(option.get('description'))[:MAX_TEXT]}
-                        for option in question.get('options', []) if isinstance(option, dict)],
-            'multiple': question.get('multiple') is True,
-            'custom': question.get('custom') is not False,
-        })
-    return {'id': entry['id'], 'questions': questions}
-
-
-def fits(entry, answers):
-    """Exactly one answer per question, each its labels or one typed answer."""
-    questions = entry['questions']
-    if not isinstance(answers, list) or len(answers) != len(questions):
-        return False
-    for question, answer in zip(questions, answers):
-        if not isinstance(question, dict) or not isinstance(answer, list) or not answer or not all(isinstance(item, str) and item for item in answer):
-            return False
-        if question.get('multiple') is not True and len(answer) != 1:
-            return False
-        if question.get('custom') is False and not set(answer) <= set(labels(question)):
-            return False
-    return True
-
-
 def child(entry):
     return {'id': entry['id'], 'title': text(entry.get('title'))[:200]}
 
@@ -238,12 +187,6 @@ def main():
                     return 'unknown'
                 raise
             return 'accepted' if found['info']['id'] == message_id else 'local'
-        if op == 'questions':
-            entries = open_questions(base, headers, directory)
-            # Past MAX_QUESTIONS the first ones go, marked as such: a pending
-            # question past them is never hidden as if there were none.
-            word = 'questions_more' if len(entries) > MAX_QUESTIONS else 'questions'
-            return word + '\t' + json.dumps([shown(entry) for entry in entries[:MAX_QUESTIONS]], separators=(',', ':'))
         if op == 'children':
             found = call(base, headers, 'GET', '/session/' + quoted(session) + '/children')
             if not isinstance(found, list):
@@ -256,14 +199,6 @@ def main():
             # Past MAX_CHILDREN the first ones go, marked as such (opencode_ctl's word).
             word = 'children_more' if len(found) > MAX_CHILDREN else 'children'
             return word + '\t' + json.dumps([child(entry) for entry in found[:MAX_CHILDREN]], separators=(',', ':'))
-        if op == 'answer':
-            asked = json.loads(payload)
-            request_id = asked['id']
-            entry = next((entry for entry in open_questions(base, headers, directory) if entry['id'] == request_id), None)
-            if entry is None:
-                return 'not_open'
-            if not fits(entry, asked.get('answers')):
-                return 'invalid'
         if op == 'send':
             sent = json.loads(payload)
             message_id = sent.get('id')
@@ -298,7 +233,7 @@ def main():
                 except ProcessLookupError:
                     return 'gone'
             body = parts(sent, files)
-        if op not in ('send', 'answer'):
+        if op != 'send':
             return 'local'
     except urllib.error.HTTPError as error:
         return 'gone' if error.code == 404 else 'auth' if error.code == 401 else 'local'
@@ -306,28 +241,18 @@ def main():
         return 'local'
     # From this boundary on, an unreadable reply may hide an admitted change.
     try:
-        if op == 'send':
-            path = '/session/' + quoted(session) + '/prompt_async'
-            try:
-                call(base, headers, 'POST', path, {'messageID': message_id, 'parts': body}, timeout=30)
-            except urllib.error.HTTPError as error:
-                # Refused before anything was admitted (handlers/session.ts:358-359):
-                # a file Kilo cannot take refuses the whole send, in its words.
-                if error.code == 400 and files and refused_attachment(error):
-                    return 'media\tunsupported_type'
-                if error.code in (400, 404):
-                    return 'invalid' if error.code == 400 else 'gone'
-                raise
-            return 'queued'
-        path = '/question/' + quoted(request_id) + '/reply?directory=' + quoted(directory)
+        path = '/session/' + quoted(session) + '/prompt_async'
         try:
-            done = call(base, headers, 'POST', path, {'answers': asked['answers']})
+            call(base, headers, 'POST', path, {'messageID': message_id, 'parts': body}, timeout=30)
         except urllib.error.HTTPError as error:
-            # QuestionNotFoundError: no longer open, nothing changed.
-            if error.code == 404:
-                return 'not_open'
+            # Refused before anything was admitted (handlers/session.ts:358-359):
+            # a file Kilo cannot take refuses the whole send, in its words.
+            if error.code == 400 and files and refused_attachment(error):
+                return 'media\tunsupported_type'
+            if error.code in (400, 404):
+                return 'invalid' if error.code == 400 else 'gone'
             raise
-        return 'answered' if done is True else 'doubt'
+        return 'queued'
     except Exception:
         return 'doubt'
 
