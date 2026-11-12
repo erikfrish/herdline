@@ -11,8 +11,9 @@ read but the pane's root pid (HERDLINE_PANE_ROOT): exactly one of
 $HOME/.local/state/kilo/daemon.json or
 $HOME/.local/share/kilo/state/daemon.json (kilo core/src/global.ts:25-26,
 kilocode/daemon/daemon.ts:97-99), this uid's, 0600, a loopback http url,
-a live pid in the pane's process tree, the TUI's sibling daemon included
-(else 'no_server': never another pane's server), Basic auth from its
+a live pid that is the pane's root or runs under it, the TUI's sibling
+daemon included (else 'no_server': never another pane's server), asked
+again just before the request that changes anything, Basic auth from its
 username and password.
 
 Routes, pinned to Kilo v7.8.27 (03a6f07),
@@ -120,17 +121,20 @@ def registration():
         'Content-Type': 'application/json',
         'Authorization': 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode(),
     }
-    return url.rstrip('/'), headers
+    return url.rstrip('/'), headers, pid
 
 
 def in_pane(pid):
-    """Whether `pid` runs in the pane's process tree (as opencode_ctl.py)."""
+    """Whether `pid` is the pane's root or runs under it (as opencode_ctl.py,
+    the nested herdr or tmux edge said there included)."""
     try:
         root = int(os.environ.get('HERDLINE_PANE_ROOT', ''))
     except ValueError:
         return False
     if root <= 1:
         return False
+    if pid == root:
+        return True
     for _ in range(64):
         pid = parent(pid)
         if pid == root:
@@ -138,6 +142,15 @@ def in_pane(pid):
         if pid is None or pid <= 1:
             return False
     return False
+
+
+def ours(pid):
+    """The registered daemon, still alive and still in the pane's tree."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return in_pane(pid)
 
 
 def parent(pid):
@@ -229,7 +242,7 @@ def child(entry):
 
 def main():
     try:
-        base, headers = registration()
+        base, headers, pid = registration()
     except NoServer:
         return 'no_server'
     except Exception:
@@ -308,6 +321,11 @@ def main():
             body = parts(sent, files)
         if op not in ('send', 'withdraw'):
             return 'local'
+        # Discovery was some reads ago, and a send's files took time: the
+        # daemon must still be alive and in the pane's tree just before the
+        # one request that changes anything. Else nothing is asked of it.
+        if not ours(pid):
+            return 'no_server'
     except urllib.error.HTTPError as error:
         return 'gone' if error.code == 404 else 'auth' if error.code == 401 else 'local'
     except Exception:

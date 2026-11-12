@@ -18,8 +18,8 @@ A server registered elsewhere (a custom XDG_STATE_HOME) is not found, and a
 bare TUI registers nothing: its worker has no port (kilo cli/cmd/tui.ts:
 435-450). Both answer 'no_server'.
 
-The registered server must also be the pane's own: its pid runs in the
-pane's process tree, under the pane's root process (HERDLINE_PANE_ROOT:
+The registered server must also be the pane's own: its pid is the pane's
+root process or runs under it (HERDLINE_PANE_ROOT:
 Herdr's shell_pid from the same pane report the native gate has just
 verified the instance against). Only pid ancestry is read (/proc/<pid>/stat
 or ps), never another process's environment or command line. Kilo's daemon
@@ -28,7 +28,8 @@ and the pane's own. A server of another pane on the
 same data root, such as a `serve --service` next to an `opencode
 --standalone` whose own server listens on stdio only, answers 'no_server'
 before any request: nothing is asked of a server outside the pane, for any
-op.
+op. Alive and in the pane is asked again just before the one request that
+changes anything, else 'no_server' and nothing is sent.
 
 Routes, pinned to source:
 - OpenCode, anomalyco/opencode fedc6f2 packages/protocol/src/groups:
@@ -159,17 +160,27 @@ def registration():
         if not isinstance(user, str) or not isinstance(password, str):
             raise Refused()
         headers['Authorization'] = 'Basic ' + base64.b64encode((user + ':' + password).encode()).decode()
-    return url.rstrip('/'), headers
+    return url.rstrip('/'), headers, pid
 
 
 def in_pane(pid):
-    """Whether `pid` runs in the pane's process tree, under its root."""
+    """Whether `pid` runs in the pane's process tree: the root itself (a
+    server exec'd as the pane's command) or anything under it.
+
+    Ancestry is all it reads, so a herdr or tmux nested in this pane, whose
+    inner panes' processes all sit under this root, gives an inner pane's
+    server as this pane's own. Told apart only by which process listens on
+    the registered port, which is not read here (another process's
+    sockets). The other way holds: from an inner pane, the outer pane's
+    server is not under the inner root and is never asked."""
     try:
         root = int(os.environ.get('HERDLINE_PANE_ROOT', ''))
     except ValueError:
         return False
     if root <= 1:
         return False
+    if pid == root:
+        return True
     for _ in range(64):
         pid = parent(pid)
         if pid == root:
@@ -177,6 +188,15 @@ def in_pane(pid):
         if pid is None or pid <= 1:
             return False
     return False
+
+
+def ours(pid):
+    """The registered server, still alive and still in the pane's tree."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return in_pane(pid)
 
 
 def parent(pid):
@@ -651,7 +671,7 @@ def main():
         # Kilo's v1 server has no such route here: nothing is asked of it.
         return 'local'
     try:
-        base, headers = registration()
+        base, headers, pid = registration()
     except NoServer:
         # No server for this user's defaults: said as such, for every op.
         return 'no_server'
@@ -751,6 +771,11 @@ def main():
                         return 'invalid'
             else:
                 return 'invalid'
+        # Discovery was some reads ago, and a send's files took time: the
+        # server must still be alive and in the pane's tree just before the
+        # one request that changes anything. Else nothing is asked of it.
+        if not ours(pid):
+            return 'no_server'
     except urllib.error.HTTPError as error:
         return 'gone' if error.code == 404 else 'auth' if error.code == 401 else 'local'
     except Exception:

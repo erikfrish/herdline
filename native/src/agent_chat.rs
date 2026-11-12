@@ -674,8 +674,11 @@ want = sys.argv[2:]
 want_pid = None if want[2] == "-" else int(want[2])
 if pid is None or want_pid is None or want_pid <= 0:
     sys.exit(2)
+# The process report must be this pane's too: its shell_pid becomes the
+# pane root the control scripts trust.
 ok = (
     result.get("pane_id") == want[0]
+    and info.get("pane_id") == want[0]
     and result.get("terminal_id") == want[1]
     and pid == want_pid
     and value == want[3]

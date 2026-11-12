@@ -5,6 +5,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -311,6 +312,63 @@ class OpenCode(unittest.TestCase):
                     if process is not None:
                         process.kill()
                         process.wait()
+                service.close()
+
+    def test_a_server_that_dies_or_leaves_the_pane_mid_send_is_not_sent_to(self):
+        # The server passes discovery, then while the send reads it is gone
+        # (killed and reaped), or its parent exits and it is re-parented out
+        # of the pane's tree. The prompt never goes out.
+        body = json.dumps({'id': 'msg_test', 'text': 'x'})
+
+        def attempt(server_pid, before_post):
+            with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+                def session():
+                    before_post()
+                    return 200, {'data': {'id': 'ses_test'}}
+                service = Server({
+                    ('GET', '/api/session/ses_test'): (200, session),
+                    ('GET', '/api/session/active'): (200, {'data': {}}),
+                    ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_test'}}),
+                })
+                try:
+                    register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': server_pid, 'password': 'test-only'})
+                    word = run(home, 'opencode', 'send', body, root=os.getpid())
+                    return word, [(m, p) for m, p, _, _ in service.seen if m == 'POST']
+                finally:
+                    service.close()
+
+        dying = sleeper()
+        try:
+            self.assertEqual(attempt(dying.pid, lambda: (dying.kill(), dying.wait())), ('no_server', []))
+        finally:
+            dying.kill()
+            dying.wait()
+        # A shell under this process, its own child the registered server.
+        shell = subprocess.Popen(['sh', '-c', 'sleep 30 & echo $!; read x'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        orphan = int(shell.stdout.readline())
+        try:
+            self.assertEqual(attempt(orphan, lambda: (shell.stdin.close(), shell.wait())), ('no_server', []))
+        finally:
+            os.kill(orphan, signal.SIGKILL)
+            if shell.poll() is None:
+                shell.kill()
+                shell.wait()
+            shell.stdout.close()
+
+    def test_a_server_execd_as_the_panes_command_is_its_own(self):
+        with tempfile.TemporaryDirectory(prefix='herdline-ctl-') as home:
+            service = Server({
+                ('GET', '/api/session/ses_test'): (200, {'data': {'id': 'ses_test'}}),
+                ('GET', '/api/session/active'): (200, {'data': {}}),
+                ('POST', '/api/session/ses_test/prompt'): (200, {'data': {'sessionID': 'ses_test', 'id': 'msg_test'}}),
+            })
+            serve = sleeper()
+            try:
+                register(Path(home) / '.local/state/opencode/service.json', {'url': service.url, 'pid': serve.pid, 'password': 'test-only'})
+                self.assertEqual(run(home, 'opencode', 'send', json.dumps({'id': 'msg_test', 'text': 'x'}), root=serve.pid), 'queued')
+            finally:
+                serve.kill()
+                serve.wait()
                 service.close()
 
     def test_staged_files_go_on_the_prompt_or_the_whole_send_is_refused(self):
