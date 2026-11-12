@@ -354,6 +354,20 @@ Switcher:
   file must canonically stay below the SSH account's HOME, and ID resolution
   must match exactly one file. A reported path alone never authorizes an
   arbitrary folder; configured roots require that exact process's environment.
+  - The profile is the one omp 18.18.8 takes itself (`extractProfileFlags`):
+    a string flag's value, an argument after `--` or after a first-token
+    subcommand is never `--profile`. `~` is never expanded, as in OMP.
+    Under `bun run <script>`, a subcommand right after the script is not
+    seen as one; harmless, as it can only name a HOME-bounded profile root.
+  - Only the environment the process started with is seen. A root OMP picks
+    up later (a project `.env` via `refreshDirsFromEnv`, `setProfile`) is
+    not authorized and refuses, never guessed.
+  - The default `~/.omp/agent/sessions` stays authorized for every OMP
+    process, named profile or XDG included: it is HOME-bounded, and Herdr
+    must still report the exact file.
+  - An agent whose HOME is not the SSH account's (`sudo`, `su -c`, another
+    exported HOME), or a root or file outside HOME, is refused as
+    `outside_home`; other confinement failures are `unconfined`.
 - **Incremental and bounded.** Chat reads byte ranges by offset: the newest
   256 KiB, then appends from the last complete line (a partial line waits),
   and older pages on request.
@@ -518,14 +532,16 @@ User, assistant and tool-result images are read through the existing
   are read in one exec. Both reports must name the instance the request was
   made for (pane, terminal, OMP pid, session file), else `instance_changed`.
 - **The blob store is the OMP process's own.** It is resolved from that
-  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does: the
-  last `--profile` before `--`, else `OMP_PROFILE` when set, else
-  `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a profile
-  `PI_CODING_AGENT_DIR`, else `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a
-  profile `…/profiles/<name>`) takes its place when it exists. What cannot be
-  pinned down is refused as `unknown_store`, never guessed: no `/proc` (e.g.
-  macOS hosts), another `HOME`, `PI_CONFIG_DIR`, relative paths, unusual
-  profile names. The store must resolve inside `$HOME`, and a blob that
+  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does, by the
+  same resolver and profile rules as the session roots (Confinement, above):
+  the `--profile` omp's `extractProfileFlags` takes, else `OMP_PROFILE` when
+  set, else `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a
+  profile `PI_CODING_AGENT_DIR` (unless derived from the environment's profile), else
+  `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`)
+  takes its place when it exists. What cannot be pinned down is refused as
+  `unknown_store`, never guessed: no `/proc` (e.g. macOS hosts), another
+  `HOME`, `PI_CONFIG_DIR`, relative paths, profile names OMP rejects. The
+  store must resolve inside `$HOME`, and a blob that
   links out of it is refused (`unconfined`). XDG existence is checked at read
   time, not when OMP started.
 - **Bounds.** At most 20 MiB of decoded image; a larger blob or inline image
