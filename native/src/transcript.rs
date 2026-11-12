@@ -394,7 +394,19 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
         let (script, limit) = match &expect {
             // OpenCode pages its own `seq` sequence via its module.
             Some(identity) if identity.agent == "opencode" => {
-                return opencode::page(exec, session, &request.pane, identity, read, reset);
+                match opencode::page(exec, session, &request.pane, identity, read, reset) {
+                    Ok(page) => return Ok(page),
+                    Err(error @ Error::NoTranscript) => {
+                        let current = instance(exec, session, &request.pane)?.ok_or(Error::NoTranscript)?;
+                        if expect.as_ref() == Some(&current) { return Err(error); }
+                        expect = Some(current);
+                        read = Read::Tail;
+                        window = FIRST_WINDOW;
+                        reset = true;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             Some(identity) => (
                 script(
@@ -416,7 +428,24 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             read_timeout(window),
             limit,
         )?;
-        let reply = parse_reply(output.exit_status, &output.tail)?;
+        let reply = match parse_reply(output.exit_status, &output.tail) {
+            Ok(reply) => reply,
+            Err(error) => {
+                // File resolution can refuse the old reference after a fork or
+                // restart. The already-emitted pane report still identifies the
+                // replacement; adopt it rather than polling the old path forever.
+                if let Ok(Some(current)) = parse_instance(Some(0), &output.tail) {
+                    if expect.as_ref() != Some(&current) {
+                        expect = Some(current);
+                        read = Read::Tail;
+                        window = FIRST_WINDOW;
+                        reset = true;
+                        continue;
+                    }
+                }
+                return Err(error);
+            }
+        };
         let (identity, status) = identity(&reply.pane, &reply.process)?;
         if expect.as_ref() != Some(&identity) {
             expect = Some(identity);

@@ -342,9 +342,12 @@ Switcher:
   `pane.get` or process info. So each read runs `herdr --session S pane get P`
   and `pane process-info --pane P` on the host, over an exec channel of the
   live connection's SSH session (no new login per poll). The identity is
-  (pane, terminal, OMP PID, `agent_session` path). Any change restarts the
-  history from the new file's end. A reconnect is a new connection and starts
-  over too.
+  (pane, terminal, agent, foreground PID and the exact `agent_session` reference).
+  Any change restarts history from the new session's tail. A resolver refusal
+  for an obsolete reference first checks the emitted current identity; a
+  replacement resets the bounded read, while the same identity retains the
+  original refusal. OpenCode sequence reads recover the same way. A reconnect
+  is a new connection and starts over too.
 - **Confinement.** The path is checked on the phone: absolute, `.jsonl`,
   under `/.omp/agent/sessions/`, no `.`/`..`, no control characters. It is
   checked again on the host after `realpath`, so a symlink cannot point chat
