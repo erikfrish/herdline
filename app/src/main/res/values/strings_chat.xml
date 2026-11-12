@@ -82,7 +82,7 @@
     <string name="chat_children">Sessions it started: %1$d</string>
     <string name="chat_children_more">Sessions it started: more than %1$d</string>
     <!-- The agent has more open permissions or questions than Chat shows at once. -->
-    <string name="chat_dialogs_more">More permissions or questions are waiting than shown here. Answer these and the next ones appear, or see them all in the terminal.</string>
+    <string name="chat_dialogs_more">More permissions or questions are waiting than Chat can show at once. Answer these first, or use Terminal.</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
     <!-- X1: why a terminal Stop pressed no key; nothing reached the pane. -->
@@ -97,7 +97,7 @@
     <string name="stop_refused_screen">Not stopped: the agent\'s empty input box isn\'t all on this screen (a draft, a panel, or a pane sized for another screen). Check it in Terminal. Nothing was pressed.</string>
     <string name="stop_refused_unsettled">Not stopped: the last delivery to this pane isn\'t confirmed yet. Nothing was pressed.</string>
     <string name="stop_refused_screen_unread">Not stopped: Herdr\'s read of this pane\'s screen failed, so it can\'t be checked from here. Nothing was pressed.</string>
-    <string name="stop_refused_key_unsent">Not stopped: Herdr refused the stop key for this pane. Nothing was pressed. Check the terminal.</string>
+    <string name="stop_refused_key_unsent">Not stopped: the stop key didn\'t reach this pane, so nothing was pressed. Check the terminal.</string>
     <string name="stop_refused_other">Not stopped. Nothing was pressed. Check the terminal.</string>
     <string name="chat_blocked_title">Waiting for you in the terminal</string>
     <string name="chat_blocked_tool">%1$s is waiting for an answer. Chat cannot answer dialogs; answer it in the terminal.</string>
