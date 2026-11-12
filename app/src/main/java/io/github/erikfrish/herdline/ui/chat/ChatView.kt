@@ -115,6 +115,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.StopRoute
 import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
@@ -131,6 +132,7 @@ import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
+import io.github.erikfrish.herdline.ui.session.controlReason
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
 import kotlinx.coroutines.Dispatchers
@@ -637,13 +639,24 @@ private fun ChatContent(
                     }
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
-                        status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") { LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem) } }
+                        status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") {
+                            val answerReason = controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
+                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem, answerReason) }
+                        }
                         status == AgentStatus.Working -> item(key = "working") {
                             LiveGap {
                                 WorkingRow(
                                     workingOn(items), colors,
                                     onStop = if (stopTarget != null && linkLive) ({ stop() }) else null,
                                     stopping = stopping, stopProblem = stopProblem,
+                                    // Text only, where Stop is not offered: why (§3.5).
+                                    stopReason = when {
+                                        stopTarget != null && linkLive -> null
+                                        !linkLive -> identity?.agent?.let {
+                                            stringResource(R.string.control_cant_check, it, stringResource(R.string.harness_cant_check_offline))
+                                        }
+                                        else -> controlReason(identity?.agent, HarnessKey.Stop, R.string.control_stop_unavailable)
+                                    },
                                 )
                             }
                         }
@@ -1408,9 +1421,19 @@ private fun StateRow(bar: Color, border: Color, fill: Color, tag: String, conten
     }
 }
 
-/** [onStop], when the agent's own server can stop this turn (OpenCode, Kilo). */
+/**
+ * [onStop], when the agent's own server or its pane can stop this turn.
+ * Without it, [stopReason] shows Stop disabled with why; with neither there is no Stop.
+ */
 @Composable
-private fun WorkingRow(what: String?, colors: ChatColors, onStop: (() -> Unit)? = null, stopping: Boolean = false, stopProblem: Boolean = false) {
+private fun WorkingRow(
+    what: String?,
+    colors: ChatColors,
+    onStop: (() -> Unit)? = null,
+    stopping: Boolean = false,
+    stopProblem: Boolean = false,
+    stopReason: String? = null,
+) {
     StateRow(colors.working, colors.border, Color.Transparent, "chat:working") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.working)
@@ -1425,15 +1448,24 @@ private fun WorkingRow(what: String?, colors: ChatColors, onStop: (() -> Unit)? 
                 FilledTonalButton(onClick = onStop, enabled = !stopping, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop")) {
                     Text(stringResource(R.string.chat_stop))
                 }
+            } else if (stopReason != null) {
+                FilledTonalButton(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = stopReason }.testTag("chat:stop"),
+                ) {
+                    Text(stringResource(R.string.chat_stop))
+                }
             }
         }
+        if (onStop == null && stopReason != null) Text(stopReason, style = ChatType.meta.copy(color = colors.muted))
         if (stopProblem) Text(stringResource(R.string.chat_stop_failed), style = ChatType.meta.copy(color = colors.muted))
     }
 }
 
 /** A blocked agent without a usable structured dialog snapshot: keep the terminal route explicit. */
 @Composable
-private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit, problem: String?) {
+private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit, problem: String?, answerReason: String? = null) {
     StateRow(colors.blocked, colors.blocked, colors.warnBg, "chat:blocked") {
         Text(stringResource(R.string.chat_blocked_title), style = ChatType.button.copy(color = colors.blocked))
         Text(
@@ -1441,6 +1473,8 @@ private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors,
             style = ChatType.meta.copy(color = colors.text),
         )
         if (!problem.isNullOrBlank()) Text(problem, style = ChatType.meta.copy(color = colors.muted))
+        // No answer from Chat for this program: why, before the way that works (§3.5).
+        answerReason?.let { Text(it, style = ChatType.meta.copy(color = colors.muted)) }
         FilledTonalButton(onClick = onTerminal, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:answer_in_terminal")) {
             Text(stringResource(R.string.chat_answer_in_terminal))
         }

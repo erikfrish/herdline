@@ -153,6 +153,7 @@ import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
@@ -1413,7 +1414,10 @@ fun SessionScreen(
                             }
                         }
                     } else if (chatReadOnly) {
-                        ReadOnlyFooter(chatAgentName, accent)
+                        ReadOnlyFooter(
+                            chatAgentName, accent,
+                            controlReason(reading?.pane?.let { view?.agentIn(it)?.agent }, HarnessKey.Send, R.string.control_send_unavailable),
+                        )
                     } else {
                         val density = LocalDensity.current
                         // Beside the content, the composer takes none of its height; the
@@ -2274,11 +2278,12 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable ()
  * live region, no animation, never cut short.
  */
 @Composable
-private fun ReadOnlyFooter(agent: String, accent: Color) {
+private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = null) {
     val colors = chatColors(accent)
-    val spoken = stringResource(R.string.chat_readonly_footer_spoken, agent)
+    // Where the card says why Send is not here (§3.5), that line, read as is.
+    val spoken = sendReason ?: stringResource(R.string.chat_readonly_footer_spoken, agent)
     Text(
-        stringResource(R.string.chat_readonly_footer),
+        sendReason ?: stringResource(R.string.chat_readonly_footer),
         style = ChatType.body.copy(color = colors.muted),
         modifier = Modifier
             .fillMaxWidth()

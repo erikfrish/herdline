@@ -97,6 +97,7 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Connection
@@ -1653,8 +1654,10 @@ private fun Editor(
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
                 // Steer is its own labelled action; Send stays disabled.
                 val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
+                // Where there is no Steer, the reason the card gives for it (§3.5), else the plain one.
+                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null }
                 Notice(
-                    stringResource(
+                    noSteer ?: stringResource(
                         when {
                             steerAction == null -> R.string.reason_agent_working
                             endpointSteer -> R.string.steer_help_endpoint
@@ -1841,7 +1844,8 @@ private fun Editor(
             AttachBlock.Held -> stringResource(R.string.composer_locked_reason)
             AttachBlock.Sending -> stringResource(R.string.composer_sending)
             AttachBlock.Rebind -> stringResource(R.string.attach_confirm_pane)
-            AttachBlock.NeedsAgent -> stringResource(R.string.attach_needs_agent)
+            AttachBlock.NeedsAgent -> controlReason(draft.agent, HarnessKey.Media, R.string.control_attach_unavailable)
+                ?: stringResource(R.string.attach_needs_agent)
             AttachBlock.Full -> stringResource(R.string.attach_full, MAX_ATTACHMENTS)
         },
     )

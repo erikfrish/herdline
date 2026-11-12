@@ -290,6 +290,18 @@ private fun noteText(note: Note): String = stringResource(
     },
 )
 
+/**
+ * A disabled control's §3.5 text for [agent]'s [key], from [unavailable] (a
+ * `control_*_unavailable` id), or null when the claim gives no reason: the
+ * caller then keeps its own words. Text only; it never decides whether the
+ * control is enabled.
+ */
+@Composable
+internal fun controlReason(agent: String?, key: HarnessKey, unavailable: Int): String? {
+    val cell = agent?.let { Harness.of(it).cell(key) } as? Cell.NotYet ?: return null
+    return stringResource(unavailable, agent, reasonText(cell))
+}
+
 /** [cell]'s reason line (card §2.3), also the %2$s of a disabled control's text (§3.5). */
 @Composable
 internal fun reasonText(cell: Cell.NotYet): String {
