@@ -88,7 +88,7 @@ class AttachmentStager(private val connection: Connection, private val resolver:
             .put("kind", kind.wire)
             .put("size", declared ?: JSONObject.NULL)
         val opened = reply { Native.attachmentBegin(session, request.toString()) }
-            ?: return@withContext Staging.Refused("not_connected")
+            ?: return@withContext Staging.Refused(lost())
         if (opened.optString("outcome") != "open") return@withContext refused(opened)
         val upload = opened.getLong("upload")
         val settled = AtomicBoolean(false)
@@ -114,18 +114,26 @@ class AttachmentStager(private val connection: Connection, private val resolver:
                         sent += read
                         if (sent > limit) throw TooLarge()
                         digest.update(buffer, 0, read)
-                        Native.attachmentWrite(upload, buffer, read)
+                        // The host's side failing is not a file this phone can't read.
+                        try {
+                            Native.attachmentWrite(upload, buffer, read)
+                        } catch (e: IOException) {
+                            throw HostFailed()
+                        }
                         onProgress(sent, declared)
                     }
                 }
                 val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
                 if (!settled.compareAndSet(false, true)) return@coroutineScope Staging.Refused("cancelled")
                 val finished = reply { Native.attachmentFinish(upload, sha256) }
-                    ?: return@coroutineScope Staging.Refused("not_connected")
+                    ?: return@coroutineScope Staging.Refused(lost())
                 staged(finished, target) ?: refused(finished)
             } catch (e: TooLarge) {
                 cancel(upload, settled)
                 Staging.Refused(tooLarge)
+            } catch (e: HostFailed) {
+                cancel(upload, settled)
+                Staging.Refused(lost())
             } catch (e: IOException) {
                 cancel(upload, settled)
                 Staging.Refused("unreadable")
@@ -164,7 +172,13 @@ class AttachmentStager(private val connection: Connection, private val resolver:
         if (settled.compareAndSet(false, true)) Native.attachmentCancel(upload)
     }
 
+    /** A host call that gave no answer: "not connected" only when the link is gone, else a failed upload. */
+    private fun lost() = if (connection.link() == 0L) "not_connected" else "failed"
+
     private class TooLarge : Exception()
+
+    /** The host's upload ended under a write; not an IOException, so never worded as this phone's read. */
+    private class HostFailed : Exception()
 
     companion object {
         const val CHUNK = 64 * 1024
