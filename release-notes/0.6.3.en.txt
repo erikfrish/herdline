@@ -1,0 +1,15 @@
+Herdline 0.6.3 — Hermes and Qwen Code history in Chat, more agent session folders, clearer modes
+
+Chat can now show the history of Hermes and Qwen Code sessions. Both are read only: where the message field would be, a line says to switch to Terminal to type. When Chat can't read a session for a reason it can name, it says that reason: a Hermes history format it doesn't read, a Qwen Code managed session, or a session kept outside your home folder on the host. It no longer promises to switch back when it won't. Where a Hermes history continues in another session, Chat marks the point.
+
+Chat finds sessions in more places: OMP profiles, and custom OMP, Pi, Claude Code and Codex folders set in the agent's environment, as long as they are inside your home folder on the host.
+
+Switching between Chat and Terminal fades instead of cutting, and the selected mode is marked by a ring, not by colour alone. When Chat isn't available for a pane, its button has a dashed outline and TalkBack says so, also when it is selected.
+
+Disclosure arrows turn instead of swapping, and a tool's details fade open. A subagent that hasn't started says Pending, with one arrow and a long name shortened.
+
+Ctrl and Alt on the extra keys say when they are latched, by a bar and to TalkBack, and are at least 48 dp wide.
+
+When Herdline asks for a password on its own, after another way of signing in failed, Remember password starts unticked, and the whole line toggles it.
+
+The card for a program Chat doesn't read keeps its buttons reachable on short screens.
