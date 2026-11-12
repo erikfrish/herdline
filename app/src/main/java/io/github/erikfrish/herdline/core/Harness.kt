@@ -82,6 +82,30 @@ data class Harness(
     }
 }
 
+/** How Chat's Stop reaches a program's running turn. */
+enum class StopRoute {
+    /** The program's own server aborts it (`native/src/agent_chat.rs`). */
+    Server,
+
+    /**
+     * One key into the pane, where a pinned source or the runtime's own
+     * working hint names it (`native/src/control/pty.rs`); stopped only when
+     * the history records it, else unconfirmed.
+     */
+    Pty,
+
+    /** Chat offers no Stop. */
+    None,
+}
+
+/** Where Stop goes for this program; the native core still decides at the tap. */
+val Harness.stop: StopRoute
+    get() = when (name.lowercase(Locale.ROOT)) {
+        "opencode", "kilo" -> StopRoute.Server
+        "omp", "pi", "claude", "codex" -> StopRoute.Pty
+        else -> StopRoute.None
+    }
+
 /** One row of "What works here", in the order the card lists them. */
 enum class HarnessItem { Terminal, History, Send, Steer, Status, Questions, Subagents, Media }
 
