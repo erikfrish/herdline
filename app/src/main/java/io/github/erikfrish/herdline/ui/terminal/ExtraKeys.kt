@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.erikfrish.herdline.R
+import kotlin.math.floor
 
 /** What one extra key does. */
 sealed interface ExtraKey {
@@ -135,6 +136,19 @@ private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
 
 /** Every row a hand can thumb without peeking, whatever the cap shrinks to. */
 private val KeyRowHeight = 48.dp
+
+/**
+ * The cap width, in dp, for a row that scrolls in a [viewport] dp wide: as
+ * many whole caps of at least [min] as fit, then the next one cut in half at
+ * the edge, so the row itself shows there is more (QF-6b). Never under [min].
+ */
+internal fun scrollingCapWidth(viewport: Float, gap: Float, min: Float = 48f): Float {
+    val whole = floor((viewport - min / 2) / (min + gap)).toInt()
+    // Too narrow for one cap and half of the next: the plain target, no cue claimed.
+    if (whole < 1) return min
+    return (viewport - whole * gap) / (whole + 0.5f)
+}
+
 /** The gaps and outer padding of the panel, in dp. */
 private val KeyGap = 5.dp
 private val KeyRowPad = 6.dp
@@ -196,9 +210,9 @@ fun ExtraKeysRow(
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target.
                 val fill = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
-                val width = fill.coerceAtLeast(48.dp)
                 // A row that scrolls: a drag that starts on a cap scrolls it and sends nothing.
                 val scrolls = fill < 48.dp
+                val width = if (scrolls) scrollingCapWidth((panelWidth - KeyRowPad * 2).value, KeyGap.value).dp else fill
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -247,15 +261,18 @@ fun ExtraKeysRow(
                                         awaitFirstDown()
                                         down = true
                                         try {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            // In a row that scrolls, the first send waits for the
-                                            // release or the hold, so a drag only scrolls.
-                                            if (!scrolls) onKey(key.keyCode, false)
+                                            // In a row that scrolls, the first send (and its buzz) waits
+                                            // for the release or the hold, so a drag only scrolls.
+                                            if (!scrolls) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onKey(key.keyCode, false)
+                                            }
                                             var held = false
                                             val repeat = scope.launch {
                                                 delay(400)
                                                 held = true
                                                 if (scrolls) {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     onKey(key.keyCode, false)
                                                     delay(60)
                                                 }
@@ -271,7 +288,10 @@ fun ExtraKeysRow(
                                                 // leaving composition: the held job never outlives the hold.
                                                 repeat.cancel()
                                             }
-                                            if (scrolls && !held && up != null) onKey(key.keyCode, false)
+                                            if (scrolls && !held && up != null) {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                onKey(key.keyCode, false)
+                                            }
                                         } finally {
                                             down = false
                                         }
