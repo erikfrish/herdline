@@ -155,7 +155,7 @@ impl Screen {
                 }
                 if style.inverse {
                     std::mem::swap(&mut fg, &mut back);
-                    bits |= flags::BACKGROUND;
+                    bits |= flags::BACKGROUND | flags::INVERSE;
                 }
                 for (on, bit) in [
                     (style.bold, flags::BOLD),

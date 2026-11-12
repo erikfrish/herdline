@@ -16,6 +16,9 @@ pub mod flags {
     pub const BACKGROUND: u16 = 128;
     /// Printable ASCII only, one character per cell: drawable as one string.
     pub const ASCII: u16 = 256;
+    /// Drawn in inverse video. `fg` and `bg` are already swapped, so the bit
+    /// only records where the colours came from: drawing never swaps again.
+    pub const INVERSE: u16 = 512;
 }
 
 /// Bumped whenever the packed layout changes.

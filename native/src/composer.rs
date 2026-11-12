@@ -10,7 +10,7 @@
 //! steps (see [`crate::steer`]). Everything else fails closed and leaves
 //! the text with the user.
 
-use crate::render::RenderFrame;
+use crate::render::{RenderFrame, flags};
 use crate::transcript::Identity;
 use crate::visible::{self, Bind, Grid, Viewport};
 use crate::{attach, hold};
@@ -427,9 +427,15 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
         }
         box_on_screen(rows.is_some(), scroll)?;
         empty_box(reading)?;
-        if matches!(program, Program::Pi | Program::Claude)
-            && !cursor_in_box(surface.frame, span.as_ref())
-        {
+        let owned = match program {
+            Program::Pi => cursor_in_box(surface.frame, span.as_ref()),
+            Program::Claude => {
+                cursor_in_box(surface.frame, span.as_ref())
+                    || claude_caret(surface.frame, pane, span.as_ref())
+            }
+            _ => true,
+        };
+        if !owned {
             // The cursor is not inside the editor the rows just read: some
             // other view owns input now, and its Enter answers that.
             return Err(Refusal::EditorUnrecognized);
@@ -1204,6 +1210,60 @@ fn cursor_in_box(
         return false;
     };
     frame.cursor.visible && span.contains(&frame.cursor.y)
+}
+
+/// Claude hides the hardware cursor and draws its own caret: one inverse
+/// space straight after its `❯` prompt and a no-break space. Herdr still
+/// places the hidden cursor on that cell. The editor owns input when the
+/// box is its three rows, the hidden cursor stands on that cell of this
+/// pane, and the only inverse run in the box there is that caret with no
+/// other style and in the theme's own colours. Anything else is not known
+/// to be Claude's empty editor.
+fn claude_caret(
+    frame: Option<&RenderFrame>,
+    pane: &str,
+    span: Option<&std::ops::RangeInclusive<u16>>,
+) -> bool {
+    let (Some(frame), Some(span)) = (frame, span) else {
+        return false;
+    };
+    let Some(rect) = frame
+        .panes
+        .iter()
+        .find(|area| area.id == pane)
+        .map(|area| area.rect)
+    else {
+        return false;
+    };
+    if span.end().checked_sub(*span.start()) != Some(2) {
+        return false;
+    }
+    let prompt = span.start() + 1;
+    let caret = (rect.x.saturating_add(2), prompt);
+    let cursor = frame.cursor;
+    if cursor.visible || (cursor.x, cursor.y) != caret {
+        return false;
+    }
+    let right = rect.x.saturating_add(rect.width);
+    let in_box = frame.runs.iter().filter(|run| {
+        span.contains(&run.row) && run.col >= rect.x && run.col.saturating_add(run.cells) <= right
+    });
+    let mut inverse = in_box.clone().filter(|run| run.flags & flags::INVERSE != 0);
+    let (Some(run), None) = (inverse.next(), inverse.next()) else {
+        return false;
+    };
+    let drawn = |col: u16, text: &str| {
+        in_box
+            .clone()
+            .any(|run| run.row == prompt && run.col == col && run.cells == 1 && run.text == text)
+    };
+    (run.col, run.row) == caret
+        && run.cells == 1
+        && run.text == " "
+        && run.flags == flags::INVERSE | flags::BACKGROUND | flags::ASCII
+        && (run.fg, run.bg) == (frame.background, frame.foreground)
+        && drawn(rect.x, "❯")
+        && drawn(rect.x + 1, "\u{a0}")
 }
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
