@@ -118,7 +118,6 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
 
     GlassScreen(
         title = stringResource(R.string.dest_agents),
-        large = true,
     ) { padding ->
         LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("inbox")) {
             item(key = "filters") {
