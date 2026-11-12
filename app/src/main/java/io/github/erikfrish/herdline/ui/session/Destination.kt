@@ -44,10 +44,7 @@ const val DESTINATION_SEPARATOR = " · "
 /** Between the tab and what tells its panes apart. */
 const val DESTINATION_WITHIN = " › "
 
-/** Below this many columns a cut `who` drops the workspace instead (§B fit 4). */
-private const val WHO_MIN = 12
-
-/** The workspace's least share while shown (§B fit 3). */
+/** The least room the workspace is shown in after a whole `who`; less drops it (§B fit 3, A-29). */
 private const val WHERE_MIN = 8
 
 /**
@@ -134,16 +131,15 @@ private fun whoOf(d: Destination, group: List<Destination>): String {
 private data class Line(val shown: String, val who: String)
 
 /**
- * The line in at most [maxColumns]: [state] and [protected] whole, the
- * workspace given `min(len, max(8, budget / 3))`, `who` the rest, room one
- * of them leaves going to the other; a cut `who` under 12 drops the
- * workspace (§B fit 2–4).
+ * The line in at most [maxColumns]: [state] and [protected] whole; `who`
+ * whole when it fits, and the workspace after it only in the room left,
+ * when that is at least `min(len, 8)` columns. Otherwise the workspace is
+ * dropped first, since the header names it, and `who` takes all the room
+ * (A-29, audit 2.9).
  */
 private fun fitLine(who: String, protected: String, state: String?, where: String, maxColumns: Int): Line {
     val sep = columns(DESTINATION_SEPARATOR)
     val stateCols = state?.let { columns(it) + sep } ?: 0
-    val whoLen = columns(who)
-    val whereLen = columns(where)
 
     fun build(whoW: Int, whereW: Int?): Line {
         val shownWho = middleEllipsis(who, whoW.coerceAtLeast(1)) + protected
@@ -152,16 +148,9 @@ private fun fitLine(who: String, protected: String, state: String?, where: Strin
     }
 
     val alone = maxColumns - stateCols - columns(protected)
-    if (where.isEmpty()) return build(alone, null)
-    val budget = alone - sep
-    var whereW = minOf(whereLen, maxOf(WHERE_MIN, budget / 3))
-    var whoW = budget - whereW
-    if (whoW > whoLen) {
-        whereW = minOf(whereLen, whereW + whoW - whoLen)
-        whoW = whoLen
-    }
-    if (whoW < whoLen && whoW < WHO_MIN) return build(alone, null)
-    return build(whoW, whereW)
+    val left = alone - columns(who) - sep
+    if (where.isEmpty() || left < minOf(columns(where), WHERE_MIN)) return build(alone, null)
+    return build(columns(who), left)
 }
 
 /**

@@ -23,10 +23,22 @@ class DestinationTest {
         destinationLabel(d, siblings.toList(), maxColumns).shown
 
     @Test
-    fun a_long_tab_and_a_long_workspace_are_both_cut_in_the_middle() {
+    fun a_long_tab_takes_the_room_and_the_workspace_is_dropped_first() {
         val line = shown(pane(2, longTab, state = "Needs input"), 41, pane(1, "work"))
-        assertEquals("qa-visua…cleanly · Needs input · qa-v…sis", line)
+        assertEquals("qa-visual-a-v…psize-cleanly · Needs input", line)
         assertEquals(41, columns(line))
+    }
+
+    @Test
+    fun a_whole_tab_with_under_eight_columns_left_drops_the_workspace() {
+        assertEquals("work · Working", shown(pane(1, "work", state = "Working"), 24, pane(2, longTab)))
+    }
+
+    @Test
+    fun a_whole_tab_with_eight_columns_left_shows_the_workspace_cut_in_the_middle() {
+        val line = shown(pane(1, "work", state = "Working"), 25, pane(2, longTab))
+        assertEquals("work · Working · qa-v…sis", line)
+        assertEquals(25, columns(line))
     }
 
     @Test
