@@ -171,6 +171,13 @@ fun ExtraKeysRow(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val latchOn = stringResource(R.string.extra_key_latch_on)
     val latchOff = stringResource(R.string.extra_key_latch_off)
+    // On a latched cap: whichever of ink or white reads better on this accent (WCAG
+    // contrast, from luminance alone), so a mid-tone accent like brass never gets white.
+    val onAccent = remember(accent) {
+        val ink = Color(0xFF10151C)
+        val l = accent.luminance() + 0.05f
+        if (l / (ink.luminance() + 0.05f) >= 1.05f / l) ink else Color.White
+    }
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -205,7 +212,7 @@ fun ExtraKeysRow(
                             },
                             label = "keyFill",
                         )
-                        val labelColor = if (active) (if (accent.luminance() > 0.5f) Color(0xFF10151C) else Color.White) else onSurface
+                        val labelColor = if (active) onAccent else onSurface
                         val hit = Modifier
                             .width(width)
                             .height(KeyRowHeight)
