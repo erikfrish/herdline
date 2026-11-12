@@ -464,7 +464,8 @@
     <string name="chat_desktop_elsewhere">桌面：%1$s</string>
     <string name="chat_desktop_elsewhere_spoken">正在此处阅读 %1$s。桌面焦点在 %2$s。</string>
     <string name="chat_send_route">发送到 %1$s 的终端</string>
-    <string name="terminal_shows_desktop">终端显示桌面焦点所在的窗格 %1$s。你刚才在阅读 %2$s。</string>
+    <string name="terminal_opening">正在为 %1$s 打开终端…</string>
+    <string name="terminal_open_failed">无法为 %1$s 打开终端。你仍在这里阅读它。</string>
     <string name="focus_reading_shared">显示 %1$s（会移动桌面焦点）</string>
     <string name="chat_pane_closed">%1$s 已关闭。草稿已保留。</string>
     <string name="reason_target_unchecked">未发送：发送会输入到 %1$s 的终端，目前无法在此检查该终端。文字已保留。</string>

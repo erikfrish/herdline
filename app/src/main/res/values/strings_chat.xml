@@ -118,7 +118,8 @@
     <string name="chat_desktop_elsewhere">Desktop: %1$s</string>
     <string name="chat_desktop_elsewhere_spoken">Reading %1$s here. The desktop is on %2$s.</string>
     <string name="chat_send_route">Sends into %1$s\'s terminal</string>
-    <string name="terminal_shows_desktop">Terminal shows the desktop\'s pane, %1$s. You were reading %2$s.</string>
+    <string name="terminal_opening">Opening Terminal for %1$s…</string>
+    <string name="terminal_open_failed">Couldn\'t open Terminal for %1$s. You\'re still reading it here.</string>
     <string name="focus_reading_shared">Show %1$s (moves the desktop)</string>
     <string name="chat_pane_closed">%1$s has closed. Your draft is kept.</string>
     <string name="reason_target_unchecked">Not sent: Send types into %1$s\'s terminal, and that terminal can\'t be checked from here right now. Your text is kept.</string>

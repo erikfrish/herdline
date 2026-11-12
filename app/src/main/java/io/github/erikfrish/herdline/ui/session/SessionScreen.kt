@@ -318,9 +318,20 @@ fun SessionScreen(
     val lastRead = remember { mutableStateMapOf<String, String>() }
     // A Terminal tab or workspace choice: the tab whose pane Herdr focuses next becomes the one read here.
     var pendingTab by remember { mutableStateOf<String?>(null) }
+    // An explicit Terminal from Chat on a pane the desktop isn't on (TerminalOpen.kt): Chat stays on that pane until
+    // Herdr's focus lands there. [terminalLate]: the one whose wait ran out; [terminalTitle]: its pane's name, said
+    // while it opens and if it couldn't; [terminalFailed]: the pane it couldn't open, said once with Try again.
+    var terminalOpening by remember(connection) { mutableStateOf<TerminalOpening?>(null) }
+    var terminalLate by remember { mutableStateOf<TerminalOpening?>(null) }
+    var terminalTitle by remember { mutableStateOf("") }
+    var terminalFailed by remember { mutableStateOf<String?>(null) }
+    // The user's choices on this screen (Chat, a pane, tab or workspace): a newer one cancels a pending Terminal.
+    var choices by remember { mutableIntStateOf(0) }
     /** Reads [pane] here. Nothing is asked of Herdr. */
     fun readHere(pane: String) {
         val shown = connection.view.value ?: return
+        choices++
+        terminalFailed = null
         readingPane = pane
         readingBoot = shown.boot
         pendingTab = null
@@ -586,25 +597,6 @@ fun SessionScreen(
     LaunchedEffect(composerText, composerHidden, rawKeys, chatMode, terminal) {
         terminal?.keepRows = composerText && !composerHidden && !(rawKeys && !chatMode)
     }
-    // S3: once per switch from Chat to Terminal while the desktop is on another pane; only its action moves the desktop.
-    // It uses the screen's existing notice slot (the snackbar) and goes when Chat returns or the two panes match.
-    var terminalNotice by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(chatMode, desktopPane, reading) {
-        if (chatMode || reading?.pane == desktopPane) terminalNotice = null
-    }
-    LaunchedEffect(terminalNotice) {
-        val pane = terminalNotice ?: return@LaunchedEffect
-        val shown = connection.view.value ?: return@LaunchedEffect
-        val desktop = desktopPane ?: return@LaunchedEffect
-        val result = snackbar.showSnackbar(
-            context.getString(R.string.terminal_shows_desktop, shown.paneTitle(desktop), shown.paneTitle(pane)),
-            actionLabel = context.getString(R.string.focus_reading_shared, shown.paneTitle(pane)),
-            withDismissAction = true,
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed && connection.view.value?.panes?.any { it.id == pane } == true) connection.focusPane(pane)
-        terminalNotice = null
-    }
 
     /**
      * A choice of [pane] on this phone: it is read here. From Terminal it also moves the desktop to it;
@@ -617,6 +609,7 @@ fun SessionScreen(
 
     /** A choice of [tab]: from Chat, a pane read in Chat is read here only; otherwise Herdr focuses the tab and picks its pane. */
     fun chooseTab(tab: String) {
+        choices++
         val shown = view ?: return
         val pane = paneForTab(shown, tab, lastRead)
         if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
@@ -629,6 +622,7 @@ fun SessionScreen(
 
     /** A choice of [workspace]: as [chooseTab] for its active tab. */
     fun chooseWorkspace(workspace: String) {
+        choices++
         val shown = view ?: return
         val pane = paneForWorkspace(shown, workspace, lastRead)
         if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
@@ -656,13 +650,97 @@ fun SessionScreen(
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
         modes.set(ModeKey(node.id, node.session, pane), ModeChoice(boot, agent, on))
-        // S3: Terminal shows the desktop's pane; say so when it isn't the one read here.
-        terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
+    /** Terminal on screen for [pane], the desktop's already; with [keyboard], its keyboard too. */
+    fun showTerminal(pane: String?, keyboard: Boolean) {
+        showChat(false, pane)
+        if (keyboard) {
+            rawKeys = true
+            terminal?.showKeyboard()
+        }
+    }
+
+    /**
+     * Every explicit Terminal: the mode switch, Chat's Open Terminal and answer and error rows, the
+     * composer's Open Terminal and terminal keyboard, the harness card. Terminal shows the desktop's pane,
+     * so from Chat on a pane the desktop isn't on it asks Herdr once to focus that pane and stays in Chat
+     * on it until the focus lands ([TerminalOpening]); otherwise it shows Terminal as before.
+     */
+    fun openTerminal(keyboard: Boolean = false) {
+        terminalFailed = null
+        val pane = chatPane
+        if (!chatMode || pane == null || pane == desktopPane) {
+            terminalOpening = null
+            showTerminal(pane, keyboard)
+            return
+        }
+        // A repeat tap while it opens asks nothing more.
+        if (terminalOpening?.let { it.pane == pane && it.choice == choices } == true) return
+        terminalTitle = view?.paneTitle(pane).orEmpty()
+        val boot = view?.boot
+        if (state !is Connection.State.Connected || boot == null) {
+            terminalOpening = null
+            terminalFailed = pane
+            return
+        }
+        terminalOpening = TerminalOpening(node.id, node.session, boot, pane, choices, keyboard)
+        connection.focusPane(pane)
+    }
+
+    // While it opens Chat says so, for at most TERMINAL_LANDING_MS; the cue goes with the request.
+    LaunchedEffect(terminalOpening) {
+        val opening = terminalOpening ?: return@LaunchedEffect
+        launch {
+            delay(TERMINAL_LANDING_MS)
+            terminalLate = opening
+        }
+        snackbar.showSnackbar(context.getString(R.string.terminal_opening, terminalTitle), duration = SnackbarDuration.Indefinite)
+    }
+    // It lands only when the view and the terminal's frame both put the desktop on its pane, on its run.
+    val frameFocus = frame?.panes?.firstOrNull { it.focused }?.id
+    LaunchedEffect(terminalOpening, terminalLate, state, view, frameFocus, reading, chatMode, choices) {
+        val opening = terminalOpening ?: return@LaunchedEffect
+        val seen = TerminalSeen(
+            node.id,
+            node.session,
+            live = state is Connection.State.Connected,
+            view = view,
+            frameFocus = frameFocus,
+            reading = reading?.pane,
+            chatShown = chatMode,
+            choice = choices,
+            timedOut = terminalLate === opening,
+        )
+        when (terminalLanding(opening, seen)) {
+            TerminalLanding.Waiting -> Unit
+            TerminalLanding.Cancelled -> terminalOpening = null
+            TerminalLanding.Failed -> {
+                terminalOpening = null
+                terminalFailed = opening.pane
+            }
+            TerminalLanding.Landed -> {
+                terminalOpening = null
+                showTerminal(opening.pane, opening.keyboard)
+            }
+        }
+    }
+    // Couldn't: Chat stays on the pane with its draft; Try again asks once more, for that pane only.
+    LaunchedEffect(terminalFailed) {
+        val pane = terminalFailed ?: return@LaunchedEffect
+        val result = snackbar.showSnackbar(
+            context.getString(R.string.terminal_open_failed, terminalTitle),
+            actionLabel = context.getString(R.string.try_again),
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        terminalFailed = null
+        if (result == SnackbarResult.ActionPerformed && chatPane == pane) openTerminal()
+    }
 
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
+        if (chat) choices++
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
             desktopAgent != null -> {
@@ -674,7 +752,8 @@ fun SessionScreen(
                 // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
                 harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
             }
-            else -> showChat(chat)
+            chat -> showChat(true)
+            else -> openTerminal()
         }
     }
 
@@ -1163,7 +1242,7 @@ fun SessionScreen(
                                     connection,
                                     shown,
                                     accent,
-                                    onTerminal = { showChat(false) },
+                                    onTerminal = { openTerminal() },
                                     // While it fades out it is a picture of the old view: TalkBack reaches
                                     // Terminal beneath at once, but a tap in the 100 ms fade-out is dropped
                                     // here and never reaches Terminal (a logged limit, review M2a SHOULD 1).
@@ -1277,7 +1356,7 @@ fun SessionScreen(
                                     keyboardUp = imeVisible,
                                     live = state is Connection.State.Connected,
                                     agentHere = card.pane?.let { view?.agentIn(it) } != null,
-                                    onTerminal = { harnessCard = null; showChat(false) },
+                                    onTerminal = { harnessCard = null; openTerminal() },
                                     onClose = { harnessCard = null },
                                     runtime = rememberHarnessRuntime(connection, chatMemory, card.pane),
                                 )
@@ -1369,15 +1448,11 @@ fun SessionScreen(
                             onHasText = { composerText = it },
                             onAttachments = { composerFiles = it },
                             onFieldFocus = { composerField = it },
-                            onTerminalKeyboard = {
-                                showChat(false)
-                                rawKeys = true
-                                terminal?.showKeyboard()
-                            },
+                            onTerminalKeyboard = { openTerminal(keyboard = true) },
                             onOpenTerminal = {
-                                // From Chat, Terminal shows the desktop as it is (S3 offers the move); from Terminal, as before.
+                                // From Terminal, as before; from Chat, openTerminal brings the desktop to the pane read here first.
                                 if (!chatMode) composerPane?.takeIf { it != focusedPane }?.let(connection::focusPane)
-                                showChat(false)
+                                openTerminal()
                             },
                             // In Chat the pane read here, also once it has closed (S5): the draft never drifts to the desktop's.
                             reading = reading?.pane?.takeIf { chatMode },

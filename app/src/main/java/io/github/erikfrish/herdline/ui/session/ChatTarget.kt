@@ -52,7 +52,7 @@ fun paneForWorkspace(view: ShellView, workspace: String, lastRead: Map<String, S
 
 /**
  * The desktop's pane, named in Chat only when it isn't the one read here
- * (S2's "Desktop: ‹tab›", S3's notice); null when they match or either is unknown.
+ * (S2's "Desktop: ‹tab›"); null when they match or either is unknown.
  */
 fun desktopElsewhere(reading: String?, desktop: String?): String? =
     desktop?.takeIf { reading != null && it != reading }
