@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,7 +54,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -1020,8 +1018,9 @@ fun SessionScreen(
                                     shown,
                                     accent,
                                     onTerminal = { showChat(false) },
-                                    // While it fades out it is a picture of the old view: TalkBack and
-                                    // touches reach Terminal beneath at once.
+                                    // While it fades out it is a picture of the old view: TalkBack reaches
+                                    // Terminal beneath at once, but a tap in the 100 ms fade-out is dropped
+                                    // here and never reaches Terminal (a logged limit, review M2a SHOULD 1).
                                     modifier = (if (chatUnreadable) Modifier.size(0.dp) else Modifier).then(
                                         if (leaving) {
                                             Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
@@ -1554,29 +1553,21 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
 private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
-    Row(
+    Box(
         Modifier
             .fillMaxHeight()
             .widthIn(min = 52.dp)
             .clip(CircleShape)
             .background(fill)
-            .then(if (selected) Modifier.border(1.dp, accent, CircleShape) else Modifier)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 10.dp)
             .testTag(tag),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+        contentAlignment = Alignment.Center,
     ) {
-        // The mark and weight say which mode is on without the fill colour. The slot is
-        // always there, so switching never shifts the label; the selected state is spoken.
-        if (selected) Icon(Icons.Filled.Check, null, Modifier.size(16.dp), tint = text) else Spacer(Modifier.size(16.dp))
-        Text(
-            label,
-            color = text,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            maxLines = 1,
-        )
+        // The thick onSurface ring says which mode is on without the fill colour, at no
+        // width: both segments keep labelLarge's one weight, so switching never resizes them.
+        Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 
