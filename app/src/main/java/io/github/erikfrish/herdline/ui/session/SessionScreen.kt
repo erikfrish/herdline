@@ -661,16 +661,31 @@ fun SessionScreen(
         }
     }
 
+    // What an explicit Terminal from Chat reads: the live view, the terminal's frame (which can lag the view), this screen's choices.
+    val frameFocus = frame?.panes?.firstOrNull { it.focused }?.id
+    fun terminalSeen(timedOut: Boolean) = TerminalSeen(
+        node.id,
+        node.session,
+        live = state is Connection.State.Connected,
+        view = view,
+        frameFocus = frameFocus,
+        reading = reading?.pane,
+        chatShown = chatMode,
+        choice = choices,
+        timedOut = timedOut,
+    )
+
     /**
      * Every explicit Terminal: the mode switch, Chat's Open Terminal and answer and error rows, the
      * composer's Open Terminal and terminal keyboard, the harness card. Terminal shows the desktop's pane,
-     * so from Chat on a pane the desktop isn't on it asks Herdr once to focus that pane and stays in Chat
-     * on it until the focus lands ([TerminalOpening]); otherwise it shows Terminal as before.
+     * so from Chat it shows at once only when the live view and the frame are both on the pane read here;
+     * otherwise Chat stays on it until they are ([TerminalOpening], [terminalStart]), asking Herdr to focus
+     * it only when the view is elsewhere. From Terminal, as before.
      */
     fun openTerminal(keyboard: Boolean = false) {
         terminalFailed = null
         val pane = chatPane
-        if (!chatMode || pane == null || pane == desktopPane) {
+        if (!chatMode || pane == null) {
             terminalOpening = null
             showTerminal(pane, keyboard)
             return
@@ -678,14 +693,22 @@ fun SessionScreen(
         // A repeat tap while it opens asks nothing more.
         if (terminalOpening?.let { it.pane == pane && it.choice == choices } == true) return
         terminalTitle = view?.paneTitle(pane).orEmpty()
-        val boot = view?.boot
-        if (state !is Connection.State.Connected || boot == null) {
-            terminalOpening = null
-            terminalFailed = pane
-            return
+        val opening = view?.boot?.let { TerminalOpening(node.id, node.session, it, pane, choices, keyboard) }
+        when (opening?.let { terminalStart(it, terminalSeen(timedOut = false)) } ?: TerminalStart.Failed) {
+            TerminalStart.Immediate -> {
+                terminalOpening = null
+                showTerminal(pane, keyboard)
+            }
+            TerminalStart.AwaitOnly -> terminalOpening = opening
+            TerminalStart.FocusAndAwait -> {
+                terminalOpening = opening
+                connection.focusPane(pane)
+            }
+            TerminalStart.Failed -> {
+                terminalOpening = null
+                terminalFailed = pane
+            }
         }
-        terminalOpening = TerminalOpening(node.id, node.session, boot, pane, choices, keyboard)
-        connection.focusPane(pane)
     }
 
     // While it opens Chat says so, for at most TERMINAL_LANDING_MS; the cue goes with the request.
@@ -698,21 +721,9 @@ fun SessionScreen(
         snackbar.showSnackbar(context.getString(R.string.terminal_opening, terminalTitle), duration = SnackbarDuration.Indefinite)
     }
     // It lands only when the view and the terminal's frame both put the desktop on its pane, on its run.
-    val frameFocus = frame?.panes?.firstOrNull { it.focused }?.id
     LaunchedEffect(terminalOpening, terminalLate, state, view, frameFocus, reading, chatMode, choices) {
         val opening = terminalOpening ?: return@LaunchedEffect
-        val seen = TerminalSeen(
-            node.id,
-            node.session,
-            live = state is Connection.State.Connected,
-            view = view,
-            frameFocus = frameFocus,
-            reading = reading?.pane,
-            chatShown = chatMode,
-            choice = choices,
-            timedOut = terminalLate === opening,
-        )
-        when (terminalLanding(opening, seen)) {
+        when (terminalLanding(opening, terminalSeen(timedOut = terminalLate === opening))) {
             TerminalLanding.Waiting -> Unit
             TerminalLanding.Cancelled -> terminalOpening = null
             TerminalLanding.Failed -> {

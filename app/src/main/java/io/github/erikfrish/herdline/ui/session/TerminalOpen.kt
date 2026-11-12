@@ -73,3 +73,24 @@ fun terminalLanding(opening: TerminalOpening, seen: TerminalSeen): TerminalLandi
         else -> TerminalLanding.Waiting
     }
 }
+
+enum class TerminalStart {
+    /** The live view and the frame are both on the pane: Terminal at once, no request. */
+    Immediate,
+
+    /** The view is on the pane but the frame isn't yet: wait for it, asking Herdr nothing. */
+    AwaitOnly,
+
+    /** The desktop is elsewhere: ask Herdr once to focus the pane, then wait. */
+    FocusAndAwait,
+
+    /** Not live, or not this run: say so, with no request and no stale proof. */
+    Failed,
+}
+
+/** How an explicit Terminal from Chat starts for [opening], by the same rules [terminalLanding] lands it. */
+fun terminalStart(opening: TerminalOpening, seen: TerminalSeen): TerminalStart = when (terminalLanding(opening, seen)) {
+    TerminalLanding.Landed -> TerminalStart.Immediate
+    TerminalLanding.Waiting -> if (seen.view?.focusedPane == opening.pane) TerminalStart.AwaitOnly else TerminalStart.FocusAndAwait
+    TerminalLanding.Failed, TerminalLanding.Cancelled -> TerminalStart.Failed
+}
