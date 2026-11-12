@@ -319,7 +319,7 @@ fun SessionScreen(
     // A Terminal tab or workspace choice: the tab whose pane Herdr focuses next becomes the one read here.
     var pendingTab by remember { mutableStateOf<String?>(null) }
     // An explicit Terminal from Chat on a pane the desktop isn't on (TerminalOpen.kt): Chat stays on that pane until
-    // Herdr's focus lands there. [terminalLate]: the one whose wait ran out; [terminalTitle]: its pane's name, said
+    // Herdr's focus lands there. [terminalLate]: the one whose wait ran out; [terminalTitle]: its tab's name as the header says it,
     // while it opens and if it couldn't; [terminalFailed]: the pane it couldn't open, said once with Try again.
     var terminalOpening by remember(connection) { mutableStateOf<TerminalOpening?>(null) }
     var terminalLate by remember { mutableStateOf<TerminalOpening?>(null) }
@@ -692,7 +692,7 @@ fun SessionScreen(
         }
         // A repeat tap while it opens asks nothing more.
         if (terminalOpening?.let { it.pane == pane && it.choice == choices } == true) return
-        terminalTitle = view?.paneTitle(pane).orEmpty()
+        terminalTitle = view?.paneTabTitle(pane).orEmpty()
         val opening = view?.boot?.let { TerminalOpening(node.id, node.session, it, pane, choices, keyboard) }
         when (opening?.let { terminalStart(it, terminalSeen(timedOut = false)) } ?: TerminalStart.Failed) {
             TerminalStart.Immediate -> {

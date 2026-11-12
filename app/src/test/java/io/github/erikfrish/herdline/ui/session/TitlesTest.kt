@@ -44,6 +44,14 @@ class TitlesTest {
     }
 
     @Test
+    fun aPaneCueNamesTheTabTheHeaderShowsNotThePaneTask() {
+        // QA 10076: Opening Terminal said the pane's "work" under the tab named l6-unread.
+        assertEquals("alice", view.paneTabTitle("p1"))
+        assertEquals("Reply with ONE", view.paneTabTitle("p3"))
+        assertEquals("Pane", view.paneTabTitle("gone"))
+    }
+
+    @Test
     fun agentsWithTheSameTaskGetNotificationsThatNameTheirTabs() {
         // lab.3 D6: Herdr's own text read "lab · 1 · 1" for both agents.
         assertEquals("qa-alpha › alice · work", notificationBody(view, "p1"))

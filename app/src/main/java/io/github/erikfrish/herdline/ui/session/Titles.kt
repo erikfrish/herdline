@@ -46,6 +46,14 @@ fun ShellView.tabTitle(tabId: String): String {
     return lead?.let { paneTitle(it.id) } ?: "Tab ${tab.number}"
 }
 
+/**
+ * What the session header and the Tabs call the tab [paneId] is in
+ * ([tabTitle]), so a cue about the pane names the tab the user sees there;
+ * a pane not in view keeps its own [paneTitle].
+ */
+fun ShellView.paneTabTitle(paneId: String): String =
+    panes.firstOrNull { it.id == paneId }?.let { tabTitle(it.tab) } ?: paneTitle(paneId)
+
 /** Where a pane sits, "workspace › tab", to tell apart panes with equal titles. */
 fun ShellView.paneWhere(paneId: String): String {
     val pane = panes.firstOrNull { it.id == paneId } ?: return ""
