@@ -144,10 +144,12 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
 /// One `mastra_messages` row, keyed by its place in the thread's order and
 /// its id (the host's KEY encoding). The bytes of an image never leave the
 /// host: it shows as a placeholder Chat cannot open, and any other file is
-/// named, never opened.
+/// named, never opened. A row with nothing to show is no entry, not an
+/// empty bubble.
 fn entry(row: &Value) -> Option<Entry> {
     let offset = row["id"].as_u64()?;
     let mut blocks = Vec::new();
+    let mut parts = row["parts"].as_array();
     let role = match row["role"].as_str() {
         Some(role @ ("user" | "assistant")) => role,
         // Mastra Code sends what the user types as a signal of type `user`
@@ -157,9 +159,13 @@ fn entry(row: &Value) -> Option<Entry> {
         // signals are the harness's own (`db-message-parts.ts:341-350`):
         // system text, never a user bubble.
         Some("signal") if matches!(row["signal"].as_str(), Some("user" | "user-message")) => "user",
+        // Their content is model-facing (reminders, state dumps), and core
+        // blanks its content string (`AIV4Adapter.ts:360`): only the marker
+        // shows, never their parts.
         Some("signal") => {
             let kind = row["signal"].as_str().unwrap_or("unknown");
             blocks.push(text_block(&format!("[Mastra Code {} signal]", cap(kind, 32).0), false));
+            parts = None;
             "system"
         }
         Some("system" | "tool") => "system",
@@ -175,9 +181,13 @@ fn entry(row: &Value) -> Option<Entry> {
         images += 1;
         Image { part, source: Source::Unreadable }
     };
-    for part in row["parts"].as_array().into_iter().flatten() {
+    for part in parts.into_iter().flatten() {
         match part["t"].as_str().unwrap_or_default() {
-            "text" => blocks.push(text_block(part["text"].as_str().unwrap_or_default(), false)),
+            "text" => {
+                if let Some(text) = part["text"].as_str().filter(|text| !text.is_empty()) {
+                    blocks.push(text_block(text, false));
+                }
+            }
             "reasoning" => {
                 if let Some(text) = part["text"].as_str().filter(|text| !text.is_empty()) {
                     blocks.push(text_block(text, true));
@@ -225,6 +235,9 @@ fn entry(row: &Value) -> Option<Entry> {
             }),
             other => blocks.push(text_block(&format!("[{}]", cap(other, 32).0), false)),
         }
+    }
+    if blocks.is_empty() {
+        return None;
     }
     Some(Entry {
         id: row["mid"].as_str().map(str::to_owned),
@@ -379,10 +392,8 @@ def agent_cwd(base):
     if not stat.S_ISDIR(top.st_mode): raise Refused('mastracode_store_unknown')
     return cwd
 
-def project_root(cwd,env):
+def project_root(cwd):
     top=os.stat(cwd)
-    if any(env.get(key) for key in ('GIT_DIR','GIT_WORK_TREE','GIT_COMMON_DIR','GIT_CEILING_DIRECTORIES','GIT_DISCOVERY_ACROSS_FILESYSTEM')):
-        raise Refused('mastracode_store_unknown')
     if '.git' in cwd.split('/'): raise Refused('mastracode_store_unknown')
     here=cwd
     while True:
@@ -399,8 +410,11 @@ def project_root(cwd,env):
             if stat.S_ISDIR(own.st_mode) and os.path.isfile(os.path.join(dot,'HEAD')):
                 # core.worktree or core.bare move or drop the work tree; with
                 # extensions.worktreeConfig, config.worktree may set them too.
+                # Git's true is true, yes, on, 1 or a bare key, any case. An
+                # include or includeIf can set either from a file not read here.
                 body=b'\n'.join(small(os.path.join(dot,name)) or b'' for name in ('config','config.worktree'))
-                if re.search(rb'(?im)^\s*worktree\s*=',body) or re.search(rb'(?im)^\s*bare\s*=\s*true',body): raise Refused('mastracode_store_unknown')
+                if re.search(rb'(?im)^[ \t]*worktree[ \t]*=',body) or re.search(rb'(?im)^[ \t]*bare[ \t]*(=[ \t]*(true|yes|on|1)[ \t]*)?\r?$',body) or re.search(rb'(?im)^[ \t]*\[[ \t]*include(if)?\b',body):
+                    raise Refused('mastracode_store_unknown')
                 return here
             if stat.S_ISREG(own.st_mode):
                 head=small(dot) or b''
@@ -434,21 +448,26 @@ def store(base,env):
         if not isinstance(url,str): raise Refused('mastracode_store_unknown')
         return from_url(url)
     # project.ts:333-339: <project>/.mastracode/database.json, then
-    # HOME/.mastracode/database.json, each {url}. The root is one of the
-    # cwd's ancestors, so with no such file on the way up there is no root to
-    # settle.
+    # HOME/.mastracode/database.json, each {url}. Git env can put the work
+    # tree anywhere, even off the cwd's ancestors, so it is refused before
+    # anything is looked for. Otherwise the root is one of the cwd's
+    # ancestors: with no such file and no `.git` on the way up there is no
+    # root to settle, and with a `.git` the walk still refuses a work tree
+    # its config moves elsewhere.
     def legacy(path):
         value=config(path)
         url=value.get('url') if isinstance(value,dict) else None
         return from_url(url) if isinstance(url,str) and url else None
+    if any(env.get(key) for key in ('GIT_DIR','GIT_WORK_TREE','GIT_COMMON_DIR','GIT_CEILING_DIRECTORIES','GIT_DISCOVERY_ACROSS_FILESYSTEM')):
+        raise Refused('mastracode_store_unknown')
     cwd=agent_cwd(base)
-    here=cwd; candidate=False
-    while True:
-        if os.path.lexists(os.path.join(here,'.mastracode','database.json')): candidate=True; break
+    here=cwd; settle=False
+    while not settle:
+        settle=any(os.path.lexists(os.path.join(here,*name)) for name in (('.mastracode','database.json'),('.git',)))
         if here in ('/',''): break
         here=os.path.dirname(here)
-    if candidate:
-        found=legacy(os.path.join(project_root(cwd,env),'.mastracode','database.json'))
+    if settle:
+        found=legacy(os.path.join(project_root(cwd),'.mastracode','database.json'))
         if found: return found
     found=legacy(os.path.join(env['HOME'],'.mastracode','database.json'))
     if found: return found
@@ -483,6 +502,12 @@ def connect(db):
         conn.execute('BEGIN')
         conn.execute('SELECT count(*) FROM sqlite_master').fetchone()
     except sqlite3.DatabaseError: raise Refused('mastracode_store_unreadable')
+    # SQLite opened the path by name: it must still be the file checked above.
+    try: again=os.stat(db)
+    except OSError: again=None
+    if again is None or (again.st_dev,again.st_ino)!=(st.st_dev,st.st_ino):
+        conn.close()
+        raise Refused('mastracode_store_unreadable')
     return conn
 
 def columns(conn,table): return {row[1] for row in conn.execute('PRAGMA table_info(%s)'%table)}

@@ -288,7 +288,26 @@ fn only_user_signals_are_the_users_words() {
     let page = host.page(TID, Read::Tail).unwrap();
     let roles: Vec<_> = page.entries.iter().map(|entry| entry.role.as_deref().unwrap()).collect();
     assert_eq!(roles, ["user", "system", "system", "user"]);
-    assert_eq!(texts(&page)[1], "[Mastra Code reactive signal]");
+    // The harness's own signals show their kind, never their content.
+    assert_eq!(
+        texts(&page),
+        ["typed by the user", "[Mastra Code reactive signal]", "[Mastra Code notification signal]", "by type"]
+    );
+}
+
+#[test]
+fn a_message_with_nothing_to_show_is_no_entry() {
+    let host = Host::new(TID, "mastracode");
+    host.default_store(json!({"threads": [TID], "messages": [
+        said(TID, "m-1", "user", "2026-01-01T00:00:01.000Z", "ask"),
+        message(TID, "m-2", "assistant", "2026-01-01T00:00:02.000Z",
+            json!({"format": 2, "parts": [{"type": "step-start"}, {"type": "text", "text": ""}]})),
+        message(TID, "m-3", "assistant", "2026-01-01T00:00:03.000Z",
+            json!({"format": 2, "parts": [{"type": "text", "text": ""}, {"type": "text", "text": "answer"}]})),
+    ]}));
+    let page = host.page(TID, Read::Tail).unwrap();
+    assert_eq!(page.entries.len(), 2);
+    assert_eq!(texts(&page), ["ask", "answer"]);
 }
 
 #[test]
@@ -422,8 +441,45 @@ fn the_project_database_json_is_found_from_the_agents_own_cwd_and_git_root() {
     fs::write(repo.join(".git/config.worktree"), "[core]\n\tworktree = /elsewhere\n").unwrap();
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
     fs::remove_file(repo.join(".git/config.worktree")).unwrap();
+    // Git reads a true core.bare in any of its spellings: no work tree.
+    for bare in ["\tbare = yes", "\tBare=On", "\tbare = 1", "\tbare"] {
+        fs::write(repo.join(".git/config"), format!("[core]\n{bare}\n")).unwrap();
+        assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN, "{bare}");
+    }
+    fs::write(repo.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
+    assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
+    // An include can set either from a file this does not read.
+    for include in ["[include]\n\tpath = more", "[includeIf \"gitdir:~/\"]\n\tpath = more"] {
+        fs::write(repo.join(".git/config"), format!("{include}\n")).unwrap();
+        assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN, "{include}");
+    }
+    fs::remove_file(repo.join(".git/config")).unwrap();
     // Git env can move the work tree anywhere: refused, never guessed.
     host.environ(&[("GIT_DIR", "/elsewhere")]);
+    assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
+}
+
+#[test]
+fn a_work_tree_moved_off_the_cwds_ancestors_is_refused_never_the_default_store() {
+    let host = Host::new(TID, "mastracode");
+    let spec = |words: &str| json!({"threads": [TID], "messages": [said(TID, "m-1", "user", "2026-01-01T00:00:01.000Z", words)]});
+    host.default_store(spec("default"));
+    // The work tree git env names holds the project database.json; nothing
+    // above the cwd does.
+    let elsewhere = host.home.path().join("elsewhere");
+    let other = host.store(&host.home.path().join("other.db"), spec("other"));
+    fs::create_dir_all(elsewhere.join(".mastracode")).unwrap();
+    fs::write(elsewhere.join(".mastracode/database.json"), json!({"url": format!("file:{}", other.display())}).to_string()).unwrap();
+    host.environ(&[("GIT_WORK_TREE", elsewhere.to_str().unwrap())]);
+    assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
+    // A repository's own core.worktree is refused the same way.
+    host.environ(&[]);
+    assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["default"]);
+    let repo = host.home.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    fs::write(repo.join(".git/config"), format!("[core]\n\tworktree = {}\n", elsewhere.display())).unwrap();
+    host.cwd(&repo);
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
 }
 
