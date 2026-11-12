@@ -101,9 +101,6 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     if reply["changed"] == true {
         return Err(Error::NoTranscript);
     }
-    if reply["too_large"] == true {
-        return Err(Error::EntryTooLarge);
-    }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
             [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE]
@@ -128,7 +125,8 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     })
 }
 
-/// One `message` row with its parts, keyed by its rowid. The bytes of an
+/// One `message` row with its parts, keyed by its rowid and message id (the
+/// host's KEY encoding). The bytes of an
 /// image never leave the host: it shows as a placeholder Chat cannot open,
 /// and any other file is named, never opened.
 fn entry(row: &Value) -> Option<Entry> {
@@ -199,6 +197,11 @@ fn entry(row: &Value) -> Option<Entry> {
             "compaction" => kind = Kind::Other,
             // Bookkeeping Kilo's own view does not show as content.
             "step-start" | "step-finish" | "snapshot" | "patch" => {}
+            // The host kept only the parts that fit the page budget.
+            "cut" => blocks.push(Block::Text {
+                text: "[Message too large to show in full]".to_owned(),
+                truncated: true,
+            }),
             other => blocks.push(text_block(&format!("[{}]", cap(other, 32).0), false)),
         }
     }
@@ -247,16 +250,27 @@ fn file_name(part: &Value) -> String {
 /// XDG_DATA_HOME and KILO_DB; nothing else from the agent's environment is
 /// returned, logged or stored. A file part's `url` (inline base64 or a
 /// `file://` path) is never returned and never opened.
-const PYTHON: &str = r#"import json, os, re, sqlite3, subprocess, sys, urllib.parse
+const PYTHON: &str = r#"import json, os, re, sqlite3, stat, subprocess, sys, urllib.parse, zlib
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
 environ_path = sys.argv[4] if len(sys.argv) > 4 else None
 LIMIT=200
 BUDGET=1572864
-CLIP=70000
+# Rust's per-item caps (transcript.rs TEXT_LIMIT, RESULT_LIMIT, ARGS_LIMIT) in
+# UTF-8 bytes, plus a few so Rust still sees the field as cut and says so.
+TEXT=65536+4; RESULT=16384+4; ARGS=8192+4
+# A Kilo revert deletes the newest messages, and SQLite then hands their
+# rowids out again. So an offset is the rowid times KEY plus 20 bits of the
+# message id's CRC: a later page can tell that the row it last showed is
+# gone or now holds another message, and starts over from the tail.
+KEY=1<<20
 NAMES=('kilo','kilo-code')
 ID=re.compile(r'^ses_[A-Za-z0-9]{1,64}$')
 # The v1 columns this reads (packages/core/src/session/sql.ts:24-114).
 NEED={'session':{'id'},'message':{'id','session_id','time_created','data'},'part':{'id','message_id','session_id','data'}}
+
+def dump(value): return json.dumps(value,separators=(',',':'),ensure_ascii=False)
+
+def check(mid): return zlib.crc32(str(mid).encode())&(KEY-1)
 
 def identity():
     result=subprocess.run(['/bin/sh','-c',report],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=20)
@@ -310,11 +324,23 @@ def store(env):
 
 # mode=ro, never immutable: Kilo is a live writer, and an immutable read can
 # see stale or torn pages. A store SQLite cannot open read-only is refused,
-# with no fallback.
+# with no fallback. Only a regular file is opened, by the one resolved path:
+# a FIFO or device there would block or misread, and a symlinked -wal or -shm
+# sidecar would let SQLite read outside the checked path.
 def connect(db):
+    try: st=os.stat(db)
+    except FileNotFoundError: raise LookupError()
+    except OSError: raise Refused('kilo_store_unreadable')
+    if not stat.S_ISREG(st.st_mode): raise Refused('kilo_store_unreadable')
+    if any(os.path.islink(db+side) for side in ('-wal','-shm')): raise Refused('kilo_store_unreadable')
     try:
-        with open(db,'rb') as f: header=f.read(100)
-    except OSError: raise LookupError()
+        fd=os.open(db,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        try:
+            opened=os.fstat(fd)
+            header=os.read(fd,100)
+        finally: os.close(fd)
+    except OSError: raise Refused('kilo_store_unreadable')
+    if (opened.st_dev,opened.st_ino)!=(st.st_dev,st.st_ino) or not stat.S_ISREG(opened.st_mode): raise Refused('kilo_store_unreadable')
     if len(header)<100 or not header.startswith(b'SQLite format 3\x00'): raise LookupError()
     try:
         conn=sqlite3.connect('file:'+urllib.parse.quote(db,safe='/')+'?mode=ro',uri=True,timeout=5)
@@ -327,7 +353,8 @@ def connect(db):
 
 def columns(conn,table): return {row[1] for row in conn.execute('PRAGMA table_info(%s)'%table)}
 
-def clip(text): return text if len(text)<=CLIP else text[:CLIP]
+# Cut to `limit` UTF-8 bytes on a character boundary.
+def clip(text,limit): return text if len(text)*4<=limit else text.encode()[:limit].decode(errors='ignore')
 
 def text(value): return value if isinstance(value,str) else ''
 
@@ -343,13 +370,13 @@ def part(raw):
     p=load(raw)
     if p is None: return {'t':'unreadable'}
     kind=p.get('type')
-    if kind in ('text','reasoning'): return {'t':kind,'text':clip(text(p.get('text'))),'synthetic':p.get('synthetic') is True}
+    if kind in ('text','reasoning'): return {'t':kind,'text':clip(text(p.get('text')),TEXT),'synthetic':p.get('synthetic') is True}
     if kind=='file': return {'t':'file','image':image(p.get('mime')),'mime':text(p.get('mime'))[:128],'name':text(p.get('filename'))[:256]}
     if kind=='tool':
         state=p.get('state') if isinstance(p.get('state'),dict) else {}
         attachments=state.get('attachments') if isinstance(state.get('attachments'),list) else []
-        return {'t':'tool','call':text(p.get('callID')),'name':text(p.get('tool')),'status':text(state.get('status')),
-            'input':clip(json.dumps(state.get('input',{}))),'output':clip(text(state.get('output'))),'error':clip(text(state.get('error'))),
+        return {'t':'tool','call':text(p.get('callID'))[:256],'name':text(p.get('tool'))[:128],'status':text(state.get('status'))[:32],
+            'input':clip(dump(state.get('input',{})),ARGS),'output':clip(text(state.get('output')),RESULT),'error':clip(text(state.get('error')),RESULT),
             'images':sum(1 for a in attachments if isinstance(a,dict) and image(a.get('mime')))}
     return {'t':kind if isinstance(kind,str) and kind else 'unknown'}
 
@@ -359,14 +386,26 @@ def info(data):
     error=data.get('error') if isinstance(data.get('error'),dict) else {}
     details=error.get('data') if isinstance(error.get('data'),dict) else {}
     out={'role':text(data.get('role')),'summary':data.get('summary') is True,'finish':data.get('finish') if isinstance(data.get('finish'),str) else None}
-    if text(error.get('name')): out['error']={'name':error['name'][:128],'message':clip(text(details.get('message')))}
+    if text(error.get('name')): out['error']={'name':error['name'][:128],'message':clip(text(details.get('message')),516)}
     if isinstance(data.get('tokens'),dict): out['tokens']=data['tokens']; out['cost']=data.get('cost')
     return out
 
 def project(conn,sid,row):
     data=load(row['data'])
     parts=[part(p[0]) for p in conn.execute('SELECT data FROM part WHERE message_id=? AND session_id=? ORDER BY id',(row['id'],sid))]
-    return {'id':row['r'],'mid':row['id'],'ts':row['time_created'],'bad':data is None,'info':info(data or {}),'parts':parts}
+    return {'id':row['r']*KEY+check(row['id']),'mid':row['id'],'ts':row['time_created'],'bad':data is None,'info':info(data or {}),'parts':parts}
+
+# One message whose parts alone pass the budget keeps the parts that fit, in
+# order, and a mark that the rest is cut, so it never fails the page.
+def fit(item):
+    parts=item['parts']; item['parts']=[]
+    used=len(dump(item).encode())+64
+    for p in parts:
+        size=len(dump(p).encode())+1
+        if used+size>BUDGET: break
+        item['parts'].append(p); used+=size
+    item['parts'].append({'t':'cut'})
+    return item
 
 def main():
     got,status=identity()
@@ -383,36 +422,40 @@ def main():
         # kilocode_change sql.ts:144: v2 rows carry seq only when the
         # experimental event system wrote them; those are not decoded here.
         if conn.execute('SELECT 1 FROM session_message WHERE session_id=? AND seq IS NOT NULL LIMIT 1',(sid,)).fetchone(): raise Refused('kilo_event_store')
-    size=conn.execute('SELECT COALESCE(MAX(rowid),0)+1 FROM message WHERE session_id=?',(sid,)).fetchone()[0]
+    size=conn.execute('SELECT COALESCE(MAX(rowid),0)+1 FROM message WHERE session_id=?',(sid,)).fetchone()[0]*KEY
     mode=opts['mode']; cursor=int(opts.get('cursor',0))
-    reset=mode=='tail' or (mode=='after' and cursor>size)
+    last,mark=divmod(max(cursor-1,0),KEY)
+    if mode=='after':
+        # The row last shown must still be there, holding the same message.
+        shown=conn.execute('SELECT id FROM message WHERE session_id=? AND rowid=?',(sid,last)).fetchone()
+        reset=cursor>size or shown is None or check(shown[0])!=mark
+    else: reset=mode=='tail'
     if reset: found=conn.execute(select+' ORDER BY rowid DESC LIMIT ?',(sid,LIMIT)).fetchall()[::-1]
-    elif mode=='before': found=conn.execute(select+' AND rowid<? ORDER BY rowid DESC LIMIT ?',(sid,cursor,LIMIT)).fetchall()[::-1]
+    elif mode=='before': found=conn.execute(select+' AND rowid<? ORDER BY rowid DESC LIMIT ?',(sid,cursor//KEY,LIMIT)).fetchall()[::-1]
     # Kilo upserts a message and its parts as it streams, so the next page
     # rereads the last one shown.
-    else: found=conn.execute(select+' AND rowid>=? ORDER BY rowid LIMIT ?',(sid,max(1,cursor-1),LIMIT)).fetchall()
+    else: found=conn.execute(select+' AND rowid>=? ORDER BY rowid LIMIT ?',(sid,last,LIMIT)).fetchall()
     rows=[]; used=0
     newest_first=mode=='before' or reset
     for row in (found[::-1] if newest_first else found):
-        packed=json.dumps(project(conn,sid,row),separators=(',',':'))
-        if used+len(packed.encode())>BUDGET:
-            if not rows: raise OverflowError()
-            break
-        used+=len(packed.encode()); rows.append(json.loads(packed))
+        item=project(conn,sid,row)
+        packed=dump(item).encode()
+        if used+len(packed)>BUDGET:
+            if rows: break
+            item=fit(item); packed=dump(item).encode()
+        used+=len(packed); rows.append(item)
     if newest_first: rows.reverse()
     start=rows[0]['id'] if rows else (size if reset else cursor)
     end=rows[-1]['id']+1 if rows else (size if reset else cursor)
-    older=conn.execute('SELECT 1 FROM message WHERE session_id=? AND rowid<? LIMIT 1',(sid,start)).fetchone() is not None
+    older=conn.execute('SELECT 1 FROM message WHERE session_id=? AND rowid<? LIMIT 1',(sid,start//KEY)).fetchone() is not None
     conn.close()
     after,_=identity()
     if after!=expect: return {'changed':True}
     return {'status':status,'reset':reset,'size':size,'start':start,'end':end,'has_older':older,'rows':rows}
 try:
-    print(json.dumps(main(),separators=(',',':')))
+    sys.stdout.buffer.write(dump(main()).encode())
 except Refused as refusal:
     print(json.dumps({'format':str(refusal)}))
-except OverflowError:
-    print('{"too_large":true}')
 except Exception:
     sys.exit(1)
 "#;

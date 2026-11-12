@@ -5,7 +5,7 @@
 //! with such rows.
 
 use super::*;
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, path::PathBuf, process::Command};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path, path::PathBuf, process::Command, time::{Duration, Instant}};
 
 const SID: &str = "ses_0a1b2c3d4e5fAbCdEfGhIjKlMn";
 const OTHER: &str = "ses_0a1b2c3d4e60ZyXwVuTsRqPoNm";
@@ -199,6 +199,104 @@ fn reads_only_the_reported_session_in_order_and_rereads_a_streaming_message() {
     let next = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert_eq!(texts(&next), ["a", "b", "c"]);
     assert_eq!(next.entries[0].id.as_deref(), Some("msg_2"));
+}
+
+/// Runs `script` against the store as Kilo's writer would, outside the reader.
+fn write(db: &Path, script: &str) {
+    let status = Command::new("python3")
+        .args(["-c", &format!("import json,sqlite3,sys\nc=sqlite3.connect(sys.argv[1])\n{script}\nc.commit()\nc.close()")])
+        .arg(db)
+        .arg(SID)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn after_a_revert_reuses_rowids_the_next_page_starts_over_with_only_current_messages() {
+    let host = Host::new(SID, "kilo");
+    let db = host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)],
+            "message": [user(SID, "msg_1"), assistant(SID, "msg_2"), user(SID, "msg_3")],
+            "part": [text(SID, "msg_1", "prt_1", "one"), text(SID, "msg_2", "prt_2", "two"), text(SID, "msg_3", "prt_3", "three")]}),
+    );
+    let tail = host.page(SID, Read::Tail).unwrap();
+    assert_eq!(texts(&tail), ["one", "two", "three"]);
+    // Kilo's revert deletes the newest two; the next two take their rowids.
+    write(
+        &db,
+        "c.execute(\"DELETE FROM part WHERE message_id IN ('msg_2','msg_3')\")\n\
+         c.execute(\"DELETE FROM message WHERE id IN ('msg_2','msg_3')\")\n\
+         for mid,words in (('msg_4','four'),('msg_5','five')):\n\
+         \x20   c.execute('INSERT INTO message VALUES (?,?,1000,1000,?)',(mid,sys.argv[2],json.dumps({'role':'user'})))\n\
+         \x20   c.execute('INSERT INTO part VALUES (?,?,?,1,1,?)',('prt_'+mid,mid,sys.argv[2],json.dumps({'type':'text','text':words})))",
+    );
+    let next = host.page(SID, Read::After { offset: tail.end }).unwrap();
+    assert!(next.reset);
+    assert_eq!(texts(&next), ["one", "four", "five"]);
+    let ids: Vec<_> = next.entries.iter().map(|entry| entry.id.as_deref().unwrap()).collect();
+    assert_eq!(ids, ["msg_1", "msg_4", "msg_5"]);
+}
+
+#[test]
+fn a_fifo_at_the_store_path_is_refused_without_waiting() {
+    let host = Host::new(SID, "kilo");
+    fs::create_dir_all(host.data()).unwrap();
+    assert!(Command::new("mkfifo").arg(host.data().join("kilo.db")).status().unwrap().success());
+    let started = Instant::now();
+    assert_eq!(refused(host.page(SID, Read::Tail)), UNREADABLE);
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn a_symlinked_wal_sidecar_is_refused() {
+    let host = Host::new(SID, "kilo");
+    let db = host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "hi")]}),
+    );
+    let elsewhere = host.home.path().join("elsewhere-wal");
+    fs::write(&elsewhere, b"").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, db.with_file_name("kilo.db-wal")).unwrap();
+    assert_eq!(refused(host.page(SID, Read::Tail)), UNREADABLE);
+}
+
+#[test]
+fn one_message_larger_than_the_page_budget_is_shown_cut_not_failed() {
+    let host = Host::new(SID, "kilo");
+    let db = host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)], "message": [assistant(SID, "msg_1")]}),
+    );
+    // 100 KB of CJK text (3 bytes a character) and 150 tool results of 20 KB:
+    // far past the 1.5 MiB budget even after each field is clipped.
+    write(
+        &db,
+        "add=lambda pid,data: c.execute('INSERT INTO part VALUES (?,?,?,1,1,?)',(pid,'msg_1',sys.argv[2],json.dumps(data)))\n\
+         add('prt_000',{'type':'text','text':'\u{8a9e}'*34000})\n\
+         for i in range(150): add('prt_%03d'%(i+1),{'type':'tool','callID':'c%d'%i,'tool':'read','state':{'status':'completed','input':{},'output':'x'*20000}})",
+    );
+    let page = host.page(SID, Read::Tail).unwrap();
+    assert_eq!(page.entries.len(), 1);
+    let blocks = &page.entries[0].blocks;
+    match &blocks[0] {
+        Block::Text { text, truncated } => {
+            assert!(*truncated);
+            assert!(text.len() <= super::super::TEXT_LIMIT && text.chars().all(|c| c == '\u{8a9e}'));
+        }
+        other => panic!("{other:?}"),
+    }
+    let results: Vec<_> = blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::ToolResult { text, truncated, .. } => Some((text.len(), *truncated)),
+            _ => None,
+        })
+        .collect();
+    assert!(!results.is_empty() && results.len() < 150);
+    assert!(results.iter().all(|&(len, truncated)| truncated && len <= super::super::RESULT_LIMIT));
+    assert!(matches!(blocks.last(), Some(Block::Text { truncated: true, .. })));
 }
 
 #[test]
