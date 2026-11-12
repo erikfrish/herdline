@@ -33,19 +33,28 @@ import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
  * buttons. Both kinds keep the same lines, so a change between them never
  * moves the list. Neither has a close, since cached history must stay
  * marked. Only a [lasting] refusal has no Retry, because no read ends it
- * (HH-1). [dense] is one 48 dp row.
+ * (HH-1); it has Open Terminal in that slot instead ([terminal], R-UX4),
+ * since every lasting cause ends in Terminal still working, and the line cut
+ * that off. Never both, so the button count stays. [dense] is one 48 dp row.
  */
-internal data class StaleStripShape(val lines: Int, val retry: Boolean, val more: Boolean, val close: Boolean)
+internal data class StaleStripShape(
+    val lines: Int,
+    val retry: Boolean,
+    val more: Boolean,
+    val close: Boolean,
+    val terminal: Boolean = false,
+)
 
 internal fun staleStripShape(lasting: Boolean, dense: Boolean) =
-    StaleStripShape(lines = if (dense) 1 else 2, retry = !lasting, more = true, close = false)
+    StaleStripShape(lines = if (dense) 1 else 2, retry = !lasting, more = true, close = false, terminal = lasting)
 
 /**
  * The strip over Chat while it shows saved history. [savedAt] is the saved
  * time and [cause] the full sentence. Line 1 is the title with that time;
  * line 2 is [cause] cut to one line. Dense is one row: an icon, the time
- * with [shortCause], Retry for a transient loss, and More. TalkBack reads
- * the whole title and [cause]. More calls [onMore]; the caller holds the
+ * with [shortCause], Retry for a transient loss or Open Terminal for a
+ * lasting one ([onTerminal]), and More. TalkBack reads the whole title and
+ * [cause]. More calls [onMore]; the caller holds the
  * dialog ([StaleCauseDialog]), so a good read never closes it. No motion.
  */
 @Composable
@@ -56,6 +65,7 @@ internal fun StaleStrip(
     lasting: Boolean,
     dense: Boolean,
     onRetry: () -> Unit,
+    onTerminal: () -> Unit,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
     tag: String = "chat:offline",
@@ -94,6 +104,11 @@ internal fun StaleStrip(
             if (shape.retry) {
                 TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:retry")) {
                     Text(stringResource(R.string.outage_retry))
+                }
+            }
+            if (shape.terminal) {
+                TextButton(onClick = onTerminal, modifier = Modifier.heightIn(min = 48.dp).testTag("$tag:terminal")) {
+                    Text(stringResource(R.string.chat_open_terminal))
                 }
             }
             TextButton(
