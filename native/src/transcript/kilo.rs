@@ -34,6 +34,9 @@ pub(super) const IN_MEMORY: &str = "kilo_store_in_memory";
 /// SQLite cannot open the store read-only, such as a WAL store without its
 /// sidecars in a folder this user cannot write.
 pub(super) const UNREADABLE: &str = "kilo_store_unreadable";
+/// The agent has no `HOME` and no `XDG_DATA_HOME`: where Kilo keeps its data
+/// cannot be told from its environment.
+pub(super) const UNKNOWN: &str = "kilo_store_unknown";
 
 /// The exact session id Kilo writes: `ses_` and its ascending identifier
 /// (`schema/src/session-id.ts:5`, `identifier.ts:1-2`), bounded.
@@ -103,7 +106,7 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE]
+            [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE, UNKNOWN]
                 .into_iter()
                 .find(|known| *known == format)
                 .ok_or(Error::BadReply)?,
@@ -125,8 +128,8 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     })
 }
 
-/// One `message` row with its parts, keyed by its rowid and message id (the
-/// host's KEY encoding). The bytes of an
+/// One `message` row with its parts, keyed by its place in Kilo's order and
+/// its message id (the host's KEY encoding). The bytes of an
 /// image never leave the host: it shows as a placeholder Chat cannot open,
 /// and any other file is named, never opened.
 fn entry(row: &Value) -> Option<Entry> {
@@ -258,10 +261,13 @@ BUDGET=1572864
 # Rust's per-item caps (transcript.rs TEXT_LIMIT, RESULT_LIMIT, ARGS_LIMIT) in
 # UTF-8 bytes, plus a few so Rust still sees the field as cut and says so.
 TEXT=65536+4; RESULT=16384+4; ARGS=8192+4
-# A Kilo revert deletes the newest messages, and SQLite then hands their
-# rowids out again. So an offset is the rowid times KEY plus 20 bits of the
-# message id's CRC: a later page can tell that the row it last showed is
-# gone or now holds another message, and starts over from the tail.
+# Kilo lists a session's messages by (time_created, id) (opencode/src/
+# session/message-v2.ts:585; index message_session_time_created_id_idx,
+# core/src/session/sql.ts:86; time_created NOT NULL, core/src/database/
+# schema.sql.ts:4-5). An offset is a message's place in that order times KEY
+# plus 20 bits of its id's CRC, so a later page can tell that the place it
+# last showed now holds another message (a revert, an import or a late older
+# message shifted the order) and starts over from the tail.
 KEY=1<<20
 NAMES=('kilo','kilo-code')
 ID=re.compile(r'^ses_[A-Za-z0-9]{1,64}$')
@@ -310,8 +316,11 @@ def store(env):
     clean=lambda value: re.sub(r'[\r\n]+','',value)
     own=clean(env.get('HOME',''))
     xdg=clean(env.get('XDG_DATA_HOME',''))
+    # As C-3 (resolve_session.py): an agent HOME that is not this user's is
+    # refused, never followed.
+    if own and os.path.realpath(own)!=home: raise Refused('kilo_store_outside_home')
     if not xdg:
-        if not own.startswith('/'): raise Refused('kilo_store_outside_home')
+        if not own: raise Refused('kilo_store_unknown')
         xdg=os.path.join(own,'.local','share')
     if not xdg.startswith('/'): raise Refused('kilo_store_outside_home')
     data=os.path.join(xdg,'kilo')
@@ -326,7 +335,11 @@ def store(env):
 # see stale or torn pages. A store SQLite cannot open read-only is refused,
 # with no fallback. Only a regular file is opened, by the one resolved path:
 # a FIFO or device there would block or misread, and a symlinked -wal or -shm
-# sidecar would let SQLite read outside the checked path.
+# sidecar would let SQLite read outside the checked path. On a WAL store
+# with no -wal or -shm and a writable dir, a read-only open creates both,
+# owned by this user and left after close: -wal empty, -shm only SQLite's
+# wal-index. It never writes the db (query_only, and a read-only close
+# skips the checkpoint).
 def connect(db):
     try: st=os.stat(db)
     except FileNotFoundError: raise LookupError()
@@ -390,10 +403,10 @@ def info(data):
     if isinstance(data.get('tokens'),dict): out['tokens']=data['tokens']; out['cost']=data.get('cost')
     return out
 
-def project(conn,sid,row):
+def project(conn,sid,place,row):
     data=load(row['data'])
     parts=[part(p[0]) for p in conn.execute('SELECT data FROM part WHERE message_id=? AND session_id=? ORDER BY id',(row['id'],sid))]
-    return {'id':row['r']*KEY+check(row['id']),'mid':row['id'],'ts':row['time_created'],'bad':data is None,'info':info(data or {}),'parts':parts}
+    return {'id':place*KEY+check(row['id']),'mid':row['id'],'ts':row['time_created'],'bad':data is None,'info':info(data or {}),'parts':parts}
 
 # One message whose parts alone pass the budget keeps the parts that fit, in
 # order, and a mark that the rest is cut, so it never fails the page.
@@ -417,28 +430,34 @@ def main():
     except LookupError: return {'error':'missing'}
     if any(not need<=columns(conn,table) for table,need in NEED.items()): raise Refused('kilo_store_layout')
     if conn.execute('SELECT 1 FROM session WHERE id=?',(sid,)).fetchone() is None: return {'error':'missing'}
-    select='SELECT rowid AS r,id,time_created,data FROM message WHERE session_id=?'
-    if conn.execute(select+' LIMIT 1',(sid,)).fetchone() is None and {'session_id','seq'}<=columns(conn,'session_message'):
+    select='SELECT id,time_created,data FROM message WHERE session_id=? ORDER BY time_created,id LIMIT ? OFFSET ?'
+    n=conn.execute('SELECT count(*) FROM message WHERE session_id=?',(sid,)).fetchone()[0]
+    if n==0 and {'session_id','seq'}<=columns(conn,'session_message'):
         # kilocode_change sql.ts:144: v2 rows carry seq only when the
         # experimental event system wrote them; those are not decoded here.
         if conn.execute('SELECT 1 FROM session_message WHERE session_id=? AND seq IS NOT NULL LIMIT 1',(sid,)).fetchone(): raise Refused('kilo_event_store')
-    size=conn.execute('SELECT COALESCE(MAX(rowid),0)+1 FROM message WHERE session_id=?',(sid,)).fetchone()[0]*KEY
+    size=n*KEY
+    at=lambda place: conn.execute(select,(sid,1,place)).fetchone()
     mode=opts['mode']; cursor=int(opts.get('cursor',0))
-    last,mark=divmod(max(cursor-1,0),KEY)
+    reset=mode=='tail'
     if mode=='after':
-        # The row last shown must still be there, holding the same message.
-        shown=conn.execute('SELECT id FROM message WHERE session_id=? AND rowid=?',(sid,last)).fetchone()
-        reset=cursor>size or shown is None or check(shown[0])!=mark
-    else: reset=mode=='tail'
-    if reset: found=conn.execute(select+' ORDER BY rowid DESC LIMIT ?',(sid,LIMIT)).fetchall()[::-1]
-    elif mode=='before': found=conn.execute(select+' AND rowid<? ORDER BY rowid DESC LIMIT ?',(sid,cursor//KEY,LIMIT)).fetchall()[::-1]
-    # Kilo upserts a message and its parts as it streams, so the next page
-    # rereads the last one shown.
-    else: found=conn.execute(select+' AND rowid>=? ORDER BY rowid LIMIT ?',(sid,last,LIMIT)).fetchall()
+        # The message last shown must still be at its place. Kilo upserts a
+        # message and its parts as it streams, so this page rereads it.
+        last,mark=divmod(max(cursor-1,0),KEY)
+        shown=at(last) if cursor<=size else None
+        reset=shown is None or check(shown['id'])!=mark
+        first=last
+    elif mode=='before':
+        end,mark=divmod(cursor,KEY)
+        reset=cursor>size or (end<n and check(at(end)['id'])!=mark)
+        first=max(0,end-LIMIT)
+    if reset: first=max(0,n-LIMIT); end=n
+    elif mode=='after': end=min(n,first+LIMIT)
+    found=list(enumerate(conn.execute(select,(sid,end-first,first)).fetchall(),first))
     rows=[]; used=0
     newest_first=mode=='before' or reset
-    for row in (found[::-1] if newest_first else found):
-        item=project(conn,sid,row)
+    for place,row in (found[::-1] if newest_first else found):
+        item=project(conn,sid,place,row)
         packed=dump(item).encode()
         if used+len(packed)>BUDGET:
             if rows: break
@@ -447,15 +466,18 @@ def main():
     if newest_first: rows.reverse()
     start=rows[0]['id'] if rows else (size if reset else cursor)
     end=rows[-1]['id']+1 if rows else (size if reset else cursor)
-    older=conn.execute('SELECT 1 FROM message WHERE session_id=? AND rowid<? LIMIT 1',(sid,start//KEY)).fetchone() is not None
+    older=rows[0]['id']//KEY>0 if rows else False
     conn.close()
-    after,_=identity()
-    if after!=expect: return {'changed':True}
     return {'status':status,'reset':reset,'size':size,'start':start,'end':end,'has_older':older,'rows':rows}
+def answer():
+    try: out=main()
+    except Refused as refusal: out={'format':str(refusal)}
+    # Every answer, a refusal or a missing session too, must describe the
+    # process still in the pane: one that changed mid-read gives no answer.
+    if not out.get('changed') and identity()[0]!=expect: return {'changed':True}
+    return out
 try:
-    sys.stdout.buffer.write(dump(main()).encode())
-except Refused as refusal:
-    print(json.dumps({'format':str(refusal)}))
+    sys.stdout.buffer.write(dump(answer()).encode())
 except Exception:
     sys.exit(1)
 "#;

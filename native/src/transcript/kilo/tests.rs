@@ -65,13 +65,23 @@ impl Host {
         let herdr = bin.join("herdr");
         fs::write(
             &herdr,
-            "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n",
+            "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\"; [ ! -f \"$HOME/proc.next\" ] || mv \"$HOME/proc.next\" \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n",
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
         let host = Self { home };
         host.environ(&[]);
         host
+    }
+
+    /// The pane's foreground Kilo, now (`proc.json`) or once the first report
+    /// is read (`proc.next`), as when Kilo is replaced mid-read.
+    fn process(&self, file: &str, pid: u32) {
+        fs::write(
+            self.home.path().join(file),
+            format!(r#"{{"result":{{"process_info":{{"foreground_processes":[{{"name":"kilo","pid":{pid}}}],"pane_id":"w1:p1","shell_pid":7}}}}}}"#),
+        )
+        .unwrap();
     }
 
     /// The agent's environment: its HOME, these variables, and one secret.
@@ -213,7 +223,7 @@ fn write(db: &Path, script: &str) {
 }
 
 #[test]
-fn after_a_revert_reuses_rowids_the_next_page_starts_over_with_only_current_messages() {
+fn after_a_revert_the_next_page_starts_over_with_only_current_messages() {
     let host = Host::new(SID, "kilo");
     let db = host.store(
         &host.data().join("kilo.db"),
@@ -223,7 +233,7 @@ fn after_a_revert_reuses_rowids_the_next_page_starts_over_with_only_current_mess
     );
     let tail = host.page(SID, Read::Tail).unwrap();
     assert_eq!(texts(&tail), ["one", "two", "three"]);
-    // Kilo's revert deletes the newest two; the next two take their rowids.
+    // Kilo's revert deletes the newest two; two new ones take their places.
     write(
         &db,
         "c.execute(\"DELETE FROM part WHERE message_id IN ('msg_2','msg_3')\")\n\
@@ -237,6 +247,69 @@ fn after_a_revert_reuses_rowids_the_next_page_starts_over_with_only_current_mess
     assert_eq!(texts(&next), ["one", "four", "five"]);
     let ids: Vec<_> = next.entries.iter().map(|entry| entry.id.as_deref().unwrap()).collect();
     assert_eq!(ids, ["msg_1", "msg_4", "msg_5"]);
+}
+
+fn at(mut message: Value, created: u64) -> Value {
+    message["time_created"] = json!(created);
+    message
+}
+
+#[test]
+fn messages_are_read_in_kilos_created_order_and_a_late_older_one_starts_over() {
+    let host = Host::new(SID, "kilo");
+    // Inserted out of order, as an import or a cloud restore may: Kilo lists
+    // by (time_created, id), never by insertion.
+    let db = host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)],
+            "message": [at(user(SID, "msg_z"), 3000), at(user(SID, "msg_b"), 1000), at(user(SID, "msg_a"), 1000), at(user(SID, "msg_m"), 2000)],
+            "part": [text(SID, "msg_z", "prt_z", "late"), text(SID, "msg_b", "prt_b", "b"), text(SID, "msg_a", "prt_a", "a"), text(SID, "msg_m", "prt_m", "mid")]}),
+    );
+    let tail = host.page(SID, Read::Tail).unwrap();
+    assert_eq!(texts(&tail), ["a", "b", "mid", "late"]);
+    write(
+        &db,
+        "c.execute('INSERT INTO message VALUES (?,?,500,500,?)',('msg_0',sys.argv[2],json.dumps({'role':'user'})))\n\
+         c.execute('INSERT INTO part VALUES (?,?,?,1,1,?)',('prt_0','msg_0',sys.argv[2],json.dumps({'type':'text','text':'older'})))",
+    );
+    let next = host.page(SID, Read::After { offset: tail.end }).unwrap();
+    assert!(next.reset);
+    assert_eq!(texts(&next), ["older", "a", "b", "mid", "late"]);
+}
+
+#[test]
+fn a_process_replaced_mid_read_gives_no_answer_not_even_a_refusal() {
+    let host = Host::new(SID, "kilo");
+    host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "hi")]}),
+    );
+    host.process("proc.next", 43);
+    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    host.process("proc.json", 42);
+    host.environ(&[("KILO_DB", ":memory:")]);
+    assert_eq!(refused(host.page(SID, Read::Tail)), IN_MEMORY);
+    host.process("proc.next", 43);
+    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+}
+
+#[test]
+fn the_agents_home_must_be_this_users_and_a_missing_one_is_unknown() {
+    let host = Host::new(SID, "kilo");
+    let spec = json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "xdg")]});
+    let xdg = host.home.path().join("xdg");
+    host.store(&xdg.join("kilo/kilo.db"), spec);
+    let environ = host.home.path().join("environ");
+    // Another HOME, even one inside this user's, is refused, never followed.
+    let other = host.home.path().join("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(&environ, format!("HOME={}\0XDG_DATA_HOME={}\0", other.display(), xdg.display())).unwrap();
+    assert_eq!(refused(host.page(SID, Read::Tail)), OUTSIDE_HOME);
+    // No HOME: XDG_DATA_HOME still places the store; with neither, nothing does.
+    fs::write(&environ, format!("XDG_DATA_HOME={}\0", xdg.display())).unwrap();
+    assert_eq!(texts(&host.page(SID, Read::Tail).unwrap()), ["xdg"]);
+    fs::write(&environ, "SECRET_TOKEN=never-read\0").unwrap();
+    assert_eq!(refused(host.page(SID, Read::Tail)), UNKNOWN);
 }
 
 #[test]
@@ -438,8 +511,11 @@ fn a_wal_store_sqlite_cannot_open_read_only_is_refused_and_left_untouched() {
     let result = host.page(SID, Read::Tail);
     fs::set_permissions(host.data(), fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(refused(result), UNREADABLE);
+    // A writable dir: SQLite may create the sidecars, but the db bytes stay
+    // as they were and no -wal content is ever written.
     assert_eq!(texts(&host.page(SID, Read::Tail).unwrap()), ["hi"]);
     assert_eq!(before, fs::read(&db).unwrap());
+    assert!(!fs::metadata(db.with_file_name("kilo.db-wal")).is_ok_and(|wal| wal.len() > 0));
 }
 
 #[test]
