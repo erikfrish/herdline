@@ -1122,7 +1122,12 @@ fun SessionScreen(
                         // listener never feeds a closed one.
                         key(connection) {
                             // The window's size, the keyboard as it animates and the pane bar: what may resize the grid.
-                            val windowKey = sessionWindowKey(windowPx, WindowInsets.ime.getBottom(LocalDensity.current), orientation, paneBar)
+                            val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                            val windowKey = sessionWindowKey(windowPx, imeBottom, orientation, paneBar)
+                            // Chat's own layout: the pane read and its composer's pane resolved, the keyboard
+                            // all the way down and no sheet holding the grid. Its grid goes once from that one.
+                            val chatSettled = chatMode && view != null && !imeVisible && imeBottom == 0 && !switcherOpen &&
+                                (composerHidden || composerPane != null)
                             // A screen-reader user who skips the strip still hears that rows are hidden.
                             val windowDescription = if (hiddenRows > 0) pluralStringResource(R.plurals.output_focus_strip_description, hiddenRows, hiddenRows) else null
                             AndroidView(
@@ -1155,8 +1160,9 @@ fun SessionScreen(
                                 update = { view ->
                                     view.latchedMeta = latched
                                     view.windowKey = windowKey
-                                    // Terminal on screen owns Herdr's grid; hidden under Chat the view sends only its first one.
+                                    // Terminal on screen owns Herdr's grid; under Chat one grid goes per visit, Chat's settled one.
                                     view.sharesGrid = !chatMode
+                                    view.chatSettled = chatSettled
                                     view.scheme = scheme
                                     view.frame = frame
                                     view.showWindow(hiddenRows, if (focusApplies) stripPx else 0)

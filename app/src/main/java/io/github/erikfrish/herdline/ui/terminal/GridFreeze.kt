@@ -66,6 +66,43 @@ internal class GridFreeze {
 }
 
 /**
+ * Whose layout Herdr's grid follows. Terminal on screen owns it: each grid
+ * it lays out goes. Under Chat one goes per visit, that of Chat's settled
+ * layout ([settled]: the mode and pane resolved, the keyboard down), so a
+ * grid Terminal or a first unsettled layout gave never sticks under Chat,
+ * and the keyboard, a notice or the composer's height there never resize
+ * the pane.
+ */
+internal class GridTurn {
+    var terminal = true
+        private set
+
+    /** Under Chat: whether its layout has settled, as the screen says. */
+    var settled = false
+
+    /** Under Chat: its one grid is still to go. */
+    private var owed = false
+
+    /** Terminal ([terminal]) or Chat came on screen; Chat coming owes its one grid. */
+    fun show(terminal: Boolean) {
+        if (this.terminal == terminal) return
+        this.terminal = terminal
+        owed = !terminal
+    }
+
+    /** Whether the grid laid out now goes to Herdr. */
+    fun reports(): Boolean = terminal || (owed && settled)
+
+    /** Whether Chat's one grid is due now, to report once its layout is done. */
+    fun chatDue(): Boolean = !terminal && owed && settled
+
+    /** A grid went to Herdr. */
+    fun reported() {
+        if (!terminal) owed = false
+    }
+}
+
+/**
  * The rows the grid reports: what the view fits, or under a hold the rows
  * of [holdHeightPx] or those the grid had ([lastRows]); when only transient
  * chrome moved the view ([chrome]) the rows the grid had; under [keep] never
