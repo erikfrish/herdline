@@ -154,7 +154,6 @@ import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessKey
-import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TabsView
@@ -181,7 +180,6 @@ import io.github.erikfrish.herdline.ui.LocalWindowClass
 import io.github.erikfrish.herdline.ui.sessionSidebar
 import io.github.erikfrish.herdline.ui.sideComposerWidthDp
 import io.github.erikfrish.herdline.ui.components.PasswordsDialog
-import io.github.erikfrish.herdline.ui.components.HelpDialog
 import io.github.erikfrish.herdline.ui.components.ConnectionGlyph
 import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.glass.GlassButton
@@ -226,7 +224,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.max
-import java.util.Locale
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
@@ -494,7 +491,6 @@ fun SessionScreen(
     val chatState = rememberSaveableStateHolder()
     // ...and its own loaded transcript, for this connection and daemon boot (C9: a new boot may reuse pane ids).
     val chatMemory = remember(connection) { ChatMemories() }.at(view?.boot)
-    val chatMemoryNow by rememberUpdatedState(chatMemory)
     val closed = readingClosed(reading, view)
     /** Whether the selected supported agent's saved mode is Chat. */
     fun chatFor(pane: String?): Boolean {
@@ -510,31 +506,14 @@ fun SessionScreen(
         modes.forget(node.id, node.session, shown.boot) { pane -> shown.agentIn(pane)?.agent }
     }
     val chatWanted = chatFor(chatPane)
-    // While Chat can't read the agent's transcript, the tab shows Terminal; the stored choice stays
-    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R only a
-    // re-check that came good with a Chat tap pending on it ends the fallback: never by itself.
-    var chatUnreadable by remember(chatMemory, chatPane) { mutableStateOf(false) }
-    // Why, when the core refused the session by type: these never clear by themselves.
-    var chatRefusal by remember(chatMemory, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
-    // F-OBS1: a Chat tap on an unreadable pane waits here for its one re-check. Not keyed: the
-    // terminal's listener, made once, clears it on input, and the switch checks the pane itself.
-    var pendingChatTap by remember { mutableStateOf<PendingChatTap?>(null) }
+    // C9: the pane chosen here shows its saved or default mode, Chat included, whatever its reads say:
+    // a pane Chat cannot read stays in Chat on its own loading, empty or unavailable page, with Retry.
     // S5: the pane read in Chat closed. Chat says so and keeps the draft; it never falls back to the desktop.
     var chatShown by remember { mutableStateOf(false) }
-    LaunchedEffect(chatWanted, chatUnreadable, closed) { if (!closed) chatShown = chatWanted && !chatUnreadable }
-    val chatMode = if (closed) chatShown else chatWanted && !chatUnreadable
+    LaunchedEffect(chatWanted, closed) { if (!closed) chatShown = chatWanted }
+    val chatMode = if (closed) chatShown else chatWanted
     // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
-    // D3-5: the Herdr agent kinds whose transcript has loaded on this connection. A kind never
-    // read here names no cause: nothing typed says why (C9).
-    val readKinds = remember(connection) { mutableSetOf<String>() }
-    val chatKind = chatPane?.let { view?.agentIn(it)?.agent }?.lowercase(Locale.ROOT)
-    val chatLoaded = chatPane?.let { chatMemory.holds(it) } == true
-    // C9: what a Chat tap may show at once: this boot's history of the pane, of the agent kind there
-    // now. Display only: Chat's own poll checks the instance from there, under its outage strip if that fails.
-    val chatCached = chatPane?.let { chatMemory.cachedFor(it, chatKind) } == true
-    LaunchedEffect(chatKind, chatLoaded) { if (chatLoaded && chatKind != null) readKinds += chatKind }
-    var help by remember { mutableStateOf(false) }
     val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
     // What is on screen: the pane read here in Chat, the desktop's in Terminal.
     val focusedPane = if (chatMode) reading?.pane?.takeIf { !closed } else desktopPane
@@ -592,10 +571,6 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
-    // FOBS1-R2: a Chat tap never outlives the pane and tab it was made on...
-    LaunchedEffect(chatPane, tab?.id) { pendingChatTap = pendingAfterSwitch(pendingChatTap, chatPane, tab?.id) }
-    // ...nor its daemon boot or connection: a restarted daemon may reuse both ids (C9).
-    LaunchedEffect(chatMemory) { pendingChatTap = null }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
@@ -677,8 +652,6 @@ fun SessionScreen(
         if (linked != null && focusPane != null) choosePane(focusPane, fromChat = true)
     }
     fun showChat(on: Boolean, pane: String? = chatPane) {
-        // A Terminal choice answers a Chat tap still waiting for its re-check.
-        if (!on) pendingChatTap = null
         pane ?: return
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
@@ -687,91 +660,11 @@ fun SessionScreen(
         terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
-    /**
-     * Says why Chat fell back to Terminal: a typed refusal its own words, a kind
-     * read here before the passing text, a kind never read here what the host
-     * lacks, with Help. That one has an action, so it is held Long, not Indefinite.
-     */
-    suspend fun sayChatUnreadable(refusal: TranscriptRefusal?, duration: SnackbarDuration) {
-        val notice = unreadableNotice(refusal, chatAgentName, chatKind != null && chatKind in readKinds)
-        val text = context.getString(notice.words.res, *notice.words.args.toTypedArray())
-        if (!notice.help) {
-            snackbar.showSnackbar(text, duration = duration)
-        } else if (snackbar.showSnackbar(text, actionLabel = context.getString(R.string.help), duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-            help = true
-        }
-    }
-
-    val chatPaneNow by rememberUpdatedState(chatPane)
-    val tabNow by rememberUpdatedState(tab?.id)
-    /**
-     * Reads unreadable [pane] once while Chat does not poll it. Only a good
-     * read clears the fallback, and only a tap still pending switches; an
-     * outcome for a pane the screen left, from an earlier daemon boot or
-     * connection, or a failure once a read came good, changes nothing
-     * (chatOutcomeApplies).
-     */
-    suspend fun recheckChat(pane: String, tap: Boolean) {
-        val owner = chatMemory
-        val kept = owner.of(pane)
-        val ok = kept.recheck(connection::transcript, pane)
-        if (ok != null && !chatOutcomeApplies(unreadable = !ok, owner = owner, readPane = pane, current = chatMemoryNow, pane = chatPaneNow, leaving = false)) return
-        when (ok) {
-            true -> {
-                chatRefusal = null
-                if (fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
-                    chatUnreadable = false
-                    showChat(true, pane)
-                }
-                pendingChatTap = null
-            }
-            false -> {
-                chatRefusal = kept.read.refusal
-                // FOBS1-R2: a tap that found this re-check in flight waited on it, so its
-                // failure answers that tap too, once; a later good read never switches for it.
-                if (tapAnswered(tap, pendingChatTap, pane, tabNow)) {
-                    pendingChatTap = null
-                    sayChatUnreadable(chatRefusal, SnackbarDuration.Short)
-                }
-            }
-            // A re-check is in flight already: its answer serves this ask too.
-            null -> Unit
-        }
-    }
-    // A new agent in the pane (its kind or Herdr name), never a status tick, asks for one re-check.
-    val chatAgentKey = chatPane?.let { view?.agentIn(it) }?.let { it.agent to it.name }
-    var seenAgentKey by remember(connection, chatPane) { mutableStateOf(chatAgentKey) }
-    LaunchedEffect(chatAgentKey) {
-        val changed = chatAgentKey != seenAgentKey
-        seenAgentKey = chatAgentKey
-        val pane = chatPane ?: return@LaunchedEffect
-        if (chatRecheck(tap = false, agentChanged = changed, unreadable = chatUnreadable, lasting = chatRefusal != null, polling = chatWanted, cached = chatCached) == ChatRecheck.Read) {
-            recheckChat(pane, tap = false)
-        }
-    }
 
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
-            chat && chatUnreadable -> {
-                // FOBS1-R3: a tap always answers, even under a typed refusal: on the history a
-                // read since loaded, else by one read whose failure says why once (tapAnswered).
-                val pane = chatPane
-                if (pane != null) when (chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted, cached = chatCached)) {
-                    ChatRecheck.Show -> {
-                        chatRefusal = null
-                        chatUnreadable = false
-                        pendingChatTap = null
-                        showChat(true, pane)
-                    }
-                    ChatRecheck.Read -> {
-                        pendingChatTap = PendingChatTap(pane, tab?.id)
-                        scope.launch { recheckChat(pane, tap = true) }
-                    }
-                    ChatRecheck.Nothing -> Unit
-                }
-            }
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
@@ -1154,7 +1047,7 @@ fun SessionScreen(
                                             onLatchCleared = { latched = it },
                                             // A tap on a pane in the mirror is a choice on this phone: read there, as Terminal focuses it.
                                             onPaneTapped = { readHere(it) },
-                                            onUsed = { typedOnce = true; pendingChatTap = null },
+                                            onUsed = { typedOnce = true },
                                         )
                                         terminal = view
                                     }
@@ -1274,30 +1167,14 @@ fun SessionScreen(
                                     // While it fades out it is a picture of the old view: TalkBack reaches
                                     // Terminal beneath at once, but a tap in the 100 ms fade-out is dropped
                                     // here and never reaches Terminal (a logged limit, review M2a SHOULD 1).
-                                    modifier = (if (chatUnreadable) Modifier.size(0.dp) else Modifier).then(
-                                        if (leaving) {
-                                            Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                }
+                                    modifier = if (leaving) {
+                                        Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
                                             }
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                                    onUnavailable = { unreadable, refusal, owner ->
-                                        // Only this pane's own Chat on this boot, not one fading out, and never
-                                        // a report queued before a read of it came good.
-                                        if (!chatOutcomeApplies(unreadable, owner, shown, chatMemoryNow, chatPaneNow, leaving)) return@ChatView
-                                        if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
-                                            // The fallback happens on its own, so it
-                                            // stays long enough to be read (lab.4 G5).
-                                            scope.launch { sayChatUnreadable(refusal, SnackbarDuration.Long) }
                                         }
-                                        chatRefusal = refusal
-                                        // Readable again only drops the refusal, so the next Chat tap reads;
-                                        // the fallback ends on that tap's own re-check (FOBS1-R2).
-                                        if (unreadable) chatUnreadable = true
+                                    } else {
+                                        Modifier
                                     },
                                     // The tab's readable title (Titles.kt), never a pane ID.
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
@@ -1431,8 +1308,8 @@ fun SessionScreen(
                                     accent = accent,
                                     background = chromeColor,
                                     onLatch = { latched = it; terminal?.latchedMeta = it },
-                                    onKey = { code, repeat -> pendingChatTap = null; terminal?.sendKey(code, 0, 0, repeat) },
-                                    onText = { typedOnce = true; pendingChatTap = null; connection.text(focusedPane, it) },
+                                    onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
+                                    onText = { typedOnce = true; connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
                                     rowsOf = extraKeyRowCount(
                                         landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
@@ -1619,7 +1496,6 @@ fun SessionScreen(
             onDismiss = { pinFor = null },
         )
     }
-    if (help) HelpDialog(onDismiss = { help = false })
     askPasswords?.let { hops ->
         PasswordsDialog(
             hops = hops,

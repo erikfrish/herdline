@@ -190,11 +190,10 @@ private val DensePillEnd = 4.dp
  * only reads. Interactive dialogs are answered in the terminal: a blocked
  * agent shows a card that opens it, never buttons that pretend to answer.
  *
- * [onUnavailable] hears `true` when chat has no transcript to show and its
- * last read failed, and `false` once a read succeeds (also at first). A
- * refresh that fails after a transcript loaded is not unavailable: chat keeps
- * the transcript under its offline strip. Reads go on while this stays
- * composed, so keep it composed (hidden) to learn when chat can read again.
+ * What it reads changes only this pane's own [ChatKept], never the mode
+ * shown (C9): a pane it cannot read stays in Chat on its own page, loading,
+ * empty, a read error with Retry or a typed refusal, and a refresh that
+ * fails after a transcript loaded keeps it under the stale strip.
  *
  * [dense] drops the list's own top and bottom padding, for a window that
  * leaves the conversation only a few lines (a landscape phone with the
@@ -207,11 +206,6 @@ fun ChatView(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * Hears whether Chat has nothing to show, the core's typed refusal when
-     * that is why, and the [memory] whose reads say so.
-     */
-    onUnavailable: ((Boolean, TranscriptRefusal?, ChatMemory) -> Unit)? = null,
     tabTitle: String? = null,
     dense: Boolean = false,
     /** The caller's memory for one connection and daemon boot, so each pane read here comes back as it was (CT-1). */
@@ -221,16 +215,15 @@ fun ChatView(
     // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
     // loaded (ChatHistory.merge).
     key(connection, pane, memory) {
-        val hear = onUnavailable?.let { hear -> { unreadable: Boolean, refusal: TranscriptRefusal? -> hear(unreadable, refusal, memory) } }
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, hear, tabTitle, dense)
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense)
     }
 }
 
 /**
  * What each pane's Chat loaded and the reader opened, kept while another
  * pane is read. The caller makes one per connection and daemon boot, since
- * a restarted daemon may reuse pane ids, and a read's outcome is the
- * memory's it was made through (SessionScreen `chatOutcomeApplies`).
+ * a restarted daemon may reuse pane ids, and a read's outcome stays in the
+ * memory it was made through.
  */
 class ChatMemory {
     private val panes = HashMap<String, ChatKept>()
@@ -238,15 +231,6 @@ class ChatMemory {
 
     /** Whether [pane] holds history read through this memory. */
     internal fun holds(pane: String): Boolean = panes[pane]?.history != null
-
-    /**
-     * Whether [pane] holds history of the agent [kind] there now: what a
-     * Chat tap may show at once (C9). This memory is one daemon boot's
-     * ([ChatMemories]), so no reused pane id of an earlier boot counts.
-     * Display only; Chat's own poll checks the instance from there.
-     */
-    internal fun cachedFor(pane: String, kind: String?): Boolean =
-        kind != null && panes[pane]?.history?.identity?.agent.equals(kind, ignoreCase = true)
 }
 
 /**
@@ -379,7 +363,7 @@ internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? T
  * Whether Chat has nothing to show and says so: nothing [loaded], its last
  * read [failed], and that read was this Chat's own ([readHere]). A failure
  * kept in the pane's memory from before is no report on the pane now: Chat
- * opened again reads first, and only then falls back or shows.
+ * opened again reads first, and only then says so.
  */
 internal fun chatUnavailable(loaded: Boolean, failed: Boolean, readHere: Boolean): Boolean = !loaded && failed && readHere
 
@@ -391,7 +375,6 @@ private fun ChatContent(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier,
-    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)?,
     tabTitle: String?,
     dense: Boolean,
 ) {
@@ -617,8 +600,6 @@ private fun ChatContent(
     val titled = remember(lines) { lines.titledKey }
     val unavailable = chatUnavailable(shown != null, problem != null, readHere)
     val refused = refusal.takeIf { unavailable }
-    val report by rememberUpdatedState(onUnavailable)
-    LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
     // Rows above the first line: Load older, then the new-session divider (R1).
     val header = (if (shown?.hasOlder == true) 1 else 0) + (if (shown?.newSession == true) 1 else 0)
 
@@ -757,9 +738,15 @@ private fun ChatContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val context = LocalContext.current
+                    // Never the core's raw message: for a session with no file yet it reads as a missing integration.
                     val said = refused?.let { context.refusalText(it, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty()) }
-                    Text(said ?: stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
-                    GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
+                    Text(said ?: stringResource(R.string.chat_read_failed), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center, modifier = Modifier.testTag("chat:unavailable"))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (refused == null) {
+                            GlassButton(stringResource(R.string.outage_retry), onClick = { wake.trySend(Unit) }, primary = true, accent = accent, modifier = Modifier.testTag("chat:retry"))
+                        }
+                        GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
+                    }
                 }
                 shown == null -> Row(
                     Modifier.align(Alignment.Center),

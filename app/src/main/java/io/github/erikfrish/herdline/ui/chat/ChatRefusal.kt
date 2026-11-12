@@ -56,8 +56,7 @@ internal fun ambiguousSession(refusal: TranscriptRefusal?): Boolean =
 
 /**
  * What Chat says for a typed refusal, used whole in place of
- * `chat_unavailable` and `session_chat_unreadable`, whose "switches back"
- * promise is false for these causes.
+ * `chat_read_failed`, whose "keeps trying" promise is false for these causes.
  */
 fun Context.refusalText(refusal: TranscriptRefusal, agent: String): String =
     refusalWords(refusal, agent).let { getString(it.res, *it.args.toTypedArray()) }

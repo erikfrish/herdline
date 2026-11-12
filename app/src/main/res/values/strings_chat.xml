@@ -4,7 +4,7 @@
     <string name="chat_terminal">Terminal</string>
     <string name="chat_load_older">Load older messages</string>
     <string name="chat_loading">Reading the transcript…</string>
-    <string name="chat_unavailable">Chat cannot read this agent: %1$s</string>
+    <string name="chat_read_failed">Chat can\'t read this session\'s transcript right now. It keeps trying.</string>
     <!-- Under the saved-at title of the shared outage strip, while the link is up but a read failed. -->
     <string name="chat_not_refreshed">Chat could not read the transcript again; it keeps trying</string>
     <!-- R-F1b: the stale-history strip over Chat. More opens the whole cause in a dialog. -->

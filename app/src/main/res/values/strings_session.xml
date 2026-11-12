@@ -24,10 +24,6 @@
     <string name="other_tabs_changed">other tabs changed</string>
     <string name="other_tab_held">delivery not confirmed on another tab</string>
     <string name="session_panes">Panes</string>
-    <!-- FOBS1-R: Chat never comes back by itself, only on a tap. -->
-    <string name="session_chat_unreadable">Chat can\'t read this agent right now, so this tab shows Terminal. Tap Chat to try again.</string>
-    <!-- D3-5, C9: no transcript of this agent kind has been read on this connection. Nothing typed says why (a slow host, a session not reported yet, no integration), so it names none. %1$s is the agent's display name; the snackbar's action is Help. -->
-    <string name="session_chat_unreadable_host">Chat can\'t read %1$s\'s current session on this host yet, so this tab shows Terminal. Tap Chat to try again.</string>
     <!-- The strip under the header while the screen is what was saved (Collie row 4). %1$s is a clock time. -->
     <string name="outage_saved_at">Showing what was saved at %1$s</string>
     <string name="outage_reconnecting">Reconnecting…</string>
