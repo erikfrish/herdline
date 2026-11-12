@@ -146,8 +146,8 @@ private val Spoken: Map<String, String> = mapOf(
 )
 
 /**
- * The panel of keys a phone keyboard lacks, drawn as two compact rows —
- * Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
+ * The panel of keys a phone keyboard lacks, drawn as two compact rows (one
+ * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input. Ctrl and
  * Alt latch for the next key or character, as on Termux; arrows and paging
  * keys repeat while held and stop at the moment the cap is released. A latched
  * modifier fills with the session's [accent] and carries a bar under its
@@ -165,6 +165,8 @@ fun ExtraKeysRow(
     onText: (String) -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    /** Rows the keys split into: two, or one on a landscape phone typing (QF-6, `extraKeyRowCount`). */
+    rowsOf: Int = 2,
 ) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -187,14 +189,16 @@ fun ExtraKeysRow(
             .testTag("extra_keys"),
     ) {
         val panelWidth = maxWidth
-        val rows = remember(keys) { extraKeyRows(keys) }
+        val rows = remember(keys, rowsOf) { extraKeyRows(keys, rowsOf) }
         Column(Modifier.fillMaxWidth().padding(horizontal = KeyRowPad, vertical = 4.dp)) {
             for (row in rows) {
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target.
-                val width = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
-                    .coerceAtLeast(48.dp)
+                val fill = ((panelWidth - KeyRowPad * 2 - KeyGap * (row.size - 1)).value / row.size).dp
+                val width = fill.coerceAtLeast(48.dp)
+                // A row that scrolls: a drag that starts on a cap scrolls it and sends nothing.
+                val scrolls = fill < 48.dp
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
@@ -238,27 +242,36 @@ fun ExtraKeysRow(
                             }
                         val gesture = when (key) {
                             is ExtraKey.Key -> if (key.repeats) {
-                                hit.pointerInput(key) {
+                                hit.pointerInput(key, scrolls) {
                                     awaitEachGesture {
                                         awaitFirstDown()
                                         down = true
                                         try {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onKey(key.keyCode, false)
+                                            // In a row that scrolls, the first send waits for the
+                                            // release or the hold, so a drag only scrolls.
+                                            if (!scrolls) onKey(key.keyCode, false)
+                                            var held = false
                                             val repeat = scope.launch {
                                                 delay(400)
+                                                held = true
+                                                if (scrolls) {
+                                                    onKey(key.keyCode, false)
+                                                    delay(60)
+                                                }
                                                 while (true) {
                                                     onKey(key.keyCode, true)
                                                     delay(60)
                                                 }
                                             }
-                                            try {
+                                            val up = try {
                                                 waitForUpOrCancellation()
                                             } finally {
                                                 // Up, a scroll stealing the gesture, or this row
                                                 // leaving composition: the held job never outlives the hold.
                                                 repeat.cancel()
                                             }
+                                            if (scrolls && !held && up != null) onKey(key.keyCode, false)
                                         } finally {
                                             down = false
                                         }

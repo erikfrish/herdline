@@ -439,9 +439,26 @@ internal const val SIDE_MIN_WIDTH_DP = 232
  */
 internal fun composerFit(landscape: Boolean, imeVisible: Boolean, screenHeightDp: Int, side: Boolean = false): ComposerFit = when {
     side -> ComposerFit.Side
-    landscape && imeVisible && screenHeightDp < COMPACT_HEIGHT_DP -> ComposerFit.Compact
+    typingCompact(landscape, imeVisible, screenHeightDp) -> ComposerFit.Compact
     else -> ComposerFit.Regular
 }
+
+/**
+ * A landscape phone while the keyboard shows: the window's current height
+ * ([Configuration.screenHeightDp], so a split-screen or freeform window counts
+ * by its own size) is under [COMPACT_HEIGHT_DP].
+ */
+private fun typingCompact(landscape: Boolean, imeVisible: Boolean, windowHeightDp: Int): Boolean =
+    landscape && imeVisible && windowHeightDp < COMPACT_HEIGHT_DP
+
+/**
+ * The extra-keys panel's rows: one where [composerFit] is compact, since two
+ * rows there leave a single grid row and the prompt off screen (QF-6); else
+ * the panel's two. The one row keeps every key in saved order, the first
+ * ones leading, and scrolls sideways if they do not fit.
+ */
+internal fun extraKeyRowCount(landscape: Boolean, imeVisible: Boolean, windowHeightDp: Int): Int =
+    if (typingCompact(landscape, imeVisible, windowHeightDp)) 1 else 2
 
 /**
  * Where the + menu's output-focus item goes among the shown [menu] entries

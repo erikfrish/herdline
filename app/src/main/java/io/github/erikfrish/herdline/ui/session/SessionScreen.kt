@@ -1242,6 +1242,11 @@ fun SessionScreen(
                                     onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
                                     onText = { typedOnce = true; connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
+                                    rowsOf = extraKeyRowCount(
+                                        landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
+                                        imeVisible = imeVisible,
+                                        windowHeightDp = LocalConfiguration.current.screenHeightDp,
+                                    ),
                                 )
                             }
                         }
