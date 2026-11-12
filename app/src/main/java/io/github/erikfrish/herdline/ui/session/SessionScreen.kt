@@ -1009,17 +1009,17 @@ fun SessionScreen(
                                 }
                                 val placeSpoken = buildString {
                                     append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
-                                    // S2: the desktop's pane, said whole even where the line cuts it.
+                                    // S2: the desktop's pane, said whole even where the line cuts it; both named by their tab, as the header shows them.
                                     desktopOther?.let {
                                         append(". ")
-                                        append(stringResource(R.string.chat_desktop_elsewhere_spoken, focusedPane?.let { p -> view?.paneTitle(p) }.orEmpty(), view?.paneTitle(it).orEmpty()))
+                                        append(stringResource(R.string.chat_desktop_elsewhere_spoken, tabName, view?.paneTabTitle(it).orEmpty()))
                                     }
                                 }
                                 val placeMarks = listOfNotNull(
                                     stringResource(R.string.other_tabs_changed).takeIf { changedElsewhere },
                                     stringResource(R.string.other_tab_held).takeIf { heldElsewhere },
                                 ).joinToString(", ").ifEmpty { null }
-                                val desktopText = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) }
+                                val desktopText = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTabTitle(it).orEmpty()) }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
