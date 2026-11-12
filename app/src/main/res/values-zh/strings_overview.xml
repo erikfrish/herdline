@@ -2,7 +2,7 @@
 <!-- TB1: the phone Tabs overview and its pane picker. -->
 <resources>
     <string name="overview_title">标签页</string>
-    <string name="overview_sub">%1$s · %3$s中的%2$s</string>
+    <string name="overview_sub">%1$s · %3$s中的 %2$s</string>
     <plurals name="overview_tabs">
         <item quantity="other">%d 个标签页</item>
     </plurals>
