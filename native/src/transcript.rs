@@ -27,6 +27,7 @@
 mod claude;
 mod codex;
 mod copilot;
+mod gemini;
 mod grok;
 mod hermes;
 mod kilo;
