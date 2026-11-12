@@ -75,6 +75,11 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -2545,6 +2550,31 @@ private fun paneRows(frame: RenderFrame?, pane: String): Int? =
 private fun shortPaneText(frame: RenderFrame?, pane: String): String =
     paneRows(frame, pane)?.let { stringResource(R.string.composer_pane_rows, it) }
         ?: stringResource(R.string.composer_pane_rows_unknown)
+
+/**
+ * QF-6c: raw input shows the focused pane with no row of its own
+ * ([paneHasNoRoom]), so the terminal draws only Herdr's border. An overlay
+ * at the terminal's top: it changes no height and resizes nothing. Its words
+ * stay the same while it shows, so its polite live region speaks once per
+ * appearance. Hide keyboard is the user's tap only; the notice takes no focus,
+ * and taps on its own bounds stop there, never reaching the terminal under it.
+ */
+@Composable
+internal fun PaneNoRoomNotice(offers: List<ShortPaneOffer>, accent: Color, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
+    val reason = stringResource(R.string.terminal_pane_no_room)
+    val hide = NoticeAction(stringResource(R.string.composer_hide_keyboard), tag = "terminal:no_room:hide_keyboard", onClick = onHideKeyboard)
+    NoticeRow(
+        Notice(
+            if (ShortPaneOffer.Portrait in offers) stringResource(R.string.terminal_pane_no_room_portrait, reason) else reason,
+            hide.takeIf { ShortPaneOffer.HideKeyboard in offers },
+        ),
+        accent,
+        modifier
+            .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false).consume() } }
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .testTag("terminal:no_room"),
+    )
+}
 
 /** The refusal code's words, as the native core's own mapping. */
 @Composable

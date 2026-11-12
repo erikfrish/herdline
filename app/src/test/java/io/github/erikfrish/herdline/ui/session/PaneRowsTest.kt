@@ -1,5 +1,6 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.core.RenderFrame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -129,5 +130,44 @@ class PaneRowsTest {
         assertEquals(13, paneRowsAfter(paneRows = 5, gridRows = 11, gridRowsAfter = 30))
         assertEquals(30, paneRowsAfter(paneRows = 40, gridRows = 11, gridRowsAfter = 30))
         assertEquals(0, paneRowsAfter(paneRows = 5, gridRows = 0, gridRowsAfter = 30))
+    }
+
+    /** A frame of [rows] grid rows; [inner] is the focused pane's content rect, or none. */
+    private fun frame(rows: Int, inner: RenderFrame.CellRect?, popup: RenderFrame.CellRect? = null) = RenderFrame(
+        cols = 80,
+        rows = rows,
+        cursor = RenderFrame.Cursor(0, 0, true, RenderFrame.CURSOR_BLOCK),
+        foreground = 0,
+        background = 0,
+        cursorColor = 0,
+        popup = popup,
+        panes = listOfNotNull(inner?.let { RenderFrame.PaneArea("p1", it, focused = true, mouseReporting = false, alternateScreen = false) }),
+        runs = emptyList(),
+    )
+
+    @Test
+    fun aPaneHerdrGaveNoRowShowsTheNoticeAndOneRowHidesIt() {
+        // QA m18: 2 grid rows, the border on both, the content rect 0 rows tall.
+        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 1, 78, 0)), rawInput = true))
+        // A content rect that starts at or past the frame's last row has none of it on screen.
+        assertTrue(paneHasNoRoom(frame(2, RenderFrame.CellRect(1, 2, 78, 2)), rawInput = true))
+        // One content row inside the frame: the pane is drawn, no notice.
+        assertFalse(paneHasNoRoom(frame(3, RenderFrame.CellRect(1, 1, 78, 1)), rawInput = true))
+        // A rect taller than the frame still has its first row drawn.
+        assertFalse(paneHasNoRoom(frame(2, RenderFrame.CellRect(0, 1, 80, 4)), rawInput = true))
+    }
+
+    @Test
+    fun withoutAFocusedRectTheGridRowsDecide() {
+        assertTrue(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS - 1, inner = null), rawInput = true))
+        assertFalse(paneHasNoRoom(frame(NO_ROOM_FALLBACK_ROWS, inner = null), rawInput = true))
+    }
+
+    @Test
+    fun noNoticeOutsideRawInputOrUnderAPopup() {
+        val empty = RenderFrame.CellRect(1, 1, 78, 0)
+        assertFalse(paneHasNoRoom(frame(2, empty), rawInput = false))
+        assertFalse(paneHasNoRoom(frame(2, empty, popup = RenderFrame.CellRect(0, 0, 40, 2)), rawInput = true))
+        assertFalse(paneHasNoRoom(null, rawInput = true))
     }
 }

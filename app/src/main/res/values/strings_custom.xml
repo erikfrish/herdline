@@ -143,6 +143,8 @@
     <string name="controls_fixed">Send, Chat | Terminal, Search and the order selector are always shown. Insert without Enter stays in the + menu or inside the larger editor.</string>
     <string name="composer_hide_keyboard">Hide keyboard</string>
     <string name="composer_portrait_reaches_send">%1$s. Portrait gives the pane 12 rows</string>
+    <string name="terminal_pane_no_room">No row left for this pane: Herdr\'s border takes the whole terminal</string>
+    <string name="terminal_pane_no_room_portrait">%1$s. Portrait leaves room for it</string>
     <string name="composer_checking">Checking the pane before Send…</string>
     <string name="composer_checking_resizing">Checking the pane before Send: it is still resizing…</string>
     <string name="composer_steer">Steer</string>

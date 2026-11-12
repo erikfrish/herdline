@@ -130,6 +130,8 @@
     <string name="controls_filters_help">隐藏时，标签页列表始终显示“全部”。</string>
     <string name="controls_fixed">发送、聊天 | 终端、搜索和排序选择器始终显示。“插入（不按 Enter）”保留在 + 菜单或大编辑器中。</string>
     <string name="composer_portrait_reaches_send">%1$s。竖屏时窗格有 12 行</string>
+    <string name="terminal_pane_no_room">此窗格没有可显示的行：Herdr 的边框占满了整个终端</string>
+    <string name="terminal_pane_no_room_portrait">%1$s。竖屏时可以显示</string>
     <string name="composer_steer">引导</string>
     <string name="steer_help">代理正在工作，所以空闲前无法发送。“引导”会粘贴你的文字，然后按一次 Enter；如果回合恰好在此之前结束，这段文字会开始一个新回合。</string>
     <string name="steer_pending">正在引导：粘贴你的文字，然后按一次 Enter…</string>
