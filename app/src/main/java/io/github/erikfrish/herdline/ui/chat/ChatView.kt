@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -610,7 +611,8 @@ private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, compa
     val spoken = pluralStringResource(R.plurals.chat_latest_new, count, count)
     val shape = if (compact) MaterialTheme.shapes.medium else CircleShape
     val frame = modifier
-        .then(if (compact) Modifier.size(CompactPillSize) else Modifier.height(PillHeight))
+        // A floor, not a size: at large font scales the count needs more than 48 dp and must not clip.
+        .then(if (compact) Modifier.sizeIn(minWidth = CompactPillSize, minHeight = CompactPillSize) else Modifier.height(PillHeight))
         .clip(shape)
         .background(colors.surf)
         .border(1.dp, colors.border, shape)
