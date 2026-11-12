@@ -256,4 +256,19 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // kimi: transcript/kimi.rs fixture tests only (main agent wire.jsonl,
+    // pinned kimi-code 482936af); no run against a real Kimi Code CLI,
+    // nothing sends.
+    Harness(
+        "kimi",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }

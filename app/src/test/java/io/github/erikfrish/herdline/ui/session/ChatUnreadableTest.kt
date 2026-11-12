@@ -71,4 +71,13 @@ class ChatUnreadableTest {
         assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_outside_home, listOf("Mastra Code"))), outside)
         assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Mastra Code"))), large)
     }
+
+    @Test
+    fun kimi_refusals_say_why_with_the_existing_words() {
+        val notice = { format: String -> unreadableNotice(TranscriptRefusal.UnsupportedFormat(format), "Kimi", everRead = false) }
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_outside_home, listOf("Kimi"))), notice("kimi_store_outside_home"))
+        for (format in listOf("kimi_session_ambiguous", "kimi_store_unreadable", "kimi_session_too_large", "kimi_wire_version", "kimi_process_unnamed")) {
+            assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Kimi"))), notice(format))
+        }
+    }
 }
