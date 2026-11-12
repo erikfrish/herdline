@@ -43,6 +43,14 @@ class ChatRefusalTest {
             refusalWords(TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"), "Copilot"),
         )
         assertEquals(
+            RefusalWords(R.string.chat_refused_stale, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_stale"), "Grok"),
+        )
+        assertEquals(
+            RefusalWords(R.string.chat_refused_unregistered, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_unregistered"), "Grok"),
+        )
+        assertEquals(
             RefusalWords(R.string.chat_refused_general, listOf("Grok")),
             refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_too_large"), "Grok"),
         )

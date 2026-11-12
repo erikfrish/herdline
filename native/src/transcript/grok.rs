@@ -8,8 +8,10 @@
 //! commit 2bdd1d6 (SOURCE_REV 559751fd), and the ACP schema of
 //! agent-client-protocol v0.10.4, which it builds against.
 //!
-//! Known limit: after an in-process `/new`, Herdr may keep reporting the old
-//! session id (herdrdev/herdr#2681), so Chat shows the previous session.
+//! After an in-process `/new`, Herdr may keep reporting the old session id
+//! (herdrdev/herdr#2681). Grok's own `active_sessions.json` is read only to
+//! refuse then: the pane's process must have exactly one entry there, naming
+//! Herdr's ref. Its entry never chooses, binds or shows a session.
 
 use super::{Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, cap, text_block};
 use crate::{Error, Result, ssh::Exec};
@@ -24,9 +26,17 @@ const PAGE_ROOM: usize = 2 * 1024 * 1024;
 /// `GROK_HOME`, the home it defaults to, or the session file resolves
 /// outside the SSH user's home, or `GROK_HOME` is relative.
 pub(super) const OUTSIDE_HOME: &str = "grok_store_outside_home";
-/// More than one `sessions/*/<id>/updates.jsonl`: which one Grok resumes is
-/// not decided by the id, so none is shown.
+/// More than one `sessions/*/<id>/updates.jsonl`, or more than one entry for
+/// the pane's process in Grok's `active_sessions.json`: which one is the
+/// pane's is not decided, so none is shown.
 pub(super) const AMBIGUOUS: &str = "grok_session_ambiguous";
+/// The pane's process has exactly one entry in `active_sessions.json`, and it
+/// names another session than Herdr's ref (after an in-process `/new`,
+/// herdr#2681). Neither is shown, and the entry's is never read instead.
+pub(super) const STALE: &str = "grok_session_stale";
+/// `active_sessions.json` is missing, unparseable, or has no entry for the
+/// pane's process, so nothing confirms Herdr's ref is still open there.
+pub(super) const UNREGISTERED: &str = "grok_session_unregistered";
 /// The session file is not a regular file, or cannot be opened read-only.
 pub(super) const UNREADABLE: &str = "grok_store_unreadable";
 /// The session file is past the bound one poll parses in full.
@@ -80,7 +90,7 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [OUTSIDE_HOME, AMBIGUOUS, UNREADABLE, TOO_LARGE]
+            [OUTSIDE_HOME, AMBIGUOUS, STALE, UNREGISTERED, UNREADABLE, TOO_LARGE]
                 .into_iter()
                 .find(|known| *known == format)
                 .ok_or(Error::BadReply)?,
@@ -289,6 +299,35 @@ def find(home,sessions,sid):
     if not inside(home,real): raise Refused('grok_store_outside_home')
     return real
 
+# xai-grok-active-sessions/src/lib.rs:16-21, :23, :35-37: grok_home's
+# active_sessions.json, a list of {session_id, pid, cwd, opened_at}, each
+# written with the pager's own pid (pager app/effects/mod.rs:133-141) when a
+# session is created or loaded, and dropped when one is left (/new:
+# dispatch/session/lifecycle.rs:380). Used only to refuse: the pane's
+# process needs exactly one entry, naming sid. Grok reads a corrupt file as
+# empty (lib.rs:111-127); so does this, and an empty one confirms nothing.
+REGISTRY_MAX=1048576
+def registered(home,sessions,pid,sid):
+    try:
+        real=os.path.realpath(os.path.join(os.path.dirname(sessions),'active_sessions.json'))
+        st=os.stat(real)
+    except FileNotFoundError: raise Refused('grok_session_unregistered')
+    except OSError: raise Refused('grok_store_unreadable')
+    if not inside(home,real): raise Refused('grok_store_outside_home')
+    if not stat.S_ISREG(st.st_mode) or st.st_size>REGISTRY_MAX: raise Refused('grok_store_unreadable')
+    try:
+        fd=os.open(real,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        try: data=os.read(fd,REGISTRY_MAX+1)
+        finally: os.close(fd)
+    except OSError: raise Refused('grok_store_unreadable')
+    try: entries=json.loads(data) if data.strip() else []
+    except ValueError: entries=[]
+    if not isinstance(entries,list) or not all(isinstance(e,dict) and isinstance(e.get('session_id'),str) and index(e.get('pid')) is not None for e in entries): entries=[]
+    ids=[e['session_id'] for e in entries if e['pid']==pid]
+    if not ids: raise Refused('grok_session_unregistered')
+    if len(ids)>1: raise Refused('grok_session_ambiguous')
+    if ids[0]!=sid: raise Refused('grok_session_stale')
+
 # Only a regular file is opened, by its one resolved path: a FIFO or device
 # there would block or misread.
 def load(real):
@@ -494,6 +533,7 @@ def main():
     home,sessions=store(environment())
     try: real=find(home,sessions,sid)
     except LookupError: return {'error':'missing'}
+    registered(home,sessions,got['pid'],sid)
     data=load(real)
     size=len(data)
     rows=rows_of(live(list(lines(data))))
@@ -518,6 +558,8 @@ def main():
     older=any(row['id']<start for row in rows)
     after,_=identity()
     if after!=expect: return {'changed':True}
+    # A /new while this read: the page is not the pane's any more.
+    registered(home,sessions,got['pid'],sid)
     return {'status':status,'reset':reset,'size':size,'start':start,'end':end,'has_older':older,'rows':out}
 try:
     sys.stdout.buffer.write(dump(main()).encode())

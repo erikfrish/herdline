@@ -26,6 +26,10 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
             RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
         // Not a form Chat can't read: the store holds no one session Chat can stand behind.
         GROK_SESSION_AMBIGUOUS -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
+        // Grok's own list of open sessions names another session for the pane's
+        // process than Herdr does, or none: either way Chat stands behind neither.
+        "grok_session_stale" -> RefusalWords(R.string.chat_refused_stale, listOf(agent))
+        "grok_session_unregistered" -> RefusalWords(R.string.chat_refused_unregistered, listOf(agent))
         "copilot_session_mismatch" -> RefusalWords(R.string.chat_refused_mismatch, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }

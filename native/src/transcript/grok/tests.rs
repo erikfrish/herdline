@@ -42,7 +42,16 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Default::default() }
+        let host = Self { home, env: Default::default() };
+        host.registry(&json!([{"session_id": sid, "pid": 42, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"}]).to_string());
+        host
+    }
+
+    /// `~/.grok/active_sessions.json` (active-sessions `lib.rs:16-23`).
+    fn registry(&self, body: &str) {
+        let grok = self.home.path().join(".grok");
+        fs::create_dir_all(&grok).unwrap();
+        fs::write(grok.join("active_sessions.json"), body).unwrap();
     }
 
     /// The shell's environment: its HOME and these variables.
@@ -278,6 +287,31 @@ fn an_unknown_session_is_not_found_and_two_matches_are_refused() {
     append(&host.file("%2Fa"), &[chunk("user_message_chunk", "one")]);
     append(&host.file("%2Fb"), &[chunk("user_message_chunk", "two")]);
     assert_eq!(refused(host.page(Read::Tail)), AMBIGUOUS);
+}
+
+#[test]
+fn the_registry_only_refuses_and_never_shows_its_own_session() {
+    const OTHER: &str = "0195f3a2-0000-7000-8000-000000000000";
+    let entry = |sid: &str, pid: u32| json!({"session_id": sid, "pid": pid, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"});
+    let host = Host::new(SID, "grok");
+    append(&host.file("%2Fw"), &[chunk("user_message_chunk", "herdr's")]);
+    let other = host.home.path().join(".grok/sessions/%2Fw").join(OTHER);
+    fs::create_dir_all(&other).unwrap();
+    append(&other.join("updates.jsonl"), &[chunk("user_message_chunk", "registry's")]);
+    // Another process's entries do not count either way.
+    host.registry(&json!([entry(OTHER, 7), entry(SID, 42)]).to_string());
+    assert_eq!(texts(&host.page(Read::Tail).unwrap()), ["herdr's"]);
+    // After /new the pane's process names another session: neither is shown.
+    host.registry(&json!([entry(OTHER, 42)]).to_string());
+    assert_eq!(refused(host.page(Read::Tail)), STALE);
+    host.registry(&json!([entry(SID, 42), entry(OTHER, 42)]).to_string());
+    assert_eq!(refused(host.page(Read::Tail)), AMBIGUOUS);
+    for body in [json!([entry(SID, 7)]).to_string(), "[]".into(), "{not json".into(), json!([{"pid": 42}]).to_string()] {
+        host.registry(&body);
+        assert_eq!(refused(host.page(Read::Tail)), UNREGISTERED, "{body}");
+    }
+    fs::remove_file(host.home.path().join(".grok/active_sessions.json")).unwrap();
+    assert_eq!(refused(host.page(Read::Tail)), UNREGISTERED);
 }
 
 #[test]
