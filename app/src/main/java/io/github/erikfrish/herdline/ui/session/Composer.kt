@@ -2552,21 +2552,29 @@ private fun shortPaneText(frame: RenderFrame?, pane: String): String =
         ?: stringResource(R.string.composer_pane_rows_unknown)
 
 /**
- * QF-6c: raw input shows the focused pane with no row of its own
- * ([paneHasNoRoom]), so the terminal draws only Herdr's border. An overlay
- * at the terminal's top: it changes no height and resizes nothing. Its words
- * stay the same while it shows, so its polite live region speaks once per
- * appearance. Hide keyboard is the user's tap only; the notice takes no focus,
- * and taps on its own bounds stop there, never reaching the terminal under it.
+ * QF-6c, QF9-N: the focused pane has no row of its own ([paneHasNoRoom]),
+ * so the terminal draws only Herdr's border. An overlay at the terminal's
+ * top: it changes no height and resizes nothing. Its words stay the same
+ * while it shows, so its polite live region speaks once per appearance. Zoom
+ * (shared) and Hide keyboard are the user's taps only, offered as
+ * [shortPaneOffers] says; the notice takes no focus, and taps on its own
+ * bounds stop there, never reaching the terminal under it.
  */
 @Composable
-internal fun PaneNoRoomNotice(offers: List<ShortPaneOffer>, accent: Color, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
+internal fun PaneNoRoomNotice(offers: List<ShortPaneOffer>, accent: Color, onZoom: () -> Unit, onHideKeyboard: () -> Unit, modifier: Modifier = Modifier) {
     val reason = stringResource(R.string.terminal_pane_no_room)
-    val hide = NoticeAction(stringResource(R.string.composer_hide_keyboard), tag = "terminal:no_room:hide_keyboard", onClick = onHideKeyboard)
+    val actions = offers.mapNotNull { offer ->
+        when (offer) {
+            ShortPaneOffer.Zoom -> NoticeAction(stringResource(R.string.zoom_shared), tag = "terminal:no_room:zoom", onClick = onZoom)
+            ShortPaneOffer.HideKeyboard -> NoticeAction(stringResource(R.string.composer_hide_keyboard), tag = "terminal:no_room:hide_keyboard", onClick = onHideKeyboard)
+            ShortPaneOffer.Portrait -> null
+        }
+    }
     NoticeRow(
         Notice(
             if (ShortPaneOffer.Portrait in offers) stringResource(R.string.terminal_pane_no_room_portrait, reason) else reason,
-            hide.takeIf { ShortPaneOffer.HideKeyboard in offers },
+            actions.getOrNull(0),
+            actions.getOrNull(1),
         ),
         accent,
         modifier
