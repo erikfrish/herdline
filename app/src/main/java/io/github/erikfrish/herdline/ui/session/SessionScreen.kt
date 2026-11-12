@@ -187,6 +187,13 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.sessionAccent
@@ -1553,6 +1560,7 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
 private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
+    val unavailable = stringResource(R.string.chat_mode_unavailable)
     Box(
         Modifier
             .fillMaxHeight()
@@ -1560,7 +1568,23 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
             .clip(CircleShape)
             .background(fill)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
+            // Unavailable says so by shape too, not by the dimming alone: a dashed
+            // ring, drawn inside the segment, so it costs no width. The selected
+            // ring stays as it is.
+            .then(
+                if (enabled || selected) Modifier else Modifier.drawBehind {
+                    val w = 1.dp.toPx()
+                    drawRoundRect(
+                        text,
+                        Offset(w / 2, w / 2),
+                        Size(size.width - w, size.height - w),
+                        CornerRadius((size.height - w) / 2),
+                        style = Stroke(w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))),
+                    )
+                },
+            )
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .then(if (enabled) Modifier else Modifier.semantics { stateDescription = unavailable })
             .padding(horizontal = 10.dp)
             .testTag(tag),
         contentAlignment = Alignment.Center,
