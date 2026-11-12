@@ -3,6 +3,8 @@
 build/
 local.properties
 /target/
+__pycache__/
+*.pyc
 *.iml
 .idea/
 *.jks
