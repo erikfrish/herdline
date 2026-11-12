@@ -978,7 +978,7 @@ bytes=$((bytes))
 printf '\n@@blob %s\n@@data\n' "$bytes"
 head -c "$bytes" "$blob"
 "#,
-            store = blob_store(pid),
+            store = blob_store(&session, &pane, pid),
         ));
     }
     script.push_str("printf '\\n@@after\\n'\n");
@@ -992,12 +992,13 @@ const RESOLVER: &str = include_str!("transcript/resolve_session.py");
 
 /// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
 /// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
-/// session roots. Exit 3 is a store outside `$HOME`; any other failure,
-/// python missing or nothing printed included, is an unknown store, never
-/// a guessed one.
-fn blob_store(pid: u32) -> String {
+/// session roots, with its arguments from Herdr's process-info for `pane`
+/// (both already shell-quoted). Exit 3 is a store outside `$HOME`; any other
+/// failure, python missing or nothing printed included, is an unknown store,
+/// never a guessed one.
+fn blob_store(session: &str, pane: &str, pid: u32) -> String {
     format!(
-        r#"store=$(python3 - --blob-store {pid} "$home" <<'HERDLINE_RESOLVE'
+        r#"store=$(python3 - --blob-store "$herdr" {session} {pane} {pid} "$home" <<'HERDLINE_RESOLVE'
 {RESOLVER}
 HERDLINE_RESOLVE
 ) || {{ status=$?; [ "$status" -eq {EXIT_UNCONFINED} ] && exit {EXIT_UNCONFINED}; exit {EXIT_NO_STORE}; }}

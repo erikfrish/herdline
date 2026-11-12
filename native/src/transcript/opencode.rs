@@ -382,12 +382,11 @@ def file_parts(row):
 def main():
     got,status=identity()
     if got!=expect or got['agent']!='opencode' or got['kind']!='id' or not got['pid']: return {'changed':True}
-    env={}
-    for field in open('/proc/%d/environ'%got['pid'],'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        if sep: env[key.decode(errors='replace')]=value.decode(errors='replace')
-    home=os.path.realpath(env.get('HOME') or os.environ['HOME'])
-    if home!=os.path.realpath(os.environ['HOME']): raise ValueError('home')
+    # The store from this shell's own HOME, XDG_DATA_HOME and OPENCODE_DB; no
+    # other process's environment is read. An agent started with values this
+    # shell lacks is not found here, never guessed.
+    env=os.environ
+    home=os.path.realpath(env['HOME'])
     data=os.path.realpath(os.path.join(env.get('XDG_DATA_HOME') or os.path.join(home,'.local','share'),'opencode'))
     name=env.get('OPENCODE_DB') or 'opencode.db'
     if name==':memory:': raise ValueError('memory')

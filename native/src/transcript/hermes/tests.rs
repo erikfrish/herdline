@@ -42,11 +42,12 @@ conn.close()
 
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
-    /// A pane running Hermes on `sid`, with an agent environment file the
-    /// script reads instead of `/proc`; the unrelated variable must stay unread.
+    /// A pane running Hermes on `sid`.
     fn new(sid: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
@@ -71,9 +72,7 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        let environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", home.path().display());
-        fs::write(home.path().join("environ"), environ).unwrap();
-        Self { home }
+        Self { home, env: Default::default() }
     }
 
     fn root(&self) -> PathBuf {
@@ -107,16 +106,12 @@ impl Host {
 
     fn reply(&self, sid: &str, read: Read) -> Value {
         let bin = self.home.path().join(".local/bin");
-        let environ = self.home.path().join("environ");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script(
-                "lab",
-                "w1:p1",
-                &self.expect(sid),
-                &options(read),
-                Some(environ.to_str().unwrap()),
-            ))
+            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .env_remove("HERMES_HOME")
+            .env_remove("HERMES_DATA_DIR_SUFFIX")
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -270,8 +265,7 @@ fn a_store_linked_outside_home_is_refused() {
     let link = host.home.path().join("linked");
     std::os::unix::fs::symlink(&real, &link).unwrap();
     // HERMES_HOME names the in-home link; its target is outside HOME.
-    let environ = format!("HOME={}\0HERMES_HOME={}\0", host.home.path().display(), link.display());
-    fs::write(host.home.path().join("environ"), environ).unwrap();
+    host.env.replace(vec![("HERMES_HOME".into(), link.display().to_string())]);
     assert!(matches!(host.page(SID, Read::Tail), Err(Error::TranscriptUnconfined)));
 }
 

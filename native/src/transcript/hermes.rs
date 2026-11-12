@@ -37,7 +37,7 @@ pub(super) fn page(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&query_script(session, pane, expect, &options(read), None))
+            shell_quote(&query_script(session, pane, expect, &options(read)))
         ),
         Duration::from_secs(60),
         PAGE_ROOM,
@@ -57,24 +57,12 @@ fn options(read: Read) -> Value {
     json!({"mode":mode,"cursor":cursor,"schema":SCHEMA_VERSION})
 }
 
-/// `environ` replaces `/proc/<pid>/environ` for the fixture tests only; every
-/// production read passes `None`, so no app or host input can point it
-/// elsewhere.
-fn query_script(
-    session: &str,
-    pane: &str,
-    expect: &Identity,
-    options: &Value,
-    environ: Option<&str>,
-) -> String {
+fn query_script(session: &str, pane: &str, expect: &Identity, options: &Value) -> String {
     format!(
-        "python3 - {} {} {}{} <<'HERDLINE_HERMES_PY'\n{}\nHERDLINE_HERMES_PY",
+        "python3 - {} {} {} <<'HERDLINE_HERMES_PY'\n{}\nHERDLINE_HERMES_PY",
         shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
         shell_quote(&options.to_string()),
         shell_quote(&super::instance_script(session, pane)),
-        environ
-            .map(|path| format!(" {}", shell_quote(path)))
-            .unwrap_or_default(),
         PYTHON
     )
 }
@@ -251,12 +239,12 @@ fn parts_text(parts: &Value) -> String {
         .join("\n")
 }
 
-/// The host side. Reads of `/proc/<pid>/environ` keep only HOME, HERMES_HOME
-/// and HERMES_DATA_DIR_SUFFIX; nothing else from the agent's environment is
-/// returned, logged or stored.
+/// The host side. The store comes from this shell's own HOME, HERMES_HOME
+/// and HERMES_DATA_DIR_SUFFIX; no other process's environment is read. An
+/// agent started with values this shell lacks is not found there, never
+/// guessed.
 const PYTHON: &str = r#"import json, os, re, sqlite3, subprocess, sys, urllib.parse
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
-environ_path = sys.argv[4] if len(sys.argv) > 4 else None
 LIMIT=200
 BUDGET=1572864
 CLIP=70000
@@ -280,14 +268,8 @@ def identity():
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:hermes'),'kind':ref['kind']}
     return got,pane.get('agent_status','unknown')
 
-def environment(pid):
-    wanted={'HOME','HERMES_HOME','HERMES_DATA_DIR_SUFFIX'}
-    env={}
-    for field in open(environ_path or '/proc/%d/environ'%pid,'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        key=key.decode(errors='replace')
-        if sep and key in wanted: env[key]=value.decode(errors='replace')
-    return env
+def environment():
+    return {key:os.environ[key] for key in ('HERMES_HOME','HERMES_DATA_DIR_SUFFIX') if key in os.environ}
 
 class Refused(Exception): pass
 
@@ -298,8 +280,6 @@ def inside(root,path): return os.path.commonpath([root,path])==root
 # value naming other variables, or a relative one, is refused, not guessed.
 def store(env):
     home=os.path.realpath(os.environ['HOME'])
-    own=env.get('HOME')
-    if not own or os.path.realpath(own)!=home: raise Refused('unconfined')
     value=env.get('HERMES_HOME','')
     if value:
         if '$' in value or '%' in value: raise Refused('unconfined')
@@ -424,7 +404,7 @@ def main():
     if got!=expect or got['agent']!='hermes' or got['kind']!='id' or not got['pid']: return {'changed':True}
     sid=got['path']
     if not ID.match(sid): return {'changed':True}
-    conn=connect(store(environment(got['pid'])))
+    conn=connect(store(environment()))
     try: versions=[row[0] for row in conn.execute('SELECT version FROM schema_version').fetchall()]
     except sqlite3.DatabaseError: versions=[]
     if versions!=[opts['schema']]: return {'version':versions[0] if len(versions)==1 and isinstance(versions[0],int) else None}

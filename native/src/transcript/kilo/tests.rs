@@ -39,12 +39,12 @@ conn.close()
 
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
-    /// A pane whose Herdr report names `agent` on `sid`, with an agent
-    /// environment file the script reads instead of `/proc`; the unrelated
-    /// variable must stay unread.
+    /// A pane whose Herdr report names `agent` on `sid`.
     fn new(sid: &str, agent: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
@@ -69,9 +69,7 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        let host = Self { home };
-        host.environ(&[]);
-        host
+        Self { home, env: Default::default() }
     }
 
     /// The pane's foreground Kilo, now (`proc.json`) or once the first report
@@ -84,13 +82,9 @@ impl Host {
         .unwrap();
     }
 
-    /// The agent's environment: its HOME, these variables, and one secret.
+    /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        let mut environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", self.home.path().display());
-        for (key, value) in vars {
-            environ.push_str(&format!("{key}={value}\0"));
-        }
-        fs::write(self.home.path().join("environ"), environ).unwrap();
+        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
     }
 
     /// Kilo's default data dir, `~/.local/share/kilo`.
@@ -124,10 +118,12 @@ impl Host {
 
     fn page(&self, sid: &str, read: Read) -> Result<Response> {
         let bin = self.home.path().join(".local/bin");
-        let environ = self.home.path().join("environ");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read), Some(environ.to_str().unwrap())))
+            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .env_remove("XDG_DATA_HOME")
+            .env_remove("KILO_DB")
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -294,22 +290,17 @@ fn a_process_replaced_mid_read_gives_no_answer_not_even_a_refusal() {
 }
 
 #[test]
-fn the_agents_home_must_be_this_users_and_a_missing_one_is_unknown() {
+fn only_the_shells_own_xdg_data_home_places_the_store() {
     let host = Host::new(SID, "kilo");
     let spec = json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "xdg")]});
     let xdg = host.home.path().join("xdg");
     host.store(&xdg.join("kilo/kilo.db"), spec);
-    let environ = host.home.path().join("environ");
-    // Another HOME, even one inside this user's, is refused, never followed.
-    let other = host.home.path().join("other");
-    fs::create_dir_all(&other).unwrap();
-    fs::write(&environ, format!("HOME={}\0XDG_DATA_HOME={}\0", other.display(), xdg.display())).unwrap();
-    assert_eq!(refused(host.page(SID, Read::Tail)), OUTSIDE_HOME);
-    // No HOME: XDG_DATA_HOME still places the store; with neither, nothing does.
-    fs::write(&environ, format!("XDG_DATA_HOME={}\0", xdg.display())).unwrap();
+    host.environ(&[("XDG_DATA_HOME", xdg.to_str().unwrap())]);
     assert_eq!(texts(&host.page(SID, Read::Tail).unwrap()), ["xdg"]);
-    fs::write(&environ, "SECRET_TOKEN=never-read\0").unwrap();
-    assert_eq!(refused(host.page(SID, Read::Tail)), UNKNOWN);
+    // Set only for the agent, it is not known here: the default store has
+    // no such session, and nothing else is searched.
+    host.environ(&[]);
+    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
 }
 
 #[test]
