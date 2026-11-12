@@ -108,6 +108,8 @@ import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Viewport
+import io.github.erikfrish.herdline.core.TranscriptRead
+import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.data.AttachConsent
 import io.github.erikfrish.herdline.data.ComposerAction
 import io.github.erikfrish.herdline.data.ComposerMenu
@@ -123,6 +125,7 @@ import io.github.erikfrish.herdline.ui.components.ConfirmDialog
 import io.github.erikfrish.herdline.ui.chat.ChatColors
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
+import io.github.erikfrish.herdline.ui.chat.ptyTurnLanded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -142,8 +145,17 @@ import io.github.erikfrish.herdline.data.attachmentsState
 import kotlin.math.ceil
 import java.util.UUID
 
-/** A delivery handed to the daemon and not yet settled, with the IDs of the files it carried. */
-private data class Pending(val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet())
+/**
+ * A delivery handed to the daemon and not yet settled, with the IDs of the
+ * files it carried. [watched] (P1): Chat typed this into an agent's pane to
+ * send it, so the read receipt makes it [SentState.InPane], not Sent;
+ * [historyFrom] is where that session's history ended before it went, null
+ * when unread.
+ */
+private data class Pending(
+    val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet(),
+    val watched: Boolean = false, val historyFrom: Long? = null,
+)
 
 /**
  * The draft's sent record once `deliver` returned [outcome]: [before] again
@@ -903,16 +915,18 @@ private fun Editor(
         }
     }
 
-    // An empty draft follows the pane; a written one keeps its binding and
-    // only gains the instance it was written for, if it lacked one.
+    // An empty draft follows the pane; a written one keeps its binding, and
+    // one written before the instance was read stays held until Rebind (R1D).
     LaunchedEffect(boot, agentNow, instanceNow, draft.blank) {
         draft.followed(boot, agentNow, instanceNow)?.let(::save)
     }
 
     // The last delivery was never confirmed: the native core holds the pane
-    // too, also after the app restarted, until the user unlocks it.
+    // too, also after the app restarted, until the user unlocks it. Text
+    // that is only in the pane's input box (P1) is held the same way.
     LaunchedEffect(key, draft.sent?.state) {
-        if (draft.sent?.state == SentState.Uncertain) connection.hold(key.nodeId, key.session, key.pane)
+        val state = draft.sent?.state
+        if (state == SentState.Uncertain || state == SentState.InPane) connection.hold(key.nodeId, key.session, key.pane)
     }
 
     // J2 F: the receipt check and the K12 notices read the pane's bottom rows,
@@ -928,7 +942,12 @@ private fun Editor(
 
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
-            is Connection.DeliveryUpdate.Confirmed -> {
+            is Connection.DeliveryUpdate.Confirmed -> if (p.watched) {
+                // P1: the read receipt proves only that the text reached the
+                // pane's input box, not that the agent took it. The editor
+                // keeps it and the pane stays held until the history shows it.
+                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.InPane, System.currentTimeMillis(), historyFrom = p.historyFrom)))
+            } else {
                 // Only now does the text leave the editor.
                 val rest = if (value.text == p.text) "" else value.text
                 write(rest)
@@ -946,6 +965,39 @@ private fun Editor(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
             )
         }
+    }
+
+    // P1: text in the pane's input box becomes Sent only once the bound
+    // session's history holds that very turn after the stored baseline. The
+    // baseline is stored with the record, so a return or a relaunch looks
+    // again (once, past the deadline). Nothing is ever typed again.
+    val inPane = draft.sent?.takeIf { it.state == SentState.InPane }
+    var inPaneWatched by remember(key, inPane) { mutableStateOf(false) }
+    LaunchedEffect(key, inPane, connection) {
+        val sent = inPane ?: return@LaunchedEffect
+        val from = sent.historyFrom
+        val instance = draft.instance
+        if (from == null || instance == null) {
+            inPaneWatched = true
+            return@LaunchedEffect
+        }
+        val via = connection
+        do {
+            val page = withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(from))) }.getOrNull()
+            if (page != null && ptyTurnLanded(page, instance, from, sent.text)) {
+                if (draft.sent != sent) return@LaunchedEffect
+                write(if (value.text == sent.text) "" else value.text)
+                // The draft is held since the tap, so the files it holds are the ones sent.
+                save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
+                via.unlock(key.nodeId, key.session, key.pane)
+                delivered()
+                return@LaunchedEffect
+            }
+            // Another session, or a history that started over: this turn can no longer be shown.
+            if (page != null && (page.reset || page.identity != instance)) break
+            delay(PTY_TURN_POLL_MS)
+        } while (System.currentTimeMillis() - sent.at < PTY_TURN_WATCH_MS)
+        inPaneWatched = true
     }
 
     // Answers that came before their delivery returned from the native core.
@@ -1235,6 +1287,14 @@ private fun Editor(
         save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis())))
         val ahead = draft
         scope.launch {
+            // P1: where Chat sends by typing into an agent's pane, where that
+            // session's history ends before the text goes; only a turn after
+            // it can be this send.
+            val watched = reading && submit && target.instance != null
+            val historyFrom = target.instance?.takeIf { watched }?.let { instance ->
+                withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
+                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+            }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.Delivery.Refused(WRITE_AHEAD_FAILED)) {
                     via.deliver(target, text, submit, seen, staged, chat = reading)
@@ -1247,7 +1307,7 @@ private fun Editor(
             sending = false
             when (outcome) {
                 is Connection.Delivery.Queued -> {
-                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet())
+                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom)
                     val answered = early.remove(outcome.receipt)
                     when {
                         answered != null -> settle(p, answered)
@@ -1521,6 +1581,13 @@ private fun Editor(
             }.takeIf { !checking },
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
         )
+        // P1: in the pane's input box, not yet in the session's history.
+        draft.sent?.state == SentState.InPane -> Notice(
+            stringResource(R.string.composer_in_pane),
+            NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
+            NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
+            warning = inPaneWatched,
+        )
         draft.sent?.state == SentState.Uncertain -> Notice(
             stringResource(R.string.composer_uncertain),
             NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
@@ -1536,7 +1603,11 @@ private fun Editor(
             stringResource(R.string.composer_agent_restarted, check?.agent ?: draft.agent ?: ""),
             rebind,
         )
-        binding == Binding.InstanceUnknown && steadyUnknown -> Notice(stringResource(R.string.composer_instance_unknown))
+        // R1D: written before this pane's session was read; Rebind binds it to the one read now.
+        binding == Binding.InstanceUnknown && steadyUnknown -> Notice(
+            stringResource(R.string.composer_instance_unknown),
+            rebind.takeIf { draft.instance == null && readInstance != null },
+        )
         // Onto a held tab the move is refused in words, not by a missing button (R6).
         mismatched && targetGone -> Notice(
             stringResource(if (moveOffer == MoveHereOffer.TargetHeld) R.string.composer_pane_gone_target_held else R.string.composer_pane_gone),
@@ -2718,6 +2789,9 @@ private const val SENT_NOTICE_MS = 8_000L
 private const val PRECHECK_SETTLE_MS = 700L
 private const val INSTANCE_POLL_MS = 5_000L
 private const val INSTANCE_SETTLE_MS = 1_500L
+/** How long an InPane send (P1) is watched for its turn in the history, from the receipt. */
+private const val PTY_TURN_WATCH_MS = 20_000L
+private const val PTY_TURN_POLL_MS = 1_000L
 
 /** Answers kept while their delivery is still returning from the native core. */
 private const val EARLY_ANSWERS = 8

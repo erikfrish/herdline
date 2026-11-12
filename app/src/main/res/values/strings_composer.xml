@@ -30,6 +30,7 @@
     <string name="composer_pending">Handed to Herdr, waiting for its answer…</string>
     <string name="composer_offline">Draft kept · nothing sends while offline</string>
     <string name="composer_uncertain">Not confirmed: it may already be in the pane. Nothing was resent.</string>
+    <string name="composer_in_pane">In the pane\'s input box, not yet in the session\'s history. Not confirmed as sent; nothing was resent.</string>
     <string name="composer_offline_held">Offline · last delivery not confirmed · nothing sends</string>
     <string name="composer_check_description">Check the pane for the message</string>
     <string name="composer_locked_line">Locked: not confirmed. Unlock to edit.</string>

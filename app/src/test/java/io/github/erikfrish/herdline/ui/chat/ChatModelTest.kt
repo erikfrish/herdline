@@ -203,4 +203,23 @@ class ChatModelTest {
         val blocks = markdownBlocks("Run:\n```sh\nls -la\n")
         assertEquals(listOf(MdBlock.Paragraph("Run:"), MdBlock.Code("sh", "ls -la\n")), blocks)
     }
+
+    @Test
+    fun a_pty_send_is_sent_only_when_its_exact_session_gains_that_turn() {
+        val sent = "  ping ✓\nline two\nline three\nline four "
+        val landed = text("u9", null, 100, "user", sent)
+        // One new user turn holding all four lines, edges and all, past the history's end before the tap.
+        assertTrue(ptyTurnLanded(page(landed, start = 100, end = 140), agent, before = 100, text = sent))
+        // The same words already in the history before the tap are not this send, also next to a changed new turn.
+        assertFalse(ptyTurnLanded(page(text("u1", null, 40, "user", sent), text("u9", null, 100, "user", "other")), agent, before = 100, text = sent))
+        // Recorded with other line ends or trimmed: not byte-equal, so not proven.
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.replace("\n", "\r\n"))), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.trim())), agent, 100, sent))
+        // Split across turns or echoed by the assistant: not landed.
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", "  ping ✓"), text("u10", null, 110, "user", "line two\nline three\nline four ")), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(text("a9", null, 100, "assistant", sent)), agent, 100, sent))
+        // Another instance or a history that started over proves nothing.
+        assertFalse(ptyTurnLanded(page(landed, identity = agent.copy(pid = 43)), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(landed, reset = true), agent, 100, sent))
+    }
 }

@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.data
 import android.content.Context
 import android.content.SharedPreferences
 import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.isChatAgent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,13 +22,20 @@ data class DraftKey(val nodeId: String, val session: String, val pane: String) {
  * What became of the last text handed to the pane. [Unlocked] is an
  * unconfirmed delivery the user released: it may have landed, the pane is
  * free again, and the record stays until the next delivery replaces it.
+ * [InPane] (P1): Chat typed it into an agent's pane and the pane's read
+ * receipt came, which proves only that the text reached the input box; it
+ * holds the pane like [Uncertain] until the session's history shows the
+ * turn ([Confirmed]) or the user unlocks it.
  */
-enum class SentState { Queued, Confirmed, Uncertain, Unlocked }
+enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked }
 
 /**
  * [acknowledged]: the user took in that an [SentState.Unlocked] attempt may
  * have landed, by editing or dismissing, so the composer stops saying so.
- * The record and its state stay as they were.
+ * The record and its state stay as they were. [historyFrom]: for an
+ * [SentState.InPane] record, where the bound session's history ended
+ * before the text went; null when that could not be read, so the turn can
+ * never be proven.
  */
 data class SentRecord(
     val text: String,
@@ -36,6 +44,7 @@ data class SentRecord(
     val state: SentState,
     val at: Long,
     val acknowledged: Boolean = false,
+    val historyFrom: Long? = null,
 )
 
 /**
@@ -46,7 +55,8 @@ data class SentRecord(
  * needs the user to confirm the pane again before anything is delivered.
  * [instance] is null for a plain terminal, for a draft just moved onto
  * another pane, and for one written before the instance could be read;
- * such a draft gains the instance at the pane's next read.
+ * such a draft, once written, stays held for a chat agent until the user
+ * rebinds it (R1D); an empty one follows the pane.
  */
 data class Draft(
     val text: String = "",
@@ -82,7 +92,10 @@ data class Draft(
         blank -> Binding.Bound
         boot != null && boot != current -> Binding.BootChanged
         !agent.equals(currentAgent, ignoreCase = true) -> Binding.AgentChanged
-        instance == null -> Binding.Bound
+        // R1D: written for a chat agent before its session could be read, so
+        // no session vouches for it; held until the user rebinds it. A plain
+        // terminal or a program without a session reader has no instance.
+        instance == null -> if (isChatAgent(agent)) Binding.InstanceUnknown else Binding.Bound
         // Fail closed: the draft names an instance nobody can vouch for now.
         now !is InstanceRead.Read || now.identity == null -> Binding.InstanceUnknown
         now.identity != instance -> Binding.AgentRestarted
@@ -97,30 +110,22 @@ data class Draft(
      * This draft brought up to date with the pane as read now, or null when
      * nothing changes. An empty draft follows the pane, so the text written
      * next is bound to the agent the user saw. A written one never changes
-     * binding here; it only gains the instance it lacks, while it is bound
-     * to the same program of the same run.
+     * binding here, nor gains an instance it lacks: the first one read may
+     * already be a later session than the one it was written for (R1D).
      */
     fun followed(current: String?, currentAgent: String?, now: InstanceRead): Draft? {
-        if (current == null) return null
-        val read = (now as? InstanceRead.Read)?.identity
-        val next = when {
-            blank -> {
-                val sameProgram = boot == current && agent.equals(currentAgent, ignoreCase = true)
-                val known = when (now) {
-                    is InstanceRead.Read -> now.identity
-                    // Not read yet: what this draft knew holds only for the same program.
-                    InstanceRead.Unread -> instance.takeIf { sameProgram }
-                }
-                rebound(current, currentAgent, known)
-            }
-            instance == null && read != null && binding(current, currentAgent, now) == Binding.Bound -> copy(instance = read)
-            else -> this
+        if (current == null || !blank) return null
+        val sameProgram = boot == current && agent.equals(currentAgent, ignoreCase = true)
+        val known = when (now) {
+            is InstanceRead.Read -> now.identity
+            // Not read yet: what this draft knew holds only for the same program.
+            InstanceRead.Unread -> instance.takeIf { sameProgram }
         }
-        return next.takeIf { it != this }
+        return rebound(current, currentAgent, known).takeIf { it != this }
     }
 
     /** The last delivery's outcome is unknown: nothing may go to the pane until the user unlocks it. */
-    val unsettled: Boolean get() = sent?.state == SentState.Queued || sent?.state == SentState.Uncertain
+    val unsettled: Boolean get() = sent?.state == SentState.Queued || sent?.state == SentState.InPane || sent?.state == SentState.Uncertain
 
     /** Whether this draft may be delivered under [binding], before the native checks. */
     fun mayDeliver(binding: Binding): Boolean = binding == Binding.Bound && !blank && !unsettled
@@ -196,6 +201,7 @@ data class Draft(
             sent?.let {
                 JSONObject().put("text", it.text).put("receipt", it.receipt).put("submit", it.submit)
                     .put("state", it.state.name).put("at", it.at).put("acknowledged", it.acknowledged)
+                    .put("historyFrom", it.historyFrom ?: JSONObject.NULL)
             } ?: JSONObject.NULL,
         )
         .put("instance", instance?.toJson() ?: JSONObject.NULL)
@@ -218,6 +224,7 @@ data class Draft(
                         .let { s -> if (s == SentState.Queued) SentState.Uncertain else s },
                     at = it.optLong("at"),
                     acknowledged = it.optBoolean("acknowledged"),
+                    historyFrom = if (it.has("historyFrom") && !it.isNull("historyFrom")) it.getLong("historyFrom") else null,
                 )
             }
             return Draft(

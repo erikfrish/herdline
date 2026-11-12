@@ -67,6 +67,24 @@ internal fun sameSession(a: TranscriptIdentity, b: TranscriptIdentity): Boolean 
     a.paneId == b.paneId && a.agent == b.agent && a.kind == b.kind && a.path == b.path
 
 /**
+ * P1: a send typed into the pane is Sent only once its session holds it.
+ * [page] must be exactly [instance]'s session read on from [before] (the
+ * history's end read before the text went) without starting over, and hold
+ * a new user turn whose one text block is [text] byte for byte: no trimming
+ * or line-end folding, as no runtime pins a canonical form. An older turn
+ * with the same words is never it; a second identical turn someone else
+ * typed after the tap cannot be told apart without a request id. The
+ * pane's read receipt alone is never this.
+ */
+internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, before: Long, text: String): Boolean {
+    if (page.reset || page.identity != instance || text.isEmpty()) return false
+    return page.entries.any { entry ->
+        entry.offset >= before && entry.kind == TranscriptKind.Message && entry.role == "user" &&
+            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.text == text
+    }
+}
+
+/**
  * What chat says the supported agent in [pane] is doing, only while the
  * same pane is live on this connection. A lost link or unknown program is
  * [AgentStatus.Unknown]; stale history never claims a Working status.
