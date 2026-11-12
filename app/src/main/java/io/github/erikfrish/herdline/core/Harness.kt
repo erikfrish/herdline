@@ -241,4 +241,19 @@ private val KNOWN: Map<String, Harness> = listOf(
         media = Proof.None,
         readOnlyHistory = true,
     ),
+    // mastracode: transcript/mastracode.rs fixture tests only (mastra_threads/
+    // mastra_messages of mastra.db, mastra-ai/mastra d432f1e); no run against
+    // a real Mastra Code, nothing sends.
+    Harness(
+        "mastracode",
+        history = Proof.Unverified,
+        send = SendRoute.None,
+        sendProof = Proof.None,
+        steer = Proof.None,
+        status = Proof.Unverified,
+        questions = Proof.None,
+        subagents = Proof.None,
+        media = Proof.None,
+        readOnlyHistory = true,
+    ),
 ).associateBy { it.name }

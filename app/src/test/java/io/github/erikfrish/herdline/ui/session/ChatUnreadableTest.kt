@@ -63,4 +63,12 @@ class ChatUnreadableTest {
             assertNotEquals(R.string.session_chat_unreadable, notice.words.res)
         }
     }
+
+    @Test
+    fun mastracode_outside_home_is_said_as_such_and_its_other_refusals_generally() {
+        val outside = unreadableNotice(TranscriptRefusal.UnsupportedFormat("mastracode_store_outside_home"), "Mastra Code", everRead = false)
+        val large = unreadableNotice(TranscriptRefusal.UnsupportedFormat("mastracode_session_too_large"), "Mastra Code", everRead = true)
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_outside_home, listOf("Mastra Code"))), outside)
+        assertEquals(UnreadableNotice(RefusalWords(R.string.chat_refused_general, listOf("Mastra Code"))), large)
+    }
 }
