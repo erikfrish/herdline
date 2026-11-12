@@ -51,13 +51,20 @@ def resolve():
         canonical = absolute(path)
         if canonical not in roots:
             roots.append(canonical)
+    def configured(path):
+        # An override that is relative, or lands outside HOME, refuses only
+        # itself: the default root and the other overrides still hold.
+        try:
+            return absolute(path)
+        except ValueError:
+            return None
     if agent in ('omp', 'pi') and kind == 'path':
         default = os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent')
         add(os.path.join(default, 'sessions'))
         override = env.get('PI_CODING_AGENT_DIR')
         if agent == 'omp':
             config = env.get('PI_CONFIG_DIR') or '.omp'
-            base = absolute(os.path.join(home, config.lstrip('/')))
+            base = configured(os.path.join(home, config.lstrip('/')))
             profile = env.get('OMP_PROFILE') if 'OMP_PROFILE' in env else env.get('PI_PROFILE')
             for index, arg in enumerate(argv):
                 if arg == '--': break
@@ -75,21 +82,26 @@ def resolve():
                     inherited = normalize_profile(env.get('PI_PROFILE'))
                 except ValueError:
                     inherited = ''
-                derived = os.path.join(base, 'profiles', inherited, 'agent') if inherited else None
+                derived = os.path.join(base, 'profiles', inherited, 'agent') if inherited and base else None
                 if override == derived:
                     override = None
-            config_root = os.path.join(base, 'profiles', profile) if profile else base
-            add(os.path.join(config_root, 'agent', 'sessions'))
+            if base:
+                config_root = os.path.join(base, 'profiles', profile) if profile else base
+                sessions = configured(os.path.join(config_root, 'agent', 'sessions'))
+                if sessions: add(sessions)
             xdg = env.get('XDG_DATA_HOME')
-            if xdg and (profile or not override):
-                app = os.path.join(absolute(xdg), 'omp')
+            data = configured(xdg) if xdg and (profile or not override) else None
+            if data:
+                app = os.path.join(data, 'omp')
                 xdg_root = os.path.join(app, 'profiles', profile) if profile else app
-                if os.path.isdir(xdg_root):
-                    add(os.path.join(xdg_root, 'sessions'))
+                sessions = configured(os.path.join(xdg_root, 'sessions')) if os.path.isdir(xdg_root) else None
+                if sessions: add(sessions)
             if not profile and override:
-                add(os.path.join(absolute(override), 'sessions'))
+                sessions = configured(os.path.join(override, 'sessions'))
+                if sessions: add(sessions)
         elif override:
-            add(os.path.join(absolute(override), 'sessions'))
+            sessions = configured(os.path.join(override, 'sessions'))
+            if sessions: add(sessions)
         candidates = [value]
     elif agent == 'claude' and kind == 'id':
         add(os.path.join(absolute(env.get('CLAUDE_CONFIG_DIR') or os.path.join(home, '.claude')), 'projects'))

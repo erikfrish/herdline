@@ -992,3 +992,67 @@ fn configured_session_roots_do_not_follow_overrides_the_agent_ignores() {
         }
     }
 }
+
+#[test]
+fn an_invalid_session_root_override_refuses_only_itself() {
+    // (variables, sessions that resolve, a session that is refused)
+    let cases: &[(&[(&str, &str)], &[&str], &str)] = &[
+        // PI_CONFIG_DIR leaves HOME: the default root still reads.
+        (
+            &[("PI_CONFIG_DIR", "../escape")],
+            &[".omp/agent/sessions/p/s.jsonl"],
+            "escape/agent/sessions/p/s.jsonl",
+        ),
+        // A relative PI_CODING_AGENT_DIR and XDG_DATA_HOME: the default root still reads.
+        (
+            &[("PI_CODING_AGENT_DIR", "relative-agent"), ("XDG_DATA_HOME", "relative-data")],
+            &[".omp/agent/sessions/p/s.jsonl"],
+            "relative-agent/sessions/p/s.jsonl",
+        ),
+        // A valid PI_CONFIG_DIR still wins beside an invalid XDG_DATA_HOME.
+        (
+            &[("PI_CONFIG_DIR", "custom-config"), ("XDG_DATA_HOME", "relative-data")],
+            &["custom-config/agent/sessions/p/s.jsonl"],
+            "relative-data/omp/sessions/p/s.jsonl",
+        ),
+    ];
+    for (variables, allowed, refused) in cases {
+        let host = Host::new("unused");
+        let home = host.home.path().to_str().unwrap();
+        let child = Command::new("/bin/sh")
+            .args(["-c", "read -r line", "omp"])
+            .env_clear()
+            .env("HOME", home)
+            .envs(variables.iter().copied())
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let process = Omp(child);
+        fs::write(
+            host.home.path().join("proc.json"),
+            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
+        )
+        .unwrap();
+        let checks = allowed.iter().map(|r| (*r, true)).chain([(*refused, false)]);
+        for (relative, accepted) in checks {
+            let file = host.home.path().join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, "{\"type\":\"session\",\"id\":\"override\"}\n").unwrap();
+            let path = file.to_str().unwrap();
+            fs::write(host.home.path().join("pane.json"), pane_json(path)).unwrap();
+            let (status, bytes) = host.run(tail(path));
+            if accepted {
+                assert_eq!(
+                    parse_reply(status, &bytes).unwrap().file.unwrap().data,
+                    fs::read(&file).unwrap(),
+                    "{variables:?} {relative}"
+                );
+            } else {
+                assert!(
+                    matches!(parse_reply(status, &bytes), Err(Error::TranscriptUnconfined)),
+                    "{variables:?} {relative}"
+                );
+            }
+        }
+    }
+}
