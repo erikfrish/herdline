@@ -26,15 +26,18 @@ data class ChatHistory(
     val end: Long,
     val entries: List<TranscriptEntry>,
     val hasOlder: Boolean = start > 0,
+    /** This history began when the pane's agent changed to another session; Chat shows a divider above it (R1, C-2). */
+    val newSession: Boolean = false,
 ) {
 
     /**
-     * This history with [page] read into it. A reset page replaces it; a page
-     * of another agent's transcript that is not a reset is a stale answer
-     * from before a switch, and is ignored.
+     * This history with [page] read into it. A reset page replaces it, marked
+     * [newSession] when it is another session ([sameSession]) or continues one
+     * that was; a page of another agent's transcript that is not a reset is a
+     * stale answer from before a switch, and is ignored.
      */
     fun merge(page: TranscriptPage, appended: Boolean): ChatHistory {
-        if (page.reset) return of(page)
+        if (page.reset) return of(page).copy(newSession = newSession || !sameSession(identity, page.identity))
         if (page.identity != identity) return this
         val byOffset = LinkedHashMap<Long, TranscriptEntry>(entries.size + page.entries.size)
         (entries + page.entries).sortedBy { it.offset }.forEach { byOffset[it.offset] = it }
@@ -53,6 +56,15 @@ data class ChatHistory(
         fun of(page: TranscriptPage) = ChatHistory(page.identity, page.start, page.end, page.entries.sortedBy { it.offset }, page.hasOlder)
     }
 }
+
+/**
+ * Whether [a] and [b] name one session: the same agent kind and session
+ * reference. Another pid or terminal of that session (a restart that resumed
+ * it) is the same session; `/new`, `/clear`, a resume or fork of another
+ * session, or another agent in the pane is not.
+ */
+internal fun sameSession(a: TranscriptIdentity, b: TranscriptIdentity): Boolean =
+    a.paneId == b.paneId && a.agent == b.agent && a.kind == b.kind && a.path == b.path
 
 /**
  * What chat says the supported agent in [pane] is doing, only while the

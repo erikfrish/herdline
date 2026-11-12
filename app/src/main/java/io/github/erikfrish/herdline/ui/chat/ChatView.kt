@@ -432,7 +432,8 @@ private fun ChatContent(
     val refused = refusal.takeIf { unavailable }
     val report by rememberUpdatedState(onUnavailable)
     LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
-    val header = if (shown?.hasOlder == true) 1 else 0
+    // Rows above the first line: Load older, then the new-session divider (R1).
+    val header = (if (shown?.hasOlder == true) 1 else 0) + (if (shown?.newSession == true) 1 else 0)
 
     fun loadOlder() {
         val known = history ?: return
@@ -577,7 +578,8 @@ private fun ChatContent(
                     Text(stringResource(R.string.chat_loading), style = ChatType.body.copy(color = colors.muted))
                 }
                 // An empty session says so in the middle of the page; older history, if any, is still one tap away.
-                items.isEmpty() && !shown.hasOlder && status != AgentStatus.Working && status != AgentStatus.Blocked -> Text(
+                // A new session in the pane keeps its divider above even while it is empty (R1).
+                items.isEmpty() && !shown.hasOlder && !shown.newSession && status != AgentStatus.Working && status != AgentStatus.Blocked -> Text(
                     stringResource(R.string.chat_empty),
                     style = ChatType.body.copy(color = colors.muted),
                     textAlign = TextAlign.Center,
@@ -602,6 +604,10 @@ private fun ChatContent(
                     // Older history loads only from the top of the list, never from a control over the newest messages.
                     if (shown.hasOlder) {
                         item(key = "older") { LoadOlder(loadingOlder, colors, ::loadOlder) }
+                    }
+                    // The pane's agent moved to another session: only that session is below (R1, C-2).
+                    if (shown.newSession) {
+                        item(key = "new_session") { NewSessionDivider(colors) }
                     }
                     items(lines, key = { it.key }) { line ->
                         CompositionLocalProvider(LocalChatImages provides images) {
@@ -928,6 +934,25 @@ private fun HistoryBoundary(colors: ChatColors) {
         Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
         Text(
             stringResource(R.string.chat_history_boundary),
+            style = ChatType.meta.copy(color = colors.dim),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+    }
+}
+
+/** "New session in this pane": every line below is the session the pane's agent moved to (designer §1 R). */
+@Composable
+private fun NewSessionDivider(colors: ChatColors) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat:new_session"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+        Text(
+            stringResource(R.string.chat_new_session_divider),
             style = ChatType.meta.copy(color = colors.dim),
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f),

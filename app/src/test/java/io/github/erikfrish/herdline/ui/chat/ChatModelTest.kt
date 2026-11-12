@@ -14,6 +14,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -90,6 +91,27 @@ class ChatModelTest {
         val other = agent.copy(path = "/h/.omp/agent/sessions/x/b.jsonl")
         assertSame(merged, merged.merge(page(text("9", null, 0, "user", "z"), identity = other), appended = true))
         assertEquals(other, merged.merge(page(text("9", null, 0, "user", "z"), identity = other, reset = true), appended = true).identity)
+    }
+
+    @Test
+    fun another_session_in_the_pane_shows_only_that_session_under_a_divider() {
+        val old = ChatHistory.of(page(text("1", null, 0, "user", "old turn"), reset = true))
+        assertFalse(old.newSession)
+        // The same session read again (a tail, a rewrite, a restart that resumed it): no divider.
+        val resumed = old.merge(page(text("1", null, 0, "user", "old turn"), reset = true, identity = agent.copy(pid = 43, terminalId = "term_2")), appended = true)
+        assertFalse(resumed.newSession)
+        // /new in the same pane: the next reset names another session; only its turns are kept.
+        val fresh = agent.copy(pid = 43, path = "/h/.omp/agent/sessions/x/b.jsonl")
+        val switched = resumed.merge(page(text("9", null, 0, "user", "new turn"), reset = true, identity = fresh), appended = true)
+        assertTrue(switched.newSession)
+        assertEquals(listOf("u:new turn"), texts(switched.entries))
+        // It stays marked while that session grows, pages back, or is re-read from its tail.
+        val grown = switched
+            .merge(page(text("10", "9", 100, "user", "next"), start = 100, end = 110, identity = fresh), appended = true)
+            .merge(page(text("9", null, 0, "user", "new turn"), reset = true, identity = fresh), appended = true)
+        assertTrue(grown.newSession)
+        // Another agent in the pane is another session too.
+        assertTrue(old.merge(page(reset = true, identity = agent.copy(agent = "claude", source = "herdr:claude")), appended = true).newSession)
     }
 
     @Test

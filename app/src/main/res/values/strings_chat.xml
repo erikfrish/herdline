@@ -114,4 +114,6 @@
     </plurals>
     <string name="chat_state_collapsed">collapsed</string>
     <string name="chat_state_expanded">expanded</string>
+    <!-- Above a session the pane's agent moved to: /new, /clear, a resume or fork (POSTNIGHT-HARNESS-INTERACTION 1 R). -->
+    <string name="chat_new_session_divider">New session in this pane</string>
 </resources>
