@@ -549,3 +549,18 @@ fn a_kilo_pane_needs_an_exact_session_id_and_its_own_process() {
         assert!(matches!(report(value, "kilo"), Err(Error::NoTranscript)), "{value}");
     }
 }
+
+#[test]
+fn an_aborted_message_reads_as_a_stop_and_other_errors_keep_their_words() {
+    let blocks = |error: Value| {
+        entry(&json!({"id": 1, "mid": "msg_1", "info": {"role": "assistant", "error": error}, "parts": []})).unwrap().blocks
+    };
+    assert_eq!(
+        blocks(json!({"name": "MessageAbortedError", "message": "aborted"})),
+        [Block::Marker { marker: Marker::Stopped, text: String::new(), truncated: false }]
+    );
+    assert_eq!(
+        blocks(json!({"name": "APIError", "message": "rate limited"})),
+        [Block::Text { text: "[rate limited]".to_owned(), truncated: false }]
+    );
+}

@@ -25,6 +25,11 @@
     <string name="chat_show_steps">显示步骤</string>
     <string name="chat_hide_steps">隐藏步骤</string>
     <string name="chat_tool_arguments">参数</string>
+    <string name="chat_marker_stopped_by_you">已由你停止</string>
+    <string name="chat_marker_stopped">已停止</string>
+    <string name="chat_marker_done">已完成</string>
+    <string name="chat_marker_to_do">待办</string>
+    <string name="chat_marker_item_spoken">%1$s：%2$s</string>
     <plurals name="chat_tool_group">
         <item quantity="other">%d 个工具</item>
     </plurals>

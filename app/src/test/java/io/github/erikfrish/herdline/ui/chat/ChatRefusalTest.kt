@@ -31,4 +31,20 @@ class ChatRefusalTest {
             refusalWords(TranscriptRefusal.UnsupportedVersion("qwen", 2, 1), "Qwen Code"),
         )
     }
+
+    @Test
+    fun two_matching_sessions_and_a_session_mismatch_say_their_own_cause() {
+        assertEquals(
+            RefusalWords(R.string.chat_refused_ambiguous, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_ambiguous"), "Grok"),
+        )
+        assertEquals(
+            RefusalWords(R.string.chat_refused_mismatch, listOf("Copilot")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"), "Copilot"),
+        )
+        assertEquals(
+            RefusalWords(R.string.chat_refused_general, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_too_large"), "Grok"),
+        )
+    }
 }

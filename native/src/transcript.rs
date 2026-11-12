@@ -353,6 +353,24 @@ pub enum Block {
         subagents: Vec<subagents::Subagent>,
     },
     Image(Image),
+    /// A turn's stop, or one plan item, which the app words in its own language.
+    Marker {
+        marker: Marker,
+        /// The plan item's text; empty for a stop.
+        text: String,
+        truncated: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Marker {
+    /// The person stopped the turn.
+    StoppedByYou,
+    /// The turn was stopped, no one says by whom.
+    Stopped,
+    Done,
+    ToDo,
 }
 
 /// Display-only question answers emitted by OMP's form tool.

@@ -24,6 +24,9 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
         "kilo_store_outside_home", "grok_store_outside_home", "copilot_store_outside_home",
         "mastracode_store_outside_home", "kimi_store_outside_home" ->
             RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
+        // Not a form Chat can't read: the store holds no one session Chat can stand behind.
+        "grok_session_ambiguous" -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
+        "copilot_session_mismatch" -> RefusalWords(R.string.chat_refused_mismatch, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
     // A format Chat can't name is said without a number, never as "unknown".

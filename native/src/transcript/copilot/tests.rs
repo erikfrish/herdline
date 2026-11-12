@@ -167,7 +167,7 @@ fn events_map_to_chat_and_hidden_secret_or_model_facing_parts_never_show() {
     let page = host.page(SID, Read::Tail).unwrap();
     assert_eq!(
         texts(&page),
-        ["fix it", "[file: shadow]", "thinking out loud", "on it", "[aborted: user_initiated]", "[rate limited]", "Unsupported Copilot event: brand.new_thing"]
+        ["fix it", "[file: shadow]", "thinking out loud", "on it", "[rate limited]", "Unsupported Copilot event: brand.new_thing"]
     );
     let all = format!("{page:?}");
     for leak in ["INTERNAL", "SECRET", "SYSTEM PROMPT", "skill body", "from a subagent", "ephemeral", "/etc/shadow", "aGVsbG8"] {
@@ -367,4 +367,19 @@ fn another_agent_or_an_id_that_is_not_a_full_uuid_is_never_read() {
     for value in ["0b8f9c1", "0B8F9C1E-2D3A-4B5C-8D6E-7F8091A2B3C4", "0b8f9c1e-2d3a-4b5c-8d6e-7f8091a2b3c", "0b8f9c1e_2d3a-4b5c-8d6e-7f8091a2b3c4"] {
         assert!(matches!(report(value, "copilot"), Err(Error::NoTranscript)), "{value}");
     }
+}
+
+#[test]
+fn only_the_persons_own_abort_reads_as_stopped_by_you() {
+    let stop = |reason: &str| {
+        let row = entry(&json!({"o": 0, "e": 1, "t": "abort", "reason": reason})).unwrap();
+        match row.blocks.as_slice() {
+            [Block::Marker { marker, text, .. }] if text.is_empty() => *marker,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(stop("user_initiated"), Marker::StoppedByYou);
+    assert_eq!(stop("user"), Marker::StoppedByYou);
+    assert_eq!(stop("timeout"), Marker::Stopped);
+    assert_eq!(stop(""), Marker::Stopped);
 }

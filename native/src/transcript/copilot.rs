@@ -11,7 +11,7 @@
 //! Copilot rewrites the head of its log on `/rewind` and when it rotates the
 //! journal, so every cursor is checked against the event it last named.
 
-use super::{Block, Entry, Identity, Image, Kind, Read, Response, Source, cap, text_block};
+use super::{Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, cap, text_block};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
 use serde_json::{Value, json};
@@ -219,7 +219,11 @@ fn entry(row: &Value) -> Option<Entry> {
             };
             (Kind::Message, "tool", vec![block])
         }
-        "abort" => (Kind::Message, "error", vec![text_block(&format!("[aborted: {}]", cap(string("reason"), 64).0), false)]),
+        // AbortData.reason: only the person's own stop says so; any other reason is a plain stop.
+        "abort" => {
+            let marker = if matches!(string("reason"), "user" | "user_initiated") { Marker::StoppedByYou } else { Marker::Stopped };
+            (Kind::Message, "error", vec![Block::Marker { marker, text: String::new(), truncated: false }])
+        }
         "error" => (Kind::Message, "error", vec![text_block(&format!("[{}]", cap(string("text"), 512).0), false)]),
         "compaction" => (Kind::Compaction, "", Vec::new()),
         _ => {
