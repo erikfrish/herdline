@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -153,6 +154,10 @@ private val PillHeight = 36.dp
 
 /** Under and over the Latest pill in a [dense][ChatView] list. */
 private val DensePillGap = 2.dp
+
+/** The dense pill: one touch target, at the list's end edge. */
+private val CompactPillSize = 48.dp
+private val DensePillEnd = 4.dp
 
 /**
  * The OMP agent in [pane] as a conversation, read from the session file
@@ -492,7 +497,7 @@ private fun ChatContent(
                         end = 16.dp,
                         top = if (dense) 0.dp else 8.dp,
                         bottom = when {
-                            pill && dense -> PillHeight + DensePillGap * 2
+                            pill && dense -> CompactPillSize + DensePillGap * 2
                             pill -> 56.dp
                             dense -> 2.dp
                             else -> 12.dp
@@ -537,7 +542,14 @@ private fun ChatContent(
                 }
             }
             if (pill) {
-                LatestPill(fresh, colors, Modifier.align(Alignment.BottomCenter).padding(bottom = if (dense) DensePillGap else 12.dp)) {
+                // Dense: the reader is mid-list, so no padding keeps the lines read clear of a centred pill.
+                // It moves to the end gutter instead, where it covers at most a long line's trailing end.
+                val place = if (dense) {
+                    Modifier.align(Alignment.BottomEnd).padding(end = DensePillEnd, bottom = DensePillGap)
+                } else {
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
+                }
+                LatestPill(fresh, colors, place, compact = dense) {
                     follow = true
                     scope.launch { list.animateScrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
                 }
@@ -610,22 +622,39 @@ private fun LoadOlder(loading: Boolean, colors: ChatColors, onLoad: () -> Unit) 
     }
 }
 
+/** [compact]: arrow over the bare count in one 48 dp square; the full plural is still what TalkBack reads. */
 @Composable
-private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, onClick: () -> Unit) {
-    Row(
-        modifier
-            .height(PillHeight)
-            .clip(CircleShape)
-            .background(colors.surf)
-            .border(1.dp, colors.border, CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp)
-            .testTag("chat:latest"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
-        Text(pluralStringResource(R.plurals.chat_latest_new, count, count), style = ChatType.button.copy(color = colors.accentText))
+private fun LatestPill(count: Int, colors: ChatColors, modifier: Modifier, compact: Boolean, onClick: () -> Unit) {
+    val spoken = pluralStringResource(R.plurals.chat_latest_new, count, count)
+    val shape = if (compact) MaterialTheme.shapes.medium else CircleShape
+    val frame = modifier
+        // A floor, not a size: at large font scales the count needs more than 48 dp and must not clip.
+        .then(if (compact) Modifier.sizeIn(minWidth = CompactPillSize, minHeight = CompactPillSize) else Modifier.height(PillHeight))
+        .clip(shape)
+        .background(colors.surf)
+        .border(1.dp, colors.border, shape)
+        .clickable(role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = spoken }
+        .testTag("chat:latest")
+    if (compact) {
+        Column(frame, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
+            Text(
+                if (count > 99) "99+" else count.toString(),
+                style = ChatType.button.copy(color = colors.accentText),
+                maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+    } else {
+        Row(
+            frame.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp), tint = colors.accentText)
+            Text(spoken, style = ChatType.button.copy(color = colors.accentText), modifier = Modifier.clearAndSetSemantics {})
+        }
     }
 }
 
