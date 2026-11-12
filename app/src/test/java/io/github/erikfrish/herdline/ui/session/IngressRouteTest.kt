@@ -41,15 +41,58 @@ class IngressRouteTest {
         // after images were staged.
         for (agent in listOf("omp", "OMP", "Omp")) {
             assertTrue(agent, agentNamed(agent, Harness.endpointAgents))
-            assertFalse(agent, agentNamed(agent, Harness.apiAgents))
+            assertFalse(agent, agentNamed(agent, Harness.queueAgents))
         }
-        assertFalse("OpenCode sends prompts but exposes no ingress queue", agentNamed("OpenCode", Harness.endpointAgents))
-        assertTrue(agentNamed("OpenCode", Harness.apiAgents))
-        assertTrue(agentNamed("CODEX", Harness.apiAgents))
-        assertFalse(agentNamed("codex", Harness.endpointAgents))
+        // OpenCode's inbox is its running server's own; only it queues on Send.
+        assertTrue(agentNamed("OpenCode", Harness.endpointAgents))
+        assertTrue(agentNamed("OpenCode", Harness.queueAgents))
+        // Codex's queue is its running app-server daemon's own.
+        assertTrue(agentNamed("CODEX", Harness.endpointAgents))
+        assertFalse(agentNamed("codex", Harness.queueAgents))
         assertFalse(agentNamed("claude", Harness.endpointAgents))
         assertFalse(agentNamed(null, Harness.endpointAgents))
-        assertFalse(agentNamed(null, Harness.apiAgents))
+        assertFalse(agentNamed(null, Harness.queueAgents))
+    }
+
+    @Test
+    fun sendSaysQueueOnlyWhileAQueueingRuntimeIsReadWorking() {
+        val opencode = instance.copy(agent = "opencode")
+        val working = IngressProbe.Live(IngressState(idle = false, queued = emptyList()))
+        val idle = IngressProbe.Live(IngressState(idle = true, queued = emptyList()))
+        assertTrue(sendQueues(reading = true, instance = opencode, probe = working))
+        // Idle starts a turn: Send stays Send.
+        assertFalse(sendQueues(reading = true, instance = opencode, probe = idle))
+        // No live read, no verb change.
+        assertFalse(sendQueues(reading = true, instance = opencode, probe = null))
+        assertFalse(sendQueues(reading = true, instance = opencode, probe = IngressProbe.Unusable("needs_server")))
+        assertFalse(sendQueues(reading = false, instance = opencode, probe = working))
+        // A runtime without a queue verb never shows it.
+        assertFalse(sendQueues(reading = true, instance = instance.copy(agent = "codex"), probe = working))
+        assertFalse(sendQueues(reading = true, instance = instance, probe = working))
+    }
+
+    @Test
+    fun aMissingOrUntrustedServerIsRefusedInItsOwnWords() {
+        assertEquals("needs_server", ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = "needs_server")))
+        assertEquals("server_discovery", ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = "server_discovery")))
+        assertEquals(REASON_UNUSABLE, ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = "stale")))
+        assertEquals(REASON_UNSUPPORTED, ingressRefusalCode(IngressSend.Refused(REASON_UNSUPPORTED, detail = "needs_server")))
+        assertEquals(R.string.reason_needs_server, reasonRes("needs_server"))
+        assertEquals(R.string.ingress_needs_server, unusableRes("needs_server"))
+        assertEquals(R.string.ingress_server_discovery, unusableRes("server_discovery"))
+        assertEquals(R.string.ingress_unusable, unusableRes("stale"))
+    }
+
+    @Test
+    fun aRefusedSendOnAPaneWithoutItsServerGivesTheServersReason() {
+        // opencode --standalone: the box check refuses the PTY route; the endpoint says why Chat can't send.
+        assertEquals("needs_server", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("needs_server")))
+        assertEquals("server_discovery", sendPrecheckCode("not_visible", IngressProbe.Unusable("server_discovery")))
+        // Any other probe leaves the box check's own code; a Send the gate allows stays allowed.
+        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("stale")))
+        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", null))
+        assertEquals("agent_working", sendPrecheckCode("agent_working", IngressProbe.Absent))
+        assertNull(sendPrecheckCode(null, IngressProbe.Unusable("needs_server")))
     }
 
     @Test
@@ -112,6 +155,14 @@ class IngressRouteTest {
         assertTrue(withdrawEnabled(ours, withdrawing = null))
         assertFalse(withdrawEnabled(ours, withdrawing = "id-9"))
         assertFalse(withdrawEnabled(IngressQueued(null, "desktop", QUEUE_STEERING), withdrawing = null))
+    }
+
+    @Test
+    fun aWithdrawStartsOnlyWhenItsRequestCanComeBack() {
+        assertTrue(withdrawRestorable("", busy = false))
+        // Typed text or a send on its way: refused before the queue is touched.
+        assertFalse(withdrawRestorable("draft", busy = false))
+        assertFalse(withdrawRestorable("", busy = true))
     }
 
     @Test

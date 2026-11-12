@@ -65,16 +65,34 @@ class SettingsStoreTest {
 
     @Test
     fun anOldDefaultExtraKeyRowTakesTheNewDefaultAndACustomOneStays() {
-        val legacy = "esc,tab,ctrl,alt,left,down,up,right,pipe,dash,slash,tilde,home,end,pgup,pgdn"
-        val prefs = MemoryPrefs().apply { values["extra_keys"] = legacy }
+        // The sixteen-key default and 0.6.22's flat fourteen: each is the default again, written back once.
+        for (old in listOf(
+            "esc,tab,ctrl,alt,left,down,up,right,pipe,dash,slash,tilde,home,end,pgup,pgdn",
+            "esc,tab,ctrl,left,down,up,right,alt,enter,backspace,pipe,slash,home,end",
+        )) {
+            val prefs = MemoryPrefs().apply { values["extra_keys"] = old }
+            assertEquals(old, Settings().extraKeys, SettingsStore(prefs).settings.value.extraKeys)
+            assertEquals(old, Settings().extraKeys.joinToString(","), prefs.values["extra_keys"])
+        }
+        // A row the user changed keeps its order and contents, even the 0.6.22 keys with two swapped.
+        for (custom in listOf("pgup,pgdn,esc", "tab,esc,ctrl,left,down,up,right,alt,enter,backspace,pipe,slash,home,end")) {
+            val customPrefs = MemoryPrefs().apply { values["extra_keys"] = custom }
+            assertEquals(custom.split(","), SettingsStore(customPrefs).settings.value.extraKeys)
+            assertEquals(custom, customPrefs.values["extra_keys"])
+        }
+    }
+
+    @Test
+    fun notificationContentKeepsItsOrderAndPrivacyAcrossRestartAndReset() {
+        val prefs = MemoryPrefs()
         val store = SettingsStore(prefs)
-        // The old default is the default again, with its new fourteen-key row, written back once.
-        assertEquals(Settings().extraKeys, store.settings.value.extraKeys)
-        assertEquals(Settings().extraKeys.joinToString(","), prefs.values["extra_keys"])
-        // A row the user changed keeps its order and contents.
-        val custom = "pgup,pgdn,esc"
-        val customPrefs = MemoryPrefs().apply { values["extra_keys"] = custom }
-        assertEquals(listOf("pgup", "pgdn", "esc"), SettingsStore(customPrefs).settings.value.extraKeys)
-        assertEquals(custom, customPrefs.values["extra_keys"])
+        store.chooseLiveLockDetail(LockDetail.NamesOnly)
+        store.update { it.copy(notificationFields = listOf("host", "state", "host", "unknown"), lockDetail = LockDetail.Full) }
+        val reloaded = SettingsStore(prefs)
+        assertEquals(listOf("host", "state"), reloaded.settings.value.notificationFields)
+        assertEquals(LockDetail.NamesOnly, reloaded.liveLockDetail.value)
+        reloaded.update { it.copy(notificationFields = NotificationFields.DEFAULT) }
+        assertEquals(LockDetail.Full, reloaded.settings.value.lockDetail)
+        assertEquals(LockDetail.NamesOnly, reloaded.liveLockDetail.value)
     }
 }

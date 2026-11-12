@@ -72,12 +72,18 @@ import kotlinx.coroutines.withContext
 
 /**
  * Whether the composer offers to attach files: the draft may be edited, its
- * target is an OMP whose instance was read (only OMP turns a pasted path
- * into `[Image #N]`, and a staged file is bound to that instance), and the
- * draft has room for another.
+ * target is an agent whose route carries files and whose instance was read
+ * (OMP turns a pasted path into `[Image #N]`; OpenCode and Kilo take them as
+ * the prompt's files; a staged file is bound to that instance), and the draft
+ * has room for another.
  */
 internal fun attachOffered(busy: Boolean, target: Connection.ComposerTarget?, count: Int, max: Int): Boolean =
-    !busy && target?.instance != null && target.agent.equals("omp", ignoreCase = true) && count < max
+    !busy && target?.instance != null && carriesFiles(target.agent) && count < max
+
+/** The agents a delivery carries staged files to: OMP by its pasted paths, OpenCode and Kilo as prompt files. */
+internal fun carriesFiles(agent: String?): Boolean = agent?.lowercase(Locale.ROOT) in FILE_AGENTS
+
+private val FILE_AGENTS = setOf("omp", "opencode", "kilo")
 
 /** Why the + menu's attach items are disabled; the first that applies is named. */
 internal enum class AttachBlock { NotConnected, Held, Sending, Rebind, NeedsAgent, Full }
@@ -98,7 +104,7 @@ internal fun attachBlock(
     unsettled -> AttachBlock.Held
     sending -> AttachBlock.Sending
     binding == Binding.BootChanged || binding == Binding.AgentChanged || binding == Binding.AgentRestarted -> AttachBlock.Rebind
-    binding == Binding.InstanceUnknown || target?.instance == null || !target.agent.equals("omp", ignoreCase = true) -> AttachBlock.NeedsAgent
+    binding == Binding.InstanceUnknown || target?.instance == null || !carriesFiles(target.agent) -> AttachBlock.NeedsAgent
     count >= max -> AttachBlock.Full
     else -> null
 }
@@ -151,6 +157,7 @@ internal fun stagingReasonRes(reason: String): Int = when (reason) {
     "not_connected" -> R.string.attachment_reason_not_connected
     "no_exec" -> R.string.attachment_reason_no_exec
     "too_large" -> R.string.attachment_reason_too_large
+    "opencode_too_large" -> R.string.attachment_reason_opencode_too_large
     "bad_name" -> R.string.attachment_reason_bad_name
     "target_changed" -> R.string.attachment_reason_target_changed
     "needs_agent" -> R.string.attachment_reason_needs_agent
@@ -219,7 +226,7 @@ private const val CHIP_ROW_GAP = 6
 private const val CHIP_MAX = 260
 
 /** Refusals a tap can't fix: the same file is refused again. */
-private val NOT_RETRYABLE = setOf("too_large")
+private val NOT_RETRYABLE = setOf("too_large", "opencode_too_large")
 
 /**
  * What a chip that isn't ready for this target shows besides its words: a

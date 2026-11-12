@@ -1,0 +1,13 @@
+Herdline 0.6.31 — OpenCode and Kilo through their own servers, forms and questions, and the sessions an agent started
+
+- Chat: a send typed into the pane counts as Sent only once the agent's session holds the turn. A draft written before the session was known is held until you bind it.
+- Chat with OpenCode: Send, Steer, Queue, Withdraw and steering a queued entry go to its running server, and the draft's files go with the prompt (up to 10 files of 20 MiB each). Working comes from the server.
+- Chat with Kilo: text sends go to its running server, only while it is idle; a send while it works is refused in words. No Steer, Queue or files for Kilo.
+- Chat: OpenCode forms and Kilo questions are shown whole, with Submit and Decline, or refused in words when Chat cannot show them whole.
+- Chat: under the transcript, OpenCode and Kilo list the sessions this one started, by title. Past 50 it says there are more.
+- Chat: when Stop presses no key, it says why. Stop also works for a pane read on another tab.
+- Chat reads Gemini (through an owned launcher and hook) and Letta (its exact local conversation).
+- More › What works here: controls that are off say why; a missing agent server is shown as such.
+- Extra keys: labels shorten by measured width. Tab marks survive font, locale and process changes.
+
+Not yet verified by QA.

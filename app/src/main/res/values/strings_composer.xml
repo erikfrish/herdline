@@ -10,6 +10,7 @@
     <string name="composer_terminal_keyboard">Terminal keyboard</string>
     <string name="composer_paste_clipboard">Paste from clipboard</string>
     <string name="composer_send">Send</string>
+    <string name="composer_queue">Queue</string>
     <string name="composer_close">Close</string>
     <string name="composer_draft">Draft</string>
     <string name="composer_check">Check</string>
@@ -30,6 +31,7 @@
     <string name="composer_pending">Handed to Herdr, waiting for its answer…</string>
     <string name="composer_offline">Draft kept · nothing sends while offline</string>
     <string name="composer_uncertain">Not confirmed: it may already be in the pane. Nothing was resent.</string>
+    <string name="composer_in_pane">In the pane\'s input box, not yet in the session\'s history. Not confirmed as sent; nothing was resent.</string>
     <string name="composer_offline_held">Offline · last delivery not confirmed · nothing sends</string>
     <string name="composer_check_description">Check the pane for the message</string>
     <string name="composer_locked_line">Locked: not confirmed. Unlock to edit.</string>
@@ -133,9 +135,10 @@
     <string name="attachment_reason_not_connected">Not connected. Not uploaded.</string>
     <string name="attachment_reason_no_exec">This host doesn\'t allow commands over SSH. Not uploaded.</string>
     <string name="attachment_reason_too_large">Too large: images up to 20 MiB, files up to 64 MiB.</string>
+    <string name="attachment_reason_opencode_too_large">Too large for OpenCode: it takes files up to 20 MiB each. Not uploaded.</string>
     <string name="attachment_reason_bad_name">The file name can\'t be used. Not uploaded.</string>
     <string name="attachment_reason_target_changed">The connection changed while uploading. Not uploaded.</string>
-    <string name="attachment_reason_needs_agent">Files go only to an OMP agent. Not uploaded.</string>
+    <string name="attachment_reason_needs_agent">Files go only to an OMP or OpenCode agent. Not uploaded.</string>
     <string name="attachment_reason_staging_unsafe">The host\'s upload folder isn\'t private. Not uploaded.</string>
     <string name="attachment_reason_mismatch">The upload arrived damaged and was removed.</string>
     <string name="attachment_reason_no_tools">The host lacks the tools to receive files.</string>
@@ -143,9 +146,12 @@
     <string name="attachment_reason_unreadable">Can\'t read the file on this phone. Pick it again.</string>
     <string name="attachment_reason_failed">Upload failed. Tap to try again.</string>
     <string name="reason_attachment_target">An attachment was uploaded for another pane. Nothing sent.</string>
-    <string name="reason_attachment_needs_agent">Files can be sent only to an OMP agent. Nothing sent.</string>
+    <string name="reason_attachment_needs_agent">Files can be sent only to an OMP or OpenCode agent. Nothing sent.</string>
     <string name="reason_attachment_steer">A steer can\'t carry files. Nothing sent.</string>
     <string name="reason_attachment_missing">An uploaded file is gone from the host. Upload it again.</string>
+    <string name="reason_attachment_too_many">OpenCode takes at most 10 files in one message. Remove some. Nothing sent.</string>
+    <string name="reason_attachment_too_large">A file is over OpenCode\'s 20 MiB limit for one file. Remove it. Nothing sent.</string>
+    <string name="reason_attachment_unsupported">An image isn\'t a PNG, JPEG, GIF or WebP, so OpenCode can\'t take it as an image. Nothing sent.</string>
     <!-- Chat's Send through the OMP endpoint (ChatIngress.kt). -->
     <string name="reason_dialog_open">OMP has a question or dialog open. Answer it in Chat if available, or in Terminal. Nothing sent.</string>
     <string name="reason_collab">OMP is in a collab session, which Chat can\'t send into. Nothing sent.</string>
@@ -154,11 +160,13 @@
     <string name="reason_empty">Nothing to send: no text and no images.</string>
     <string name="reason_dropped">OMP did not take the message. Nothing was queued.</string>
     <string name="reason_endpoint_unsupported">This OMP lacks the hooks Chat\'s Send needs. Nothing sent, and nothing typed into the pane.</string>
-    <string name="reason_endpoint_unusable">Chat\'s line to OMP can\'t be used safely now. Nothing sent, and nothing typed into the pane.</string>
-    <string name="ingress_uncertain">Not confirmed: OMP may already have it queued. Nothing was resent.</string>
-    <string name="ingress_check_description">Ask OMP whether it has the message</string>
-    <string name="ingress_check_unknown">Still unknown: OMP has no settled record of it. Nothing was resent.</string>
-    <string name="ingress_queue_title">Waiting in OMP\'s queue</string>
+    <string name="reason_endpoint_unusable">Chat\'s line to the agent can\'t be used safely now. Nothing sent, and nothing typed into the pane.</string>
+    <string name="reason_needs_server">This session has no agent server running, so Chat can\'t send to it. Nothing sent, and nothing typed into the pane.</string>
+    <string name="reason_server_discovery">Chat can\'t tell which server is this session\'s (a custom data root, two servers, or loose file permissions), so it won\'t guess. Nothing sent, and nothing typed into the pane.</string>
+    <string name="ingress_uncertain">Not confirmed: the agent may already have it queued. Nothing was resent.</string>
+    <string name="ingress_check_description">Ask the agent whether it has the message</string>
+    <string name="ingress_check_unknown">Still unknown: the agent has no settled record of it. Nothing was resent.</string>
+    <string name="ingress_queue_title">Waiting in the agent\'s queue</string>
     <string name="ingress_queue_steering">Steer</string>
     <string name="ingress_queue_follow_up">Follow-up</string>
     <string name="ingress_queue_no_text">(images only)</string>
@@ -166,6 +174,16 @@
     <string name="ingress_withdraw">Withdraw</string>
     <string name="ingress_withdraw_gone">It had already left the queue.</string>
     <string name="ingress_withdraw_failed">Couldn\'t withdraw it: it may still be queued.</string>
+    <string name="ingress_withdraw_editor">Not withdrawn: clear the editor first, so the request can come back into it. It stays queued.</string>
+    <string name="ingress_withdraw_text_unknown">Withdrawn, but this phone has no record of the text it sent, so its text was not put back. Any files it kept are back.</string>
     <string name="ingress_unsupported">The Herdline extension runs here, but this OMP lacks the hooks it needs (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
-    <string name="ingress_unusable">Chat\'s line to OMP is there but unusable (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
+    <string name="ingress_unusable">Chat\'s line to the agent is there but unusable (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
+    <string name="ingress_needs_server">This session\'s agent server isn\'t running, so Chat can\'t send to it. Nothing is typed into the pane.</string>
+    <string name="ingress_server_discovery">Chat can\'t trust which server belongs to this session (a custom data root, two servers, or loose file permissions), so it refuses rather than guess. Nothing is typed into the pane.</string>
+    <string name="ingress_promote">Steer</string>
+    <string name="ingress_promote_gone">Not steered: it had already left the queue.</string>
+    <string name="ingress_promote_failed">Couldn\'t steer it: it may still be waiting as a follow-up.</string>
+    <!-- A Withdraw or Steer tap on a queued request, on its way to the agent: the tap was taken, its answer follows. -->
+    <string name="ingress_queue_asking">Asking the agent…</string>
+    <string name="steer_help_queue">The agent is working: Queue runs your message after this turn; Steer puts it into the turn.</string>
 </resources>

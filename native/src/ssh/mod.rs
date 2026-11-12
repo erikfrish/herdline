@@ -34,6 +34,10 @@ use std::{
 /// Connecting and authenticating every hop together may take this long.
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(100);
+/// Uploads that hold a channel at once. OpenSSH allows 10 sessions per
+/// connection (`MaxSessions`); with the bridge's own channel and a command's,
+/// a 10-file batch opened together would pass it and have channels refused.
+const UPLOADS_AT_ONCE: usize = 4;
 
 /// One SSH server on the way to Herdr: a jump host, or the host itself.
 #[derive(Debug)]
@@ -121,6 +125,35 @@ impl Exec {
             input: Some(input),
             outcome,
         })
+    }
+}
+
+#[cfg(test)]
+impl Exec {
+    /// Runs each command on this machine with `/bin/sh -c` in exactly `env`,
+    /// so a test can drive the host scripts through the callers that use them.
+    /// The tail is stdout only, cut to `limit` like the bridge's.
+    pub(crate) fn local(env: Vec<(String, String)>) -> Self {
+        let (jobs, mut queue) = tokio::sync::mpsc::channel::<Job>(4);
+        thread::spawn(move || {
+            while let Some(job) = queue.blocking_recv() {
+                let output = std::process::Command::new("/bin/sh")
+                    .arg("-c")
+                    .arg(&job.command)
+                    .env_clear()
+                    .envs(env.iter().cloned())
+                    .stdin(std::process::Stdio::null())
+                    .output()
+                    .map_err(Error::Io)
+                    .map(|output| {
+                        let mut tail = output.stdout;
+                        let tail = tail.split_off(tail.len().saturating_sub(job.limit));
+                        Output { exit_status: output.status.code().and_then(|code| u32::try_from(code).ok()), tail }
+                    });
+                let _ = job.reply.send(output);
+            }
+        });
+        Self { jobs }
     }
 }
 
@@ -284,6 +317,7 @@ async fn run_bridge(
         tokio::io::copy_bidirectional(&mut channel, &mut theirs).await
     };
     let handles = Arc::new(handles);
+    let uploads = Arc::new(tokio::sync::Semaphore::new(UPLOADS_AT_ONCE));
     // One command at a time; an upload runs beside them, so a long one
     // never delays a check. A job still queued when the pump ends is
     // dropped, which its caller sees as a closed connection.
@@ -296,7 +330,14 @@ async fn run_bridge(
             match job.input {
                 Some(input) => {
                     let handles = handles.clone();
+                    let uploads = uploads.clone();
                     tokio::spawn(async move {
+                        // Waits its turn; its stdin queue holds the phone's
+                        // first chunks meanwhile, then the writer blocks.
+                        let Ok(_turn) = uploads.acquire_owned().await else {
+                            let _ = job.reply.send(Err(Error::SshClosed));
+                            return;
+                        };
                         let outcome =
                             upload(&handles[last], job.command, input, job.timeout, job.limit)
                                 .await;
@@ -331,8 +372,15 @@ async fn exec(
     timeout: Duration,
     limit: usize,
 ) -> Result<Output> {
-    let channel = session.channel_open_session().await?;
-    channel.exec(true, command).await?;
+    // The one job worker waits on this: a channel the host never opens must
+    // not hold every later command (Stop's key among them) behind it.
+    let channel = tokio::time::timeout(SETUP_TIMEOUT, async {
+        let channel = session.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        Ok::<_, Error>(channel)
+    })
+    .await
+    .map_err(|_| Error::CommandTimeout)??;
     tokio::time::timeout(timeout, collect(channel, limit))
         .await
         .map_err(|_| Error::CommandTimeout)

@@ -222,6 +222,8 @@ struct Host {
     home: tempfile::TempDir,
     /// Herdr's process-info report for the pane.
     process: Value,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
@@ -230,8 +232,7 @@ impl Host {
     }
 
     /// A pane whose Herdr report names Kimi on `sid` with a process named
-    /// `name` in the foreground, an environment file read instead of `/proc`
-    /// and a working directory link to `$HOME/work`.
+    /// `name` in the foreground, working in `$HOME/work`.
     fn with(sid: &str, name: &str) -> Self {
         Self::running(sid, json!({"name": name, "pid": 42}))
     }
@@ -248,6 +249,7 @@ impl Host {
             "agent_status": "idle",
             "pane_id": "w1:p1",
             "terminal_id": "term_1",
+            "foreground_cwd": home.path().join("work"),
         }, "type": "pane_info"}});
         fs::write(home.path().join("pane.json"), pane.to_string()).unwrap();
         let process = json!({"result": {"process_info": {"foreground_processes": [process], "pane_id": "w1:p1", "shell_pid": 7}}});
@@ -259,22 +261,24 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        std::os::unix::fs::symlink(home.path().join("work"), home.path().join("cwd")).unwrap();
-        let host = Self { home, process };
-        host.environ(&[]);
-        host
+        Self { home, process, env: Default::default() }
+    }
+
+    /// Herdr's `foreground_cwd` for the pane: `cwd`, or none reported.
+    fn cwd(&self, cwd: Option<&std::path::Path>) {
+        let file = self.path("pane.json");
+        let mut pane: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        pane["result"]["pane"]["foreground_cwd"] = json!(cwd);
+        fs::write(file, pane.to_string()).unwrap();
     }
 
     fn path(&self, rest: &str) -> PathBuf {
         self.home.path().join(rest)
     }
 
+    /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        let mut environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", self.home.path().display());
-        for (key, value) in vars {
-            environ.push_str(&format!("{key}={value}\0"));
-        }
-        fs::write(self.path("environ"), environ).unwrap();
+        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
     }
 
     /// The session directory of `sid` in `bucket` under `sessions`, bound
@@ -305,12 +309,11 @@ impl Host {
 
     fn page_of(&self, sid: &str, stamp: u64) -> Result<Response> {
         let bin = self.path(".local/bin");
-        let environ = self.path("environ");
-        let cwd = self.path("cwd");
-        let fixture = Some((environ.to_str().unwrap(), cwd.to_str().unwrap()));
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(script("lab", "w1:p1", &self.expect(sid), stamp, fixture))
+            .arg(script("lab", "w1:p1", &self.expect(sid), stamp))
+            .env_remove("KIMI_CODE_HOME")
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -388,11 +391,10 @@ fn a_session_bound_to_another_directory_or_an_unreadable_cwd_is_unconfined() {
     let host = Host::new(SID);
     host.session("bucket1", &two_turns());
     fs::create_dir_all(host.path("other")).unwrap();
-    fs::remove_file(host.path("cwd")).unwrap();
-    std::os::unix::fs::symlink(host.path("other"), host.path("cwd")).unwrap();
+    host.cwd(Some(&host.path("other")));
     assert!(matches!(host.page(), Err(Error::TranscriptUnconfined)));
 
-    fs::remove_file(host.path("cwd")).unwrap();
+    host.cwd(None);
     assert!(matches!(host.page(), Err(Error::TranscriptUnconfined)));
 }
 

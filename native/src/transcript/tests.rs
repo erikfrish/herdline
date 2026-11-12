@@ -14,9 +14,17 @@ fn pane_json(path: &str) -> String {
 
 const PROCESS: &str = r#"{"result":{"process_info":{"foreground_processes":[{"name":"omp","pid":42}],"pane_id":"w1:p1","shell_pid":7}}}"#;
 
+/// The root variables the resolver takes from its shell, unset for every
+/// run so only the ones a test names are seen.
+const ROOT_VARIABLES: [&str; 7] = [
+    "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR", "PI_CODING_AGENT_DIR", "XDG_DATA_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME",
+];
+
 /// Runs [`script`] against a fake Herdr in a scratch home, as the host would.
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
@@ -33,7 +41,7 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home }
+        Self { home, env: Default::default() }
     }
 
     fn sessions(&self) -> std::path::PathBuf {
@@ -46,9 +54,14 @@ impl Host {
         // The fake Herdr leads PATH: `command -v herdr` comes first in the
         // host's candidates, and a machine with Herdr in /usr/bin would run it.
         let bin = self.home.path().join(".local/bin");
-        let output = Command::new("/bin/sh")
+        let mut command = Command::new("/bin/sh");
+        for key in ROOT_VARIABLES {
+            command.env_remove(key);
+        }
+        let output = command
             .arg("-c")
             .arg(script("lab", "w1:p1", fetch))
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -58,6 +71,16 @@ impl Host {
             .code()
             .and_then(|code| u32::try_from(code).ok());
         (status, output.stdout)
+    }
+
+    /// The pane's foreground process: `name`, pid 42, with the `argv` Herdr
+    /// reports for it; the shell runs with HOME and `variables`.
+    fn agent(&self, name: &str, argv: &[&str], variables: &[(&str, String)]) {
+        let process = serde_json::json!({"result": {"process_info": {
+            "foreground_processes": [{"name": name, "pid": 42, "argv": argv}],
+            "pane_id": "w1:p1", "shell_pid": 7}}});
+        fs::write(self.home.path().join("proc.json"), process.to_string()).unwrap();
+        self.env.replace(variables.iter().map(|(key, value)| (key.to_string(), value.clone())).collect());
     }
 }
 
@@ -134,6 +157,55 @@ fn identity_refuses_panes_without_an_omp_session_file() {
         identity(&pane, &process),
         Err(Error::NoTranscript)
     ));
+}
+
+#[test]
+fn a_gemini_pane_is_named_only_by_its_binding_never_by_a_reported_ref() {
+    // Even beside a session ref Herdr could report, a Gemini pane without
+    // the owned launcher's tokens is refused, not read as that ref.
+    let mut pane: Value = serde_json::from_str(&pane_json("/home/u/.omp/agent/sessions/x/s.jsonl")).unwrap();
+    pane["result"]["pane"]["agent"] = "gemini".into();
+    assert!(matches!(
+        identity(&pane, &Value::Null),
+        Err(Error::UnsupportedFormat("gemini_session_unbound"))
+    ));
+    let id = "0b9c6f1e-1a2b-4c3d-8e9f-0123456789ab";
+    pane["result"]["pane"]["tokens"] = serde_json::json!({
+        "hl_gemini_id": id, "hl_gemini_pid": "42", "hl_gemini_gen": "0123456789abcdef0123456789abcdef",
+    });
+    let launcher = serde_json::json!({"result": {"process_info": {"foreground_processes": [
+        {"pid": 42, "argv": ["/usr/bin/node", "/home/u/.local/share/herdline/gemini"]},
+    ]}}});
+    let (identity, status) = identity(&pane, &launcher).unwrap();
+    assert_eq!((identity.agent.as_str(), identity.path.as_str(), identity.pid, status.as_str()), ("gemini", id, Some(42), "blocked"));
+}
+
+#[test]
+fn a_letta_pane_is_named_only_by_herdrs_letta_ref_beside_its_one_foreground_letta() {
+    let mut pane: Value = serde_json::from_str(&pane_json("x")).unwrap();
+    pane["result"]["pane"]["agent"] = "letta".into();
+    pane["result"]["pane"]["agent_session"] =
+        serde_json::json!({"agent": "letta", "kind": "id", "source": "herdr:letta", "value": "agent-1:conv-2"});
+    let letta = |pids: &[u64]| {
+        let list: Vec<Value> = pids.iter().map(|pid| serde_json::json!({"name": "letta", "pid": pid})).collect();
+        serde_json::json!({"result": {"process_info": {"foreground_processes": list}}})
+    };
+    let (identity, status) = identity(&pane, &letta(&[42])).unwrap();
+    assert_eq!(
+        (identity.agent.as_str(), identity.path.as_str(), identity.pid, identity.source.as_str(), status.as_str()),
+        ("letta", "agent-1:conv-2", Some(42), "herdr:letta", "blocked")
+    );
+    // No letta in the foreground, or two: none is guessed.
+    let omp: Value = serde_json::from_str(PROCESS).unwrap();
+    assert!(matches!(identity_of(&pane, &omp), Err(Error::NoTranscript)));
+    assert!(matches!(identity_of(&pane, &letta(&[42, 43])), Err(Error::NoTranscript)));
+    // A ref Herdr did not give as its own Letta id is refused in words.
+    pane["result"]["pane"]["agent_session"]["source"] = "hook".into();
+    assert!(matches!(identity_of(&pane, &letta(&[42])), Err(Error::UnsupportedFormat("letta_local_format"))));
+}
+
+fn identity_of(pane: &Value, process: &Value) -> Result<Identity> {
+    identity(pane, process).map(|(identity, _)| identity)
 }
 
 /// Reads `bytes[start..start + len]` of `content` like the host does.
@@ -349,50 +421,26 @@ fn messages_keep_their_time_usage_stop_reason_and_exit_code() {
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
 const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-/// The OMP process in the pane: the host reads its arguments and
-/// environment to find its blob store. A lone shell blocked in the `read`
-/// builtin, so it starts no child; stopped and reaped when dropped.
-struct Omp(std::process::Child);
-
-impl Drop for Omp {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
 impl Host {
     /// A host whose pane shows the session file `s.jsonl` holding `lines`,
-    /// run by an OMP started with `args` and, besides HOME, `env`.
-    fn with_session(lines: &str, args: &[&str], env: &[(&str, &str)]) -> (Self, Identity, Omp) {
+    /// run by `omp <args>` in a shell with, besides HOME, `env`.
+    fn with_session(lines: &str, args: &[&str], env: &[(&str, &str)]) -> (Self, Identity) {
         let host = Host::new("unused");
         let file = host.sessions().join("s.jsonl");
         fs::write(&file, lines).unwrap();
         let path = file.to_str().unwrap().to_owned();
         fs::write(host.home.path().join("pane.json"), pane_json(&path)).unwrap();
-        let omp = Command::new("/bin/sh")
-            .args(["-c", "read -r line", "omp"])
-            .args(args)
-            .env_clear()
-            .env("HOME", host.home.path())
-            .envs(env.iter().copied())
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let pid = omp.id();
-        fs::write(
-            host.home.path().join("proc.json"),
-            PROCESS.replace("\"pid\":42", &format!("\"pid\":{pid}")),
-        )
-        .unwrap();
+        let argv: Vec<&str> = ["omp"].into_iter().chain(args.iter().copied()).collect();
+        let env: Vec<_> = env.iter().map(|(key, value)| (*key, value.to_string())).collect();
+        host.agent("omp", &argv, &env);
         let identity = Identity {
             pane_id: "w1:p1".into(),
             terminal_id: "term_1".into(),
-            pid: Some(pid),
+            pid: Some(42),
             path,
             ..Identity::default()
         };
-        (host, identity, Omp(omp))
+        (host, identity)
     }
 
     fn store(&self, dir: &str) -> std::path::PathBuf {
@@ -466,7 +514,7 @@ fn a_blob_is_served_only_as_its_entry_names_it_and_only_whole() {
         .enumerate()
         .map(|(index, hash)| image_line(&format!("e{index}"), &format!("blob:sha256:{hash}")))
         .collect();
-    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    let (host, identity) = Host::with_session(&text, &[], &[]);
     let parsed = entries("omp", text.as_bytes(), 0);
     assert_eq!(
         parsed[0].blocks[1],
@@ -524,19 +572,19 @@ fn the_blob_store_is_the_one_the_omp_process_uses() {
     let media = at(&parsed, 0, 1, Some(&hash));
 
     // A profile in its arguments: that profile's store, not the default one.
-    let (host, identity, _omp) =
+    let (host, identity) =
         Host::with_session(&text, &["--profile", "qa"], &[("OMP_PROFILE", "other")]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(host.media(&identity, &media), refused(Refusal::Missing));
     fs::write(host.store(".omp/profiles/qa/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(host.media(&identity, &media), png());
 
-    let (host, identity, _omp) = Host::with_session(&text, &[], &[("OMP_PROFILE", "qa")]);
+    let (host, identity) = Host::with_session(&text, &[], &[("OMP_PROFILE", "qa")]);
     fs::write(host.store(".omp/profiles/qa/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(host.media(&identity, &media), png());
 
     // A layout it cannot pin down is refused, not read from the default store.
-    let (host, identity, _omp) = Host::with_session(&text, &[], &[("PI_CONFIG_DIR", ".elsewhere")]);
+    let (host, identity) = Host::with_session(&text, &[], &[("PI_CONFIG_DIR", ".elsewhere")]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     assert_eq!(
         host.media(&identity, &media),
@@ -549,7 +597,7 @@ fn an_image_of_another_instance_is_refused() {
     let hash = sha(PNG);
     let text = image_line("u", &format!("blob:sha256:{hash}"));
     let parsed = entries("omp", text.as_bytes(), 0);
-    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    let (host, identity) = Host::with_session(&text, &[], &[]);
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
     let replaced = Identity {
         pid: identity.pid.map(|pid| pid + 1),
@@ -599,7 +647,7 @@ fn inline_images_are_read_from_their_own_line_only() {
         + &image_line("u", &data)
         + &image_line("bad", "!!!!")
         + &image_line("txt", &STANDARD.encode("plain text"));
-    let (host, identity, _omp) = Host::with_session(&text, &[], &[]);
+    let (host, identity) = Host::with_session(&text, &[], &[]);
     let parsed = entries("omp", text.as_bytes(), 0);
     let at = |index: usize, part: usize| at(&parsed, index, part, None);
 
@@ -851,15 +899,6 @@ fn configured_session_roots_are_read_only_when_the_foreground_process_names_them
                 .to_string_lossy()
                 .into_owned()
         };
-        let child = Command::new("/bin/sh")
-            .args(["-c", "read line"])
-            .env_clear()
-            .env("HOME", host.home.path())
-            .env(variable, setting)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let process = Omp(child);
         let reference = if agent == "omp" || agent == "pi" {
             file.to_str().unwrap()
         } else {
@@ -869,13 +908,7 @@ fn configured_session_roots_are_read_only_when_the_foreground_process_names_them
         pane["result"]["pane"]["agent"] = agent.into();
         pane["result"]["pane"]["agent_session"] = serde_json::json!({"agent":agent,"source":format!("herdr:{agent}"),"kind":if agent=="omp"||agent=="pi" {"path"} else {"id"},"value":reference});
         fs::write(host.home.path().join("pane.json"), pane.to_string()).unwrap();
-        fs::write(
-            host.home.path().join("proc.json"),
-            PROCESS
-                .replace("omp", agent)
-                .replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
-        )
-        .unwrap();
+        host.agent(agent, &[agent], &[(variable, setting)]);
         let (status, bytes) = host.run(tail(reference));
         let reply = parse_reply(status, &bytes).unwrap();
         assert_eq!(
@@ -952,21 +985,8 @@ fn configured_session_roots_do_not_follow_overrides_the_agent_ignores() {
             .iter()
             .map(|(key, value)| (*key, value.replace("{home}", home)))
             .collect();
-        let child = Command::new("/bin/sh")
-            .args(["-c", "read -r line", "omp"])
-            .args(*args)
-            .env_clear()
-            .env("HOME", home)
-            .envs(variables.iter().map(|(key, value)| (*key, value)))
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let process = Omp(child);
-        fs::write(
-            host.home.path().join("proc.json"),
-            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
-        )
-        .unwrap();
+        let argv: Vec<&str> = ["omp"].into_iter().chain(args.iter().copied()).collect();
+        host.agent("omp", &argv, &variables);
         for (relative, accepted) in [(*allowed, true), (*refused, false)] {
             let file = host.home.path().join(relative);
             fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1018,21 +1038,8 @@ fn an_invalid_session_root_override_refuses_only_itself() {
     ];
     for (variables, allowed, refused) in cases {
         let host = Host::new("unused");
-        let home = host.home.path().to_str().unwrap();
-        let child = Command::new("/bin/sh")
-            .args(["-c", "read -r line", "omp"])
-            .env_clear()
-            .env("HOME", home)
-            .envs(variables.iter().copied())
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let process = Omp(child);
-        fs::write(
-            host.home.path().join("proc.json"),
-            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", process.0.id())),
-        )
-        .unwrap();
+        let variables: Vec<_> = variables.iter().map(|(key, value)| (*key, value.to_string())).collect();
+        host.agent("omp", &["omp"], &variables);
         let checks = allowed.iter().map(|r| (*r, true)).chain([(*refused, false)]);
         for (relative, accepted) in checks {
             let file = host.home.path().join(relative);
@@ -1057,32 +1064,14 @@ fn an_invalid_session_root_override_refuses_only_itself() {
     }
 }
 
-/// An OMP pane process run as `omp <args>`, or with `bun` as `bun <script>
-/// <args>` (the cmdline of a script launch), with HOME and `variables`.
-fn launch(host: &Host, bun: bool, args: &[&str], variables: &[(&str, String)]) -> Omp {
-    use std::os::unix::process::CommandExt;
-    let mut command = Command::new("/bin/sh");
-    if bun {
-        let script = host.home.path().join("omp.js");
-        fs::write(&script, "read -r line\n").unwrap();
-        command.arg0("bun").arg(script);
-    } else {
-        command.args(["-c", "read -r line", "omp"]);
-    }
-    let child = command
-        .args(args)
-        .env_clear()
-        .env("HOME", host.home.path())
-        .envs(variables.iter().map(|(key, value)| (*key, value)))
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    fs::write(
-        host.home.path().join("proc.json"),
-        PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", child.id())),
-    )
-    .unwrap();
-    Omp(child)
+/// An OMP pane process Herdr reports as `omp <args>`, or for a bun launch
+/// `bun <script> <args>`, in a shell with HOME and `variables`.
+fn launch(host: &Host, bun: bool, args: &[&str], variables: &[(&str, String)]) {
+    let script = host.home.path().join("omp.js");
+    let script = script.to_str().unwrap();
+    let lead: &[&str] = if bun { &["bun", script] } else { &["omp"] };
+    let argv: Vec<&str> = lead.iter().chain(args).copied().collect();
+    host.agent("omp", &argv, variables);
 }
 
 /// Herdr reports the session file at `relative` under HOME; the read's result.
@@ -1120,7 +1109,7 @@ fn the_profile_is_the_one_omp_itself_takes_from_its_arguments() {
     ];
     for (bun, args, allowed, refused) in cases {
         let host = Host::new("unused");
-        let _omp = launch(&host, *bun, args, &[]);
+        launch(&host, *bun, args, &[]);
         let (data, read) = read_reported(&host, allowed);
         assert_eq!(read.unwrap(), data, "{args:?}");
         if let Some(refused) = refused {
@@ -1134,7 +1123,7 @@ fn the_profile_is_the_one_omp_itself_takes_from_its_arguments() {
 fn a_tilde_or_a_symlinked_config_never_widens_the_roots() {
     let host = Host::new("unused");
     // `~` is never expanded by OMP: a relative override, refused alone.
-    let _omp = launch(&host, false, &[], &[("PI_CODING_AGENT_DIR", "~/custom".into())]);
+    launch(&host, false, &[], &[("PI_CODING_AGENT_DIR", "~/custom".into())]);
     assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
     assert!(matches!(read_reported(&host, "custom/sessions/p/s.jsonl").1, Err(Error::TranscriptUnconfined)));
     // OMP compares a PI_CODING_AGENT_DIR its parent derived from PI_PROFILE
@@ -1148,7 +1137,7 @@ fn a_tilde_or_a_symlinked_config_never_widens_the_roots() {
         ("PI_PROFILE", "work".to_owned()),
         ("PI_CODING_AGENT_DIR", format!("{home}/.omp/profiles/work/agent")),
     ];
-    let _omp = launch(&host, false, &[], &variables);
+    launch(&host, false, &[], &variables);
     assert!(read_reported(&host, "real-omp/agent/sessions/p/s.jsonl").1.is_ok());
     assert!(matches!(
         read_reported(&host, "real-omp/profiles/work/agent/sessions/p/s.jsonl").1,
@@ -1157,34 +1146,12 @@ fn a_tilde_or_a_symlinked_config_never_widens_the_roots() {
 }
 
 #[test]
-fn another_home_or_a_file_outside_home_is_refused_as_outside_home() {
+fn a_file_outside_home_is_refused_as_outside_home() {
+    // A session file that links out of HOME, with no foreground process.
+    // Herdr must name the link itself (another value is a changed session,
+    // unconfined).
     let host = Host::new("unused");
     let elsewhere = tempfile::tempdir().unwrap();
-    let _omp = {
-        use std::os::unix::process::CommandExt;
-        let child = Command::new("/bin/sh")
-            .arg0("omp")
-            .args(["-c", "read -r line"])
-            .env_clear()
-            .env("HOME", elsewhere.path())
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        fs::write(
-            host.home.path().join("proc.json"),
-            PROCESS.replace("\"pid\":42", &format!("\"pid\":{}", child.id())),
-        )
-        .unwrap();
-        Omp(child)
-    };
-    assert!(matches!(
-        read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1,
-        Err(Error::SessionRootOutsideHome)
-    ));
-    // A session file that links out of HOME, with no process environment.
-    // Herdr must name the link itself (another value is a changed session,
-    // unconfined), and no foreground PID means no host process is read.
-    let host = Host::new("unused");
     let secret = elsewhere.path().join("secret.jsonl");
     fs::write(&secret, "{}\n").unwrap();
     let link = host.sessions().join("evil.jsonl");
@@ -1207,7 +1174,7 @@ fn page_and_blob_store_follow_the_same_profile() {
     let parsed = entries("omp", text.as_bytes(), 0);
     // `--profile` is the system prompt here: omp runs the default profile,
     // so its page and its blobs are both the default ones.
-    let (host, identity, _omp) =
+    let (host, identity) =
         Host::with_session(&text, &["--system-prompt", "--profile", "x"], &[]);
     let (status, bytes) = host.run(tail(&identity.path));
     assert_eq!(parse_reply(status, &bytes).unwrap().file.unwrap().data, text.as_bytes());
@@ -1221,7 +1188,7 @@ fn an_agent_dir_derived_from_the_environment_profile_is_dropped_under_profile_de
     let host = Host::new("unused");
     let derived = format!("{}/.omp/profiles/w/agent", host.home.path().display());
     let variables = [("OMP_PROFILE", "w".to_owned()), ("PI_CODING_AGENT_DIR", derived)];
-    let _omp = launch(&host, false, &["--profile", "default"], &variables);
+    launch(&host, false, &["--profile", "default"], &variables);
     assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
     assert!(matches!(
         read_reported(&host, ".omp/profiles/w/agent/sessions/p/s.jsonl").1,

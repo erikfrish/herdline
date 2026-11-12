@@ -12,12 +12,12 @@ const SID: &str = "0195f3a2-7c41-7d2e-9b1a-3f6c2d8e4a10";
 
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
-    /// A pane whose Herdr report names `agent` on `sid`, with an agent
-    /// environment file the script reads instead of `/proc`; the unrelated
-    /// variable must stay unread.
+    /// A pane whose Herdr report names `agent` on `sid`.
     fn new(sid: &str, agent: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
@@ -42,18 +42,21 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        let host = Self { home };
-        host.environ(&[]);
+        let host = Self { home, env: Default::default() };
+        host.registry(&json!([{"session_id": sid, "pid": 42, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"}]).to_string());
         host
     }
 
-    /// The agent's environment: its HOME, these variables, and one secret.
+    /// `~/.grok/active_sessions.json` (active-sessions `lib.rs:16-23`).
+    fn registry(&self, body: &str) {
+        let grok = self.home.path().join(".grok");
+        fs::create_dir_all(&grok).unwrap();
+        fs::write(grok.join("active_sessions.json"), body).unwrap();
+    }
+
+    /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        let mut environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", self.home.path().display());
-        for (key, value) in vars {
-            environ.push_str(&format!("{key}={value}\0"));
-        }
-        fs::write(self.home.path().join("environ"), environ).unwrap();
+        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
     }
 
     /// `~/.grok/sessions/<cwd dir>/<sid>/updates.jsonl` (`paths.rs:132-141`).
@@ -65,11 +68,12 @@ impl Host {
 
     fn page(&self, read: Read) -> Result<Response> {
         let bin = self.home.path().join(".local/bin");
-        let environ = self.home.path().join("environ");
         let expect = expect();
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &expect, &options(read), Some(environ.to_str().unwrap())))
+            .arg(query_script("lab", "w1:p1", &expect, &options(read)))
+            .env_remove("GROK_HOME")
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
@@ -283,6 +287,31 @@ fn an_unknown_session_is_not_found_and_two_matches_are_refused() {
     append(&host.file("%2Fa"), &[chunk("user_message_chunk", "one")]);
     append(&host.file("%2Fb"), &[chunk("user_message_chunk", "two")]);
     assert_eq!(refused(host.page(Read::Tail)), AMBIGUOUS);
+}
+
+#[test]
+fn the_registry_only_refuses_and_never_shows_its_own_session() {
+    const OTHER: &str = "0195f3a2-0000-7000-8000-000000000000";
+    let entry = |sid: &str, pid: u32| json!({"session_id": sid, "pid": pid, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"});
+    let host = Host::new(SID, "grok");
+    append(&host.file("%2Fw"), &[chunk("user_message_chunk", "herdr's")]);
+    let other = host.home.path().join(".grok/sessions/%2Fw").join(OTHER);
+    fs::create_dir_all(&other).unwrap();
+    append(&other.join("updates.jsonl"), &[chunk("user_message_chunk", "registry's")]);
+    // Another process's entries do not count either way.
+    host.registry(&json!([entry(OTHER, 7), entry(SID, 42)]).to_string());
+    assert_eq!(texts(&host.page(Read::Tail).unwrap()), ["herdr's"]);
+    // After /new the pane's process names another session: neither is shown.
+    host.registry(&json!([entry(OTHER, 42)]).to_string());
+    assert_eq!(refused(host.page(Read::Tail)), STALE);
+    host.registry(&json!([entry(SID, 42), entry(OTHER, 42)]).to_string());
+    assert_eq!(refused(host.page(Read::Tail)), AMBIGUOUS);
+    for body in [json!([entry(SID, 7)]).to_string(), "[]".into(), "{not json".into(), json!([{"pid": 42}]).to_string()] {
+        host.registry(&body);
+        assert_eq!(refused(host.page(Read::Tail)), UNREGISTERED, "{body}");
+    }
+    fs::remove_file(host.home.path().join(".grok/active_sessions.json")).unwrap();
+    assert_eq!(refused(host.page(Read::Tail)), UNREGISTERED);
 }
 
 #[test]

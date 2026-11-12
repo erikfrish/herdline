@@ -23,7 +23,7 @@ const UNREADABLE: &str = "kimi_store_unreadable";
 const TOO_LARGE: &str = "kimi_session_too_large";
 const VERSION: &str = "kimi_wire_version";
 /// The pane's foreground process is none [`foreground_pid`] accepts, so
-/// there is no process whose environment and directory bind the store.
+/// there is no Kimi process whose working directory binds the session.
 const UNNAMED: &str = "kimi_process_unnamed";
 const REFUSALS: [&str; 6] = [OUTSIDE_HOME, AMBIGUOUS, UNREADABLE, TOO_LARGE, VERSION, UNNAMED];
 
@@ -128,7 +128,7 @@ pub(super) fn page(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&script(session, pane, expect, stamp, None))
+            shell_quote(&script(session, pane, expect, stamp))
         ),
         super::read_timeout(MAX_WINDOW),
         usize::try_from(MAX_WINDOW).unwrap_or(usize::MAX) + HEADER_ROOM,
@@ -139,23 +139,12 @@ pub(super) fn page(
     answer(&output.tail, expect, reset)
 }
 
-/// `fixture` (tests only): a file read instead of `/proc/<pid>/environ`
-/// and a link read instead of `/proc/<pid>/cwd`.
-fn script(
-    session: &str,
-    pane: &str,
-    expect: &Identity,
-    stamp: u64,
-    fixture: Option<(&str, &str)>,
-) -> String {
+fn script(session: &str, pane: &str, expect: &Identity, stamp: u64) -> String {
     format!(
-        "python3 - {} {} {}{} <<'HERDLINE_KIMI_PY'\n{PYTHON}\nHERDLINE_KIMI_PY",
+        "python3 - {} {} {} <<'HERDLINE_KIMI_PY'\n{PYTHON}\nHERDLINE_KIMI_PY",
         shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
         shell_quote(&json!({ "stamp": stamp }).to_string()),
         shell_quote(&super::instance_script(session, pane)),
-        fixture
-            .map(|(environ, cwd)| format!(" {} {}", shell_quote(environ), shell_quote(cwd)))
-            .unwrap_or_default(),
     )
 }
 
@@ -1146,14 +1135,14 @@ fn entry(
     }
 }
 
-/// The host side. Reads of `/proc/<pid>/environ` keep only HOME and
-/// KIMI_CODE_HOME; nothing else from the agent's environment is returned,
-/// logged or stored. Only the session's `state.json` and its main agent's
+/// The host side. The store comes from this shell's own HOME and
+/// KIMI_CODE_HOME, and the running Kimi's directory from Herdr's
+/// `foreground_cwd`; no other process's environment or cwd is read. An agent
+/// started with a KIMI_CODE_HOME this shell lacks is not found there, never
+/// guessed. Only the session's `state.json` and its main agent's
 /// `wire.jsonl` are opened, each without following a link.
 const PYTHON: &str = r#"import hashlib, json, os, re, stat, subprocess, sys
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
-environ_path = sys.argv[4] if len(sys.argv) > 4 else None
-cwd_link = sys.argv[5] if len(sys.argv) > 5 else None
 MAX_FILE=33554432
 SID=re.compile(r'session_[A-Za-z0-9._-]{1,500}')
 
@@ -1188,30 +1177,23 @@ def identity():
     fg=process.get('foreground_processes',[])
     pid=next((p.get('pid') for p in fg if p.get('name') in NAMES),None) or next((p.get('pid') for p in fg if p.get('name')=='node' and node_kimi(p.get('argv'))),None)
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:kimi'),'kind':ref['kind']}
-    return got,pane.get('agent_status','unknown')
+    return got,pane.get('agent_status','unknown'),pane.get('foreground_cwd')
 
 def inside(root,path): return path!=root and os.path.commonpath([root,path])==root
 
-def environment(pid):
-    env={}
-    with open(environ_path or '/proc/%d/environ'%pid,'rb') as handle:
-        for field in handle.read(262144).split(b'\0'):
-            key,sep,value=field.partition(b'=')
-            if sep and key in (b'HOME',b'KIMI_CODE_HOME') and key not in env: env[key]=value.decode('utf-8','surrogateescape')
-    return env
+def environment():
+    return {key:os.environ[key] for key in ('HOME','KIMI_CODE_HOME') if key in os.environ}
 
 # paths.ts:38-43: KIMI_CODE_HOME verbatim when non-empty, no ~ expansion,
-# else the agent's home's .kimi-code. A relative value would resolve against
+# else this user's home's .kimi-code. A relative value would resolve against
 # Kimi's cwd, which this does not guess: refused, never the default store.
 def store(env):
     home=os.path.realpath(os.environ['HOME'])
-    root=env.get(b'KIMI_CODE_HOME','')
+    root=env.get('KIMI_CODE_HOME','')
     if root:
         if not root.startswith('/'): raise Refused('kimi_store_outside_home')
     else:
-        own=env.get(b'HOME','')
-        if not own.startswith('/'): raise Refused('kimi_store_outside_home')
-        root=os.path.join(own,'.kimi-code')
+        root=os.path.join(env['HOME'],'.kimi-code')
     root=os.path.realpath(root)
     if not inside(home,root): raise Refused('kimi_store_outside_home')
     return root
@@ -1291,22 +1273,20 @@ def bound_cwd(sdir):
     raise Refused('kimi_store_unreadable')
 
 def main():
-    got,status=identity()
+    got,status,running=identity()
     if got!=expect or got['agent']!='kimi' or got['kind']!='id': return {'changed':True},b''
     sid=got['path']
     if not isinstance(sid,str) or not SID.fullmatch(sid): return {'changed':True},b''
     if not got['pid']: raise Refused('kimi_process_unnamed')
-    pid=int(got['pid'])
-    try: env=environment(pid)
-    except OSError: raise Refused('kimi_store_unreadable')
-    root=store(env)
+    root=store(environment())
     try: sdir=find(root,sid)
     except LookupError: return {'error':'missing'},b''
     cwd=bound_cwd(sdir)
     # The session must be the one the running process works in: its state
-    # cwd against the process's own cwd, never the pane's report.
-    try: running=os.path.realpath(os.readlink(cwd_link or '/proc/%d/cwd'%pid))
-    except OSError: return {'error':'foreign'},b''
+    # cwd against Herdr's foreground_cwd (the OS working directory of the
+    # pane's foreground process), never where the pane started.
+    if not isinstance(running,str) or not running.startswith('/'): return {'error':'foreign'},b''
+    running=os.path.realpath(running)
     if not cwd.startswith('/') or os.path.realpath(cwd)!=running: return {'error':'foreign'},b''
     path=os.path.join(sdir,'agents','main','wire.jsonl')
     try: fd,st=regular(path,MAX_FILE)
@@ -1318,7 +1298,7 @@ def main():
             head['not_modified']=True; data=b''
         else: data=read_all(fd,st.st_size)
     finally: os.close(fd)
-    after,_=identity()
+    after=identity()[0]
     if after!=expect: return {'changed':True},b''
     return head,data
 

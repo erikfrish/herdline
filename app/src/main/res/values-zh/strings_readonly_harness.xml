@@ -6,6 +6,8 @@
     <string name="chat_refused_qwen_managed">此 Qwen Code 会话以托管会话方式存储，聊天无法读取。终端仍可使用：请在终端中阅读和输入。</string>
     <string name="chat_refused_ambiguous">聊天为此窗格找到多个 %1$s 会话，因此都不显示。终端仍可使用：在那里阅读和输入。</string>
     <string name="chat_refused_mismatch">此窗格的 %1$s 日志指向另一个会话，因此聊天不显示其内容。终端仍可使用：在那里阅读和输入。</string>
+    <string name="chat_refused_stale">%1$s 的打开会话列表显示此窗格所在的会话与 Herdr 报告的不同，因此聊天两者都不显示。终端仍可使用：在那里阅读和输入。</string>
+    <string name="chat_refused_unregistered">%1$s 的打开会话列表无法确认此窗格的会话，因此聊天不显示其内容。终端仍可使用：在那里阅读和输入。</string>
     <string name="chat_refused_general">聊天无法读取 %1$s 以这种方式保存的会话。终端仍可使用：在那里阅读和输入。</string>
     <!-- Shown in the same frame as the refusals above, so they read in one language. -->
     <string name="chat_open_terminal">打开终端</string>

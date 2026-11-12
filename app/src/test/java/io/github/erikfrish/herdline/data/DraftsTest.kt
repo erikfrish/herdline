@@ -16,16 +16,16 @@ class DraftsTest {
 
     @Test
     fun aWrittenDraftNeedsConfirmingAfterHerdrRestarts() {
-        assertEquals(Binding.Bound, written.binding("boot-1", "omp", unread))
-        assertEquals(Binding.BootChanged, written.binding("boot-2", "omp", unread))
-        assertEquals(Binding.Bound, written.rebound("boot-2", "omp", null).binding("boot-2", "omp", unread))
+        assertEquals(Binding.Bound, forAlice.binding("boot-1", "omp", InstanceRead.Read(alice)))
+        assertEquals(Binding.BootChanged, forAlice.binding("boot-2", "omp", InstanceRead.Read(alice)))
+        assertEquals(Binding.Bound, forAlice.rebound("boot-2", "omp", alice).binding("boot-2", "omp", InstanceRead.Read(alice)))
     }
 
     @Test
     fun aWrittenDraftNeedsConfirmingWhenAnotherProgramRunsInThePane() {
         assertEquals(Binding.AgentChanged, written.binding("boot-1", null, unread))
         assertEquals(Binding.AgentChanged, written.binding("boot-1", "claude", unread))
-        assertEquals(Binding.Bound, written.binding("boot-1", "OMP", unread))
+        assertEquals(Binding.Bound, forAlice.binding("boot-1", "OMP", InstanceRead.Read(alice)))
     }
 
     @Test
@@ -51,16 +51,22 @@ class DraftsTest {
     }
 
     @Test
-    fun aDraftWithoutAnInstanceStaysBoundAndGainsTheFirstOneRead() {
-        assertEquals(Binding.Bound, written.binding("boot-1", "omp", unread))
-        assertNull(written.followed("boot-1", "omp", unread))
-        assertEquals(forAlice, written.followed("boot-1", "omp", InstanceRead.Read(alice)))
-        // Never adopted across a change the user has not confirmed.
-        assertNull(written.followed("boot-2", "omp", InstanceRead.Read(alice)))
+    fun aDraftWrittenBeforeTheSessionWasReadIsNeverSentToTheSessionReadLater() {
+        // Typed while the pane's session was still unread; then a new session starts there.
+        val later = alice.copy(pid = 4200, path = "/h/.omp/agent/sessions/w/b.jsonl")
+        assertNull(written.followed("boot-1", "omp", InstanceRead.Read(later)))
+        assertEquals(Binding.InstanceUnknown, written.binding("boot-1", "omp", InstanceRead.Read(later)))
+        assertEquals(Binding.InstanceUnknown, written.binding("boot-1", "omp", unread))
+        assertFalse(written.mayDeliver(written.binding("boot-1", "omp", InstanceRead.Read(later))))
+        // Only the user's Rebind binds it to the session read now.
+        val rebound = written.rebound("boot-1", "omp", later)
+        assertTrue(rebound.mayDeliver(rebound.binding("boot-1", "omp", InstanceRead.Read(later))))
+        // A plain terminal has no session to read: its draft stays bound.
+        val shell = Draft(text = "ls", boot = "boot-1", agent = null)
+        assertTrue(shell.mayDeliver(shell.binding("boot-1", null, InstanceRead.Read(null))))
         // An empty draft follows the pane, instance included.
         val empty = Draft(boot = "boot-1", agent = "omp", instance = alice)
-        val other = alice.copy(pid = 4200)
-        assertEquals(empty.copy(instance = other), empty.followed("boot-1", "omp", InstanceRead.Read(other)))
+        assertEquals(empty.copy(instance = later), empty.followed("boot-1", "omp", InstanceRead.Read(later)))
         assertEquals(Draft(boot = "boot-2", agent = "claude"), empty.followed("boot-2", "claude", unread))
     }
 
@@ -142,7 +148,7 @@ class DraftsTest {
     }
 
     @Test
-    fun onlyAQueuedOrUncertainDeliveryOfThisSessionIsHeld() {
+    fun onlyAnUnconfirmedDeliveryOfThisSessionIsHeld() {
         val store = DraftStore(MemoryPrefs())
         fun record(state: SentState) = Draft(text = "fix it", sent = SentRecord("fix it", "", submit = true, state, at = 1))
         SentState.entries.forEach { store.put(DraftKey("n", "s", it.name), record(it)) }
@@ -151,7 +157,8 @@ class DraftsTest {
         store.put(DraftKey("n", "other", "w1:p1"), record(SentState.Uncertain))
         store.put(DraftKey("m", "s", "w1:p2"), record(SentState.Queued))
 
-        assertEquals(setOf(SentState.Queued.name, SentState.Uncertain.name), store.held("n", "s"))
+        // In the input box but not in the history (P1) holds the pane too.
+        assertEquals(setOf(SentState.Queued.name, SentState.InPane.name, SentState.Uncertain.name), store.held("n", "s"))
     }
 
     @Test
@@ -180,7 +187,8 @@ class DraftsTest {
         val sent = SentRecord("old", "r1", submit = true, SentState.Confirmed, at = 1)
         val moved = written.copy(selectionStart = 3, selectionEnd = 3).movedOnto(Draft(sent = sent), "boot-2", "claude", now = 9)
         assertEquals(Draft("fix the build", 3, 3, "boot-2", "claude", 9, sent), moved)
-        assertEquals(Binding.Bound, moved?.binding("boot-2", "claude", unread))
+        // Onto a chat agent its session is not known yet: held until Rebind.
+        assertEquals(Binding.InstanceUnknown, moved?.binding("boot-2", "claude", unread))
         assertNull(written.movedOnto(Draft(text = "theirs"), "boot-1", "omp", now = 9))
     }
 
@@ -190,7 +198,7 @@ class DraftsTest {
         val theirs = Draft(text = "theirs", boot = "boot-1", agent = "omp", sent = sent)
         val moved = written.replacedOnto(theirs, "boot-2", "claude", now = 9)
         assertEquals(Draft("fix the build", 0, 0, "boot-2", "claude", 9, sent), moved)
-        assertEquals(Binding.Bound, moved.binding("boot-2", "claude", unread))
+        assertEquals(Binding.InstanceUnknown, moved.binding("boot-2", "claude", unread))
     }
 
     @Test

@@ -43,8 +43,30 @@ class ChatRefusalTest {
             refusalWords(TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"), "Copilot"),
         )
         assertEquals(
+            RefusalWords(R.string.chat_refused_stale, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_stale"), "Grok"),
+        )
+        assertEquals(
+            RefusalWords(R.string.chat_refused_unregistered, listOf("Grok")),
+            refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_unregistered"), "Grok"),
+        )
+        assertEquals(
             RefusalWords(R.string.chat_refused_general, listOf("Grok")),
             refusalWords(TranscriptRefusal.UnsupportedFormat("grok_session_too_large"), "Grok"),
         )
+    }
+
+    @Test
+    fun the_card_says_ambiguous_exactly_when_chat_words_no_one_grok_session() {
+        val noOne = setOf(R.string.chat_refused_ambiguous, R.string.chat_refused_stale, R.string.chat_refused_unregistered)
+        val refusals = listOf(
+            TranscriptRefusal.UnsupportedFormat("grok_session_ambiguous"), TranscriptRefusal.UnsupportedFormat("grok_session_stale"),
+            TranscriptRefusal.UnsupportedFormat("grok_session_unregistered"), TranscriptRefusal.UnsupportedFormat("copilot_session_mismatch"),
+            TranscriptRefusal.UnsupportedFormat("grok_session_too_large"), TranscriptRefusal.OutsideHome, null,
+        )
+        for (refusal in refusals) {
+            val worded = refusal?.let { refusalWords(it, "Grok").res in noOne } ?: false
+            assertEquals(refusal.toString(), worded, ambiguousSession(refusal))
+        }
     }
 }

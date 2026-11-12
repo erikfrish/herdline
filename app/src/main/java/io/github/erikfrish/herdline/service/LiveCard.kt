@@ -28,6 +28,7 @@ data class LiveRow(
     val status: AgentStatus,
     val since: Long?,
     val worked: Long? = null,
+    val tab: String? = null,
 ) {
     val key: MonitorKey get() = MonitorKey(nodeId, pane)
 }
@@ -40,6 +41,9 @@ data class LiveRow(
 data class LiveCard(val rows: List<LiveRow>, val staleSince: Long?) {
     val needYou: Int get() = rows.count { it.status == AgentStatus.Blocked }
 }
+
+/** Actual foreground-card data and privacy, shared with the Settings preview. */
+internal data class NotificationCardPreview(val card: LiveCard?, val nodes: Int, val host: String?, val agents: Int, val needYou: Int, val level: io.github.erikfrish.herdline.data.LockDetail, val connection: AttachedState)
 
 /**
  * The card for [monitored] agents found in [nodes], most urgent first, or
@@ -59,7 +63,7 @@ fun liveCard(
         if (agents.isNotEmpty() && !node.connected) staleSince = minOf(staleSince ?: node.lastSeen, node.lastSeen)
         agents.map {
             val key = MonitorKey(node.nodeId, it.pane)
-            LiveRow(node.nodeId, node.title, it.pane, it.displayName, readableTitle(it.title, it.agent), it.status, since(key), worked(key))
+            LiveRow(node.nodeId, node.title, it.pane, it.displayName, readableTitle(it.title, it.agent), it.status, since(key), worked(key), node.view?.tabs?.firstOrNull { tab -> tab.id == it.tab }?.label)
         }
     }.sortedBy { it.status.attention }
     return if (rows.isEmpty()) null else LiveCard(rows, staleSince)

@@ -50,7 +50,13 @@
     <string name="section_extra_keys">Extra keys</string>
     <string name="show_extra_keys">Show the extra keys row</string>
     <string name="extra_key_up">Move %1$s left</string>
-    <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier.</string>
+    <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier. Keep the first 14 keys in their default order to keep the default layout; added keys appear beside or above it.</string>
+    <!-- Under the key list: which layout rule the saved list gets. -->
+    <plurals name="extra_keys_layout_default">
+        <item quantity="one">Layout: default grid + %d extra key</item>
+        <item quantity="other">Layout: default grid + %d extra keys</item>
+    </plurals>
+    <string name="extra_keys_layout_custom">Layout: your order in two rows</string>
     <string name="extra_keys_default">Restore the default keys</string>
 
     <string name="section_notifications">Notifications &amp; privacy</string>
@@ -65,10 +71,11 @@
     <string name="lock_state_only">State only</string>
     <string name="live_promotion">Live Update status</string>
     <string name="live_promotion_settings">Open Android settings</string>
+    <string name="live_promotion_settings_missing">This Android has no settings page for Herdline\'s notifications. Open Settings › Apps › Herdline › Notifications.</string>
     <string name="promotion_off">Live updates are off.</string>
     <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
     <string name="promotion_stale">Not connected: not shown as live</string>
-    <string name="promotion_unsupported">Android 16 QPR1 (36.1) or newer is required; this version shows an ordinary notification instead.</string>
+    <string name="promotion_unsupported">Android 16 or newer is required; this version shows an ordinary notification instead.</string>
     <string name="promotion_not_allowed">Live Updates are off for Herdline</string>
     <string name="promotion_not_promotable">Ordinary ongoing notification: Android reports it does not qualify as a Live Update.</string>
     <string name="promotion_requested">Requested; Android or Samsung hasn\'t promoted it</string>
@@ -149,6 +156,7 @@
     <string name="composer_checking_resizing">Checking the pane before Send: it is still resizing…</string>
     <string name="composer_steer">Steer</string>
     <string name="steer_help">The agent is working, so Send is off until it is idle. Steer pastes your text, then presses Enter once; if the turn ends just before, the text starts a new turn.</string>
+    <string name="steer_help_endpoint">Steer queues your text and images for the running agent, as Send does while it works. If the turn has already ended, OMP keeps them waiting until its next turn and you can withdraw them; Codex refuses them, and nothing is sent.</string>
     <string name="steer_pending">Steering: pasting your text, then one Enter…</string>
     <string name="steer_left">The steer stopped before Enter: your text is in the pane\'s input box</string>
     <string name="agent_idle">The agent is idle: use Send</string>

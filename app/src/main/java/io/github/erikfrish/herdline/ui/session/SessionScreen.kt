@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenuItem
@@ -140,11 +141,19 @@ import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Native
 import io.github.erikfrish.herdline.core.Routes
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
@@ -165,6 +174,7 @@ import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
 import io.github.erikfrish.herdline.ui.chat.ChatMemory
 import io.github.erikfrish.herdline.ui.chat.ChatView
+import io.github.erikfrish.herdline.ui.chat.rememberHarnessRuntime
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
 import io.github.erikfrish.herdline.ui.LocalWindowClass
@@ -230,7 +240,10 @@ import io.github.erikfrish.herdline.ui.terminal.terminalDescription
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
 private val MergedHeaderHeight: Dp = 480.dp
-private val MergedTitleWidth: Dp = 160.dp
+/** The widest the place button gets in that merged row, so the tab strip keeps the rest. */
+private val MergedPlaceWidth: Dp = 220.dp
+/** Narrower than this, the place button's second line leaves out the workspace (TalkBack keeps it). */
+private val PlaceNarrow: Dp = 96.dp
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
@@ -928,16 +941,21 @@ fun SessionScreen(
                                             outputFocus = outputFocus.takeIf { !chatMode && !wide },
                                             onOutputFocus = ::setOutputFocus,
                                             onPin = { focusedPane?.let(pinOrUnpin) },
+                                            onWorksHere = focusedPane?.let { p -> view?.agentIn(p) }?.let { agent -> { harnessCard = HarnessCardKey(agent.pane, agent.agent) } },
                                         )
                                     }
                                 }
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
+                                val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
+                                // One changed set for the strip and the place button, whichever is on screen.
+                                val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
+                                // Only where it has room: a short window's merged row, and the wide layout.
                                 val tabRow = @Composable {
                                     if (tabs.isNotEmpty()) {
                                         TabRow(
                                             tabs = tabs,
-                                            title = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() },
+                                            title = tabTitle,
                                             selectedId = tab?.id,
                                             heldPane = { view?.heldPaneOf(it.id, held) },
                                             accent = accent,
@@ -951,80 +969,88 @@ fun SessionScreen(
                                                     else -> null
                                                 }
                                             },
+                                            unseen = unseenTabs,
                                             onTab = ::chooseTab,
-                                            // n/N opens the switcher wherever it is not already in view.
-                                            onTabs = when {
-                                                !wide -> ::openSwitcher
-                                                settings.sidebarOpen -> null
-                                                else -> ::toggleSidebar
-                                            },
                                             onRename = { prompt = Prompt.RenameTab(it.id, it.label) },
                                             onClose = { prompt = Prompt.CloseTab(it.id, it.label) },
                                         )
                                     }
                                 }
+                                // HEADER-COMPACT: the tab on screen, its workspace, n/N and the desktop
+                                // marker in one button; a tap is the way to Tabs (and New tab), a long press
+                                // the tab's Rename / Close. On a phone it opens the Tabs sheet; wide, it
+                                // shows or folds the sidebar, which is the switcher there.
+                                val tabName = tab?.let(tabTitle) ?: title
+                                val at = tabs.indexOfFirst { it.id == tab?.id }
+                                val position = if (at >= 0) stringResource(R.string.session_tabs_position, at + 1, tabs.size) else null
+                                val heldElsewhere = held.isNotEmpty() && view?.let { v -> tabs.any { it.id != tab?.id && v.heldPaneOf(it.id, held) != null } } == true
+                                val changedElsewhere = unseenTabs.any { it != tab?.id }
+                                // Wide, the tap shows or hides the sidebar, so say which; settings is collected state, so it follows a toggle.
+                                val placeSpokenRes = when {
+                                    !wide -> R.string.session_place_spoken
+                                    settings.sidebarOpen -> R.string.session_place_spoken_wide_open
+                                    else -> R.string.session_place_spoken_wide
+                                }
+                                val placeSpoken = buildString {
+                                    append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
+                                    // S2: the desktop's pane, said whole even where the line cuts it.
+                                    desktopOther?.let {
+                                        append(". ")
+                                        append(stringResource(R.string.chat_desktop_elsewhere_spoken, focusedPane?.let { p -> view?.paneTitle(p) }.orEmpty(), view?.paneTitle(it).orEmpty()))
+                                    }
+                                }
+                                val placeMarks = listOfNotNull(
+                                    stringResource(R.string.other_tabs_changed).takeIf { changedElsewhere },
+                                    stringResource(R.string.other_tab_held).takeIf { heldElsewhere },
+                                ).joinToString(", ").ifEmpty { null }
+                                val desktopText = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) }
+                                val place = @Composable { twoLines: Boolean, modifier: Modifier ->
+                                    PlaceButton(
+                                        tabName = tabName,
+                                        workspace = title,
+                                        position = position,
+                                        marked = changedElsewhere || heldElsewhere,
+                                        desktopElsewhere = desktopOther != null,
+                                        desktop = desktopText,
+                                        state = state,
+                                        twoLines = twoLines,
+                                        halo = headerColor,
+                                        spoken = placeSpoken,
+                                        marks = placeMarks,
+                                        onClick = if (wide) ::toggleSidebar else ::openSwitcher,
+                                        onRename = tab?.let { t -> { prompt = Prompt.RenameTab(t.id, t.label) } },
+                                        onClose = tab?.let { t -> { prompt = Prompt.CloseTab(t.id, t.label) } },
+                                        modifier = modifier,
+                                    )
+                                }
                                 if (typingShort) {
                                     // Nothing: the keyboard is up in a short window (see typingShort).
                                 } else if (short) {
-                                    // Sideways phone: one row, so the content keeps the height. The
-                                    // host and tab count move out; the dot keeps the link state.
+                                    // Sideways phone: one row, so the content keeps the height. The place
+                                    // button on one line (tab, n/N, marks), then the strip.
                                     Row(
                                         Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp).testTag("session:header_merged"),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         up()
-                                        ConnectionGlyph(state)
-                                        Text(
-                                            title,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = MergedTitleWidth).padding(horizontal = 4.dp).testTag("session:title"),
-                                        )
+                                        place(false, Modifier.widthIn(max = MergedPlaceWidth))
                                         Box(Modifier.weight(1f)) { tabRow() }
                                         trailing()
                                     }
                                 } else {
+                                    // One 48 dp row, growing only for a large font; no host, no "N tabs" (n/N says it).
                                     Row(
-                                        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 6.dp),
+                                        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         up()
-                                        // A plain label: the tab row and the Tabs sheet are the ways to move.
-                                        Column(
-                                            Modifier
-                                                .weight(1f)
-                                                .padding(horizontal = 6.dp, vertical = 4.dp)
-                                                .testTag("session:place"),
-                                        ) {
-                                            Text(
-                                                title,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.testTag("session:title"),
-                                            )
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                ConnectionGlyph(state)
-                                                val count = tabs.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.session_tab_count, it, it) }
-                                                // S2: last, so it is what ellipsizes first.
-                                                val desktop = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) }
-                                                val place = listOfNotNull(node.title, count).joinToString(" · ")
-                                                val spoken = desktopOther?.let {
-                                                    "$place. " +
-                                                        stringResource(R.string.chat_desktop_elsewhere_spoken, focusedPane?.let { p -> view?.paneTitle(p) }.orEmpty(), view?.paneTitle(it).orEmpty())
-                                                } ?: place
-                                                // A-24: the tab count stays whole while the host and Desktop names give way.
-                                                ContextLine(node.title, count, desktop, spoken, Modifier.testTag("session:context"))
-                                            }
-                                        }
+                                        place(true, Modifier.weight(1f))
                                         trailing()
                                     }
-                                    tabRow()
+                                    // A phone has no strip: the place button and the Tabs sheet are the ways to move.
+                                    if (wide) tabRow()
                                 }
                                 val shown = view
                                 if (paneBar && shown != null && tab != null) {
@@ -1341,7 +1367,16 @@ fun SessionScreen(
                         harnessCard?.let { card ->
                             // Keyed, so a new card is announced afresh and the one kept under the keyboard is not.
                             key(card) {
-                                HarnessCardSlot(card.program, cardTab, keyboardUp = imeVisible, onTerminal = { harnessCard = null; showChat(false) }, onClose = { harnessCard = null })
+                                HarnessCardSlot(
+                                    card.program,
+                                    cardTab,
+                                    keyboardUp = imeVisible,
+                                    live = state is Connection.State.Connected,
+                                    agentHere = card.pane?.let { view?.agentIn(it) } != null,
+                                    onTerminal = { harnessCard = null; showChat(false) },
+                                    onClose = { harnessCard = null },
+                                    runtime = rememberHarnessRuntime(connection, chatMemory, card.pane),
+                                )
                             }
                         }
                         AgentBannerSlot(
@@ -1381,7 +1416,10 @@ fun SessionScreen(
                             }
                         }
                     } else if (chatReadOnly) {
-                        ReadOnlyFooter(chatAgentName, accent)
+                        ReadOnlyFooter(
+                            chatAgentName, accent,
+                            controlReason(reading?.pane?.let { view?.agentIn(it)?.agent }, HarnessKey.Send, R.string.control_send_unavailable),
+                        )
                     } else {
                         val density = LocalDensity.current
                         // Beside the content, the composer takes none of its height; the
@@ -1692,6 +1730,8 @@ private fun SessionMenu(
     /** Whether output focus is armed; null where the item is not offered (Chat, or a wide layout). */
     outputFocus: Boolean?,
     onOutputFocus: (Boolean) -> Unit,
+    /** Opens "What works here"; null when the focused pane runs no Herdr agent. */
+    onWorksHere: (() -> Unit)? = null,
 ) {
     @Composable
     fun item(
@@ -1743,6 +1783,7 @@ private fun SessionMenu(
         if (pinned != null) {
             divider()
             item(if (pinned) R.string.monitor_stop else R.string.monitor_agent, Icons.Default.Notifications, tag = "session:menu:pin") { onPin() }
+            onWorksHere?.let { item(R.string.harness_works_here, Icons.Default.Info, tag = "session:menu:works_here") { it() } }
         }
         if (paneActions) {
             divider()
@@ -1802,6 +1843,89 @@ private fun AttentionChip(label: String, color: Color, tag: String, spokenLabel:
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+/**
+ * The session header's place (HEADER-COMPACT): the [tabName] on screen with a
+ * ▾, then on [twoLines] the link glyph and [PlaceLine] (workspace, n/N, marks,
+ * the desktop marker); on one line, in a short window, the glyph, the tab and
+ * n/N with the marks. A tap ([onClick]) goes to Tabs, where New tab is; a long
+ * press is the tab's Rename / Close ([TabMenu]), as on the strip. TalkBack
+ * reads one node: [spoken], with [marks] as its state.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PlaceButton(
+    tabName: String,
+    workspace: String,
+    position: String?,
+    marked: Boolean,
+    desktopElsewhere: Boolean,
+    desktop: String?,
+    state: Connection.State,
+    twoLines: Boolean,
+    halo: Color,
+    spoken: String,
+    marks: String?,
+    onClick: () -> Unit,
+    onRename: (() -> Unit)?,
+    onClose: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    var menu by remember { mutableStateOf(false) }
+    val canMenu = onRename != null && onClose != null
+    BoxWithConstraints(
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = if (canMenu) {
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menu = true
+                    }
+                } else null,
+                onLongClickLabel = if (canMenu) stringResource(R.string.more) else null,
+            )
+            .semantics {
+                contentDescription = spoken
+                if (marks != null) stateDescription = marks
+            }
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .testTag("session:place"),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // Narrow (a large font, the need-you chip shown): the workspace is spoken only.
+        val lineWorkspace = workspace.takeIf { maxWidth >= PlaceNarrow }
+        Column(Modifier.clearAndSetSemantics { }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!twoLines) {
+                    ConnectionGlyph(state)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    tabName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).testTag("session:title"),
+                )
+                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!twoLines) PlaceLine(null, position, marked, desktopElsewhere, desktop = null, halo = halo)
+            }
+            if (twoLines) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ConnectionGlyph(state)
+                    PlaceLine(lineWorkspace, position, marked, desktopElsewhere, desktop, halo, Modifier.testTag("session:context"))
+                }
+            }
+        }
+        if (onRename != null && onClose != null) TabMenu(menu, onDismiss = { menu = false }, onRename = onRename, onClose = onClose)
     }
 }
 
@@ -2156,11 +2280,12 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable ()
  * live region, no animation, never cut short.
  */
 @Composable
-private fun ReadOnlyFooter(agent: String, accent: Color) {
+private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = null) {
     val colors = chatColors(accent)
-    val spoken = stringResource(R.string.chat_readonly_footer_spoken, agent)
+    // Where the card says why Send is not here (§3.5), that line, read as is.
+    val spoken = sendReason ?: stringResource(R.string.chat_readonly_footer_spoken, agent)
     Text(
-        stringResource(R.string.chat_readonly_footer),
+        sendReason ?: stringResource(R.string.chat_readonly_footer),
         style = ChatType.body.copy(color = colors.muted),
         modifier = Modifier
             .fillMaxWidth()

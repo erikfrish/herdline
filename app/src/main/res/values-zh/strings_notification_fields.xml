@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_content">实时通知内容</string>
+    <string name="notification_content_help">选择并排列实时与连接卡片的字段。隐私设置限制通知及其公开版本。代理提醒保留原有内容。</string>
+    <string name="notification_field_agent">代理</string>
+    <string name="notification_field_tab">标签页</string>
+    <string name="notification_field_host">主机</string>
+    <string name="notification_field_state">状态</string>
+    <string name="notification_field_elapsed">已用时间</string>
+    <string name="notification_field_counts">代理数量</string>
+    <string name="notification_field_up">将%1$s前移</string>
+    <string name="notification_content_reset">恢复默认内容</string>
+    <string name="notification_requires_full">仅在完整详情中显示</string>
+    <string name="notification_requires_names">在名称或完整详情中显示</string>
+    <string name="notification_requires_elapsed">在仅状态或完整详情中显示；名称模式不显示时间</string>
+    <string name="notification_preview_sample">示例 — 未监控代理</string>
+    <string name="notification_preview_actual">当前通知</string>
+    <string name="notification_connected">已连接</string>
+    <string name="notification_last_seen">最后更新于 %1$s</string>
+    <string name="notification_not_live">非实时 · 最后已知状态</string>
+    <string name="notification_more">还有 %1$d 个</string>
+    <plurals name="notification_agents_count"><item quantity="other">%d 个代理</item></plurals>
+    <plurals name="notification_needs_count"><item quantity="other">%d 个需要您输入</item></plurals>
+    <string name="notification_yes">是</string>
+    <string name="notification_no">否</string>
+    <string name="notification_promotion_unavailable">此 Android 版本不支持</string>
+    <string name="notification_promotion_details">请求实时展示：%1$s · 系统允许：%2$s · 符合条件：%3$s · 已实时展示：%4$s。Android 实时展示不代表已显示于 Samsung Now Bar。</string>
+    <string name="notification_requires_state">在仅状态、名称或完整详情中显示</string>
+</resources>

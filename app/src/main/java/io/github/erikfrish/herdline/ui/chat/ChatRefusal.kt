@@ -25,7 +25,11 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
         "mastracode_store_outside_home", "kimi_store_outside_home" ->
             RefusalWords(R.string.chat_refused_outside_home, listOf(agent))
         // Not a form Chat can't read: the store holds no one session Chat can stand behind.
-        "grok_session_ambiguous" -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
+        GROK_SESSION_AMBIGUOUS -> RefusalWords(R.string.chat_refused_ambiguous, listOf(agent))
+        // Grok's own list of open sessions names another session for the pane's
+        // process than Herdr does, or none: either way Chat stands behind neither.
+        "grok_session_stale" -> RefusalWords(R.string.chat_refused_stale, listOf(agent))
+        "grok_session_unregistered" -> RefusalWords(R.string.chat_refused_unregistered, listOf(agent))
         "copilot_session_mismatch" -> RefusalWords(R.string.chat_refused_mismatch, listOf(agent))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
@@ -36,6 +40,19 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
 }
+
+/** Grok's store holds no one session Chat can stand behind: Chat refuses, and the card says so. */
+private const val GROK_SESSION_AMBIGUOUS = "grok_session_ambiguous"
+
+/**
+ * The Grok refusals where no one session for the pane can be stood behind:
+ * two candidates, or Grok's own open-session list naming another or none.
+ */
+private val GROK_NO_ONE_SESSION = setOf(GROK_SESSION_AMBIGUOUS, "grok_session_stale", "grok_session_unregistered")
+
+/** Whether [refusal] leaves the card's Grok session rows NotYet AmbiguousSession. */
+internal fun ambiguousSession(refusal: TranscriptRefusal?): Boolean =
+    (refusal as? TranscriptRefusal.UnsupportedFormat)?.format in GROK_NO_ONE_SESSION
 
 /**
  * What Chat says for a typed refusal, used whole in place of

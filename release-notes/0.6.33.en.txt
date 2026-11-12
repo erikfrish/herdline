@@ -1,0 +1,13 @@
+Herdline 0.6.33 (experimental) — Stop always answers, OpenCode and Kilo only through the pane's own server, Kilo Steer, clearer upload errors
+
+- Chat with OpenCode and Kilo: every action now goes only to a server started inside that pane, such as a Kilo daemon started in the pane before the Kilo TUI. A server belonging to another pane is never used, even when it shares the same data folder. Without its own server, the pane shows that no server is running and Chat refuses to send; nothing is sent. Pending QA.
+- Chat: every Stop tap now ends in words. Chat says "Stopping…" at once, and "Stop was not confirmed" if no answer comes within 20 seconds; a later answer from the host replaces that. If OpenCode or Kilo report no turn running, Chat says so instead of saying nothing. Pending QA.
+- Chat: a Stop on a pane read on another tab no longer loses its answer if the agent's session is re-read during the call. Pending QA.
+- Chat with Kilo: Steer puts a message into the turn at work, and Withdraw takes back one of this app's own steers while it still waits. Kilo has no queue after the turn and lists no waiting messages, so Chat shows only the steers it sent. Pending QA.
+- Chat: after Withdraw or Steer on a queued message, Chat says "Asking the agent…" until the agent answers, and an older check of the queue can no longer put the message back, so the first tap counts. Pending QA.
+- Attachments: a failed upload now says the upload failed and can be retried. Before, it could say "Not connected" or "Can't read the file on this phone" while the phone was connected and the file was fine. At most 4 files upload at the same time. Pending QA.
+- Chat with Kilo: files go with the prompt as data URLs (as in 0.6.32). Pending QA.
+- Chat with OpenCode and Kilo: past five open permissions or questions, Chat marks that more are waiting (as in 0.6.32). Pending QA.
+- Chat: a new session started in the pane is followed for OMP, Pi, Claude, Codex, OpenCode, Kimi, Mastracode, Qwen, Hermes and Gemini. Pending QA.
+
+Nothing above is verified by QA or on a device yet.

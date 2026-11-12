@@ -389,8 +389,9 @@ pub(super) fn session_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
 }
 
-/// Runs on the host. Reads from the qwen process's environment only
-/// `QWEN_RUNTIME_DIR` and `QWEN_HOME`, and never prints either. A relative
+/// Runs on the host. Reads from this shell's own environment only
+/// `QWEN_RUNTIME_DIR` and `QWEN_HOME` (no other process's environment; one
+/// set only for the agent is not known here), and never prints either. A relative
 /// base is refused as unconfined; one that resolves to `$HOME` itself or
 /// outside it is refused as outside home, and never followed. The
 /// stamp hashes the open file's device, inode, size and mtime: equal, the
@@ -417,16 +418,9 @@ def identity():
 
 class OutsideHome(Exception): pass
 
-def base_dir(pid, home):
-    wanted={}
-    with open('/proc/%d/environ'%pid,'rb') as env:
-        for field in env.read(262144).split(b'\0'):
-            key,sep,value=field.partition(b'=')
-            if sep and value and key in (b'QWEN_RUNTIME_DIR',b'QWEN_HOME') and key not in wanted:
-                wanted[key]=value
-    value=wanted.get(b'QWEN_RUNTIME_DIR') or wanted.get(b'QWEN_HOME')
-    if value is None: return os.path.join(home,'.qwen')
-    value=value.decode('utf-8')
+def base_dir(home):
+    value=os.environ.get('QWEN_RUNTIME_DIR') or os.environ.get('QWEN_HOME')
+    if not value: return os.path.join(home,'.qwen')
     if value=='~': value=home
     elif value.startswith('~/'): value=os.path.join(home,value[2:])
     if not value.startswith('/') or any(ord(c)<32 for c in value): return None
@@ -441,7 +435,7 @@ def main():
     if not SESSION_ID.fullmatch(sid): return reply({'error':'bad_id'})
     if not isinstance(cwd,str) or not cwd.startswith('/'): return reply({'error':'no_cwd'})
     home=os.path.realpath(os.environ['HOME'])
-    try: base=base_dir(int(got['pid']),home)
+    try: base=base_dir(home)
     except OutsideHome: return reply({'error':'outside_home'})
     except (OSError,UnicodeDecodeError): base=None
     if base is None: return reply({'error':'unconfined'})
@@ -485,7 +479,7 @@ except Exception:
 mod tests {
     use super::*;
     use std::path::Path;
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
 
     const SID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -613,18 +607,10 @@ mod tests {
         }
     }
 
-    /// A child named nothing in particular whose environment holds exactly `env`.
-    fn process(env: &[(&str, &Path)]) -> Child {
-        let mut command = Command::new("sleep");
-        command.arg("30").env_clear();
-        for (key, value) in env {
-            command.env(key, value);
-        }
-        command.spawn().unwrap()
-    }
-
-    /// The real host script against a pane report printed by `printf`.
-    fn host(home: &Path, pid: u32, cwd: &str, sid: &str, stamp: u64) -> Result<Response> {
+    /// The real host script against a pane report printed by `printf`, in a
+    /// shell whose environment holds HOME and exactly `env`.
+    fn host(home: &Path, env: &[(&str, &Path)], cwd: &str, sid: &str, stamp: u64) -> Result<Response> {
+        let pid = 42;
         let pane = json!({"result":{"pane":{"pane_id":"p1","terminal_id":"t1","agent_status":"idle",
             "foreground_cwd":cwd,"agent_session":{"agent":"qwen","kind":"id","value":sid,"source":"herdr:qwen"}}}});
         let process = json!({"result":{"process_info":{"foreground_processes":[{"name":"qwen","pid":pid}]}}});
@@ -636,6 +622,9 @@ mod tests {
             .arg(serde_json::to_string(&expect).unwrap())
             .arg(json!({ "stamp": stamp }).to_string())
             .arg(report)
+            .env_remove("QWEN_RUNTIME_DIR")
+            .env_remove("QWEN_HOME")
+            .envs(env.iter().map(|(key, value)| (*key, *value)))
             .env("HOME", home)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -653,7 +642,7 @@ mod tests {
         dir
     }
 
-    /// FIXTURE-ONLY. The host script: runtime dir from the process's own
+    /// FIXTURE-ONLY. The host script: runtime dir from the shell's own
     /// environment, the archive path, not-modified on an unchanged file and
     /// a full reload once it changes.
     #[test]
@@ -664,23 +653,25 @@ mod tests {
         let cwd = "/tmp/proj-a";
         let file = chats(&base, cwd).join("archive").join(format!("{SID}.jsonl"));
         std::fs::write(&file, fixture_a(cwd)).unwrap();
-        let mut qwen = process(&[("QWEN_RUNTIME_DIR", &base), ("QWEN_HOME", &home.join("unused"))]);
+        let env = [("QWEN_RUNTIME_DIR", base.as_path()), ("QWEN_HOME", &home.join("unused"))];
 
-        let first = host(&home, qwen.id(), cwd, SID, 0).unwrap();
+        let first = host(&home, &env, cwd, SID, 0).unwrap();
         assert!(first.reset);
         assert_eq!(first.entries.len(), 3);
         assert_ne!(first.end, 0);
 
-        let again = host(&home, qwen.id(), cwd, SID, first.end).unwrap();
+        let again = host(&home, &env, cwd, SID, first.end).unwrap();
         assert!(!again.reset && again.entries.is_empty());
         assert_eq!(again.end, first.end);
 
         std::fs::write(&file, fixture_a(cwd) + &line(json!({"uuid":"r8","parentUuid":"r7","type":"user","sessionId":SID,"cwd":cwd,"message":{"parts":[{"text":"next"}]}}))).unwrap();
-        let changed = host(&home, qwen.id(), cwd, SID, first.end).unwrap();
+        let changed = host(&home, &env, cwd, SID, first.end).unwrap();
         assert!(changed.reset);
         assert_ne!(changed.end, first.end);
         assert_eq!(changed.entries.len(), 4);
-        qwen.kill().unwrap();
+        // Set only for the agent, the runtime dir is not known here: the
+        // default ~/.qwen has no such session, and nothing else is searched.
+        assert!(matches!(host(&home, &[], cwd, SID, 0), Err(Error::NoTranscript)));
     }
 
     /// FIXTURE-ONLY. Fixture B and C on the host: a link out, a runtime
@@ -692,38 +683,32 @@ mod tests {
         let home = std::fs::canonicalize(home.path()).unwrap();
         let outside = tempfile::tempdir().unwrap();
         let base = home.join(".qwen");
-        let mut qwen = process(&[]);
-        let pid = qwen.id();
+        let none: &[(&str, &Path)] = &[];
 
         // A link to a file outside, even one with the right content.
         let cwd = "/tmp/proj-a";
         let target = outside.path().join("outside.jsonl");
         std::fs::write(&target, fixture_a(cwd)).unwrap();
         std::os::unix::fs::symlink(&target, chats(&base, cwd).join(format!("{SID}.jsonl"))).unwrap();
-        assert!(matches!(host(&home, pid, cwd, SID, 0), Err(Error::TranscriptUnconfined)));
+        assert!(matches!(host(&home, none, cwd, SID, 0), Err(Error::TranscriptUnconfined)));
 
         // `/tmp/a/b` and `/tmp/a-b` share a folder; the first record's cwd tells them apart.
         std::fs::write(chats(&base, "/tmp/a/b").join(format!("{SID}.jsonl")), fixture_a("/tmp/a-b")).unwrap();
-        assert!(matches!(host(&home, pid, "/tmp/a/b", SID, 0), Err(Error::TranscriptUnconfined)));
-        assert_eq!(host(&home, pid, "/tmp/a-b", SID, 0).unwrap().entries.len(), 3);
+        assert!(matches!(host(&home, none, "/tmp/a/b", SID, 0), Err(Error::TranscriptUnconfined)));
+        assert_eq!(host(&home, none, "/tmp/a-b", SID, 0).unwrap().entries.len(), 3);
 
         // Refused before any file is looked at.
-        assert!(matches!(host(&home, pid, cwd, "bad", 0), Err(Error::NoTranscript)));
+        assert!(matches!(host(&home, none, cwd, "bad", 0), Err(Error::NoTranscript)));
 
         let managed = "/tmp/managed";
         std::fs::write(chats(&base, managed).join(format!("{SID}.jsonl")),
             line(json!({"uuid":"h","type":"system","subtype":"managed_session_header_v1","sessionId":SID}))).unwrap();
-        assert!(matches!(host(&home, pid, managed, SID, 0), Err(Error::UnsupportedFormat(MANAGED))));
-        qwen.kill().unwrap();
+        assert!(matches!(host(&home, none, managed, SID, 0), Err(Error::UnsupportedFormat(MANAGED))));
 
         // A runtime dir outside HOME is its own refusal, so Chat can say where the session is.
-        let mut away = process(&[("QWEN_RUNTIME_DIR", outside.path())]);
-        assert!(matches!(host(&home, away.id(), cwd, SID, 0), Err(Error::SessionRootOutsideHome)));
-        away.kill().unwrap();
+        assert!(matches!(host(&home, &[("QWEN_RUNTIME_DIR", outside.path())], cwd, SID, 0), Err(Error::SessionRootOutsideHome)));
 
         // A relative one names no place at all: unconfined, not "outside".
-        let mut relative = process(&[("QWEN_RUNTIME_DIR", Path::new("rel/dir"))]);
-        assert!(matches!(host(&home, relative.id(), cwd, SID, 0), Err(Error::TranscriptUnconfined)));
-        relative.kill().unwrap();
+        assert!(matches!(host(&home, &[("QWEN_RUNTIME_DIR", Path::new("rel/dir"))], cwd, SID, 0), Err(Error::TranscriptUnconfined)));
     }
 }

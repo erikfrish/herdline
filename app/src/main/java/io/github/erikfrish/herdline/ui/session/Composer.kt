@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.shape.CircleShape
@@ -97,6 +98,7 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Connection
@@ -108,6 +110,8 @@ import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Viewport
+import io.github.erikfrish.herdline.core.TranscriptRead
+import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.data.AttachConsent
 import io.github.erikfrish.herdline.data.ComposerAction
 import io.github.erikfrish.herdline.data.ComposerMenu
@@ -123,6 +127,7 @@ import io.github.erikfrish.herdline.ui.components.ConfirmDialog
 import io.github.erikfrish.herdline.ui.chat.ChatColors
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
+import io.github.erikfrish.herdline.ui.chat.ptyTurnLanded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -142,8 +147,17 @@ import io.github.erikfrish.herdline.data.attachmentsState
 import kotlin.math.ceil
 import java.util.UUID
 
-/** A delivery handed to the daemon and not yet settled, with the IDs of the files it carried. */
-private data class Pending(val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet())
+/**
+ * A delivery handed to the daemon and not yet settled, with the IDs of the
+ * files it carried. [watched] (P1): Chat typed this into an agent's pane to
+ * send it, so the read receipt makes it [SentState.InPane], not Sent;
+ * [historyFrom] is where that session's history ended before it went, null
+ * when unread.
+ */
+private data class Pending(
+    val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet(),
+    val watched: Boolean = false, val historyFrom: Long? = null,
+)
 
 /**
  * The draft's sent record once `deliver` returned [outcome]: [before] again
@@ -167,6 +181,29 @@ internal inline fun <T> afterWriteAhead(writeAhead: () -> Boolean, refused: T, c
 
 /** The refusal of a delivery whose write-ahead record could not be stored. */
 internal const val WRITE_AHEAD_FAILED = "write_ahead_failed"
+
+/** Image steering needs a live, working endpoint whose runtime takes a steer (OMP's, Codex's daemon, OpenCode's server); the PTY route is text-only. */
+internal fun endpointSteerReady(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
+    reading && agentNamed(instance?.agent, Harness.steerAgents) && probe is IngressProbe.Live && !probe.state.idle
+
+/**
+ * Whether Chat's Send queues behind the running turn: a program whose
+ * runtime has that verb, read live and working. The button then says
+ * Queue before the tap; Auto never becomes a queue on the host.
+ */
+internal fun sendQueues(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
+    reading && agentNamed(instance?.agent, Harness.queueAgents) && probe is IngressProbe.Live && !probe.state.idle
+
+/**
+ * The refusal code an endpoint send shows: a route that needs its server,
+ * or whose server could not be told apart, in its own words; any other
+ * unusable route in the general ones.
+ */
+internal fun ingressRefusalCode(outcome: IngressSend.Refused): String =
+    when (outcome.detail) {
+        "needs_server", "server_discovery" -> outcome.detail.takeIf { outcome.reason == REASON_UNUSABLE } ?: outcome.reason
+        else -> outcome.reason
+    }
 
 /**
  * The draft after an edit to [text] with the selection [start]..[end], or
@@ -801,6 +838,9 @@ private fun Editor(
     // Chat's OMP endpoint for the draft's instance (ChatIngress.kt): the
     // last probe, a Check under way or come back empty, and a withdraw.
     var probeRead by remember(key, connection) { mutableStateOf<ProbeRead?>(null) }
+    // Bumped by every read a send, Withdraw or Steer makes itself, and when one starts: a poll
+    // begun before then answers for an older queue and is dropped, never laid over the fresh one.
+    var probeEpoch by remember(key, connection) { mutableIntStateOf(0) }
     var checking by remember(key) { mutableStateOf(false) }
     var checkUnknown by remember(key, draft.sent?.receipt) { mutableStateOf(false) }
     var withdrawing by remember(key) { mutableStateOf<String?>(null) }
@@ -899,16 +939,18 @@ private fun Editor(
         }
     }
 
-    // An empty draft follows the pane; a written one keeps its binding and
-    // only gains the instance it was written for, if it lacked one.
+    // An empty draft follows the pane; a written one keeps its binding, and
+    // one written before the instance was read stays held until Rebind.
     LaunchedEffect(boot, agentNow, instanceNow, draft.blank) {
         draft.followed(boot, agentNow, instanceNow)?.let(::save)
     }
 
     // The last delivery was never confirmed: the native core holds the pane
-    // too, also after the app restarted, until the user unlocks it.
+    // too, also after the app restarted, until the user unlocks it. Text
+    // that is only in the pane's input box (P1) is held the same way.
     LaunchedEffect(key, draft.sent?.state) {
-        if (draft.sent?.state == SentState.Uncertain) connection.hold(key.nodeId, key.session, key.pane)
+        val state = draft.sent?.state
+        if (state == SentState.Uncertain || state == SentState.InPane) connection.hold(key.nodeId, key.session, key.pane)
     }
 
     // J2 F: the receipt check and the K12 notices read the pane's bottom rows,
@@ -924,7 +966,12 @@ private fun Editor(
 
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
-            is Connection.DeliveryUpdate.Confirmed -> {
+            is Connection.DeliveryUpdate.Confirmed -> if (p.watched) {
+                // P1: the read receipt proves only that the text reached the
+                // pane's input box, not that the agent took it. The editor
+                // keeps it and the pane stays held until the history shows it.
+                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.InPane, System.currentTimeMillis(), historyFrom = p.historyFrom)))
+            } else {
                 // Only now does the text leave the editor.
                 val rest = if (value.text == p.text) "" else value.text
                 write(rest)
@@ -942,6 +989,39 @@ private fun Editor(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
             )
         }
+    }
+
+    // P1: text in the pane's input box becomes Sent only once the bound
+    // session's history holds that very turn after the stored baseline. The
+    // baseline is stored with the record, so a return or a relaunch looks
+    // again (once, past the deadline). Nothing is ever typed again.
+    val inPane = draft.sent?.takeIf { it.state == SentState.InPane }
+    var inPaneWatched by remember(key, inPane) { mutableStateOf(false) }
+    LaunchedEffect(key, inPane, connection) {
+        val sent = inPane ?: return@LaunchedEffect
+        val from = sent.historyFrom
+        val instance = draft.instance
+        if (from == null || instance == null) {
+            inPaneWatched = true
+            return@LaunchedEffect
+        }
+        val via = connection
+        do {
+            val page = withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(from))) }.getOrNull()
+            if (page != null && ptyTurnLanded(page, instance, from, sent.text)) {
+                if (draft.sent != sent) return@LaunchedEffect
+                write(if (value.text == sent.text) "" else value.text)
+                // The draft is held since the tap, so the files it holds are the ones sent.
+                save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
+                via.unlock(key.nodeId, key.session, key.pane)
+                delivered()
+                return@LaunchedEffect
+            }
+            // Another session, or a history that started over: this turn can no longer be shown.
+            if (page != null && (page.reset || page.identity != instance)) break
+            delay(PTY_TURN_POLL_MS)
+        } while (System.currentTimeMillis() - sent.at < PTY_TURN_WATCH_MS)
+        inPaneWatched = true
     }
 
     // Answers that came before their delivery returned from the native core.
@@ -970,12 +1050,26 @@ private fun Editor(
         val target = probeTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
         while (true) {
+            val epoch = probeEpoch
             val read = withContext(Dispatchers.IO) { connection.ingressState(target) }
-            probeRead = read.getOrNull()?.let { ProbeRead(instance, it) }
+            if (epoch == probeEpoch && withdrawing == null) probeRead = read.getOrNull()?.let { ProbeRead(instance, it) }
             delay(INSTANCE_POLL_MS)
         }
     }
     val probe = probeFor(probeRead, draft.instance)
+    // Kilo lists no waiting steer: its own steers leave the record once the
+    // server reads the session idle, the only answer that says so. A send
+    // whose withdraw got no answer comes back into the editor once its chip
+    // goes without a retry; not while a withdraw is on its way, which answers itself.
+    val unlistedSteers = agentNamed(draft.agent, Harness.unlistedSteerAgents)
+    LaunchedEffect(probe, unlistedSteers, withdrawing) {
+        if (withdrawing != null) return@LaunchedEffect
+        val settled = queueSettled(probe, draft, unlistedSteers, draft.instance?.path, value.text) ?: return@LaunchedEffect
+        if (settled.text != draft.text) value = TextFieldValue(settled.text, TextRange(settled.text.length))
+        save(settled)
+    }
+    val endpointSteer = endpointSteerReady(reading, draft.instance, probe)
+    val queueVerb = sendQueues(reading, draft.instance, probe)
 
     // UR3: the uploads under way, by attachment ID, and how far each got.
     // They belong to this destination: leaving it cancels them, and what
@@ -984,7 +1078,8 @@ private fun Editor(
     val uploads = remember(key) { mutableStateMapOf<String, Job>() }
     val progress = remember(key) { mutableStateMapOf<String, Float?>() }
     DisposableEffect(key) { onDispose { uploads.values.forEach { it.cancel() } } }
-    val draftBusy = sending || pending != null || steer.active || draft.unsettled
+    // A withdraw on its way holds the draft too: its request comes back into it.
+    val draftBusy = sending || pending != null || steer.active || draft.unsettled || withdrawing != null
     val attachState = attachmentsState(draft.attachments, uploads.keys.toSet(), composerTarget())
     // Nothing goes to a host before the user agreed for that
     // host. The question comes before the picker, so a Cancel picks and
@@ -1178,7 +1273,9 @@ private fun Editor(
         onDeliveryStart()
         // As for the pane route: on disk before the request may leave, so a
         // restart before the answer reads back unconfirmed, with the id Check asks for.
-        save(draft.copy(sent = SentRecord(text, ingressReceipt(id), true, SentState.Queued, System.currentTimeMillis())))
+        // The text and files this request carries are kept by its id with it: a
+        // withdrawal restores exactly them, never the queue's display text (QA m43 C3).
+        save(draft.copy(sent = SentRecord(text, ingressReceipt(id), true, SentState.Queued, System.currentTimeMillis())).queuedWith(id, text, draft.attachments))
         val ahead = draft
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
@@ -1191,15 +1288,19 @@ private fun Editor(
                 // OMP holds it: the text and its files leave the editor. Nothing
                 // was typed into the pane, so the terminal is not brought up.
                 write(if (value.text == text) "" else value.text)
-                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }))
-                outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
+                // Its record, by request id, was written ahead (PHOTO-STEER-W). A steer
+                // the server lists nowhere waits by this record and the server's word only.
+                val kept = draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried })
+                save(if (deliverAs == "steer" && agentNamed(instance.agent, Harness.unlistedSteerAgents)) kept.waitingSteer(id, instance.path) else kept)
+                outcome.state?.let { probeEpoch++; probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
             } else {
-                save(draft.copy(sent = sent))
+                // Refused: nothing is queued, so nothing can be withdrawn. Uncertain keeps its record.
+                save(draft.copy(sent = sent, queued = if (outcome is IngressSend.Refused) draft.queued - id else draft.queued))
             }
             sending = false
             when (outcome) {
                 IngressSend.Absent -> typeIn()
-                is IngressSend.Refused -> refusal = outcome.reason
+                is IngressSend.Refused -> refusal = ingressRefusalCode(outcome)
                 is IngressSend.Accepted, is IngressSend.Uncertain -> {}
             }
         }
@@ -1208,7 +1309,7 @@ private fun Editor(
     /** The draft typed into the pane, with Enter when [submit]: Terminal, Insert, and Chat with no endpoint. */
     fun typeIn(submit: Boolean) {
         // The buttons say the same; this holds against a tap that raced them.
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         // Every file uploaded for exactly this target, or nothing goes.
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
         val staged = draft.attachments.mapNotNull { it.staged }
@@ -1225,6 +1326,14 @@ private fun Editor(
         save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis())))
         val ahead = draft
         scope.launch {
+            // P1: where Chat sends by typing into an agent's pane, where that
+            // session's history ends before the text goes; only a turn after
+            // it can be this send.
+            val watched = reading && submit && target.instance != null
+            val historyFrom = target.instance?.takeIf { watched }?.let { instance ->
+                withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
+                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+            }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.Delivery.Refused(WRITE_AHEAD_FAILED)) {
                     via.deliver(target, text, submit, seen, staged, chat = reading)
@@ -1237,7 +1346,7 @@ private fun Editor(
             sending = false
             when (outcome) {
                 is Connection.Delivery.Queued -> {
-                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet())
+                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom)
                     val answered = early.remove(outcome.receipt)
                     when {
                         answered != null -> settle(p, answered)
@@ -1254,9 +1363,14 @@ private fun Editor(
     }
 
     fun deliver(submit: Boolean) {
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
-        if (endpointRoute(reading, draft.instance, submit)) endpointSend("auto") { typeIn(submit) } else typeIn(submit)
+        if (endpointRoute(reading, draft.instance, submit)) {
+            // The verb the button showed: Queue while a queueing runtime works.
+            endpointSend(if (queueVerb) "queue" else "auto") { typeIn(submit) }
+        } else {
+            typeIn(submit)
+        }
     }
 
     /**
@@ -1264,8 +1378,11 @@ private fun Editor(
      * receipt is confirmed and the pane shows it.
      */
     fun pasteSteer() {
-        // A steer carries no files (docs/attachments.md).
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding) || draft.attachments.isNotEmpty()) return
+        if (draft.attachments.isNotEmpty()) {
+            refusal = "attachment_steer"
+            return
+        }
+        if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         val target = composerTarget() ?: return
         val text = value.text
         val via = connection
@@ -1299,9 +1416,10 @@ private fun Editor(
      * [pasteSteer]. Its own tap only; Send never becomes it.
      */
     fun steerStart() {
-        if (sending || pending != null || steer.active || !draft.mayDeliver(binding)) return
+        if (draftBusy || !draft.mayDeliver(binding) || (holdsDraft && viewed != null && viewed != key.pane)) return
         if (endpointRoute(reading, draft.instance, submit = true)) {
             if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
+            if (draft.attachments.isNotEmpty() && !endpointSteer) return
             endpointSend("steer", ::pasteSteer)
         } else {
             pasteSteer()
@@ -1342,22 +1460,64 @@ private fun Editor(
         }
     }
 
-    /** Takes [entry] back out of OMP's queue, then reads the queue again. */
+    /**
+     * Takes [entry] back out of OMP's queue, then reads the queue again.
+     * Refused before the call when the editor could not take it back.
+     */
     fun withdraw(entry: IngressQueued) {
+        val requestId = entry.requestId ?: return
+        if (!withdrawRestorable(value.text, draftBusy)) {
+            withdrawNote = R.string.ingress_withdraw_editor
+            return
+        }
+        val target = composerTarget() ?: return
+        val instance = target.instance ?: return
+        val via = connection
+        withdrawing = requestId
+        withdrawNote = null
+        probeEpoch++
+        scope.launch {
+            val done = withContext(Dispatchers.IO) { via.ingressWithdraw(target, requestId) }
+            val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
+            withdrawing = null
+            probeEpoch++
+            probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
+            withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
+            // Withdrawn is taken back, not lost: its text and files into the
+            // editor, after anything typed while the withdraw was on its way.
+            // Send and Steer stayed off meanwhile (draftBusy). A withdraw with no
+            // answer is remembered: a later "not waiting" may mean it took it.
+            val answer = done.getOrNull()
+            // A request this draft has no record of (sent before 10064) has no known text:
+            // nothing is guessed from the queue, and the user is told.
+            if (answer == true && draft.queued[requestId]?.text == null) withdrawNote = R.string.ingress_withdraw_text_unknown
+            val back = draft.afterWithdraw(requestId, answer, value.text)
+            if (answer == true || (requestId in draft.queued && requestId !in back.queued)) {
+                value = TextFieldValue(back.text, TextRange(back.text.length))
+            }
+            save(back)
+        }
+    }
+
+    /**
+     * Steers queued follow-up [entry] into the running turn, then reads the
+     * queue again. Only the runtime's answer moves it; a failure says so.
+     */
+    fun promote(entry: IngressQueued) {
         val requestId = entry.requestId ?: return
         val target = composerTarget() ?: return
         val instance = target.instance ?: return
         val via = connection
         withdrawing = requestId
         withdrawNote = null
+        probeEpoch++
         scope.launch {
-            val done = withContext(Dispatchers.IO) { via.ingressWithdraw(target, requestId) }
+            val done = withContext(Dispatchers.IO) { via.ingressPromote(target, requestId) }
             val fresh = withContext(Dispatchers.IO) { via.ingressState(target) }
             withdrawing = null
+            probeEpoch++
             probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
-            withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
-            // Withdrawn is taken back, not lost: into an empty, free editor.
-            if (done.getOrNull() == true && value.text.isEmpty() && !sending && !draft.unsettled) write(entry.text)
+            withdrawNote = done.fold({ if (it) null else R.string.ingress_promote_gone }, { R.string.ingress_promote_failed })
         }
     }
 
@@ -1391,11 +1551,9 @@ private fun Editor(
     // same notice a refusal would, held steady by PrecheckHold.
     // A live endpoint takes Chat's Send without the pane: the box checks,
     // which read what the pane shows, neither gate nor explain it then.
-    val apiAgent = reading && draft.instance != null && agentNamed(draft.agent, Harness.apiAgents)
-    val apiReady = apiAgent && state is Connection.State.Connected && check?.paneExists == true && (check.status == AgentStatus.Idle || check.status == AgentStatus.Done)
-    val endpointReady = reading && probe is IngressProbe.Live || apiReady
+    val endpointReady = reading && probe is IngressProbe.Live
     val sendGate = if (reading) check?.chatSend else check?.send
-    val precheck = sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
+    val precheck = sendPrecheckCode(sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason, probe)
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }
@@ -1421,10 +1579,9 @@ private fun Editor(
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
     val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
-    // Its own gate: never derived from Send's, and never offered for a
-    // draft without the agent instance the native side compares, or with files.
-    val steerEnabled = !busy && draft.mayDeliver(binding) && draft.attachments.isEmpty() && !mismatched &&
-        draft.instance != null && check?.steer?.ok == true
+    // Endpoint steering accepts ready attachments; PTY steering stays text-only.
+    val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
+        draft.instance != null && (endpointSteer || draft.attachments.isEmpty() && check?.steer?.ok == true)
     val rebind = NoticeAction(stringResource(R.string.composer_rebind)) {
         save(draft.rebound(boot, check?.agent, readInstance))
     }
@@ -1492,6 +1649,13 @@ private fun Editor(
             }.takeIf { !checking },
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
         )
+        // P1: in the pane's input box, not yet in the session's history.
+        draft.sent?.state == SentState.InPane -> Notice(
+            stringResource(R.string.composer_in_pane),
+            NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
+            NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
+            warning = inPaneWatched,
+        )
         draft.sent?.state == SentState.Uncertain -> Notice(
             stringResource(R.string.composer_uncertain),
             NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
@@ -1507,7 +1671,11 @@ private fun Editor(
             stringResource(R.string.composer_agent_restarted, check?.agent ?: draft.agent ?: ""),
             rebind,
         )
-        binding == Binding.InstanceUnknown && steadyUnknown -> Notice(stringResource(R.string.composer_instance_unknown))
+        // Written before this pane's session was read; Rebind binds it to the one read now.
+        binding == Binding.InstanceUnknown && steadyUnknown -> Notice(
+            stringResource(R.string.composer_instance_unknown),
+            rebind.takeIf { draft.instance == null && readInstance != null },
+        )
         // Onto a held tab the move is refused in words, not by a missing button (R6).
         mismatched && targetGone -> Notice(
             stringResource(if (moveOffer == MoveHereOffer.TargetHeld) R.string.composer_pane_gone_target_held else R.string.composer_pane_gone),
@@ -1542,14 +1710,28 @@ private fun Editor(
             NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled },
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
         )
+        // The endpoint queues text and images; the PTY wording (paste, then Enter) is not its.
+        // Where Send says Queue, the help names both verbs.
+        endpointSteer && steerEnabled && holdsDraft -> Notice(
+            stringResource(if (queueVerb) R.string.steer_help_queue else R.string.steer_help_endpoint),
+            NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
+        )
         blocked != null -> when (val code = blocked) {
             // Insert goes only where its own check passes; Send stays disabled.
             "agent_working" -> {
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
                 // Steer is its own labelled action; Send stays disabled.
                 val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
+                // Where there is no Steer, the reason the card gives for it (§3.5), else the plain one.
+                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null }
                 Notice(
-                    stringResource(if (steerAction != null) R.string.steer_help else R.string.reason_agent_working),
+                    noSteer ?: stringResource(
+                        when {
+                            steerAction == null -> R.string.reason_agent_working
+                            endpointSteer -> R.string.steer_help_endpoint
+                            else -> R.string.steer_help
+                        },
+                    ),
                     insert ?: steerAction,
                     steerAction?.takeIf { insert != null },
                 )
@@ -1647,7 +1829,13 @@ private fun Editor(
     }
 
     if (reading) {
-        IngressQueuePanel(queuePanel(probe), withdrawing, withdrawNote, ::withdraw)
+        IngressQueuePanel(
+            if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
+            withdrawing,
+            withdrawNote,
+            ::withdraw,
+            onPromote = if (agentNamed(draft.agent, Harness.queueAgents)) ::promote else null,
+        )
     }
 
     // Compact (J2): the notice is the field's top line (ComposerBand); its
@@ -1706,6 +1894,7 @@ private fun Editor(
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
         sendEnabled = sendEnabled,
+        sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
         onSend = { deliver(submit = true) },
         onTerminalKeyboard = {
@@ -1730,7 +1919,8 @@ private fun Editor(
             AttachBlock.Held -> stringResource(R.string.composer_locked_reason)
             AttachBlock.Sending -> stringResource(R.string.composer_sending)
             AttachBlock.Rebind -> stringResource(R.string.attach_confirm_pane)
-            AttachBlock.NeedsAgent -> stringResource(R.string.attach_needs_agent)
+            AttachBlock.NeedsAgent -> controlReason(draft.agent, HarnessKey.Media, R.string.control_attach_unavailable)
+                ?: stringResource(R.string.attach_needs_agent)
             AttachBlock.Full -> stringResource(R.string.attach_full, MAX_ATTACHMENTS)
         },
     )
@@ -1795,6 +1985,7 @@ private fun Editor(
             sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
             readOnly = busy,
             sendEnabled = sendEnabled,
+            sendQueues = queueVerb,
             insertEnabled = insertEnabled,
             onInsert = { deliver(submit = false) },
             onSend = { deliver(submit = true) },
@@ -1873,6 +2064,8 @@ internal fun ComposerBand(
     onMenu: (Boolean) -> Unit,
     insertEnabled: Boolean,
     sendEnabled: Boolean,
+    /** Send queues behind the running turn: the button says Queue (§1 S). */
+    sendQueues: Boolean = false,
     onInsert: () -> Unit,
     onSend: () -> Unit,
     destinationMismatch: Boolean,
@@ -2176,7 +2369,8 @@ internal fun ComposerBand(
         // The only primary action: Send, once the native check allows.
         Box(
             Modifier
-                .size(48.dp)
+                .heightIn(min = 48.dp)
+                .widthIn(min = 48.dp)
                 // The accessibility node must say what the visuals say: a
                 // greyed Send is disabled even though the tap target stays
                 // clickable so the precheck notice explains the refusal
@@ -2186,19 +2380,7 @@ internal fun ComposerBand(
                 .testTag("composer:send"),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .background(if (sendEnabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.Send,
-                    stringResource(R.string.composer_send),
-                    tint = if (sendEnabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            SendFace(sendEnabled, accent, sendQueues)
         }
     }
 }
@@ -2373,6 +2555,7 @@ private fun LargerEditor(
     agentStatus: AgentStatus?,
     readOnly: Boolean,
     sendEnabled: Boolean,
+    sendQueues: Boolean,
     insertEnabled: Boolean,
     onInsert: () -> Unit,
     onSend: () -> Unit,
@@ -2440,7 +2623,7 @@ private fun LargerEditor(
                             )
                         }
                     }
-                    SendButton(sendEnabled, accent, sendHint, onSend)
+                    SendButton(sendEnabled, accent, sendHint, sendQueues, onSend)
                 }
                 chips(Modifier.padding(horizontal = 16.dp))
                 BasicTextField(
@@ -2517,26 +2700,41 @@ private fun LargerEditor(
 
 /** The round 40 dp Send inside a 48 dp target. */
 @Composable
-private fun SendButton(enabled: Boolean, accent: Color, hint: String?, onSend: () -> Unit) {
+private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: Boolean, onSend: () -> Unit) {
     Box(
         Modifier
-            .size(48.dp)
+            .heightIn(min = 48.dp)
+            .widthIn(min = 48.dp)
             .clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onSend)
             .testTag("composer:send"),
         contentAlignment = Alignment.Center,
     ) {
+        SendFace(enabled, accent, queues)
+    }
+}
+
+/**
+ * Send's face: the round arrow, or the word Queue while a send waits for
+ * the running turn, so the verb is seen before the tap (§1 S).
+ */
+@Composable
+private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean) {
+    val fill = if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val ink = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    if (queues) {
         Box(
             Modifier
-                .size(40.dp)
-                .background(if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
+                .height(40.dp)
+                .background(fill, CircleShape)
+                .padding(horizontal = 14.dp)
+                .testTag("composer:queue"),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                Icons.Default.Send,
-                stringResource(R.string.composer_send),
-                tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
+            Text(stringResource(R.string.composer_queue), color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    } else {
+        Box(Modifier.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Send, stringResource(R.string.composer_send), tint = ink, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -2628,12 +2826,17 @@ internal fun reasonRes(reason: String): Int =
         "instance_unknown" -> R.string.reason_instance_unknown
         "agent_idle" -> R.string.agent_idle
         "steer_expired" -> R.string.steer_expired
+        "needs_server" -> R.string.reason_needs_server
+        "server_discovery" -> R.string.reason_server_discovery
         "steer_not_shown" -> R.string.steer_not_shown
         WRITE_AHEAD_FAILED -> R.string.reason_write_ahead_failed
         "attachment_target" -> R.string.reason_attachment_target
         "attachment_needs_agent" -> R.string.reason_attachment_needs_agent
         "attachment_steer" -> R.string.reason_attachment_steer
         "attachment_missing" -> R.string.reason_attachment_missing
+        "attachment_too_many" -> R.string.reason_attachment_too_many
+        "attachment_too_large" -> R.string.reason_attachment_too_large
+        "attachment_unsupported" -> R.string.reason_attachment_unsupported
         "unconfirmed" -> R.string.composer_uncertain
         // Chat's OMP endpoint (ChatIngress.kt, host/omp/herdline-ingress.ts).
         "instance_changed" -> R.string.reason_agent_restarted
@@ -2678,6 +2881,9 @@ private const val SENT_NOTICE_MS = 8_000L
 private const val PRECHECK_SETTLE_MS = 700L
 private const val INSTANCE_POLL_MS = 5_000L
 private const val INSTANCE_SETTLE_MS = 1_500L
+/** How long an InPane send (P1) is watched for its turn in the history, from the receipt. */
+private const val PTY_TURN_WATCH_MS = 20_000L
+private const val PTY_TURN_POLL_MS = 1_000L
 
 /** Answers kept while their delivery is still returning from the native core. */
 private const val EARLY_ANSWERS = 8

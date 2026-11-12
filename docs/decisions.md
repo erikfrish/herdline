@@ -164,8 +164,8 @@ layout; it settles when the keyboard closes. The Session layout setting
 
 |Area|Phone and medium|Tablet (expanded)|
 |---|---|---|
-|Header|← Hosts; the workspace name, with a connection dot, host and tab count below; a "N need you" chip only while an agent is blocked; one Chat \| Terminal segmented control, always in the same place; ⋮|the same; Settings is also on the rail|
-|Tab row|the workspace's tabs by their Herdr names, the active one centred and underlined, with ‹ › to step and an n/N button that opens the Tabs sheet; a long press offers Rename and Close tab|the same; n/N is left out while the sidebar is open (the sidebar is the switcher) and reopens it while folded|
+|Header|one 48 dp row (taller only for a large font): ← Hosts; a place button with the tab's name and ▾ over the connection glyph, workspace, n/N, a changed mark for other tabs, and a monitor glyph while the desktop is on another pane; a "N need you" chip only while an agent is blocked; one Chat \| Terminal segmented control, always in the same place; ⋮. A tap on the place button opens the Tabs sheet, where New tab is; a long press offers Rename and Close tab. TalkBack reads "‹tab›, tab n of N in ‹workspace›. Opens Tabs"|the same, but the tap shows or hides the sidebar, also while it is open, and is read "Shows tabs" or, while it is open, "Hides tabs"; Settings is also on the rail|
+|Tab row|none: the place button and the Tabs sheet are how to move (HEADER-COMPACT)|the workspace's tabs by their Herdr names, the active one centred and underlined, with ‹ › to step; a long press offers Rename and Close tab|
 |Sidebar|none; the switcher is the Tabs sheet|Herdr's switcher as a 320 dp list pane, folded by its ‹ button to a 56 dp rail. The rail has one 48 dp item per workspace, its number with a status dot, spoken as "name, status", with Herdr's focused workspace marked current. A rail tap focuses that workspace in Herdr. Open or folded is kept across restarts|
 |Panes|a pane bar when the tab has more than one pane: a chip per pane|a pane toolbar on every tab: chips plus Split right / Split down / Zoom / Close pane (shared)|
 |⋮ menu|New tab, Rename tab, Close tab…; then Split right / Split down / Zoom / Close pane… (shared; phones only); then Settings, Reconnect (only while a live link is lost) and Disconnect…, which asks first. Close pane… is offered only on a split tab, as in the pane toolbar: the only pane closes with its tab, through Close tab…|the same without the pane group|
@@ -174,9 +174,10 @@ layout; it settles when the keyboard closes. The Session layout setting
 
 
 A window shorter than 480 dp (a phone held sideways) merges the header and
-the tab row into one 48 dp row. It holds ←, the connection dot, the
-workspace name (at most 160 dp), the tab row with ‹ › and n/N, the need-you
-chip, Chat \| Terminal and ⋮. The host and tab count line is left out there.
+the tab row into one 48 dp row. It holds ←, the place button on one line (the
+connection glyph, tab name and ▾, n/N and the marks, at most 220 dp), the tab
+row with ‹ ›, the need-you chip, Chat \| Terminal and ⋮. A tap on the place
+button opens the Tabs sheet there too.
 Height and width come from the session window, not the device, so split
 screen follows the same rules.
 
@@ -199,6 +200,21 @@ over OMP's own input box and status line. That limit is physical, and it
 stays. Closing the keyboard brings the rows back. In the same windows the ⋮
 menu lists Settings and Disconnect… first, so both are reachable without
 scrolling; other widths keep the order above.
+
+Extra keys (`ui/terminal/ExtraKeys.kt`) default to fourteen keys in two rows
+of seven, placed as on a hardware keyboard, so thumbs find them without
+looking: Tab Esc Home ↑ End / ⌫ over Ctrl Alt ← ↓ → | ⏎. Ctrl is bottom left
+with Tab above it and Esc beside Tab; the arrows are an inverted T, ↑
+directly above ↓. A saved row exactly equal to an old default (0.6.22's flat
+fourteen, or the sixteen before it) is that default, not a choice, and
+migrates once; any other saved row, a reordered default included, is the
+user's and is kept. Reset gives the new default. A row too narrow for its
+caps with 5 dp gaps first tightens to 2 dp gaps while every cap stays 48 dp,
+so the default fits a 360 dp phone whole; only a longer custom row scrolls.
+The one-row panel of a sideways phone typing (QF-6) is refused when the two
+rows stack ↑ over ↓, since one row would turn that pair sideways: the default
+stays two 48 dp rows there, and a custom set without that pair still gets one
+row.
 
 Titles: a tab is named by its Herdr name, which stays put while agents
 retitle. A pane is named by its agent's task title, else its label, its
@@ -349,25 +365,27 @@ Switcher:
   original refusal. OpenCode sequence reads recover the same way. A reconnect
   is a new connection and starts over too.
 - **Confinement.** Absolute session-file syntax is admitted on the phone;
-  the host resolves default or foreground-process-configured OMP/Pi roots,
-  OMP profile/XDG paths, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Every root and
-  file must canonically stay below the SSH account's HOME, and ID resolution
-  must match exactly one file. A reported path alone never authorizes an
-  arbitrary folder; configured roots require that exact process's environment.
+  the host resolves default or configured OMP/Pi roots, OMP profile/XDG
+  paths, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Every root and file must
+  canonically stay below the SSH account's HOME, and ID resolution must
+  match exactly one file. A reported path alone never authorizes an
+  arbitrary folder. Configured roots come only from the exec shell's own
+  environment and the `argv` Herdr's `process-info` reports for the pane's
+  process; no other process's environment, cmdline or cwd is read (10063;
+  10057-10062 read `/proc/<pid>/environ` and `cmdline`). A root set only in
+  the agent's environment is not known and refuses, never guessed.
   - The profile is the one omp 18.18.8 takes itself (`extractProfileFlags`):
     a string flag's value, an argument after `--` or after a first-token
     subcommand is never `--profile`. `~` is never expanded, as in OMP.
     Under `bun run <script>`, a subcommand right after the script is not
     seen as one; harmless, as it can only name a HOME-bounded profile root.
-  - Only the environment the process started with is seen. A root OMP picks
-    up later (a project `.env` via `refreshDirsFromEnv`, `setProfile`) is
-    not authorized and refuses, never guessed.
+  - A root OMP picks up later (a project `.env` via `refreshDirsFromEnv`,
+    `setProfile`) is not authorized and refuses, never guessed.
   - The default `~/.omp/agent/sessions` stays authorized for every OMP
     process, named profile or XDG included: it is HOME-bounded, and Herdr
     must still report the exact file.
-  - An agent whose HOME is not the SSH account's (`sudo`, `su -c`, another
-    exported HOME), or a root or file outside HOME, is refused as
-    `outside_home`; other confinement failures are `unconfined`.
+  - A root or file outside HOME is refused as `outside_home`; other
+    confinement failures are `unconfined`.
 - **Incremental and bounded.** Chat reads byte ranges by offset: the newest
   256 KiB, then appends from the last complete line (a partial line waits),
   and older pages on request.
@@ -538,16 +556,17 @@ User, assistant and tool-result images are read through the existing
 - **One instance, one exec.** The pane, the line, the blob and the pane again
   are read in one exec. Both reports must name the instance the request was
   made for (pane, terminal, OMP pid, session file), else `instance_changed`.
-- **The blob store is the OMP process's own.** It is resolved from that
-  process's `/proc/<pid>/cmdline` and `environ` as OMP 18.18.8 does, by the
-  same resolver and profile rules as the session roots (Confinement, above):
-  the `--profile` omp's `extractProfileFlags` takes, else `OMP_PROFILE` when
-  set, else `PI_PROFILE`; `~/.omp/profiles/<name>/agent`, or without a
-  profile `PI_CODING_AGENT_DIR` (unless derived from the environment's profile), else
-  `~/.omp/agent`; `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`)
-  takes its place when it exists. What cannot be pinned down is refused as
-  `unknown_store`, never guessed: no `/proc` (e.g. macOS hosts), another
-  `HOME`, `PI_CONFIG_DIR`, relative paths, profile names OMP rejects. The
+- **The blob store is the OMP process's own.** It is resolved from the
+  `argv` Herdr's `process-info` reports for that pid and the exec shell's own
+  environment, by the same resolver and profile rules as the session roots
+  (Confinement, above): the `--profile` omp's `extractProfileFlags` takes,
+  else `OMP_PROFILE` when set, else `PI_PROFILE`;
+  `~/.omp/profiles/<name>/agent`, or without a profile `PI_CODING_AGENT_DIR`
+  (unless derived from the environment's profile), else `~/.omp/agent`;
+  `$XDG_DATA_HOME/omp` (with a profile `…/profiles/<name>`) takes its place
+  when it exists. What cannot be pinned down is refused as `unknown_store`,
+  never guessed: no such process in Herdr's report, `PI_CONFIG_DIR`,
+  relative paths, profile names OMP rejects. The
   store must resolve inside `$HOME`, and a blob that
   links out of it is refused (`unconfined`). XDG existence is checked at read
   time, not when OMP started.
@@ -582,8 +601,10 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   every refusal show an explicit error; nothing is typed. Once a request may
   have reached the socket, doubt is `uncertain`, and nothing is resent.
 - **Discovery.** Over the link's exec: the pane report gives the OMP pid;
-  `$XDG_RUNTIME_DIR/herdline-ingress/<sessionId>-<pid>.json` from that
-  process's environment, the directory 0700 and the sidecar 0600, both this
+  `<runtime>/herdline-ingress/<sessionId>-<pid>.json`, where `<runtime>` is
+  the exec shell's own `$XDG_RUNTIME_DIR`, else `/run/user/<uid>`; no other
+  process's environment is read (10062), so an extension that published
+  elsewhere is absent. The directory 0700 and the sidecar 0600, both this
   user's and no links, and its `sessionFile` exactly the instance's. The
   exchange re-checks the sidecar bytes and the 0600 socket, then talks
   through `socat` (20 s idle) without half-closing before the answer.
@@ -632,14 +653,15 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
   Send still refuses `dialog_open` while any dialog is open. The forms UI is
   `core/ChatDialog.kt` and `ui/chat/ChatForms.kt`.
 - **Native ↔ Kotlin.** `Native.ingress(session, json)`; the request is
-  `{op: send|status|state|withdraw|dialogs|dialog_submit, node, session,
+  `{op: send|status|state|withdraw|dialogs|dialog_submit|abort, node, session,
   boot, pane, agent, instance:{pane_id, terminal_id, pid, path}, id, text?,
   attachments?, deliverAs?: auto|steer, dialogId?, answer?}`. Replies:
   `{"endpoint":"absent"}`, `{"endpoint":"unsupported","missing":[…]}`,
   `{"endpoint":"unusable","reason"}`, `{"endpoint":"live", "id", "outcome",
   "reason"?, "state"?}` (send, status), `{"endpoint":"live","state"}`,
   `{"endpoint":"live","id","withdrawn"}`, `{"endpoint":"live","dialogs"}`,
-  `{"endpoint":"live","dialogId","result"}`, and the core's own
+  `{"endpoint":"live","dialogId","result"}`, `{"endpoint":"live","aborted"}`,
+  and the core's own
   `{"outcome":"refused","reason"}` before anything left (`unsettled` while a
   PTY delivery holds the pane, attachment reasons). A send whose call fails
   after it may have left is uncertain; the other ops fail.
@@ -650,16 +672,46 @@ O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
 - **Recovery.** An endpoint send writes ahead a Queued record with receipt
   `ingress:<id>`; reloaded, it is Uncertain, and Check asks `status`.
 
-### Codex and OpenCode input binding
+### Codex, OpenCode and Kilo input binding
 
 Control-API input requires a positive foreground PID as well as the exact
 pane, terminal and session reference. A retained session identity without
-its foreground process does not authorize a send. OpenCode connects only
-to its private, already-running loopback service registration: no automatic
-service start, HTTP redirects or environment proxy routing. An unknown
-acknowledgement after POST remains uncertain; discovery failure before POST
-is a refusal. The real loopback transport boundary is exercised with
-`python native/src/agent_chat/test_opencode_send.py`.
+its foreground process does not authorize a send. OpenCode and Kilo connect
+only to their private, already-running loopback server registration under
+this user's default state directories (OpenCode `service*.json`, Kilo
+`daemon.json`, mode 0600, own uid, live pid): no automatic service start,
+HTTP redirects or environment proxy routing. The registered server must be
+the pane's own: its pid runs in the pane's process tree, under the pane's
+root process (Herdr's `shell_pid` in the same report the gate verified),
+read from pid ancestry only, never another process's environment or
+command line. Kilo's daemon started in the pane beside its TUI (`kilo
+daemon start --foreground &`, then `kilo`) is the TUI's sibling under that
+shell and counts as the pane's own. Another pane's server on the same data
+root (a `serve --service` beside an `opencode --standalone`, whose own
+server listens on stdio only) is never
+asked, for any op, and answers `no_server`, as a bare TUI that registers
+nothing does, and as a pane Herdr reports no shell for. An unknown
+acknowledgement after POST remains uncertain; discovery failure before
+POST is a refusal.
+
+Over that server, Chat reads the session's open permission requests and
+questions while the agent is Blocked, as dialogs (permissions with an Allow
+once / Always allow / Reject choice), sends the user's explicit reply to
+exactly one open request, and offers Stop while it works (OpenCode
+`interrupt`, Kilo `abort`). Kilo's text Send with staged files, Steer,
+withdraw, status, state and children go through its v1 server
+(`kilo_ctl.py`, pinned v7.8.27 03a6f07); nothing of Kilo is typed into the
+pane. A plain Kilo send while it works is refused `agent_working`; a Steer
+is a send to the session at work, run at the turn's next step boundary, and
+a Steer that finds it idle is refused `agent_idle`, never a new turn. Kilo
+lists no waiting prompt, so Chat's queue for Kilo shows only the steers this
+app recorded as waiting, while the server reads the session at work, and
+withdraw takes back exactly one of them by its id; an idle read drops them.
+Kilo has no queue behind the turn and no promote: both are answered
+unsupported by name. Codex answers `abort` and dialogs as unsupported. The
+real loopback transport boundary is exercised with
+`python3 -B native/src/agent_chat/test_opencode_ctl.py` and
+`python3 -B native/src/agent_chat/test_kilo_ctl.py`.
 
 
 ### Questions and submitted answers

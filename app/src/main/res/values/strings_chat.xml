@@ -79,6 +79,30 @@
     <string name="chat_truncated">Shortened for chat; the terminal has the rest</string>
     <string name="chat_working">Working</string>
     <string name="chat_working_on">Working · %1$s</string>
+    <string name="chat_children">Sessions it started: %1$d</string>
+    <string name="chat_children_more">Sessions it started: more than %1$d</string>
+    <!-- The agent has more open permissions or questions than Chat shows at once. -->
+    <string name="chat_dialogs_more">More permissions or questions are waiting than Chat can show at once. Answer these first, or use Terminal.</string>
+    <string name="chat_stop">Stop</string>
+    <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
+    <!-- A Stop tap on its way to the host: the tap was taken, its answer follows. -->
+    <string name="chat_stopping">Stopping…</string>
+    <!-- The agent's own server (OpenCode, Kilo) found no turn running to stop. -->
+    <string name="chat_stop_none_running">Not stopped: the agent\'s server has no turn running.</string>
+    <!-- X1: why a terminal Stop pressed no key; nothing reached the pane. -->
+    <string name="stop_refused_boot_changed">Not stopped: Herdr restarted. Nothing was pressed.</string>
+    <string name="stop_refused_pane_missing">Not stopped: that pane no longer exists. Nothing was pressed.</string>
+    <string name="stop_refused_agent_changed">Not stopped: another program or session runs in the pane now. Nothing was pressed.</string>
+    <string name="stop_refused_popup_open">Not stopped: a Herdr popup is open. Close it, then stop again. Nothing was pressed.</string>
+    <string name="stop_refused_not_working">Not stopped: the agent isn\'t working now. Nothing was pressed.</string>
+    <string name="stop_refused_not_visible">Not stopped: Herdr isn\'t showing this pane, so its screen can\'t be checked from here. Open its tab in Terminal, then stop again. Nothing was pressed.</string>
+    <string name="stop_refused_scrolled">Not stopped: the pane is scrolled back. Scroll it to the bottom in Terminal, then stop again. Nothing was pressed.</string>
+    <string name="stop_refused_no_stop_key">Not stopped: this program\'s stop key isn\'t shown on its screen. Stop it in Terminal. Nothing was pressed.</string>
+    <string name="stop_refused_screen">Not stopped: the agent\'s empty input box isn\'t all on this screen (a draft, a panel, or a pane sized for another screen). Check it in Terminal. Nothing was pressed.</string>
+    <string name="stop_refused_unsettled">Not stopped: the last delivery to this pane isn\'t confirmed yet. Nothing was pressed.</string>
+    <string name="stop_refused_screen_unread">Not stopped: Herdr\'s read of this pane\'s screen failed, so it can\'t be checked from here. Nothing was pressed.</string>
+    <string name="stop_refused_key_unsent">Not stopped: the stop key didn\'t reach this pane, so nothing was pressed. Check the terminal.</string>
+    <string name="stop_refused_other">Not stopped. Nothing was pressed. Check the terminal.</string>
     <string name="chat_blocked_title">Waiting for you in the terminal</string>
     <string name="chat_blocked_tool">%1$s is waiting for an answer. Chat cannot answer dialogs; answer it in the terminal.</string>
     <string name="chat_blocked_other">The agent is waiting for input. Chat cannot answer dialogs; answer it in the terminal.</string>
@@ -112,4 +136,6 @@
     </plurals>
     <string name="chat_state_collapsed">collapsed</string>
     <string name="chat_state_expanded">expanded</string>
+    <!-- Above a session the pane's agent moved to: /new, /clear, a resume or fork. -->
+    <string name="chat_new_session_divider">New session in this pane</string>
 </resources>

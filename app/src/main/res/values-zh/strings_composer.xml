@@ -10,6 +10,7 @@
     <string name="composer_terminal_keyboard">终端键盘</string>
     <string name="composer_paste_clipboard">从剪贴板粘贴</string>
     <string name="composer_send">发送</string>
+    <string name="composer_queue">排队</string>
     <string name="composer_close">关闭</string>
     <string name="composer_draft">草稿</string>
     <string name="composer_check">检查</string>
@@ -23,6 +24,7 @@
     <string name="composer_pending">已交给 Herdr，正在等待其应答…</string>
     <string name="composer_offline">草稿已保留 · 离线时不会发送任何内容</string>
     <string name="composer_uncertain">未确认：它可能已在窗格中。没有重新发送。</string>
+    <string name="composer_in_pane">已在窗格的输入框中，但会话历史中还没有。未确认已发送；没有重新发送。</string>
     <string name="composer_offline_held">离线 · 上次投递未确认 · 不会发送任何内容</string>
     <string name="composer_check_description">检查窗格中是否有这条消息</string>
     <string name="composer_locked_line">已锁定：未确认。解锁后可编辑。</string>

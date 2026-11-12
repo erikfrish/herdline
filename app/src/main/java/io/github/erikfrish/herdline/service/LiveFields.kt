@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.data.LockDetail
+import io.github.erikfrish.herdline.data.NotificationFields
 
 /*
  * The live update of pinned agents, as the fields of
@@ -16,12 +17,11 @@ import io.github.erikfrish.herdline.data.LockDetail
  *   state, time, count or name.
  * - **State only:** the state glyph, the state word and the elapsed time when
  *   Herdline saw the status begin; no name or count.
- * - **Names:** agent names and states; no time or count.
+ * - **Names:** agent names and states, with the original live-title count; no time.
  * - **Full:** names, states, times and counts; never Herdr's pane title,
  *   which may quote the task.
  *
- * Unlocked, the main content is the full words with titles, as for every
- * other Herdline notification.
+ * The same cap applies while unlocked; configurable fields never quote task titles.
  */
 
 /** The small icon: SystemUI draws it as a mask, so only its shape tells the state. */
@@ -29,16 +29,6 @@ enum class LiveGlyph { Live, Working, NeedsInput, Done, Disconnected }
 
 /** What the pinned agents are doing, where a live update is shown at all. */
 enum class LiveState { Working, Done, Disconnected }
-
-/** One MetricStyle metric (API 37+). */
-internal sealed interface LiveMetric {
-    val label: String
-
-    /** A stopwatch counting from [since], epoch milliseconds. */
-    data class Elapsed(override val label: String, val since: Long) : LiveMetric
-
-    data class Count(override val label: String, val count: Int) : LiveMetric
-}
 
 /** What one version of the notification shows. */
 internal data class LiveFace(
@@ -51,8 +41,6 @@ internal data class LiveFace(
     val chip: String?,
     /** Base of the chronometer, epoch milliseconds; null shows no time. */
     val since: Long?,
-    /** MetricStyle metrics on API 37+, the first one critical; empty for none. */
-    val metrics: List<LiveMetric>,
     /** What accessibility services announce (the ticker). */
     val spoken: String,
 )
@@ -107,7 +95,7 @@ internal class DoneCards {
  * notification shows the plain Attached content instead. [now] dates the
  * elapsed minutes and [time] formats a time of day.
  */
-internal fun liveFields(t: LiveTexts, card: LiveCard?, level: LockDetail, locked: Boolean, now: Long, time: (Long) -> String): LiveFields? {
+internal fun liveFields(t: LiveTexts, card: LiveCard?, level: LockDetail, locked: Boolean, now: Long, fields: List<String> = NotificationFields.DEFAULT, time: (Long) -> String): LiveFields? {
     if (card == null) return null
     val state = liveState(card) ?: return null
     val top = when (state) {
@@ -115,13 +103,13 @@ internal fun liveFields(t: LiveTexts, card: LiveCard?, level: LockDetail, locked
         LiveState.Done -> card.rows.first { it.status == AgentStatus.Done }
         LiveState.Disconnected -> card.rows.first()
     }
-    val permitted = face(t, card, state, top, level, titles = false, now, time)
+    val permitted = face(t, card, state, top, level, now, fields, time)
     return LiveFields(
         state = state,
         // Link lost: demoted at once; it is old news, not a live task.
         promote = state != LiveState.Disconnected,
         unpin = true,
-        main = if (locked) permitted else face(t, card, state, top, LockDetail.Full, titles = true, now, time),
+        main = permitted,
         public = permitted,
         top = top,
     )
@@ -136,12 +124,13 @@ private fun face(
     state: LiveState,
     top: LiveRow,
     lock: LockDetail,
-    titles: Boolean,
+    // The selected fields can narrow the privacy level, never broaden it.
     now: Long,
+    fields: List<String>,
     time: (Long) -> String,
 ): LiveFace {
     if (lock == LockDetail.Hidden) {
-        return LiveFace(LiveGlyph.Live, t.app(), t.unlock(), null, "", null, emptyList(), t.hiddenSpoken())
+        return LiveFace(LiveGlyph.Live, t.app(), t.unlock(), null, "", null, t.hiddenSpoken())
     }
     val word = when (state) {
         LiveState.Working -> t.status(AgentStatus.Working)
@@ -153,78 +142,45 @@ private fun face(
         LiveState.Done -> LiveGlyph.Done
         LiveState.Disconnected -> LiveGlyph.Disconnected
     }
-    // Time only while the link is up: a stale live time is never shown.
-    val since = top.since.takeIf { state == LiveState.Working }
-    fun elapsedOf(row: LiveRow): Int? = when {
-        state == LiveState.Disconnected -> null
-        row.status == AgentStatus.Working -> row.since?.let { minutes(now - it) }
-        row.status == AgentStatus.Done -> row.worked?.let(::minutes)
-        else -> null
+    val allowed = NotificationFields.normalized(fields).filter { NotificationFields.allowed(it, lock) }.toSet()
+    val since = top.since.takeIf { state == LiveState.Working && "elapsed" in allowed }
+    fun elapsedText(row: LiveRow): String? {
+        if (state == LiveState.Disconnected || "elapsed" !in allowed) return null
+        val duration = when (row.status) {
+            AgentStatus.Working -> null // A real header chronometer, never duplicated body text.
+            AgentStatus.Done -> row.worked
+            else -> null
+        } ?: return null
+        return minutes(duration)?.let { if (row.status == AgentStatus.Done) t.total(t.minutes(it)) else t.minutes(it) }
     }
-    fun elapsedText(row: LiveRow): String? = elapsedOf(row)?.let { if (row.status == AgentStatus.Done) t.total(t.minutes(it)) else t.minutes(it) }
-    val spokenTime = elapsedOf(top)?.let(t::spokenMinutes)
-    val timedChip = when {
-        state == LiveState.Done -> word
-        since != null -> null
-        else -> ""
-    }
-    // Only panes really live count as tasks: an Idle or Done pin stays
-    // listed but is no live task (QA LU-C).
-    val live = card.rows.count { it.status == AgentStatus.Working || it.status == AgentStatus.Blocked }
-    val title = when {
-        state == LiveState.Disconnected -> word
-        live <= 1 -> t.pair(top.name, word)
-        else -> t.pair(t.many(live), t.row(top.name, word))
-    }
-    return when (lock) {
-        LockDetail.StateOnly -> {
-            val title = t.pair(t.app(), word)
-            LiveFace(glyph, title, elapsedText(top)?.let { t.pair(word, it) } ?: word, null, timedChip, since, emptyList(), listOfNotNull(title, spokenTime).joinToString(", "))
-        }
-        LockDetail.NamesOnly -> {
-            val names = card.rows.joinToString(" · ") { if (state == LiveState.Disconnected) it.name else t.row(it.name, t.status(it.status)) }
-            LiveFace(glyph, title, names, null, if (state == LiveState.Done) word else "", null, emptyList(), listOf(title, names).joinToString(", "))
-        }
-        else -> {
-            val lines = card.rows.map { row ->
-                val status = t.status(row.status)
-                val shown = row.title?.takeIf { titles && it.isNotBlank() && it != row.name }
-                val line = when {
-                    // The last status is not live once the link is lost.
-                    state == LiveState.Disconnected -> shown?.let { t.pair(row.name, it) } ?: row.name
-                    shown != null -> t.rowTitled(row.name, status, shown)
-                    else -> t.row(row.name, status)
-                }
-                elapsedText(row)?.let { t.pair(line, it) } ?: line
-            }
-            val stale = card.staleSince?.let { t.staleAt(time(it)) }
-            val text = when {
-                stale != null -> stale
-                card.rows.size > 1 -> lines.joinToString(" · ")
-                state == LiveState.Done -> elapsedText(top) ?: t.place(top.node, top.name)
-                else -> t.place(top.node, top.name)
-            }
-            val metrics = if (state == LiveState.Working) {
-                listOfNotNull(
-                    since?.let { LiveMetric.Elapsed(t.elapsed(), it) },
-                    LiveMetric.Count(t.status(AgentStatus.Working), card.rows.count { it.status == AgentStatus.Working }),
-                    card.needYou.takeIf { it > 0 }?.let { LiveMetric.Count(t.status(AgentStatus.Blocked), it) },
-                )
-            } else {
-                emptyList()
-            }
-            LiveFace(
-                glyph,
-                title,
-                text,
-                (listOfNotNull(stale) + lines).joinToString("\n"),
-                timedChip,
-                since,
-                metrics,
-                listOfNotNull(title, text, spokenTime).joinToString(", "),
-            )
+    val counts = if (state != LiveState.Disconnected && "counts" in allowed && (card.rows.size > 1 || card.needYou > 0)) t.agents(card.rows.size, card.needYou) else null
+    fun parts(row: LiveRow): List<String> = fields.distinct().mapNotNull { field ->
+        if (field !in allowed) return@mapNotNull null
+        when (field) {
+            "agent" -> row.name.takeIf { it.isNotBlank() }
+            "tab" -> row.tab?.takeIf { it.isNotBlank() }
+            "host" -> row.node.takeIf { it.isNotBlank() }
+            "state" -> if (state == LiveState.Disconnected) word else t.status(row.status)
+            "elapsed" -> elapsedText(row)
+            "counts" -> counts
+            else -> null
         }
     }
+    val topParts = parts(top)
+    val liveCount = card.rows.count { it.status == AgentStatus.Working || it.status == AgentStatus.Blocked }
+    val title = if (lock == LockDetail.NamesOnly && state == LiveState.Disconnected) word else (if (lock == LockDetail.NamesOnly && liveCount > 1 && "agent" in allowed && "state" in allowed && state != LiveState.Disconnected) listOf(t.many(liveCount)) else emptyList()).plus(topParts.take(2)).joinToString(" · ").ifBlank { t.app() }
+    val detail = topParts.drop(2).joinToString(" · ").ifBlank { null }
+    // A stale marker is mandatory even when the user hides State.
+    val stale = card.staleSince?.let { if (lock == LockDetail.NamesOnly) t.notLive() else t.staleAt(time(it)) }
+    val text = listOfNotNull(stale, detail).joinToString(" · ").ifBlank { null }
+    val big = if (card.rows.size > 1) (listOfNotNull(stale) + card.rows.take(5).map { parts(it).joinToString(" · ") }.filter { it.isNotBlank() } + listOfNotNull(card.rows.size.takeIf { it > 5 && lock == LockDetail.Full && "counts" in allowed }?.let { t.more(it - 5) })).joinToString("\n").ifBlank { null } else text
+    val spokenTime = since?.let { minutes(now - it) }?.let(t::spokenMinutes)
+    return LiveFace(
+        if ("state" in allowed) glyph else LiveGlyph.Live,
+        title, text, big,
+        if ("state" in allowed) (if (card.needYou > 0 && state != LiveState.Disconnected && "counts" in allowed) t.needYou(card.needYou) else word) else "",
+        since, listOfNotNull(title.replace(" · ", ", "), text?.replace(" · ", ", "), spokenTime).joinToString(", "),
+    )
 }
 
 /**
@@ -244,16 +200,15 @@ internal interface LiveTexts {
     fun hiddenSpoken(): String
     fun status(status: AgentStatus): String
     fun notConnected(): String
-    fun pair(first: String, second: String): String
-    fun row(name: String, status: String): String
-    fun rowTitled(name: String, status: String, title: String): String
     fun many(count: Int): String
-    fun place(node: String, name: String): String
     fun minutes(count: Int): String
     fun total(elapsed: String): String
     fun spokenMinutes(count: Int): String
     fun staleAt(time: String): String
-    fun elapsed(): String
+    fun agents(count: Int, needYou: Int): String
+    fun more(count: Int): String
+    fun needYou(count: Int): String
+    fun notLive(): String
 }
 
 internal class ResourceLiveTexts(private val context: Context) : LiveTexts {
@@ -263,16 +218,15 @@ internal class ResourceLiveTexts(private val context: Context) : LiveTexts {
     override fun hiddenSpoken() = context.getString(R.string.live_hidden_spoken)
     override fun status(status: AgentStatus) = AgentNotifications.statusText(context, status)
     override fun notConnected() = context.getString(R.string.live_not_connected)
-    override fun pair(first: String, second: String) = context.getString(R.string.live_title_one, first, second)
-    override fun row(name: String, status: String) = context.getString(R.string.live_row, name, status)
-    override fun rowTitled(name: String, status: String, title: String) = context.getString(R.string.live_row_titled, name, status, title)
     override fun many(count: Int) = res.getQuantityString(R.plurals.live_title_many, count, count)
-    override fun place(node: String, name: String) = context.getString(R.string.live_place, node, name)
     override fun minutes(count: Int) = res.getQuantityString(R.plurals.live_minutes, count, count)
     override fun total(elapsed: String) = context.getString(R.string.live_total, elapsed)
     override fun spokenMinutes(count: Int) = res.getQuantityString(R.plurals.live_minutes_spoken, count, count)
-    override fun staleAt(time: String) = context.getString(R.string.live_stale, time)
-    override fun elapsed() = context.getString(R.string.live_metric_elapsed)
+    override fun staleAt(time: String) = context.getString(R.string.notification_last_seen, time)
+    override fun agents(count: Int, needYou: Int) = res.getQuantityString(R.plurals.notification_agents_count, count, count) + (if (needYou > 0) " · " + needYou(needYou) else "")
+    override fun more(count: Int) = context.getString(R.string.notification_more, count)
+    override fun needYou(count: Int) = res.getQuantityString(R.plurals.notification_needs_count, count, count)
+    override fun notLive() = context.getString(R.string.notification_not_live)
 }
 
 /** The drawable of [glyph]. */

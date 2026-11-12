@@ -22,14 +22,16 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`mastracode`/`kimi` own their line/row formats; the
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`mastracode`/`kimi`/`gemini`/`letta` own their line/row formats; the
 /// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
 mod copilot;
+mod gemini;
 mod grok;
 mod hermes;
 mod kilo;
+mod letta;
 mod mastracode;
 mod kimi;
 mod opencode;
@@ -133,7 +135,8 @@ pub struct Identity {
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
     /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
-    /// `qwen`, `hermes`, `kilo`, `copilot`, `mastracode`, `kimi`.
+    /// `qwen`, `hermes`, `kilo`, `copilot`, `mastracode`, `kimi`, `gemini`,
+    /// `letta`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -449,12 +452,14 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             // chain (a tree, not a byte range), Hermes its SQLite `messages`
             // ids, Kilo its messages' places in (time_created, id) order,
             // Grok its rewind-filtered update rows, Copilot its checked event
-            // log, Mastra Code its thread's (createdAt, id) order and Kimi its
-            // whole active wire chain, read only, each via its module.
+            // log, Mastra Code its thread's (createdAt, id) order, Kimi its
+            // whole active wire chain, Gemini its whole folded chat and Letta
+            // its local conversation's in-context order, read only, each via
+            // its module.
             Some(identity)
                 if matches!(
                     identity.agent.as_str(),
-                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi"
+                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini" | "letta"
                 ) =>
             {
                 let page = match identity.agent.as_str() {
@@ -465,6 +470,8 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                     "copilot" => copilot::page(exec, session, &request.pane, identity, read, reset),
                     "mastracode" => mastracode::page(exec, session, &request.pane, identity, read, reset),
                     "kimi" => kimi::page(exec, session, &request.pane, identity, read, reset),
+                    "gemini" => gemini::binding::page(exec, session, &request.pane, identity, read, reset),
+                    "letta" => letta::page(exec, session, &request.pane, identity, read, reset),
                     _ => opencode::page(exec, session, &request.pane, identity, read, reset),
                 };
                 match page {
@@ -579,9 +586,9 @@ fn image(
         return opencode::image(exec, session, pane, expect, media);
     }
     // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
-    // Copilot, Mastra Code and Kimi history is read without its media: chat
-    // never fetches any, so every image is Unreadable.
-    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi") {
+    // Copilot, Mastra Code, Kimi, Gemini and Letta history is read without
+    // its media: chat never fetches any, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini" | "letta") {
         return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
@@ -978,7 +985,7 @@ bytes=$((bytes))
 printf '\n@@blob %s\n@@data\n' "$bytes"
 head -c "$bytes" "$blob"
 "#,
-            store = blob_store(pid),
+            store = blob_store(&session, &pane, pid),
         ));
     }
     script.push_str("printf '\\n@@after\\n'\n");
@@ -992,12 +999,13 @@ const RESOLVER: &str = include_str!("transcript/resolve_session.py");
 
 /// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
 /// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
-/// session roots. Exit 3 is a store outside `$HOME`; any other failure,
-/// python missing or nothing printed included, is an unknown store, never
-/// a guessed one.
-fn blob_store(pid: u32) -> String {
+/// session roots, with its arguments from Herdr's process-info for `pane`
+/// (both already shell-quoted). Exit 3 is a store outside `$HOME`; any other
+/// failure, python missing or nothing printed included, is an unknown store,
+/// never a guessed one.
+fn blob_store(session: &str, pane: &str, pid: u32) -> String {
     format!(
-        r#"store=$(python3 - --blob-store {pid} "$home" <<'HERDLINE_RESOLVE'
+        r#"store=$(python3 - --blob-store "$herdr" {session} {pane} {pid} "$home" <<'HERDLINE_RESOLVE'
 {RESOLVER}
 HERDLINE_RESOLVE
 ) || {{ status=$?; [ "$status" -eq {EXIT_UNCONFINED} ] && exit {EXIT_UNCONFINED}; exit {EXIT_NO_STORE}; }}
@@ -1065,6 +1073,18 @@ fn split<'a>(bytes: &'a [u8], marker: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
 /// The pane's transcript identity and agent status, from `pane get` and
 /// `pane process-info`.
 fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
+    // Gemini reports no session to Herdr: only the owned launcher's binding
+    // names one, and a Gemini pane without it is refused, never matched by
+    // its cwd or latest file. So `gemini` is not in the reported-ref list.
+    if let Some(identity) = gemini::binding::identity(pane, process)? {
+        return Ok((identity, agent_status(&pane["result"]["pane"])));
+    }
+    // Letta: only Herdr's own `herdr:letta` id ref beside exactly one
+    // foreground `letta` process names one; its module refuses anything else,
+    // never the latest conversation, the cwd or the cloud.
+    if let Some(identity) = letta::identity(pane, process)? {
+        return Ok((identity, agent_status(&pane["result"]["pane"])));
+    }
     let pane = &pane["result"]["pane"];
     let session = &pane["agent_session"];
     let agent = session["agent"]
@@ -1114,7 +1134,12 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
         kind: kind.to_owned(),
     };
-    let status = pane["agent_status"]
+    Ok((identity, agent_status(pane)))
+}
+
+/// Herdr's agent status for the pane, when it is a plain word.
+fn agent_status(pane: &Value) -> String {
+    pane["agent_status"]
         .as_str()
         .filter(|status| {
             status.len() <= 32
@@ -1123,8 +1148,7 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
                     .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
         })
         .unwrap_or("unknown")
-        .to_owned();
-    Ok((identity, status))
+        .to_owned()
 }
 
 /// A session id (`[A-Za-z0-9._-]+`, no `/`, `..`, leading `.`) exactly as

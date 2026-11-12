@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.widget.Toast
 import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -23,7 +24,6 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.data.IconVariant
-import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.ui.MainActivity
 
@@ -37,9 +37,6 @@ enum class Promotion {
 
     /** The card is stale and is not offered for promotion. */
     Stale,
-
-    /** Custom selected-icon content: ordinary notification, not offered for promotion. */
-    Custom,
 
     /** Android before 16 has no promoted notifications: an ordinary ongoing card. */
     Unsupported,
@@ -110,6 +107,18 @@ object AgentNotifications {
     /** What the service last did with the live card, for [promotion]. */
     @Volatile
     internal var card: Promotion = Promotion.NoCard
+    @Volatile
+    internal var promotionRequested: Boolean = false
+
+    internal data class PromotionDetails(val requested: Boolean, val allowed: Boolean?, val eligible: Boolean?, val shown: Boolean?)
+
+    internal fun promotionDetails(context: Context): PromotionDetails {
+        val requested = promotionRequested
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return PromotionDetails(requested, null, null, null)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification
+        return PromotionDetails(requested, manager.canPostPromotedNotifications(), posted?.hasPromotableCharacteristics(), posted?.let { it.flags and Notification.FLAG_PROMOTED_ONGOING != 0 } ?: false)
+    }
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -118,7 +127,7 @@ object AgentNotifications {
             listOf(
                 NotificationChannel(CHANNEL_ATTENTION, context.getString(R.string.channel_attention), NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(CHANNEL_DONE, context.getString(R.string.channel_done), NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(CHANNEL_CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CHANNEL_CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW).apply { description = context.getString(R.string.attached_detail) },
                 NotificationChannel(CHANNEL_LIVE, context.getString(R.string.channel_live), NotificationManager.IMPORTANCE_LOW),
             ),
         )
@@ -316,9 +325,7 @@ object AgentNotifications {
         if (!liveActivity) return Promotion.Off
         val state = card
         if (state != Promotion.Requested) return state
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA ||
-            Build.VERSION.SDK_INT_FULL < Build.VERSION_CODES_FULL.BAKLAVA_1
-        ) return Promotion.Unsupported
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return Promotion.Unsupported
         val manager = context.getSystemService(NotificationManager::class.java)
         if (!manager.canPostPromotedNotifications()) return Promotion.NotAllowed
         val posted = manager.activeNotifications.firstOrNull { it.id == ConnectionService.NOTIFICATION_ID && it.tag == null }?.notification
@@ -327,14 +334,25 @@ object AgentNotifications {
         return if (posted.hasPromotableCharacteristics()) Promotion.Requested else Promotion.NotPromotable
     }
 
-    /** The system page where the user allows or stops Herdline's promoted notifications. */
-    fun settingsIntent(context: Context): Intent = Intent(
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            android.provider.Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS
-        } else {
-            android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS
-        },
-    ).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    /**
+     * Opens the system page where the user allows or stops Herdline's
+     * promoted notifications. Where this Android has no such page (API 36.0
+     * answers -91, not resolved, without throwing: QA m43 C5), the app's
+     * notification settings open instead; where neither opens, a message
+     * says so. Never a silent no-op.
+     */
+    fun openSettings(context: Context) {
+        val pages = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) add(android.provider.Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
+            add(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        }
+        val opened = pages.any { action ->
+            val intent = Intent(action).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.resolveActivity(context.packageManager) != null &&
+                runCatching { context.startActivity(intent) }.isSuccess
+        }
+        if (!opened) Toast.makeText(context, R.string.live_promotion_settings_missing, Toast.LENGTH_LONG).show()
+    }
 
     internal fun statusText(context: Context, status: AgentStatus): String = context.getString(
         when (status) {
@@ -354,7 +372,6 @@ object AgentNotifications {
     internal fun publicOf(context: Context, channel: String, content: NoteContent, icon: Int = R.drawable.ic_notification): NotificationCompat.Builder =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(icon)
-            .setLargeIcon(IconVariants.currentIcon(context))
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setSubText(content.subText)
@@ -417,7 +434,6 @@ object AgentNotifications {
         if (children.put(note.key.tag, ChildPost(words, lock, note.at, variant)) || force) {
             val child = NotificationCompat.Builder(context, channel)
                 .setSmallIcon(icon)
-                .setLargeIcon(IconVariants.icon(context, variant))
                 .setWhen(note.at)
                 .setShowWhen(true)
                 .setCategory(if (attention) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
@@ -441,7 +457,6 @@ object AgentNotifications {
         if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock, variant)) || force) {
             val summary = NotificationCompat.Builder(context, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setLargeIcon(IconVariants.icon(context, variant))
                 .setGroup(group(nodeId))
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)

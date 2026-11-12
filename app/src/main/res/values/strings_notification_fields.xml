@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_content">Live notification content</string>
+    <string name="notification_content_help">Choose and order fields for the live and connection cards. Privacy caps both the notification and its public version. Agent alerts keep their own content.</string>
+    <string name="notification_field_agent">Agent</string>
+    <string name="notification_field_tab">Tab</string>
+    <string name="notification_field_host">Host</string>
+    <string name="notification_field_state">State</string>
+    <string name="notification_field_elapsed">Elapsed time</string>
+    <string name="notification_field_counts">Agent counts</string>
+    <string name="notification_field_up">Move %1$s earlier</string>
+    <string name="notification_content_reset">Restore default content</string>
+    <string name="notification_requires_full">Shown only with Full detail</string>
+    <string name="notification_requires_names">Shown with Names or Full detail</string>
+    <string name="notification_requires_elapsed">Shown with State only or Full detail; Names shows names without time</string>
+    <string name="notification_preview_sample">Sample — no agents monitored</string>
+    <string name="notification_preview_actual">Current notification</string>
+    <string name="notification_connected">Connected</string>
+    <string name="notification_last_seen">Last seen %1$s</string>
+    <string name="notification_not_live">Not live · last known</string>
+    <string name="notification_more">+%1$d more</string>
+    <plurals name="notification_agents_count"><item quantity="one">%d agent</item><item quantity="other">%d agents</item></plurals>
+    <plurals name="notification_needs_count"><item quantity="one">%d needs you</item><item quantity="other">%d need you</item></plurals>
+    <string name="notification_yes">yes</string>
+    <string name="notification_no">no</string>
+    <string name="notification_promotion_unavailable">Not available on this Android version</string>
+    <string name="notification_promotion_details">Promotion requested: %1$s · allowed by system: %2$s · eligible: %3$s · shown as live: %4$s. Android promotion does not prove Samsung Now Bar placement.</string>
+    <string name="notification_requires_state">Shown with State only, Names or Full detail</string>
+</resources>

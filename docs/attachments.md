@@ -30,7 +30,9 @@ mentioned as `@"/abs/path"`.
   or a quote. The host repeats every check.
 - **Limits.** Images may be at most 20 MiB, OMP's `MAX_IMAGE_INPUT_BYTES`
   (`pi-tui/src/chat/image-loading.ts`). Other files may be at most 64 MiB.
-  The host enforces the limit with `head -c limit+1`.
+  For an OpenCode target every file may be at most 20 MiB, OpenCode
+  2.2.7's own `MAX_ATTACHMENT_BYTES`, refused before upload as
+  `opencode_too_large`. The host enforces the limit with `head -c limit+1`.
 - **Verified.** Staging succeeds only when the size and SHA-256 computed on the
   host equal the ones the phone computed while it streamed.
 - **Cancel cleans up.** A cancel or any failed check removes the upload's
@@ -84,7 +86,7 @@ The + menu leads with **Attach image** (the system Photo Picker, images
 only) and **Attach file** (`OpenMultipleDocuments`, any type), each with
 its limit as a help line. While the draft can't take files they stay,
 disabled, and the help line names why: not connected, the draft is held or
-sending, the pane must be confirmed again, the pane has no OMP whose
+sending, the pane must be confirmed again, the pane has no OMP, OpenCode or Kilo whose
 instance was read, or the draft already holds its 10 files
 (`attachBlock`; null exactly where files may be attached).
 
@@ -111,8 +113,10 @@ instance was read, or the draft already holds its 10 files
   uploaded, and uploads again only on the user's tap.
 - **Held until ready.** Send and Insert stay off until every file is staged
   for exactly the draft's target (`attachmentsState`). After a rebind,
-  move or new agent instance, the earlier copy no longer counts. Steer is
-  off while the draft has files.
+  move or new agent instance, the earlier copy no longer counts. Explicit Chat
+  Steer accepts ready images and files through the live OMP endpoint while it
+  works; the terminal/PTY Steer route remains text-only. A missing endpoint
+  keeps the image draft and reports a refusal instead of dropping its files.
 - **Images without text.** A staged image is a non-empty draft; no caption
   is required. The same refusal, offline and target-mismatch notices shown
   for text also explain why a photo-only draft cannot be sent. A Chat send
@@ -121,6 +125,14 @@ instance was read, or the draft already holds its 10 files
   host's whole empty-editor check and the uncertain-delivery care.
 - **Sent once.** A confirmed delivery takes its files out of the draft. A
   refused or uncertain one keeps them, and the hold applies as for text.
+- **Withdrawn, not lost.** The draft remembers the files of each send OMP
+  accepted, by request id (the newest 16, across restarts). Withdrawing that
+  send from OMP's queue puts its text and the same staged files back into
+  the editor: nothing is uploaded or sent again. A withdraw starts only when
+  the editor is empty, with nothing on its way. Otherwise it is refused
+  before the queue is touched ("clear the editor first"), and the request
+  stays queued. Send and Steer stay off while it runs, and text typed
+  meanwhile stays first, with the withdrawn text after it.
 - **Remove** cancels an upload under way and deletes a staged copy from the
   host.
 
@@ -181,8 +193,45 @@ If two pastes were merged into one, OMP would get the path as plain text, and
 the transcript would show no `Image` block. Check for `[Image #N]` after
 sending an image together with text.
 
-Steers carry no attachments: `composerSteer` refuses a request that has
-attachments (`attachment_steer`).
+The terminal/PTY `composerSteer` path refuses attachments (`attachment_steer`).
+Chat's endpoint route carries them as image parts or file mentions with
+`deliverAs: "steer"`, using the same staging, instance, dialog, request-id,
+queue receipt and uncertain-delivery safeguards as an ordinary Chat Send.
+Photo-only steering needs no caption. The explicit Steer action remains
+distinct from Send; no text-only fallback discards an attached photo.
+
+## OpenCode
+
+An OpenCode Send (Auto, Steer or Queue) carries the draft's staged files as
+the prompt's `files`, PromptInput `{uri, name, source: {type: "inline"}}`
+(pinned 2.2.7 fedc6f2 `schema/prompt-input.ts:9-18`). The native core writes
+the full staged records and their target to the host command's stdin, never
+an argument; `agent_chat/opencode_media.py`, embedded in the control script,
+reads each file under the staging root, checks its binding, size and SHA-256,
+encodes it as a data URI and sends the prompt in the same process. The
+session and the agent process are asked again after the files are read. Text
+is still required. At most 10 files, each at most 20 MiB; there is no total
+limit. Any refusal refuses the whole send in words, before the prompt, never
+dropping a file or falling back to the pane: `attachment_too_many`,
+`attachment_too_large`, `attachment_unsupported` (an image that is not PNG,
+JPEG, GIF or WebP), `attachment_target`, `attachment_missing`,
+`attachment_needs_agent`.
+
+## Kilo
+
+A Kilo Send or Steer (Kilo takes no Queue) carries the draft's
+staged files through the same `opencode_media.py` checks, embedded in
+`kilo_ctl.py`, as v1 FilePartInput `{type: "file", mime, filename, url}` with
+the verified bytes as a `data:` URL (pinned v7.8.27 03a6f07
+`schema/src/v1/session.ts:442-466`, `session/prompt.ts:1039-1070`), never a
+host path: a `file:` URL is read by Kilo after it has answered 204, behind its
+own read permission, where a failure becomes a note in the transcript. Kilo
+pins no size cap on such a part (a raster is resized, text is read whole), so
+the native limits hold: 10 files, images 20 MiB, other files 64 MiB. The
+session, its idleness and the agent process are asked again after the files
+are read. A raster Kilo cannot decode is its synchronous 400 (kind
+`attachment`) and refuses the whole send as `attachment_unsupported`; the
+other refusals are OpenCode's.
 
 ## JNI contract
 
@@ -216,8 +265,9 @@ Refusal reasons are:
 - `not_connected` (Kotlin only): no live link to stage on;
 - `no_exec`: the link has no SSH session for commands;
 - `target_changed`: the session or daemon run is not this link's;
-- `needs_agent`: the target names no OMP instance;
+- `needs_agent`: the target names no agent instance;
 - `too_large`;
+- `opencode_too_large` (Kotlin only): past OpenCode's 20 MiB per file;
 - `bad_name`;
 - `staging_unsafe`: the root or the directory fails a check;
 - `mismatch`: the size or the SHA-256;

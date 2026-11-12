@@ -21,7 +21,9 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
 import io.github.erikfrish.herdline.core.IngressSend
+import io.github.erikfrish.herdline.core.QUEUE_STEERING
 import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.SentRecord
 import io.github.erikfrish.herdline.data.SentState
 
@@ -96,6 +98,14 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
+/**
+ * The code Send's precheck shows for the pane's refused box check [gate]: where the
+ * endpoint said its server is missing or can't be told apart, that reason, since the
+ * box check is the PTY route's and says nothing of the program's own server.
+ */
+internal fun sendPrecheckCode(gate: String?, probe: IngressProbe?): String? =
+    gate?.let { code -> (probe as? IngressProbe.Unusable)?.reason?.takeIf { it == "needs_server" || it == "server_discovery" } ?: code }
+
 /** What the queue panel shows. */
 internal sealed interface QueuePanel {
     data object Hidden : QueuePanel
@@ -118,11 +128,65 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
 }
 
 /**
+ * The panel for a program whose server lists no waiting steer (Kilo): [probe]'s own, except that
+ * while it reads session [session] at work, the steers this app recorded as waiting there show,
+ * by the text each carried. Nothing else is guessed: an idle read shows none, since nothing
+ * waits behind no turn (kilo prompt-queue.ts:86-107, 273-286), and [queueSettled] then drops them.
+ */
+internal fun unlistedQueuePanel(probe: IngressProbe?, draft: Draft, session: String?): QueuePanel {
+    if (probe !is IngressProbe.Live || probe.state.idle || session == null) return queuePanel(probe)
+    val waiting = draft.waitingSteers(session).map { (id, send) -> IngressQueued(id, send.text.orEmpty(), QUEUE_STEERING) }
+    return if (waiting.isEmpty()) QueuePanel.Hidden else QueuePanel.Queue(waiting)
+}
+
+/**
+ * [draft] after [probe]'s read, else null when nothing changes; [editor] is the text typed now.
+ * A send whose withdraw got no answer ([io.github.erikfrish.herdline.data.QueuedSend.withdrawDoubt])
+ * and whose chip goes without a retry may have been taken back by that withdraw: its text and
+ * files come back after [editor], unsent. Losing them is worse than a duplicate. Its chip goes
+ * when the server's listed queue no longer holds it, or, where the server lists none ([unlisted],
+ * Kilo), when session [session] reads idle, which also ends every other steer recorded there.
+ */
+internal fun queueSettled(probe: IngressProbe?, draft: Draft, unlisted: Boolean, session: String?, editor: String): Draft? {
+    if (probe !is IngressProbe.Live) return null
+    val gone = if (unlisted) {
+        if (!probe.state.idle || session == null) return null
+        draft.waitingSteers(session).map { it.first }
+    } else {
+        val listed = probe.state.queued.mapNotNullTo(HashSet()) { it.requestId }
+        draft.queued.keys.filter { it !in listed }
+    }
+    val doubted = gone.filter { draft.queued[it]?.withdrawDoubt == true }
+    val restored = doubted.fold(draft.copy(text = editor)) { d, id -> d.withdrawn(id, d.text) }
+    val settled = (if (doubted.isEmpty()) draft else restored).steersLeft(gone)
+    return settled.takeIf { it != draft }
+}
+
+/**
  * Only a request this app sent carries an id OMP can withdraw; one queued
  * at the desktop is withdrawn there. One withdraw at a time.
  */
 internal fun withdrawEnabled(entry: IngressQueued, withdrawing: String?): Boolean =
     entry.requestId != null && withdrawing == null
+
+/**
+ * Whether a withdraw may start: the request comes back into the editor, so
+ * the editor must be empty, with nothing on its way. Otherwise it is
+ * refused before the queue is touched, and the request stays queued.
+ */
+internal fun withdrawRestorable(editor: String, busy: Boolean): Boolean = editor.isEmpty() && !busy
+
+/**
+ * The words for an unusable endpoint: a server the session needs and does
+ * not run, or one whose registration could not be trusted, each in its own
+ * terms; any other check that failed in the general ones.
+ */
+@StringRes
+internal fun unusableRes(reason: String): Int = when (reason) {
+    "needs_server" -> R.string.ingress_needs_server
+    "server_discovery" -> R.string.ingress_server_discovery
+    else -> R.string.ingress_unusable
+}
 
 /**
  * OMP's queue for the instance Chat reads, its own block above the
@@ -135,12 +199,16 @@ internal fun IngressQueuePanel(
     withdrawing: String?,
     @StringRes note: Int?,
     onWithdraw: (IngressQueued) -> Unit,
+    /** Steers a queued follow-up into the running turn; null where the runtime has no such verb. */
+    onPromote: ((IngressQueued) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val error = MaterialTheme.colorScheme.error
     val noteText: @Composable () -> Unit = {
-        note?.let {
-            Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = error, modifier = Modifier.testTag("ingress:note"))
+        when {
+            note != null -> Text(stringResource(note), style = MaterialTheme.typography.bodySmall, color = error, modifier = Modifier.testTag("ingress:note"))
+            // A Withdraw or Steer under way: greyed buttons alone would read as a tap that did nothing.
+            withdrawing != null -> Text(stringResource(R.string.ingress_queue_asking), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("ingress:asking"))
         }
     }
     when (panel) {
@@ -152,7 +220,7 @@ internal fun IngressQueuePanel(
             modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unsupported"),
         )
         is QueuePanel.Unusable -> Text(
-            stringResource(R.string.ingress_unusable, panel.reason),
+            stringResource(unusableRes(panel.reason), panel.reason),
             style = MaterialTheme.typography.bodySmall,
             color = error,
             modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unusable"),
@@ -179,6 +247,13 @@ internal fun IngressQueuePanel(
                     if (entry.requestId == null) {
                         Text(stringResource(R.string.ingress_queue_desktop), style = MaterialTheme.typography.labelSmall)
                     } else {
+                        if (onPromote != null && !entry.steering) {
+                            TextButton(
+                                onClick = { onPromote(entry) },
+                                enabled = withdrawEnabled(entry, withdrawing),
+                                modifier = Modifier.heightIn(min = 48.dp).testTag("ingress:promote"),
+                            ) { Text(stringResource(R.string.ingress_promote)) }
+                        }
                         TextButton(
                             onClick = { onWithdraw(entry) },
                             enabled = withdrawEnabled(entry, withdrawing),

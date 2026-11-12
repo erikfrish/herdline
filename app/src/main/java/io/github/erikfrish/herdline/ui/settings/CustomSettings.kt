@@ -1,6 +1,5 @@
 package io.github.erikfrish.herdline.ui.settings
 
-import android.content.ActivityNotFoundException
 import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.view.View
@@ -116,6 +115,7 @@ import io.github.erikfrish.herdline.ui.glass.GlassScreen
 import io.github.erikfrish.herdline.ui.glass.IconBadge
 import io.github.erikfrish.herdline.ui.terminal.AllExtraKeys
 import io.github.erikfrish.herdline.ui.terminal.DEFAULT_EXTRA_KEY_IDS
+import io.github.erikfrish.herdline.ui.terminal.isDefaultBased
 import io.github.erikfrish.herdline.ui.chat.chatPalette
 import io.github.erikfrish.herdline.ui.theme.HerdlineTheme
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
@@ -350,6 +350,18 @@ internal fun LazyListScope.extraKeySettings(store: SettingsStore, settings: Sett
                                 }
                             }
                             Switch(position >= 0, { store.update { it.copy(extraKeys = toggled(it.extraKeys, id)) } }, Modifier.testTag("settings:key:$id"))
+                        },
+                    )
+                }
+                // Which layout rule applies to the saved list; the list itself is never rewritten.
+                val known = settings.extraKeys.filter(AllExtraKeys::containsKey)
+                Box(Modifier.padding(horizontal = 18.dp, vertical = 10.dp).testTag("settings:keys_layout")) {
+                    Help(
+                        if (isDefaultBased(known)) {
+                            val extra = known.size - DEFAULT_EXTRA_KEY_IDS.size
+                            pluralStringResource(R.plurals.extra_keys_layout_default, extra, extra)
+                        } else {
+                            stringResource(R.string.extra_keys_layout_custom)
                         },
                     )
                 }
@@ -872,13 +884,7 @@ private fun PromotionRows() {
     ItemRow(
         title = stringResource(R.string.live_promotion_settings),
         chevron = true,
-        onClick = {
-            try {
-                context.startActivity(AgentNotifications.settingsIntent(context))
-            } catch (e: ActivityNotFoundException) {
-                // No such settings page on this build of Android; the state above still stands.
-            }
-        },
+        onClick = { AgentNotifications.openSettings(context) },
     )
 }
 
@@ -886,7 +892,6 @@ private fun promotionText(state: Promotion): Int = when (state) {
     Promotion.Off -> R.string.promotion_off
     Promotion.NoCard -> R.string.promotion_no_card
     Promotion.Stale -> R.string.promotion_stale
-    Promotion.Custom -> R.string.promotion_custom
     Promotion.Unsupported -> R.string.promotion_unsupported
     Promotion.NotAllowed -> R.string.promotion_not_allowed
     Promotion.NotPromotable -> R.string.promotion_not_promotable

@@ -116,10 +116,9 @@ fields; `ConnectionService.build` posts them).
   dropped, has no time and none is shown, never "0 min". While Working with
   a known start, `when` is a chronometer; a Done run shows "N min total"
   only when Herdline saw it start and end.
-- **Style.** API 37+ uses `MetricStyle` under Full (elapsed, working count,
-  waiting count; elapsed critical). Below that, `BigTextStyle` with a line
-  per pinned row. There is no progress bar or percentage; the category is
-  `progress`.
+- **Style.** Standard `BigTextStyle`, with at most five projected pinned rows
+  and a remaining count. No custom RemoteViews, duplicate large logo, fake
+  progress or percentage; the pinned card requests promotion explicitly.
 - **Actions.** Tap opens the top row's pane. Unpin unpins every row shown,
   including Done. The Attached content keeps Disconnect.
 - **Unpin, swipe and the service.** Swipe-dismiss (Android 14+) unpins the
@@ -141,7 +140,7 @@ resumes:
 | off | live updates setting off |
 | no card | no pinned agent is working or just finished |
 | stale | link down; promotion not requested |
-| ordinary, unsupported | Android before 16 QPR1 (full SDK 36.1) |
+| ordinary, unsupported | Android before 16 (API 36) |
 | ordinary, not allowed | `NotificationManager.canPostPromotedNotifications()` is false |
 | ordinary, not qualifying | the posted card fails `Notification.hasPromotableCharacteristics()` |
 | requested | allowed and qualifying; the system has not set `FLAG_PROMOTED_ONGOING` |
@@ -150,7 +149,13 @@ resumes:
 `promoted` proves Android promotion only, not the Samsung Now Bar location.
 The bottom lock-screen capsule must be observed on the Samsung itself; an
 ordinary Attached notification or an emulator card is not equivalent.
-The promotion request API requires Android 16 QPR1 (36.1), not merely API 36.
+Reporting starts at Android 16 (API 36.0): `canPostPromotedNotifications`,
+`hasPromotableCharacteristics` and `FLAG_PROMOTED_ONGOING` are all API 36.
+The request is `NotificationCompat.Builder.setRequestPromotedOngoing`
+(androidx.core 1.19.1), which only sets the `android.requestPromotedOngoing`
+extra, so it is the same request on 36.0; the framework's own
+`Notification.Builder.setRequestPromotedOngoing` setter is 36.1 and is not
+called.
 See [Android Live Updates](https://developer.android.com/develop/ui/views/notifications/live-update).
 
 "Open Android settings" opens the app's promotion page on Android 16
@@ -169,13 +174,13 @@ notification lock detail.
 | Mode | Agent notification on a locked screen | Live update on a locked screen |
 |---|---|---|
 | Hidden | "An agent needs you" / "An agent finished"; summary "Agent notifications" | `ic_live`, the app name, "Unlock for details": no state, time, count or name |
-| State only | live update only | the state glyph, "‹app name› · ‹state›", "‹state› · N min" when the start was seen; no names or counts |
-| Names | agent name and state, host | agent names and states; no times or counts |
-| Full | everything, including Herdr's title and message | place, states, times and counts; never task titles, prompts or commands |
+| State only | live update only | state plus an observed header chronometer; no names or counts |
+| Names | agent name and state, host | agent names/states and original multiple-live-agent title count; no times |
+| Full | everything, including Herdr's title and message | selected real fields; never task titles, prompts or commands |
 
-The same words go to every surface: icon, chip, title, text, style, the
-public version and the ticker TalkBack reads. Task titles appear only on an
-unlocked screen.
+The live/attached selection is capped in both main and public content, even
+while unlocked; previews use that same projection. Agent alerts retain their
+existing independent redaction and may show task titles only at Full detail.
 
 Herdr's notification title and body, which may quote the task, prompt or
 answer, appear only in Full.
@@ -189,18 +194,32 @@ showing. A new notification while locked still alerts.
 
 ## App icon on notifications
 
-Every Herdline notification draws two icons. The large icon and the coloured
-artwork of the live card follow the icon chosen in Settings › Appearance
-(`IconVariants.icon`). The small icon is a state mask (`ic_notification`,
-`ic_needs_input`, `ic_working`, and the other live glyphs), never the variant
-tile. The round tile in the channel header (the left icon on One UI) is not
-the app's: the system draws the installed manifest's static package icon
-there, and no app can change it at runtime. Since 0.6.0 the manifest ships
-the Dusk tile so that header matches the Dusk identity this build uses
-everywhere else; picking another variant leaves just that one system tile
-showing Dusk. The enableable Default launcher alias stays explicitly Wood. A
-real Samsung shade screenshot (SM-S928U1, 0.5.3) showed the mismatch this
-fixes: Wood header tile, Dusk large icon.
+Herdline keeps the required small state icon and Android's system-owned app
+icon. It adds no large logo or custom artwork to attached, lost, agent,
+summary or pinned live notifications. Launcher icon variants are unchanged.
+
+## Configurable live notification content
+
+Settings › Notifications › Live notification content selects and orders six
+real fields: state, agent, tab, host, elapsed and agent counts. All except
+host are selected by default. Unavailable values are absent; no prompt or
+task title is included. The connection card drops its old boilerplate body.
+
+The privacy cap applies to the main card and public version alike, even
+unlocked: Hidden keeps app + unlock only; State only permits state and an
+observed elapsed clock; Names permits agent and state, plus the original
+title count of more than one Working/Blocked agent; Full permits all fields.
+Names deliberately omits clocks. Capped Settings controls stay visible but
+disabled. Selection and reset never change saved privacy or live-pin level.
+
+The Settings preview uses the exact service snapshot and the same projection;
+only with no current card does it show a labelled generic sample. Clock time
+uses a real chronometer, not per-second notification reposts. Stale cards stop
+it: Hidden says nothing, Names says Not live / last known, State only and Full
+show a static last-seen time. Promotion details report requested, allowed,
+eligible and actually promoted separately; none proves Samsung Now Bar
+placement. Stock Samsung proof remains open until the actual capsule is seen.
+
 
 ## Known gaps
 

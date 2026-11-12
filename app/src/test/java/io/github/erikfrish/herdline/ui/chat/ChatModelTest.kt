@@ -14,6 +14,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -90,6 +91,27 @@ class ChatModelTest {
         val other = agent.copy(path = "/h/.omp/agent/sessions/x/b.jsonl")
         assertSame(merged, merged.merge(page(text("9", null, 0, "user", "z"), identity = other), appended = true))
         assertEquals(other, merged.merge(page(text("9", null, 0, "user", "z"), identity = other, reset = true), appended = true).identity)
+    }
+
+    @Test
+    fun another_session_in_the_pane_shows_only_that_session_under_a_divider() {
+        val old = ChatHistory.of(page(text("1", null, 0, "user", "old turn"), reset = true))
+        assertFalse(old.newSession)
+        // The same session read again (a tail, a rewrite, a restart that resumed it): no divider.
+        val resumed = old.merge(page(text("1", null, 0, "user", "old turn"), reset = true, identity = agent.copy(pid = 43, terminalId = "term_2")), appended = true)
+        assertFalse(resumed.newSession)
+        // /new in the same pane: the next reset names another session; only its turns are kept.
+        val fresh = agent.copy(pid = 43, path = "/h/.omp/agent/sessions/x/b.jsonl")
+        val switched = resumed.merge(page(text("9", null, 0, "user", "new turn"), reset = true, identity = fresh), appended = true)
+        assertTrue(switched.newSession)
+        assertEquals(listOf("u:new turn"), texts(switched.entries))
+        // It stays marked while that session grows, pages back, or is re-read from its tail.
+        val grown = switched
+            .merge(page(text("10", "9", 100, "user", "next"), start = 100, end = 110, identity = fresh), appended = true)
+            .merge(page(text("9", null, 0, "user", "new turn"), reset = true, identity = fresh), appended = true)
+        assertTrue(grown.newSession)
+        // Another agent in the pane is another session too.
+        assertTrue(old.merge(page(reset = true, identity = agent.copy(agent = "claude", source = "herdr:claude")), appended = true).newSession)
     }
 
     @Test
@@ -177,8 +199,40 @@ class ChatModelTest {
     }
 
     @Test
+    fun the_agents_own_server_decides_working_and_the_panes_blocked_stays() {
+        val opencode = Agent("w1:p1", "w1", "t1", null, "opencode", null, AgentStatus.Idle, false)
+        fun with(status: AgentStatus, running: Boolean?) = chatStatus(true, "w1:p1", opencode.copy(status = status), running)
+        assertEquals(AgentStatus.Working, with(AgentStatus.Idle, running = true))
+        assertEquals("a new turn after Done", AgentStatus.Working, with(AgentStatus.Done, running = true))
+        assertEquals("its drain ended", AgentStatus.Idle, with(AgentStatus.Working, running = false))
+        assertEquals(AgentStatus.Done, with(AgentStatus.Done, running = false))
+        assertEquals("waiting on the user", AgentStatus.Blocked, with(AgentStatus.Blocked, running = true))
+        assertEquals("no server answer: the pane's", AgentStatus.Working, with(AgentStatus.Working, running = null))
+        assertEquals("never past a lost link", AgentStatus.Unknown, chatStatus(false, "w1:p1", opencode, running = true))
+    }
+
+    @Test
     fun an_unclosed_code_fence_still_renders_as_code() {
         val blocks = markdownBlocks("Run:\n```sh\nls -la\n")
         assertEquals(listOf(MdBlock.Paragraph("Run:"), MdBlock.Code("sh", "ls -la\n")), blocks)
+    }
+
+    @Test
+    fun a_pty_send_is_sent_only_when_its_exact_session_gains_that_turn() {
+        val sent = "  ping ✓\nline two\nline three\nline four "
+        val landed = text("u9", null, 100, "user", sent)
+        // One new user turn holding all four lines, edges and all, past the history's end before the tap.
+        assertTrue(ptyTurnLanded(page(landed, start = 100, end = 140), agent, before = 100, text = sent))
+        // The same words already in the history before the tap are not this send, also next to a changed new turn.
+        assertFalse(ptyTurnLanded(page(text("u1", null, 40, "user", sent), text("u9", null, 100, "user", "other")), agent, before = 100, text = sent))
+        // Recorded with other line ends or trimmed: not byte-equal, so not proven.
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.replace("\n", "\r\n"))), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.trim())), agent, 100, sent))
+        // Split across turns or echoed by the assistant: not landed.
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", "  ping ✓"), text("u10", null, 110, "user", "line two\nline three\nline four ")), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(text("a9", null, 100, "assistant", sent)), agent, 100, sent))
+        // Another instance or a history that started over proves nothing.
+        assertFalse(ptyTurnLanded(page(landed, identity = agent.copy(pid = 43)), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(landed, reset = true), agent, 100, sent))
     }
 }

@@ -32,6 +32,15 @@ data class IngressSubagent(val parentCallId: String?, val child: TranscriptSubag
 /** OMP's queue as the extension reports it, and whether the agent is idle. */
 data class IngressState(val idle: Boolean, val queued: List<IngressQueued>, val subagents: List<IngressSubagent> = emptyList())
 
+/** One session this one started, as its program's server lists it (Kilo, OpenCode): its id and title, no state claimed. */
+data class IngressChild(val id: String, val title: String)
+
+/** The sessions listed, and [more] when the server holds others beyond them. */
+data class IngressChildren(val sessions: List<IngressChild>, val more: Boolean)
+
+/** The open dialogs' snapshot as given, and [more] when the server holds others beyond them (OpenCode, Kilo). */
+class IngressDialogs(val dialogs: JSONArray, val more: Boolean)
+
 /** What one send through the endpoint amounts to. */
 sealed interface IngressSend {
     /** This instance publishes no endpoint: nothing was sent, and the pane route may be used. */
@@ -132,25 +141,99 @@ internal fun ingressWithdrawn(call: () -> String): Result<Boolean> {
     return Result.success(reply.optBoolean("withdrawn"))
 }
 
-internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
+/** Whether queued entry was steered into the running turn; false when it had left the queue. Anything less fails. */
+internal fun ingressPromoted(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    val promoted = reply.opt("promoted")
+    if (reply.optString("endpoint") != "live" || promoted !is Boolean) {
+        return Result.failure(IOException("not promoted"))
+    }
+    return Result.success(promoted)
+}
+
+internal fun ingressDialogsOutcome(call: () -> String): Result<IngressDialogs> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val dialogs = reply.optJSONArray("dialogs")
     if (reply.optString("endpoint") != "live" || dialogs == null) {
         return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
     }
-    return Result.success(dialogs)
+    return Result.success(IngressDialogs(dialogs, reply.optBoolean("more", false)))
+}
+
+/** The sessions [ingressChildren][Connection.ingressChildren] listed; anything but a live list fails. */
+internal fun ingressChildrenOutcome(call: () -> String): Result<IngressChildren> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    val children = reply.optJSONArray("children")
+    if (reply.optString("endpoint") != "live" || children == null) {
+        return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
+    }
+    return try {
+        val sessions = (0 until children.length()).map { children.getJSONObject(it).let { c -> IngressChild(c.getString("id"), c.getString("title")) } }
+        Result.success(IngressChildren(sessions, reply.optBoolean("more", false)))
+    } catch (error: JSONException) {
+        Result.failure(IOException("children unreadable", error))
+    }
+}
+
+/**
+ * Whether the program's server is missing: `unusable: needs_server` is
+ * true, a live answer false. Any other answer says nothing either way and
+ * fails, so the card keeps its claim rather than guess.
+ */
+internal fun ingressNeedsServerOutcome(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    return when (val endpoint = reply.optString("endpoint")) {
+        "live" -> Result.success(false)
+        "unusable" -> if (reply.optString("reason") == "needs_server") Result.success(true) else Result.failure(IOException("unusable"))
+        else -> Result.failure(IOException("endpoint ${endpoint.ifEmpty { "unknown" }}"))
+    }
 }
 
 /** OMP's results for a dialog submit; only these say what became of the answer. */
 private val SUBMIT_RESULTS = setOf("submitted", "not_open", "invalid", "kind_mismatch")
 
-internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<String> {
+/** A question another client answered first: `not_open` with `settled: answered`. */
+internal const val DIALOG_ANSWERED_ELSEWHERE = "answered"
+
+internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<String> = dialogOutcome(dialogId, SUBMIT_RESULTS, call)
+
+/** A decline's results: `cancelled`, or `not_open` (answered elsewhere said apart). Anything less is unconfirmed. */
+internal fun ingressCancelOutcome(dialogId: String, call: () -> String): Result<String> = dialogOutcome(dialogId, setOf("cancelled", "not_open"), call)
+
+private fun dialogOutcome(dialogId: String, results: Set<String>, call: () -> String): Result<String> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
     val result = reply.optString("result")
-    if (reply.optString("endpoint") != "live" || reply.optString("dialogId") != dialogId || result !in SUBMIT_RESULTS) {
-        return Result.failure(IOException("no submit result"))
+    if (reply.optString("endpoint") != "live" || reply.optString("dialogId") != dialogId || result !in results) {
+        return Result.failure(IOException("no dialog result"))
     }
+    if (result == "not_open" && reply.optString("settled") == "answered") return Result.success(DIALOG_ANSWERED_ELSEWHERE)
     return Result.success(result)
+}
+
+/** A PTY stop that pressed no key, for [reason] (`control/pty.rs` `Refusal`): nothing reached the pane. */
+class StopRefused(val reason: String) : IOException("refused: $reason")
+
+/**
+ * Stop's answer: whether a running turn was stopped. Anything less fails.
+ * A PTY stop (`route: pty`) is `stopped` only once the history recorded it;
+ * `refused` with its reason fails as [StopRefused], since no key went; an
+ * `uncertain` key, or any other answer, fails unconfirmed.
+ */
+internal fun ingressAbortOutcome(call: () -> String): Result<Boolean> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    if (reply.optString("route") == "pty") {
+        val reason = reply.optString("reason")
+        return when (val outcome = reply.optString("outcome")) {
+            "stopped" -> Result.success(true)
+            "refused" if reason.isNotEmpty() -> Result.failure(StopRefused(reason))
+            else -> Result.failure(IOException("${outcome.ifEmpty { "unknown" }}: ${reason.ifEmpty { "unknown" }}"))
+        }
+    }
+    val aborted = reply.opt("aborted")
+    if (reply.optString("endpoint") != "live" || aborted !is Boolean) {
+        return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
+    }
+    return Result.success(aborted)
 }
 
 private fun liveOutcome(id: String, reply: JSONObject): IngressSend {

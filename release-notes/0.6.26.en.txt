@@ -1,0 +1,5 @@
+Herdline 0.6.26 — Chat sends to a working Codex
+
+When Codex's app-server daemon runs this session, Chat's Send starts a turn on an idle Codex and steers a working one, and Steer joins the running turn. While Codex waits for an approval or an answer, Send is refused and the answer stays in the terminal. When the daemon does not run this session, Send types into the pane as before. A send whose fate is unknown says Not confirmed and is never sent again.
+
+Not yet verified by QA.

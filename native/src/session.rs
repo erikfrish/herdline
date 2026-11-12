@@ -6,7 +6,7 @@
 //! of queueing them. Rarer events go through a small bounded queue.
 
 use crate::{
-    Error, Result, attach, clipboard,
+    Error, Result, attach, clipboard, control,
     composer::{self, Refusal, Registry},
     delivery, hold, ingress,
     input::{self, Modifiers, Touch},
@@ -41,6 +41,13 @@ use std::{
 
 /// Rare events waiting for the UI; frames and snapshots never queue here.
 const EVENT_CAPACITY: usize = 64;
+
+/// How long a stop waits for its own record in the history.
+const STOP_WAIT: Duration = Duration::from_secs(10);
+/// How often the registry is read meanwhile; a lock, no host call.
+const STOP_POLL: Duration = Duration::from_millis(250);
+/// History reads once the status left working: each is one host command.
+const STOP_READS: usize = 3;
 
 /// Numbers each link, so a receipt answered on one never releases a
 /// delivery queued on another that reused its request ID.
@@ -418,11 +425,130 @@ impl Session {
                 _ => Err(Error::NotReady),
             };
         };
+        if request.op == ingress::Op::Abort && !matches!(request.instance.agent.as_str(), "opencode" | "kilo") {
+            return Ok(self.stop_pty(&exec, &request));
+        }
         if request.instance.agent == "omp" {
             ingress::run(&exec, &self.shared.session, request)
         } else {
             crate::agent_chat::run(&exec, &self.shared.session, request)
         }
+    }
+
+    /// Stop the instance's working turn with the one key its runtime takes
+    /// for it (see [`control::pty`]), pressed once. Answers `stopped` only
+    /// when Herdr's status left working and the same session's history,
+    /// read after the tap, records the stop; a pressed key with no such
+    /// record is `uncertain`, never stopped.
+    fn stop_pty(&self, exec: &ssh::Exec, request: &ingress::Request) -> String {
+        use control::pty;
+        let refused = |reason: pty::Refusal| {
+            // The one record of why no key went: the app shows it in words.
+            tracing::info!(?reason, "stop refused");
+            json!({"route": "pty", "outcome": "refused", "reason": reason}).to_string()
+        };
+        let uncertain = json!({"route": "pty", "outcome": "uncertain", "reason": Refusal::Unconfirmed}).to_string();
+        let pane = request.pane.as_str();
+        let instance = &request.instance;
+        let target = request.target();
+        let fenced = |now: Option<&transcript::Identity>| composer::same_instance(instance, now).is_ok();
+        if !fenced(self.read_instance(pane).as_ref()) {
+            return refused(pty::Refusal::AgentChanged);
+        }
+        // Where the history stood before the key: only lines after it count.
+        let confirms = pty::confirms(&instance.agent);
+        let read = |read| {
+            let request = transcript::Request { pane: pane.to_owned(), expect: Some(instance.clone()), read, media: None };
+            match transcript::fetch(exec, &self.shared.session, &request) {
+                Ok(transcript::Answer::Page(page)) if page.identity == *instance => Some(page),
+                Ok(_) => None,
+                Err(error) => {
+                    tracing::warn!(%error, "history not read for stop");
+                    None
+                }
+            }
+        };
+        let before = if confirms { read(transcript::Read::Tail).map(|page| page.end) } else { None };
+        // Chat reads a pane apart from the desktop's tab: off Herdr's shared
+        // surface, its own visible screen is read for it, and the instance
+        // fenced again past that read. Nothing is focused or resized.
+        let screen = if self.with_surface(|_, surface| pty::on_surface(surface, pane)) {
+            None
+        } else {
+            match pty::read_screen(exec, &self.shared.session, pane) {
+                Ok(rows) => Some(rows),
+                Err(reason) => return refused(reason),
+            }
+        };
+        if screen.is_some() && !fenced(self.read_instance(pane).as_ref()) {
+            return refused(pty::Refusal::AgentChanged);
+        }
+        let holds = hold::holds();
+        let mut steers = steer::steers();
+        if holds.is_held(&target) || steers.takes(&target, self.shared.link) {
+            return refused(pty::Refusal::Unsettled);
+        }
+        // The frame at the tap decides, under the same locks as a delivery;
+        // the pane's read screen only when the frame does not hold it.
+        let decided = self.with_surface(|registry, surface| pty::admit(registry, surface, &request.boot, pane, &instance.agent, screen.as_deref()));
+        let key = match decided {
+            Ok(key) => key,
+            Err(reason) => return refused(reason),
+        };
+        let pty::Key::Esc = key;
+        // Off the surface the key goes to exactly that pane through Herdr's
+        // own per-pane input, the instance fenced once more right before it;
+        // the headless client's input only reaches the surface it draws.
+        if screen.is_some() {
+            if !fenced(self.read_instance(pane).as_ref()) {
+                return refused(pty::Refusal::AgentChanged);
+            }
+            let pressed = pty::press(exec, &self.shared.session, pane, key);
+            drop(steers);
+            drop(holds);
+            match pressed {
+                pty::Press::Pressed => {}
+                pty::Press::Unsent => return refused(pty::Refusal::KeyUnsent),
+                pty::Press::Unknown => return uncertain,
+            }
+        } else {
+            let sent = self.handle.send_input(&request.boot, pane, vec![input::esc()]);
+            drop(steers);
+            drop(holds);
+            if let Err(error) = sent {
+                tracing::warn!(%error, "stop key not sent");
+                return uncertain;
+            }
+        }
+        let Some(before) = before else {
+            return uncertain;
+        };
+        let deadline = std::time::Instant::now() + STOP_WAIT;
+        let mut reads = 0;
+        while std::time::Instant::now() < deadline && reads < STOP_READS {
+            thread::sleep(STOP_POLL);
+            let left_working = {
+                let registry = lock(&self.shared.registry);
+                if registry.boot.as_deref() != Some(request.boot.as_str()) {
+                    return uncertain;
+                }
+                registry
+                    .panes
+                    .get(pane)
+                    .is_some_and(|facts| facts.status.is_some_and(|status| status != herdr_client::protocol::AgentStatus::Working))
+            };
+            if !left_working {
+                continue;
+            }
+            reads += 1;
+            let Some(page) = read(transcript::Read::After { offset: before }) else {
+                return uncertain;
+            };
+            if !page.reset && pty::shows_stop(&page.entries) && fenced(self.read_instance(pane).as_ref()) {
+                return json!({"route": "pty", "outcome": "stopped", "key": key}).to_string();
+            }
+        }
+        uncertain
     }
 
     /// The agent instance in `pane` now, as JSON `{"instance": …}`, `null`

@@ -54,18 +54,31 @@ internal interface NoteTexts {
     fun agentAttention(): String
     fun agentDone(): String
     fun agentsSummary(): String
+    fun connected(): String
+    fun agentCounts(count: Int, needYou: Int): String
 }
 
+internal enum class AttachedState { Connected, Connecting, Disconnected }
+
+/** A mixed set is never labelled wholly connected; unknown/lost states win over a pending connect. */
+internal fun attachedState(states: List<io.github.erikfrish.herdline.core.Connection.State>): AttachedState = when {
+    states.isNotEmpty() && states.all { it is io.github.erikfrish.herdline.core.Connection.State.Connected } -> AttachedState.Connected
+    states.any { it is io.github.erikfrish.herdline.core.Connection.State.Connecting || it is io.github.erikfrish.herdline.core.Connection.State.SettingUp } && states.all { it is io.github.erikfrish.herdline.core.Connection.State.Connected || it is io.github.erikfrish.herdline.core.Connection.State.Connecting || it is io.github.erikfrish.herdline.core.Connection.State.SettingUp } -> AttachedState.Connecting
+    else -> AttachedState.Disconnected
+}
+
+internal fun attachedTitle(context: Context, state: AttachedState): String = context.getString(when (state) {
+    AttachedState.Connected -> R.string.connection_connected
+    AttachedState.Connecting -> R.string.connection_connecting
+    AttachedState.Disconnected -> R.string.disconnected
+})
+
 /** The foreground notification while no live update shows: connecting, attached, reconnecting or offline, or a pin that is not live. */
-internal fun attachedContent(t: NoteTexts, count: Int, host: String?, lock: LockDetail, locked: Boolean): Redacted {
-    val generic = t.attachedHosts(count)
-    val named = if (count == 1 && host != null) t.attachedTo(host) else generic
-    val permitted = NoteContent(if (lock.showsNames) named else generic)
-    val full = NoteContent(named, t.attachedDetail())
-    return Redacted(
-        main = if (locked && !lock.showsNames) permitted else full,
-        public = if (lock == LockDetail.Full) full else permitted,
-    )
+internal fun attachedContent(t: NoteTexts, count: Int, host: String?, lock: LockDetail, locked: Boolean, fields: List<String> = io.github.erikfrish.herdline.data.NotificationFields.DEFAULT, agents: Int? = null, needYou: Int = 0, connection: AttachedState = AttachedState.Connected, connectionTitle: String = t.connected()): Redacted {
+    val title = if ("host" in fields && lock == LockDetail.Full && count == 1 && !host.isNullOrBlank()) connectionTitle + " · " + host else connectionTitle
+    val text = agents?.takeIf { connection == AttachedState.Connected && "counts" in fields && lock == LockDetail.Full && (it > 1 || needYou > 0) }?.let { t.agentCounts(it, needYou) }
+    val content = NoteContent(if (lock == LockDetail.Hidden) "Herdline" else title, text)
+    return Redacted(content, content)
 }
 
 /**
@@ -122,4 +135,6 @@ internal class ResourceTexts(private val context: Context) : NoteTexts {
     override fun agentAttention() = context.getString(R.string.lock_agent_attention)
     override fun agentDone() = context.getString(R.string.lock_agent_done)
     override fun agentsSummary() = context.getString(R.string.lock_agents_summary)
+    override fun connected() = context.getString(R.string.notification_connected)
+    override fun agentCounts(count: Int, needYou: Int) = ResourceLiveTexts(context).agents(count, needYou)
 }

@@ -65,6 +65,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -114,8 +115,18 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.HarnessRuntime
+import io.github.erikfrish.herdline.core.ServerProbe
+import io.github.erikfrish.herdline.core.HarnessKey
+import io.github.erikfrish.herdline.core.StopRoute
+import io.github.erikfrish.herdline.core.StopRefused
+import androidx.annotation.StringRes
+import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
+import io.github.erikfrish.herdline.core.DIALOG_ANSWERED_ELSEWHERE
 import io.github.erikfrish.herdline.core.IngressProbe
+import io.github.erikfrish.herdline.core.IngressChildren
 import io.github.erikfrish.herdline.core.IngressSubagent
 import io.github.erikfrish.herdline.core.MarkerKind
 import io.github.erikfrish.herdline.core.visibleDialogs
@@ -128,8 +139,11 @@ import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
+import io.github.erikfrish.herdline.ui.session.controlReason
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -207,6 +221,41 @@ fun ChatView(
 class ChatMemory {
     private val panes = HashMap<String, ChatKept>()
     internal fun of(pane: String): ChatKept = panes.getOrPut(pane) { ChatKept() }
+}
+
+/** Programs Chat reaches through their own server, whose absence the card names (card §3.4). */
+private val SERVER_AGENTS = setOf("opencode", "kilo")
+
+/**
+ * The card's runtime row for [pane]: what the native core says of its
+ * OpenCode or Kilo server (Connection.ingressNeedsServer). Unknown until it
+ * answers and after a failed probe. Asked again whenever the link, the boot,
+ * the pane's agent or its instance changes, never polled. When Chat has not
+ * read the pane yet, one history read names the instance first. Grok's
+ * ambiguous-session refusal, once a read returned it, is said on the card.
+ */
+@Composable
+fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: String?): HarnessRuntime {
+    val view by connection.view.collectAsState()
+    val linkLive = connection.state.collectAsState().value is Connection.State.Connected
+    val boot = view?.boot
+    val agent = pane?.let { view?.agentIn(it) }
+    val server = SERVER_AGENTS.any { it.equals(agent?.agent, ignoreCase = true) }
+    val identity = pane?.let { memory.of(it).history?.identity }
+    val probe by produceState(ServerProbe.Unknown, connection, linkLive, boot, pane, agent, identity) {
+        if (pane == null || boot == null || !server || !linkLive) return@produceState
+        // Its history landing changes [identity] and asks again with it.
+        if (identity == null) {
+            memory.of(pane).recheck(connection, pane)
+            return@produceState
+        }
+        if (identity.agent !in SERVER_AGENTS) return@produceState
+        val target = Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+        value = withContext(Dispatchers.IO) { connection.ingressNeedsServer(target) }
+            .fold({ missing -> if (missing) ServerProbe.Missing else ServerProbe.Present }, { ServerProbe.Unknown })
+    }
+    // The typed Grok refusals where Chat stands behind no one session (ChatRefusal.ambiguousSession): the card says it too.
+    return HarnessRuntime(server = probe, ambiguousSession = ambiguousSession(pane?.let { memory.of(it).read.refusal }))
 }
 
 internal class ChatKept {
@@ -299,10 +348,14 @@ private fun ChatContent(
     // Retry cuts the wait before the next read short.
     val wake = remember { Channel<Unit>(Channel.CONFLATED) }
     val colors = chatColors(accent)
-    // What the agent does now: the live view's agent in this pane, never the last poll's answer.
+    // What the agent does now: the live view's agent in this pane, never the last poll's answer,
+    // and the agent's own server where it has one, for exactly the instance shown.
     val linkLive = connection.state.collectAsState().value is Connection.State.Connected
     val view by connection.view.collectAsState()
-    val status = chatStatus(linkLive, pane, view?.agentIn(pane))
+    var serverRunning by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, Boolean>?>(null) }
+    // The sessions the program's own server says this one started, for exactly the instance shown.
+    var serverChildren by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, IngressChildren>?>(null) }
+    val status = chatStatus(linkLive, pane, view?.agentIn(pane), serverRunning?.takeIf { it.first == history?.identity }?.second)
     val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
     LaunchedEffect(Unit) {
@@ -328,28 +381,86 @@ private fun ChatContent(
     val images = remember(identity) {
         identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
     }
-    val dialogTarget = remember(connection, view?.boot, identity, pane) {
+    // OpenCode and Kilo ask through their own server: read it only while the agent waits on the user.
+    val serverAgent = identity?.agent == "opencode" || identity?.agent == "kilo"
+    val asked = status == AgentStatus.Blocked
+    val dialogTarget = remember(connection, view?.boot, identity, pane, serverAgent && asked) {
         val boot = view?.boot
-        if (boot == null || identity == null || identity.agent != "omp") null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+        val reads = identity?.agent == "omp" || serverAgent && asked
+        if (boot == null || identity == null || !reads) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    // Stop goes where the program's Harness row says: its server, or one key in its pane.
+    val stopTarget = remember(connection, view?.boot, identity, pane) {
+        val boot = view?.boot
+        if (boot == null || identity == null || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    // OpenCode's server says which of its sessions it runs (GET /api/session/active); a read that
+    // fails or isn't Live says nothing, so the pane's own status stands.
+    val stateTarget = remember(connection, view?.boot, identity, pane) {
+        val boot = view?.boot
+        if (boot == null || identity == null || !serverAgent) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+    }
+    LaunchedEffect(stateTarget, linkLive) {
+        serverRunning = null
+        serverChildren = null
+        val target = stateTarget ?: return@LaunchedEffect
+        val instance = target.instance ?: return@LaunchedEffect
+        if (!linkLive) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val probe = withContext(Dispatchers.IO) { connection.ingressState(target) }.getOrNull()
+                serverRunning = (probe as? IngressProbe.Live)?.let { instance to !it.state.idle }
+                // Only a program's own server (OpenCode, Kilo) lists a session's children; a failed read shows none, never an old list.
+                if (Harness.of(target.agent.orEmpty()).stop == StopRoute.Server) {
+                    serverChildren = withContext(Dispatchers.IO) { connection.ingressChildren(target) }.getOrNull()?.let { instance to it }
+                }
+                delay(if (busy) BUSY_POLL_MS else IDLE_POLL_MS)
+            }
+        }
+    }
+    // Kept per pane, not per target: a re-read identity mid-call must not drop the tap's answer.
+    var stopping by remember(pane) { mutableStateOf(false) }
+    // Why the last Stop did nothing: a refusal's code (no key went), [STOP_NONE_RUNNING] or [STOP_UNCONFIRMED].
+    var stopProblem by remember(pane) { mutableStateOf<String?>(null) }
+    fun stop() {
+        val target = stopTarget ?: return
+        // One call at a time: a second tap while the first runs does nothing (Stop is greyed, "Stopping…").
+        if (!linkLive || stopping) return
+        stopping = true
+        stopProblem = null
+        scope.launch {
+            try {
+                val result = stopOutcome(STOP_ANSWER_MS, { withContext(Dispatchers.IO) { connection.ingressAbort(target) } }) { stopProblem = it }
+                if (result.getOrNull() == true) wake.trySend(Unit)
+            } finally {
+                stopping = false
+            }
+        }
     }
     // The endpoint's live children, folded into the task calls that spawned them.
     var liveSubagents by remember(dialogTarget) { mutableStateOf<List<IngressSubagent>>(emptyList()) }
     val items = remember(persistedItems, liveSubagents) { withLiveSubagents(persistedItems, liveSubagents) }
     var dialogs by remember(dialogTarget) { mutableStateOf<List<ChatDialog>>(emptyList()) }
     var dialogProblem by remember(dialogTarget) { mutableStateOf<String?>(null) }
+    // The server holds more open dialogs than the snapshot shows: said, never passed off as all of them.
+    var dialogsMore by remember(dialogTarget) { mutableStateOf(false) }
     var submittingDialog by remember(dialogTarget) { mutableStateOf<String?>(null) }
     val uncertainDialogs = remember(dialogTarget) { mutableStateMapOf<String, Boolean>() }
     val currentDialogTarget by rememberUpdatedState(dialogTarget)
     val dialogErrors = remember(dialogTarget) { mutableStateMapOf<String, String>() }
+    // Questions this phone answered or declined, shown as they ended; never resent.
+    val settledDialogs = remember(dialogTarget) { mutableStateMapOf<String, Pair<ChatDialog, DialogSettled>>() }
     LaunchedEffect(dialogTarget, linkLive) {
         val target = dialogTarget ?: return@LaunchedEffect
         if (!linkLive) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 val result = withContext(Dispatchers.IO) { connection.ingressDialogs(target) }
-                result.onSuccess { array ->
+                result.onSuccess { snapshot ->
                     try {
-                        dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) })
+                        val array = snapshot.dialogs
+                        dialogs = visibleDialogs((0 until array.length()).map { ChatDialog.parse(array.getJSONObject(it)) }).filterNot { it.id in settledDialogs }
+                        dialogsMore = snapshot.more
                         dialogProblem = null
                     } catch (error: IllegalArgumentException) {
                         dialogs = emptyList()
@@ -363,15 +474,23 @@ private fun ChatContent(
                     dialogProblem = error.message
                 }
                 // The live state names each child under the tool call that spawned it; a read
-                // that fails keeps the last one.
-                withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
-                    liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
+                // that fails keeps the last one. Only OMP's endpoint has one.
+                if (target.agent == "omp") {
+                    withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
+                        liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
+                    }
                 }
                 delay(BUSY_POLL_MS)
             }
         }
     }
-    fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject) {
+    fun settle(dialog: ChatDialog, outcome: DialogSettled) {
+        settledDialogs[dialog.id] = dialog to outcome
+        dialogs = dialogs.filterNot { it.id == dialog.id }
+        uncertainDialogs.remove(dialog.id)
+        dialogErrors.remove(dialog.id)
+    }
+    fun submitDialog(dialog: ChatDialog, answer: org.json.JSONObject, summary: String) {
         val target = dialogTarget ?: return
         if (!linkLive || dialogProblem != null || submittingDialog != null || uncertainDialogs[dialog.id] == true || !dialog.submittable || dialogs.none { it.id == dialog.id }) return
         submittingDialog = dialog.id
@@ -380,14 +499,45 @@ private fun ChatContent(
             try {
                 val result = withContext(Dispatchers.IO) { connection.ingressSubmitDialog(target, dialog.id, answer) }
                 if (currentDialogTarget != target) return@launch
-                if (result.getOrNull() == "submitted") {
-                    dialogs = dialogs.filterNot { it.id == dialog.id }
-                    uncertainDialogs.remove(dialog.id)
-                    wake.trySend(Unit)
-                } else {
-                    val code = result.getOrNull()
-                    if (code == null) uncertainDialogs[dialog.id] = true
-                    dialogErrors[dialog.id] = code ?: "unconfirmed"
+                val code = result.getOrNull()
+                when {
+                    // A question the host can decline shows how it ended; OMP's own forms settle in the transcript.
+                    dialog.cancellable && code == "submitted" -> settle(dialog, DialogSettled.Answered(summary))
+                    dialog.cancellable && code == FORM_NOT_OPEN -> settle(dialog, DialogSettled.NoLongerAsked)
+                    dialog.cancellable && code == DIALOG_ANSWERED_ELSEWHERE -> settle(dialog, DialogSettled.AnsweredElsewhere)
+                    code == "submitted" -> {
+                        dialogs = dialogs.filterNot { it.id == dialog.id }
+                        uncertainDialogs.remove(dialog.id)
+                    }
+                    else -> {
+                        if (code == null) uncertainDialogs[dialog.id] = true
+                        dialogErrors[dialog.id] = if (code == DIALOG_ANSWERED_ELSEWHERE) FORM_NOT_OPEN else code ?: "unconfirmed"
+                    }
+                }
+                if (code == "submitted") wake.trySend(Unit)
+            } finally {
+                submittingDialog = null
+            }
+        }
+    }
+    fun cancelDialog(dialog: ChatDialog) {
+        val target = dialogTarget ?: return
+        if (!linkLive || dialogProblem != null || submittingDialog != null || uncertainDialogs[dialog.id] == true || !dialog.cancellable || dialogs.none { it.id == dialog.id }) return
+        submittingDialog = dialog.id
+        dialogErrors.remove(dialog.id)
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { connection.ingressCancelDialog(target, dialog.id) }
+                if (currentDialogTarget != target) return@launch
+                when (result.getOrNull()) {
+                    "cancelled" -> settle(dialog, DialogSettled.Declined).also { wake.trySend(Unit) }
+                    FORM_NOT_OPEN -> settle(dialog, DialogSettled.NoLongerAsked)
+                    DIALOG_ANSWERED_ELSEWHERE -> settle(dialog, DialogSettled.AnsweredElsewhere)
+                    else -> {
+                        // The decline may have reached the host: never retried as if it had not.
+                        uncertainDialogs[dialog.id] = true
+                        dialogErrors[dialog.id] = "unconfirmed"
+                    }
                 }
             } finally {
                 submittingDialog = null
@@ -404,7 +554,8 @@ private fun ChatContent(
     val refused = refusal.takeIf { unavailable }
     val report by rememberUpdatedState(onUnavailable)
     LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
-    val header = if (shown?.hasOlder == true) 1 else 0
+    // Rows above the first line: Load older, then the new-session divider (R1).
+    val header = (if (shown?.hasOlder == true) 1 else 0) + (if (shown?.newSession == true) 1 else 0)
 
     fun loadOlder() {
         val known = history ?: return
@@ -549,7 +700,8 @@ private fun ChatContent(
                     Text(stringResource(R.string.chat_loading), style = ChatType.body.copy(color = colors.muted))
                 }
                 // An empty session says so in the middle of the page; older history, if any, is still one tap away.
-                items.isEmpty() && !shown.hasOlder && status != AgentStatus.Working && status != AgentStatus.Blocked -> Text(
+                // A new session in the pane keeps its divider above even while it is empty (R1).
+                items.isEmpty() && !shown.hasOlder && !shown.newSession && status != AgentStatus.Working && status != AgentStatus.Blocked -> Text(
                     stringResource(R.string.chat_empty),
                     style = ChatType.body.copy(color = colors.muted),
                     textAlign = TextAlign.Center,
@@ -575,6 +727,10 @@ private fun ChatContent(
                     if (shown.hasOlder) {
                         item(key = "older") { LoadOlder(loadingOlder, colors, ::loadOlder) }
                     }
+                    // The pane's agent moved to another session: only that session is below (R1, C-2).
+                    if (shown.newSession) {
+                        item(key = "new_session") { NewSessionDivider(colors) }
+                    }
                     items(lines, key = { it.key }) { line ->
                         CompositionLocalProvider(LocalChatImages provides images) {
                             Column(Modifier.padding(top = line.gap.dp())) {
@@ -594,14 +750,51 @@ private fun ChatContent(
                     dialogs.forEach { dialog ->
                         item(key = "dialog:" + dialog.id) {
                             LiveGap {
-                                ChatFormCard(dialog, colors, submitting = !linkLive || dialogProblem != null || submittingDialog == dialog.id || uncertainDialogs[dialog.id] == true, submitError = dialogErrors[dialog.id], onSubmit = { submitDialog(dialog, it) })
+                                ChatFormCard(
+                                    dialog, colors,
+                                    submitting = !linkLive || dialogProblem != null || submittingDialog == dialog.id || uncertainDialogs[dialog.id] == true,
+                                    submitError = dialogErrors[dialog.id],
+                                    onSubmit = { answer, summary -> submitDialog(dialog, answer, summary) },
+                                    onCancel = if (dialog.cancellable) ({ cancelDialog(dialog) }) else null,
+                                )
                             }
                         }
                     }
+                    if (dialogsMore) {
+                        item(key = "dialogs:more") { LiveGap { DialogsMoreRow(colors) } }
+                    }
+                    settledDialogs.values.forEach { (dialog, outcome) ->
+                        item(key = "dialog:" + dialog.id) {
+                            LiveGap { ChatFormCard(dialog, colors, submitting = false, submitError = null, onSubmit = { _, _ -> }, settled = outcome) }
+                        }
+                    }
+                    val children = serverChildren?.takeIf { it.first == identity }?.second
+                    if (children != null && children.sessions.isNotEmpty()) {
+                        item(key = "children") { LiveGap { ChildrenRow(children, colors) } }
+                    }
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
-                        status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") { LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem) } }
-                        status == AgentStatus.Working -> item(key = "working") { LiveGap { WorkingRow(workingOn(items), colors) } }
+                        status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") {
+                            val answerReason = controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
+                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem, answerReason) }
+                        }
+                        status == AgentStatus.Working -> item(key = "working") {
+                            LiveGap {
+                                WorkingRow(
+                                    workingOn(items), colors,
+                                    onStop = if (stopTarget != null && linkLive) ({ stop() }) else null,
+                                    stopping = stopping, stopProblem = stopProblem,
+                                    // Text only, where Stop is not offered: why (§3.5).
+                                    stopReason = when {
+                                        stopTarget != null && linkLive -> null
+                                        !linkLive -> identity?.agent?.let {
+                                            stringResource(R.string.control_cant_check, it, stringResource(R.string.harness_cant_check_offline))
+                                        }
+                                        else -> controlReason(identity?.agent, HarnessKey.Stop, R.string.control_stop_unavailable)
+                                    },
+                                )
+                            }
+                        }
                         // Herdr has no agent error state; a turn that ended on a failed tool is the error chat can see.
                         failure != null -> item(key = "error") { LiveGap { ErrorRow(failure, colors, onTerminal) } }
                         else -> Unit
@@ -892,6 +1085,25 @@ private fun HistoryBoundary(colors: ChatColors) {
         Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
         Text(
             stringResource(R.string.chat_history_boundary),
+            style = ChatType.meta.copy(color = colors.dim),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+    }
+}
+
+/** "New session in this pane": every line below is the session the pane's agent moved to (designer §1 R). */
+@Composable
+private fun NewSessionDivider(colors: ChatColors) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat:new_session"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.weight(0.15f).height(1.dp).background(colors.border))
+        Text(
+            stringResource(R.string.chat_new_session_divider),
             style = ChatType.meta.copy(color = colors.dim),
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f),
@@ -1344,8 +1556,19 @@ private fun StateRow(bar: Color, border: Color, fill: Color, tag: String, conten
     }
 }
 
+/**
+ * [onStop], when the agent's own server or its pane can stop this turn.
+ * Without it, [stopReason] shows Stop disabled with why; with neither there is no Stop.
+ */
 @Composable
-private fun WorkingRow(what: String?, colors: ChatColors) {
+private fun WorkingRow(
+    what: String?,
+    colors: ChatColors,
+    onStop: (() -> Unit)? = null,
+    stopping: Boolean = false,
+    stopProblem: String? = null,
+    stopReason: String? = null,
+) {
     StateRow(colors.working, colors.border, Color.Transparent, "chat:working") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.working)
@@ -1354,14 +1577,120 @@ private fun WorkingRow(what: String?, colors: ChatColors) {
                 style = ChatType.body.copy(color = colors.text),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (onStop != null) {
+                FilledTonalButton(onClick = onStop, enabled = !stopping, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop")) {
+                    Text(stringResource(R.string.chat_stop))
+                }
+            } else if (stopReason != null) {
+                FilledTonalButton(
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = stopReason }.testTag("chat:stop"),
+                ) {
+                    Text(stringResource(R.string.chat_stop))
+                }
+            }
+        }
+        if (onStop == null && stopReason != null) Text(stopReason, style = ChatType.meta.copy(color = colors.muted))
+        if (stopProblem != null) {
+            Text(
+                when (stopProblem) {
+                    STOP_UNCONFIRMED -> stringResource(R.string.chat_stop_failed)
+                    STOP_NONE_RUNNING -> stringResource(R.string.chat_stop_none_running)
+                    else -> stringResource(stopRefusalRes(stopProblem))
+                },
+                style = ChatType.meta.copy(color = colors.muted),
+                modifier = Modifier.testTag("chat:stop:problem"),
+            )
+        } else if (stopping) {
+            Text(stringResource(R.string.chat_stopping), style = ChatType.meta.copy(color = colors.muted), modifier = Modifier.testTag("chat:stopping"))
+        }
+    }
+}
+
+/**
+ * The sessions this one started, by title (the id where it has none); the server gives no state for
+ * them, so none is shown. A cut list says there are more, never passes for the whole.
+ */
+@Composable
+private fun ChildrenRow(children: IngressChildren, colors: ChatColors) {
+    StateRow(colors.muted, colors.border, Color.Transparent, "chat:children") {
+        val count = children.sessions.size
+        Text(
+            if (children.more) stringResource(R.string.chat_children_more, count) else stringResource(R.string.chat_children, count),
+            style = ChatType.meta.copy(color = colors.muted),
+        )
+        children.sessions.forEach { child ->
+            Text(
+                child.title.ifBlank { child.id },
+                style = ChatType.body.copy(color = colors.text),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
+/** More permissions or questions are open than Chat shows: answering these brings the next ones in. */
+@Composable
+private fun DialogsMoreRow(colors: ChatColors) {
+    StateRow(colors.blocked, colors.border, Color.Transparent, "chat:dialogs:more") {
+        Text(stringResource(R.string.chat_dialogs_more), style = ChatType.meta.copy(color = colors.muted))
+    }
+}
+
+/** A Stop that may have pressed its key without a confirmation. */
+private const val STOP_UNCONFIRMED = "unconfirmed"
+
+/** A server Stop whose server had no turn running for the instance. */
+private const val STOP_NONE_RUNNING = "none_running"
+
+/** How long a Stop tap waits for the host before it says "not confirmed"; the host's own answer still replaces it. */
+internal const val STOP_ANSWER_MS = 20_000L
+
+/**
+ * The words a finished Stop call leaves: none once stopped (the turn's end shows it), else the
+ * refusal's code, [STOP_NONE_RUNNING] when the server found nothing running, or [STOP_UNCONFIRMED].
+ */
+internal fun stopProblemOf(result: Result<Boolean>): String? = result.fold(
+    { stopped -> if (stopped) null else STOP_NONE_RUNNING },
+    { (it as? StopRefused)?.reason ?: STOP_UNCONFIRMED },
+)
+
+/**
+ * One Stop tap's words, said through [say]: [STOP_UNCONFIRMED] once [waitMs] passes with no answer,
+ * then always the answer's own ([stopProblemOf]) when [call] returns, so no tap ends in silence.
+ */
+internal suspend fun stopOutcome(waitMs: Long, call: suspend () -> Result<Boolean>, say: (String?) -> Unit): Result<Boolean> = coroutineScope {
+    val answer = async { call() }
+    if (withTimeoutOrNull(waitMs) { answer.await() } == null) say(STOP_UNCONFIRMED)
+    answer.await().also { say(stopProblemOf(it)) }
+}
+
+/** A PTY stop's refusal (`control/pty.rs` `Refusal`) in words; each means no key reached the pane. */
+@StringRes
+internal fun stopRefusalRes(reason: String): Int =
+    when (reason) {
+        "boot_changed" -> R.string.stop_refused_boot_changed
+        "pane_missing" -> R.string.stop_refused_pane_missing
+        "agent_changed" -> R.string.stop_refused_agent_changed
+        "popup_open" -> R.string.stop_refused_popup_open
+        "not_working" -> R.string.stop_refused_not_working
+        "not_visible" -> R.string.stop_refused_not_visible
+        "scrolled" -> R.string.stop_refused_scrolled
+        "no_stop_key" -> R.string.stop_refused_no_stop_key
+        "screen_not_stoppable" -> R.string.stop_refused_screen
+        "unsettled" -> R.string.stop_refused_unsettled
+        "screen_unread" -> R.string.stop_refused_screen_unread
+        "key_unsent" -> R.string.stop_refused_key_unsent
+        else -> R.string.stop_refused_other
+    }
+
 /** A blocked agent without a usable structured dialog snapshot: keep the terminal route explicit. */
 @Composable
-private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit, problem: String?) {
+private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors, onTerminal: () -> Unit, problem: String?, answerReason: String? = null) {
     StateRow(colors.blocked, colors.blocked, colors.warnBg, "chat:blocked") {
         Text(stringResource(R.string.chat_blocked_title), style = ChatType.button.copy(color = colors.blocked))
         Text(
@@ -1369,6 +1698,8 @@ private fun NeedsInputRow(asking: TranscriptBlock.ToolCall?, colors: ChatColors,
             style = ChatType.meta.copy(color = colors.text),
         )
         if (!problem.isNullOrBlank()) Text(problem, style = ChatType.meta.copy(color = colors.muted))
+        // No answer from Chat for this program: why, before the way that works (§3.5).
+        answerReason?.let { Text(it, style = ChatType.meta.copy(color = colors.muted)) }
         FilledTonalButton(onClick = onTerminal, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:answer_in_terminal")) {
             Text(stringResource(R.string.chat_answer_in_terminal))
         }

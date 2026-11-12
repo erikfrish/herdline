@@ -25,6 +25,8 @@ class NotificationContentGapTest {
         override fun agentAttention() = "An agent needs you"
         override fun agentDone() = "An agent finished"
         override fun agentsSummary() = "Agent notifications"
+        override fun connected() = "Connected"
+        override fun agentCounts(count: Int, needYou: Int) = "$count agents · $needYou need input"
     }
 
     private val host = "secret-host"
@@ -107,14 +109,4 @@ class NotificationContentGapTest {
         assertEquals(r.main, r.public)
     }
 
-    @Test
-    fun attachedWithoutAHostNameIsGenericUnderHiddenAndFull() {
-        val hidden = attachedContent(t, 1, null, LockDetail.Hidden, locked = true)
-        assertEquals(NoteContent("Attached to 1 node(s)"), hidden.main)
-        assertEquals(hidden.main, hidden.public)
-
-        val full = attachedContent(t, 1, null, LockDetail.Full, locked = true)
-        assertEquals(NoteContent("Attached to 1 node(s)", "Agents keep running"), full.main)
-        assertEquals(full.main, full.public)
-    }
 }

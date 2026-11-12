@@ -50,6 +50,26 @@
     <string name="chat_truncated">已为聊天缩短；完整内容在终端中</string>
     <string name="chat_working">工作中</string>
     <string name="chat_working_on">工作中 · %1$s</string>
+    <string name="chat_children">它启动的会话：%1$d</string>
+    <string name="chat_children_more">它启动的会话：超过 %1$d 个</string>
+    <string name="chat_dialogs_more">等待中的权限请求或问题多于聊天一次能显示的数量。请先回答这些，或使用终端。</string>
+    <string name="chat_stop">停止</string>
+    <string name="chat_stop_failed">未确认停止，请查看终端。</string>
+    <string name="chat_stopping">正在停止…</string>
+    <string name="chat_stop_none_running">未停止：代理的服务器没有正在运行的轮次。</string>
+    <string name="stop_refused_boot_changed">未停止：Herdr 已重启。未按任何键。</string>
+    <string name="stop_refused_pane_missing">未停止：该窗格已不存在。未按任何键。</string>
+    <string name="stop_refused_agent_changed">未停止：窗格中现在运行的是另一个程序或会话。未按任何键。</string>
+    <string name="stop_refused_popup_open">未停止：Herdr 弹窗已打开。请先关闭，再停止。未按任何键。</string>
+    <string name="stop_refused_not_working">未停止：代理当前没有在工作。未按任何键。</string>
+    <string name="stop_refused_not_visible">未停止：Herdr 当前未显示此窗格，无法在此检查其屏幕。请在终端中打开它的标签页，再停止。未按任何键。</string>
+    <string name="stop_refused_scrolled">未停止：窗格已向上滚动。请在终端中滚动到底部，再停止。未按任何键。</string>
+    <string name="stop_refused_no_stop_key">未停止：此程序的屏幕上没有显示停止键。请在终端中停止。未按任何键。</string>
+    <string name="stop_refused_screen">未停止：代理的空输入框没有完整显示在此屏幕上（有草稿、面板，或窗格按另一个屏幕调整了大小）。请在终端中查看。未按任何键。</string>
+    <string name="stop_refused_unsettled">未停止：上一次发送到此窗格的内容尚未确认。未按任何键。</string>
+    <string name="stop_refused_screen_unread">未停止：Herdr 读取此窗格屏幕失败，无法在此检查。未按任何键。</string>
+    <string name="stop_refused_key_unsent">未停止：停止键未到达此窗格，未按任何键。请查看终端。</string>
+    <string name="stop_refused_other">未停止。未按任何键。请查看终端。</string>
     <string name="chat_blocked_title">正在终端中等你</string>
     <string name="chat_blocked_tool">%1$s 正在等待回答。聊天无法回答对话框，请在终端中回答。</string>
     <string name="chat_blocked_other">代理正在等待输入。聊天无法回答对话框，请在终端中回答。</string>
@@ -59,4 +79,5 @@
     <string name="chat_error_title">工具失败后已停止</string>
     <string name="chat_empty">此会话中还没有消息。</string>
     <string name="chat_you">你</string>
+    <string name="chat_new_session_divider">此窗格中的新会话</string>
 </resources>

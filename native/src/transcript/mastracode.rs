@@ -78,7 +78,7 @@ pub(super) fn page(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&query_script(session, pane, expect, &options(read), None))
+            shell_quote(&query_script(session, pane, expect, &options(read)))
         ),
         Duration::from_secs(60),
         PAGE_ROOM,
@@ -98,16 +98,12 @@ fn options(read: Read) -> Value {
     json!({"mode":mode,"cursor":cursor})
 }
 
-/// `proc` replaces `/proc/<pid>` (its `environ` and `cwd`) for the fixture
-/// tests only; every production read passes `None`, so no app or host input
-/// can point it elsewhere.
-fn query_script(session: &str, pane: &str, expect: &Identity, options: &Value, proc: Option<&str>) -> String {
+fn query_script(session: &str, pane: &str, expect: &Identity, options: &Value) -> String {
     format!(
-        "python3 - {} {} {}{} <<'HERDLINE_MASTRACODE_PY'\n{}\nHERDLINE_MASTRACODE_PY",
+        "python3 - {} {} {} <<'HERDLINE_MASTRACODE_PY'\n{}\nHERDLINE_MASTRACODE_PY",
         shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
         shell_quote(&options.to_string()),
         shell_quote(&super::instance_script(session, pane)),
-        proc.map(|path| format!(" {}", shell_quote(path))).unwrap_or_default(),
         PYTHON
     )
 }
@@ -260,14 +256,15 @@ fn named(what: &str, part: &Value) -> String {
     format!("[{what}: {}]", cap(name.unwrap_or("unknown"), 256).0)
 }
 
-/// The host side. Reads of `/proc/<pid>/environ` keep only the variables
-/// that pick the store; nothing else from the agent's environment is
-/// returned, logged or stored. A file part's `data` (inline base64 or a URL)
-/// is never returned and never opened.
+/// The host side. The store comes from this shell's own environment (only
+/// the variables that pick it) and the agent's working directory from
+/// Herdr's `foreground_cwd`; no other process's environment or cwd is read.
+/// An agent started with storage variables this shell lacks is not found
+/// there, never guessed. A file part's `data` (inline base64 or a URL) is
+/// never returned and never opened.
 const PYTHON: &str = r#"import json, os, re, sqlite3, stat, subprocess, sys, urllib.parse, zlib
 from datetime import datetime, timezone
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
-proc_path = sys.argv[4] if len(sys.argv) > 4 else None
 LIMIT=200
 BUDGET=1572864
 # One ordering scan reads every row's id and createdAt; past this the thread
@@ -316,15 +313,10 @@ def identity():
     fg=process.get('foreground_processes',[])
     pid=next((p.get('pid') for p in fg if isinstance(p,dict) and mastra(p)),None)
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:mastracode'),'kind':ref['kind']}
-    return got,pane.get('agent_status','unknown')
+    return got,pane.get('agent_status','unknown'),pane.get('foreground_cwd')
 
-def environment(base):
-    env={}
-    for field in open(os.path.join(base,'environ'),'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        key=key.decode(errors='replace')
-        if sep and key in WANTED: env[key]=value.decode(errors='replace')
-    return env
+def environment():
+    return {key:value for key,value in os.environ.items() if key in WANTED}
 
 class Refused(Exception): pass
 
@@ -384,9 +376,10 @@ def from_url(url):
 # Git is never run here (its config is the agent's to control): this walks
 # up to the first `.git` as git's discovery does, and refuses what that walk
 # cannot settle, never the default store in its place.
-def agent_cwd(base):
+def agent_cwd(cwd):
+    if not isinstance(cwd,str) or not cwd.startswith('/'): raise Refused('mastracode_store_unknown')
     try:
-        cwd=os.path.realpath(os.readlink(os.path.join(base,'cwd')))
+        cwd=os.path.realpath(cwd)
         top=os.stat(cwd)
     except OSError: raise Refused('mastracode_store_unknown')
     if not stat.S_ISDIR(top.st_mode): raise Refused('mastracode_store_unknown')
@@ -427,8 +420,8 @@ def project_root(cwd):
         here=os.path.dirname(here)
 
 # project.ts:302-346 getStorageConfig, in its order, with the env keys from
-# the agent's /proc/<pid>/environ.
-def store(base,env):
+# this shell's own environment and the cwd Herdr reports.
+def store(running,env):
     if not env.get('HOME','').startswith('/'): raise Refused('mastracode_store_unknown')
     backend=env.get('MASTRA_STORAGE_BACKEND')
     if backend=='pg': raise Refused('mastracode_store_remote')
@@ -460,7 +453,7 @@ def store(base,env):
         return from_url(url) if isinstance(url,str) and url else None
     if any(env.get(key) for key in ('GIT_DIR','GIT_WORK_TREE','GIT_COMMON_DIR','GIT_CEILING_DIRECTORIES','GIT_DISCOVERY_ACROSS_FILESYSTEM')):
         raise Refused('mastracode_store_unknown')
-    cwd=agent_cwd(base)
+    cwd=agent_cwd(running)
     here=cwd; settle=False
     while not settle:
         settle=any(os.path.lexists(os.path.join(here,*name)) for name in (('.mastracode','database.json'),('.git',)))
@@ -604,17 +597,14 @@ def fit(item):
     return item
 
 def main():
-    got,status=identity()
+    got,status,running=identity()
     if got!=expect or got['agent']!='mastracode' or got['kind']!='id' or not got['pid']: return {'changed':True}
     sid=got['path']
     if not ID.match(sid): return {'changed':True}
     # Herdr reports `session-init` until Mastra Code names its thread
     # (sdk/src/index.ts:930-940): no thread yet, never the latest one.
     if sid=='session-init': return {'error':'missing'}
-    base=proc_path or '/proc/%d'%got['pid']
-    try: env=environment(base)
-    except OSError: raise Refused('mastracode_store_unknown')
-    db=store(base,env)
+    db=store(running,environment())
     try: conn=connect(db)
     except LookupError: return {'error':'missing'}
     if any(not need<=columns(conn,table) for table,need in NEED.items()): raise Refused('mastracode_store_layout')

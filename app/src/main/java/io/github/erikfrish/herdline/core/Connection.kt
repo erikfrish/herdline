@@ -479,9 +479,10 @@ class Connection(val node: Node) {
     }
 
     /**
-     * Hands [text] and [attachments] to exactly [target]'s OMP instance
-     * through its ingress endpoint, as request [id]; [deliverAs] is `auto`
-     * (steers a working agent, starts an idle one's turn) or `steer`. Only
+     * Hands [text] and [attachments] to exactly [target]'s instance through
+     * its endpoint, as request [id]; [deliverAs] is `auto` (an idle agent's
+     * turn starts; a working OMP is steered, a working OpenCode refuses it),
+     * `steer`, or `queue` (after the running turn, where the runtime has it). Only
      * [IngressSend.Absent] lets the caller use [deliver] instead: it is
      * answered when the instance publishes no endpoint, before anything is
      * sent. Never retried. Blocks on the host: call it off the main thread.
@@ -531,14 +532,42 @@ class Connection(val node: Node) {
         }
     }
 
+    /** Steers queued follow-up [requestId] into the running turn; false when it had left the queue. Blocks on the host. */
+    fun ingressPromote(target: ComposerTarget, requestId: String): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressPromoted {
+            Native.ingress(session, ingressRequest("promote", target, requestId).toString())
+        }
+    }
+
     /**
-     * OMP's open dialogs on exactly [target]'s instance, its snapshot as
-     * given (`{dialogId, kind, source, html?, form?, title?, options?, createdAt}`
-     * each). Blocks on the host.
+     * The open dialogs on exactly [target]'s instance, its snapshot as given
+     * (`{dialogId, kind, source, html?, form?, title?, options?, createdAt}`
+     * each), and whether the server holds more than it shows. Blocks on the host.
      */
-    fun ingressDialogs(target: ComposerTarget): Result<JSONArray> {
+    fun ingressDialogs(target: ComposerTarget): Result<IngressDialogs> {
         val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
         return ingressDialogsOutcome {
+            Native.ingress(session, ingressRequest("dialogs", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
+    /** The sessions exactly [target]'s session started, as its server lists them; it changes nothing. Blocks on the host. */
+    fun ingressChildren(target: ComposerTarget): Result<IngressChildren> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressChildrenOutcome {
+            Native.ingress(session, ingressRequest("children", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
+    /**
+     * Whether [target]'s program runs without its server, for the card's
+     * runtime row (card §3.4). Asks the dialogs read, the one op both
+     * OpenCode and Kilo take to their server; it changes nothing. Blocks on the host.
+     */
+    fun ingressNeedsServer(target: ComposerTarget): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressNeedsServerOutcome {
             Native.ingress(session, ingressRequest("dialogs", target, UUID.randomUUID().toString()).toString())
         }
     }
@@ -556,6 +585,30 @@ class Connection(val node: Node) {
             .put("dialogId", dialogId)
             .put("answer", answer)
         return ingressSubmitOutcome(dialogId) { Native.ingress(session, request.toString()) }
+    }
+
+    /**
+     * Decline the one question [dialogId] on [target]'s instance (OpenCode's
+     * form, Kilo's question). `cancelled` or `not_open`, or
+     * [DIALOG_ANSWERED_ELSEWHERE]; anything less fails. Blocks on the host.
+     */
+    fun ingressCancelDialog(target: ComposerTarget, dialogId: String): Result<String> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        val request = ingressRequest("dialog_cancel", target, UUID.randomUUID().toString()).put("dialogId", dialogId)
+        return ingressCancelOutcome(dialogId) { Native.ingress(session, request.toString()) }
+    }
+
+    /**
+     * Stop the turn running on exactly [target]'s instance: through the
+     * agent's own server (OpenCode, Kilo), else with one key in its pane
+     * ([StopRoute.Pty]). True when one was stopped, false when the server
+     * found none running; an unconfirmed key fails. Blocks on the host.
+     */
+    fun ingressAbort(target: ComposerTarget): Result<Boolean> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressAbortOutcome {
+            Native.ingress(session, ingressRequest("abort", target, UUID.randomUUID().toString()).toString())
+        }
     }
 
     private fun ingressSession(target: ComposerTarget): Long? {

@@ -26,15 +26,18 @@ data class ChatHistory(
     val end: Long,
     val entries: List<TranscriptEntry>,
     val hasOlder: Boolean = start > 0,
+    /** This history began when the pane's agent changed to another session; Chat shows a divider above it (R1, C-2). */
+    val newSession: Boolean = false,
 ) {
 
     /**
-     * This history with [page] read into it. A reset page replaces it; a page
-     * of another agent's transcript that is not a reset is a stale answer
-     * from before a switch, and is ignored.
+     * This history with [page] read into it. A reset page replaces it, marked
+     * [newSession] when it is another session ([sameSession]) or continues one
+     * that was; a page of another agent's transcript that is not a reset is a
+     * stale answer from before a switch, and is ignored.
      */
     fun merge(page: TranscriptPage, appended: Boolean): ChatHistory {
-        if (page.reset) return of(page)
+        if (page.reset) return of(page).copy(newSession = newSession || !sameSession(identity, page.identity))
         if (page.identity != identity) return this
         val byOffset = LinkedHashMap<Long, TranscriptEntry>(entries.size + page.entries.size)
         (entries + page.entries).sortedBy { it.offset }.forEach { byOffset[it.offset] = it }
@@ -55,12 +58,46 @@ data class ChatHistory(
 }
 
 /**
+ * Whether [a] and [b] name one session: the same agent kind and session
+ * reference. Another pid or terminal of that session (a restart that resumed
+ * it) is the same session; `/new`, `/clear`, a resume or fork of another
+ * session, or another agent in the pane is not.
+ */
+internal fun sameSession(a: TranscriptIdentity, b: TranscriptIdentity): Boolean =
+    a.paneId == b.paneId && a.agent == b.agent && a.kind == b.kind && a.path == b.path
+
+/**
+ * P1: a send typed into the pane is Sent only once its session holds it.
+ * [page] must be exactly [instance]'s session read on from [before] (the
+ * history's end read before the text went) without starting over, and hold
+ * a new user turn whose one text block is [text] byte for byte: no trimming
+ * or line-end folding, as no runtime pins a canonical form. An older turn
+ * with the same words is never it; a second identical turn someone else
+ * typed after the tap cannot be told apart without a request id. The
+ * pane's read receipt alone is never this.
+ */
+internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, before: Long, text: String): Boolean {
+    if (page.reset || page.identity != instance || text.isEmpty()) return false
+    return page.entries.any { entry ->
+        entry.offset >= before && entry.kind == TranscriptKind.Message && entry.role == "user" &&
+            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.text == text
+    }
+}
+
+/**
  * What chat says the supported agent in [pane] is doing, only while the
  * same pane is live on this connection. A lost link or unknown program is
  * [AgentStatus.Unknown]; stale history never claims a Working status.
+ *
+ * [running] is the agent's own server answer for this exact instance (OpenCode
+ * `GET /api/session/active`), null when none was read: a session it runs is
+ * Working, one it doesn't run is not, and the pane's Blocked stays Blocked.
  */
-fun chatStatus(connected: Boolean, pane: String, agent: Agent?): AgentStatus = when {
+fun chatStatus(connected: Boolean, pane: String, agent: Agent?, running: Boolean? = null): AgentStatus = when {
     !connected || agent == null || agent.pane != pane || !isChatAgent(agent.agent) -> AgentStatus.Unknown
+    running == null || agent.status == AgentStatus.Blocked -> agent.status
+    running -> AgentStatus.Working
+    agent.status == AgentStatus.Working -> AgentStatus.Idle
     else -> agent.status
 }
 

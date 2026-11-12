@@ -9,6 +9,7 @@ pub mod attach;
 mod clipboard;
 pub mod composer;
 pub mod config;
+mod control;
 mod delivery;
 mod error;
 pub mod herdr_setup;

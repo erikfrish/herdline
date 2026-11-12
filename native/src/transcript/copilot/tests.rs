@@ -11,11 +11,12 @@ const OTHER: &str = "1c9fad2f-3e4b-4c6d-9e7f-8091a2b3c4d5";
 
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
-    /// A pane whose Herdr report names `agent` on `sid`, with an agent
-    /// environment file the script reads instead of `/proc`.
+    /// A pane whose Herdr report names `agent` on `sid`.
     fn new(sid: &str, agent: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
@@ -40,17 +41,12 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        let host = Self { home };
-        host.environ(&[]);
-        host
+        Self { home, env: Default::default() }
     }
 
+    /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        let mut environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", self.home.path().display());
-        for (key, value) in vars {
-            environ.push_str(&format!("{key}={value}\0"));
-        }
-        fs::write(self.home.path().join("environ"), environ).unwrap();
+        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
     }
 
     /// `events.jsonl` of `sid` under the store `root`.
@@ -82,10 +78,11 @@ impl Host {
 
     fn page(&self, sid: &str, read: Read) -> Result<Response> {
         let bin = self.home.path().join(".local/bin");
-        let environ = self.home.path().join("environ");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read), Some(environ.to_str().unwrap())))
+            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .env_remove("COPILOT_HOME")
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()

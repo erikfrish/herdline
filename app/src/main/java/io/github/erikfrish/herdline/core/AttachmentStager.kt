@@ -79,13 +79,16 @@ class AttachmentStager(private val connection: Connection, private val resolver:
         val mime = resolver.getType(uri)
         val kind = attachmentKind(mime)
         val name = safeAttachmentName(display, kind, mime)
-        if (declared != null && declared > kind.limit) return@withContext Staging.Refused("too_large")
+        val limit = kind.limitFor(target.agent)
+        // Past OpenCode's own cap but within ours: said as OpenCode's.
+        val tooLarge = if (limit < kind.limit) "opencode_too_large" else "too_large"
+        if (declared != null && declared > limit) return@withContext Staging.Refused(tooLarge)
         val request = bindingJson(target)
             .put("name", name)
             .put("kind", kind.wire)
             .put("size", declared ?: JSONObject.NULL)
         val opened = reply { Native.attachmentBegin(session, request.toString()) }
-            ?: return@withContext Staging.Refused("not_connected")
+            ?: return@withContext Staging.Refused(lost())
         if (opened.optString("outcome") != "open") return@withContext refused(opened)
         val upload = opened.getLong("upload")
         val settled = AtomicBoolean(false)
@@ -109,20 +112,28 @@ class AttachmentStager(private val connection: Connection, private val resolver:
                         val read = it.read(buffer)
                         if (read < 0) break
                         sent += read
-                        if (sent > kind.limit) throw TooLarge()
+                        if (sent > limit) throw TooLarge()
                         digest.update(buffer, 0, read)
-                        Native.attachmentWrite(upload, buffer, read)
+                        // The host's side failing is not a file this phone can't read.
+                        try {
+                            Native.attachmentWrite(upload, buffer, read)
+                        } catch (e: IOException) {
+                            throw HostFailed()
+                        }
                         onProgress(sent, declared)
                     }
                 }
                 val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
                 if (!settled.compareAndSet(false, true)) return@coroutineScope Staging.Refused("cancelled")
                 val finished = reply { Native.attachmentFinish(upload, sha256) }
-                    ?: return@coroutineScope Staging.Refused("not_connected")
+                    ?: return@coroutineScope Staging.Refused(lost())
                 staged(finished, target) ?: refused(finished)
             } catch (e: TooLarge) {
                 cancel(upload, settled)
-                Staging.Refused("too_large")
+                Staging.Refused(tooLarge)
+            } catch (e: HostFailed) {
+                cancel(upload, settled)
+                Staging.Refused(lost())
             } catch (e: IOException) {
                 cancel(upload, settled)
                 Staging.Refused("unreadable")
@@ -161,7 +172,13 @@ class AttachmentStager(private val connection: Connection, private val resolver:
         if (settled.compareAndSet(false, true)) Native.attachmentCancel(upload)
     }
 
+    /** A host call that gave no answer: "not connected" only when the link is gone, else a failed upload. */
+    private fun lost() = if (connection.link() == 0L) "not_connected" else "failed"
+
     private class TooLarge : Exception()
+
+    /** The host's upload ended under a write; not an IOException, so never worded as this phone's read. */
+    private class HostFailed : Exception()
 
     companion object {
         const val CHUNK = 64 * 1024
@@ -174,6 +191,13 @@ val AttachmentKind.limit: Long
         AttachmentKind.IMAGE -> 20L * 1024 * 1024
         AttachmentKind.FILE -> 64L * 1024 * 1024
     }
+
+/** OpenCode 2.2.7's own cap on any one prompt file, image or not (`MAX_ATTACHMENT_BYTES`). */
+const val OPENCODE_FILE_LIMIT = 20L * 1024 * 1024
+
+/** The most a file may be for [agent]: the kind's [limit], or less where that agent's server takes less. */
+fun AttachmentKind.limitFor(agent: String?): Long =
+    if (agent.equals("opencode", ignoreCase = true)) minOf(limit, OPENCODE_FILE_LIMIT) else limit
 
 /** The image types OMP turns into `[Image #N]`, with the extension its path check needs. */
 private val IMAGE_EXTENSIONS = mapOf(

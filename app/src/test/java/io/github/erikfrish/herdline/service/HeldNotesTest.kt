@@ -26,6 +26,8 @@ class HeldNotesTest {
         override fun agentAttention() = "An agent needs you"
         override fun agentDone() = "An agent finished"
         override fun agentsSummary() = "Agent notifications"
+        override fun connected() = "Connected"
+        override fun agentCounts(count: Int, needYou: Int) = "$count agents · $needYou need input"
     }
 
     private val host = "qa-alpha"

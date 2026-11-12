@@ -24,6 +24,8 @@ class NotificationContentTest {
         override fun agentAttention() = "An agent needs you"
         override fun agentDone() = "An agent finished"
         override fun agentsSummary() = "Agent notifications"
+        override fun connected() = "Connected"
+        override fun agentCounts(count: Int, needYou: Int) = "$count agents · $needYou need input"
     }
 
     private val host = "secret-host"
@@ -39,62 +41,6 @@ class NotificationContentTest {
     }
 
     private fun agent(lock: LockDetail, locked: Boolean) = agentContent(t, true, host, agentName, task, "body: $task", null, lock, locked)
-
-    // Attached, no monitored agent (connecting, attached, reconnecting, offline).
-
-    @Test
-    fun attachedHiddenLockedNamesNoHost() {
-        val r = attachedContent(t, 1, host, LockDetail.Hidden, locked = true)
-        assertEquals(NoteContent("Attached to 1 node(s)"), r.main)
-        assertEquals(NoteContent("Attached to 1 node(s)"), r.public)
-    }
-
-    @Test
-    fun attachedHiddenUnlockedIsFullWithAGenericPublicVersion() {
-        val r = attachedContent(t, 1, host, LockDetail.Hidden, locked = false)
-        assertEquals(NoteContent("Attached to $host", "Agents keep running"), r.main)
-        assertEquals(NoteContent("Attached to 1 node(s)"), r.public)
-    }
-
-    @Test
-    fun attachedNamesLockedShowsTheHost() {
-        val r = attachedContent(t, 1, host, LockDetail.NamesOnly, locked = true)
-        assertEquals("Attached to $host", r.main.title)
-        assertEquals(NoteContent("Attached to $host"), r.public)
-    }
-
-    @Test
-    fun attachedNamesUnlocked() {
-        val r = attachedContent(t, 1, host, LockDetail.NamesOnly, locked = false)
-        assertEquals(NoteContent("Attached to $host", "Agents keep running"), r.main)
-        assertEquals(NoteContent("Attached to $host"), r.public)
-    }
-
-    @Test
-    fun attachedFullLockedShowsEverythingAndSoDoesItsPublicVersion() {
-        val r = attachedContent(t, 1, host, LockDetail.Full, locked = true)
-        assertEquals(NoteContent("Attached to $host", "Agents keep running"), r.main)
-        assertEquals(r.main, r.public)
-    }
-
-    @Test
-    fun attachedFullUnlocked() {
-        val r = attachedContent(t, 1, host, LockDetail.Full, locked = false)
-        assertEquals(NoteContent("Attached to $host", "Agents keep running"), r.main)
-        assertEquals(r.main, r.public)
-    }
-
-    @Test
-    fun attachedToSeveralNodesNamesNoneOfThem() {
-        assertEquals("Attached to 2 node(s)", attachedContent(t, 2, host, LockDetail.NamesOnly, locked = false).main.title)
-    }
-
-    @Test
-    fun attachedWithoutAHostNameIsGenericUnderNames() {
-        val r = attachedContent(t, 1, null, LockDetail.NamesOnly, locked = true)
-        assertEquals(NoteContent("Attached to 1 node(s)", "Agents keep running"), r.main)
-        assertEquals(NoteContent("Attached to 1 node(s)"), r.public)
-    }
 
     // Connection lost: not re-posted on the lock edge, so the same words locked or not.
 

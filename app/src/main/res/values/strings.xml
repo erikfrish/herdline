@@ -113,6 +113,8 @@
     <string name="agents">Agents</string>
     <string name="new_workspace">New workspace</string>
     <string name="new_tab">New tab</string>
+    <string name="new_tab_in">New tab in %1$s</string>
+    <string name="new_tab_choose">New tab, choose workspace</string>
     <string name="tab_name">Name</string>
     <string name="tab_name_hint">Leave blank to number it</string>
     <string name="create">Create</string>

@@ -34,9 +34,6 @@ pub(super) const IN_MEMORY: &str = "kilo_store_in_memory";
 /// SQLite cannot open the store read-only, such as a WAL store without its
 /// sidecars in a folder this user cannot write.
 pub(super) const UNREADABLE: &str = "kilo_store_unreadable";
-/// The agent has no `HOME` and no `XDG_DATA_HOME`: where Kilo keeps its data
-/// cannot be told from its environment.
-pub(super) const UNKNOWN: &str = "kilo_store_unknown";
 
 /// The exact session id Kilo writes: `ses_` and its ascending identifier
 /// (`schema/src/session-id.ts:5`, `identifier.ts:1-2`), bounded.
@@ -57,7 +54,7 @@ pub(super) fn page(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&query_script(session, pane, expect, &options(read), None))
+            shell_quote(&query_script(session, pane, expect, &options(read)))
         ),
         Duration::from_secs(60),
         PAGE_ROOM,
@@ -77,24 +74,12 @@ fn options(read: Read) -> Value {
     json!({"mode":mode,"cursor":cursor})
 }
 
-/// `environ` replaces `/proc/<pid>/environ` for the fixture tests only; every
-/// production read passes `None`, so no app or host input can point it
-/// elsewhere.
-fn query_script(
-    session: &str,
-    pane: &str,
-    expect: &Identity,
-    options: &Value,
-    environ: Option<&str>,
-) -> String {
+fn query_script(session: &str, pane: &str, expect: &Identity, options: &Value) -> String {
     format!(
-        "python3 - {} {} {}{} <<'HERDLINE_KILO_PY'\n{}\nHERDLINE_KILO_PY",
+        "python3 - {} {} {} <<'HERDLINE_KILO_PY'\n{}\nHERDLINE_KILO_PY",
         shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
         shell_quote(&options.to_string()),
         shell_quote(&super::instance_script(session, pane)),
-        environ
-            .map(|path| format!(" {}", shell_quote(path)))
-            .unwrap_or_default(),
         PYTHON
     )
 }
@@ -106,7 +91,7 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE, UNKNOWN]
+            [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE]
                 .into_iter()
                 .find(|known| *known == format)
                 .ok_or(Error::BadReply)?,
@@ -254,13 +239,13 @@ fn file_name(part: &Value) -> String {
     format!("[file: {}]", cap(name.or(part["mime"].as_str()).unwrap_or("unknown"), 256).0)
 }
 
-/// The host side. Reads of `/proc/<pid>/environ` keep only HOME,
-/// XDG_DATA_HOME and KILO_DB; nothing else from the agent's environment is
-/// returned, logged or stored. A file part's `url` (inline base64 or a
-/// `file://` path) is never returned and never opened.
+/// The host side. The store comes from this shell's own HOME, XDG_DATA_HOME
+/// and KILO_DB; no other process's environment is read. An agent started
+/// with values this shell lacks is not found there, never guessed. A file
+/// part's `url` (inline base64 or a `file://` path) is never returned and
+/// never opened.
 const PYTHON: &str = r#"import json, os, re, sqlite3, stat, subprocess, sys, urllib.parse, zlib
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
-environ_path = sys.argv[4] if len(sys.argv) > 4 else None
 LIMIT=200
 BUDGET=1572864
 # Rust's per-item caps (transcript.rs TEXT_LIMIT, RESULT_LIMIT, ARGS_LIMIT) in
@@ -297,14 +282,8 @@ def identity():
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:kilo'),'kind':ref['kind']}
     return got,pane.get('agent_status','unknown')
 
-def environment(pid):
-    wanted={'HOME','XDG_DATA_HOME','KILO_DB'}
-    env={}
-    for field in open(environ_path or '/proc/%d/environ'%pid,'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        key=key.decode(errors='replace')
-        if sep and key in wanted: env[key]=value.decode(errors='replace')
-    return env
+def environment():
+    return {key:os.environ[key] for key in ('HOME','XDG_DATA_HOME','KILO_DB') if key in os.environ}
 
 class Refused(Exception): pass
 
@@ -319,14 +298,7 @@ def inside(root,path): return os.path.commonpath([root,path])==root
 def store(env):
     home=os.path.realpath(os.environ['HOME'])
     clean=lambda value: re.sub(r'[\r\n]+','',value)
-    own=clean(env.get('HOME',''))
-    xdg=clean(env.get('XDG_DATA_HOME',''))
-    # As C-3 (resolve_session.py): an agent HOME that is not this user's is
-    # refused, never followed.
-    if own and os.path.realpath(own)!=home: raise Refused('kilo_store_outside_home')
-    if not xdg:
-        if not own: raise Refused('kilo_store_unknown')
-        xdg=os.path.join(own,'.local','share')
+    xdg=clean(env.get('XDG_DATA_HOME','')) or os.path.join(clean(env['HOME']),'.local','share')
     if not xdg.startswith('/'): raise Refused('kilo_store_outside_home')
     data=os.path.join(xdg,'kilo')
     value=env.get('KILO_DB','')
@@ -430,7 +402,7 @@ def main():
     if got!=expect or got['agent']!='kilo' or got['kind']!='id' or not got['pid']: return {'changed':True}
     sid=got['path']
     if not ID.match(sid): return {'changed':True}
-    db=store(environment(got['pid']))
+    db=store(environment())
     try: conn=connect(db)
     except LookupError: return {'error':'missing'}
     if any(not need<=columns(conn,table) for table,need in NEED.items()): raise Refused('kilo_store_layout')

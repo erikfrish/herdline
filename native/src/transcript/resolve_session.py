@@ -1,5 +1,8 @@
-"""Resolve only the current pane's session within known process-configured
-roots; with --blob-store, the blob store of an OMP process instead."""
+"""Resolve only the current pane's session within known configured roots;
+with --blob-store, the blob store of an OMP process instead. Roots come from
+this shell's own environment and the arguments Herdr reports for the pane's
+process; no other process's environment, cmdline or cwd is read, so a root
+set only in the agent's environment is not known here and never guessed."""
 import glob
 import json
 import os
@@ -10,9 +13,9 @@ import sys
 class OutsideHome(ValueError):
     """A root or file the agent uses lies outside this user's home."""
 
-# Only the variables a root comes from are decoded: the rest of environ
-# (tokens, keys) never sits in this script's memory as text.
-WANTED = (b'HOME', b'OMP_PROFILE', b'PI_PROFILE', b'PI_CONFIG_DIR', b'PI_CODING_AGENT_DIR', b'XDG_DATA_HOME', b'CLAUDE_CONFIG_DIR', b'CODEX_HOME')
+# Only the variables a root comes from are taken from this shell's own
+# environment.
+WANTED = ('HOME', 'OMP_PROFILE', 'PI_PROFILE', 'PI_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'XDG_DATA_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME')
 
 # omp 18.18.8 (oh-my-pi 6e48274) reads --profile before anything else, in
 # extractProfileFlags (coding-agent/src/cli/profile-bootstrap.ts:77-229), so
@@ -77,17 +80,15 @@ def profile_flag(argv):
             index += 1
     return profile
 
-def process(pid):
-    """The root variables of `pid`'s environment and its arguments."""
-    env = {}
-    for field in open('/proc/%d/environ' % pid, 'rb').read(262144).split(b'\0'):
-        key, separator, data = field.partition(b'=')
-        if separator and key in WANTED:
-            env[key.decode()] = data.decode(errors='replace')
-    argv = [part.decode(errors='replace') for part in open('/proc/%d/cmdline' % pid, 'rb').read(65536).split(b'\0')]
-    if argv and argv[-1] == '':
-        argv.pop()
-    return env, argv
+def environment():
+    """The root variables of this shell's own environment."""
+    return {key: os.environ[key] for key in WANTED if key in os.environ}
+
+def arguments(processes, pid):
+    """The argv Herdr's process-info reports for `pid`, or none."""
+    entry = next((process for process in processes if isinstance(process, dict) and process.get('pid') == pid), {})
+    argv = entry.get('argv')
+    return argv if isinstance(argv, list) and all(isinstance(part, str) for part in argv) else []
 
 def normalize_profile(name):
     name = (name or '').strip()
@@ -129,11 +130,12 @@ def blob_store(pid):
     (18.18.8): the profile's agent dir, or without one PI_CODING_AGENT_DIR,
     else ~/.omp/agent; an existing $XDG_DATA_HOME/omp (with a profile,
     .../profiles/<name>) takes its place. What it cannot pin down exactly
-    (no /proc, another HOME, PI_CONFIG_DIR, a relative value) raises
-    ValueError; a store outside HOME, OutsideHome."""
-    env, argv = process(pid)
-    if not env.get('HOME') or os.path.realpath(env['HOME']) != home:
-        raise ValueError('home')
+    (no such process in Herdr's report, PI_CONFIG_DIR, a relative value)
+    raises ValueError; a store outside HOME, OutsideHome."""
+    processes = report('pane', 'process-info', '--pane', pane).get('process_info', {}).get('foreground_processes', [])
+    if not any(isinstance(process, dict) and process.get('pid') == pid for process in processes):
+        raise ValueError('process')
+    env, argv = environment(), arguments(processes, pid)
     if env.get('PI_CONFIG_DIR'):
         raise ValueError('config')
     profile, override = omp_agent(env, argv, '.omp')
@@ -171,16 +173,8 @@ def resolve():
         raise ValueError('changed')
     processes = report('pane', 'process-info', '--pane', pane).get('process_info', {}).get('foreground_processes', [])
     pid = next((process.get('pid') for process in processes if process.get('name') == agent), None)
-    env = {}
-    argv = []
-    if isinstance(pid, int) and pid > 0:
-        try:
-            env, argv = process(pid)
-        except OSError:
-            # Default roots require no environment guess. Configured roots do.
-            pass
-    if env.get('HOME') and os.path.realpath(env['HOME']) != home:
-        raise OutsideHome()
+    env = environment()
+    argv = arguments(processes, pid) if isinstance(pid, int) and pid > 0 else []
     def absolute(path):
         # OMP, Claude and Codex never expand `~`: Node's path.resolve reads
         # `~/x` against the agent's cwd, so it is relative here too.
@@ -251,9 +245,9 @@ def resolve():
 if sys.argv[1] == '--blob-store':
     # Run by the media read's shell: 3 is unconfined, any other failure an
     # unknown store, never a guessed one.
-    home = sys.argv[3]
+    herdr, session, pane, pid, home = sys.argv[2:]
     try:
-        print(blob_store(int(sys.argv[2])))
+        print(blob_store(int(pid)))
     except OutsideHome:
         sys.exit(3)
     except Exception:

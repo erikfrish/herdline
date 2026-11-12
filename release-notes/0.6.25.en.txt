@@ -1,0 +1,9 @@
+Herdline 0.6.25 — A one-row header, and notifications you choose the content of
+
+On a portrait phone the header is now one row. The place button shows the tab, the workspace, the tab count and a changed mark, and it opens Tabs. On a wide screen it shows or hides the tab sidebar.
+
+Settings now has a notification content section. You choose which of six fields the notification shows (state, elapsed time, agent, host, tab and counts) and their order, with a preview of what the shade will show. The privacy level still limits every field, even when the phone is unlocked. The task title is never shown, and the host only at Full detail. The live update is a standard notification, which Android may promote, and Settings says whether it asked to. The connection notification now says Connecting or Disconnected when it is not connected.
+
+You can withdraw a queued send only while the editor is empty, so its text and photos can come back into it. Otherwise Herdline says to clear the editor first, and the send stays queued.
+
+Not yet verified by QA.

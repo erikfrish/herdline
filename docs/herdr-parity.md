@@ -11,7 +11,7 @@ Herdline never changes either.
 |Agent status|status dots, "needs you" list|status dots, attention chip, Needs you / Working filters, Android notifications|
 |Pane zoom|shared with every client|the same; every zoom control says "(shared)" and the phone never zooms on its own; a short-pane notice offers Zoom (shared) to turn it on, never off|
 |Splitting a pane|keys and mouse|"Split right (shared)" / "Split down (shared)" in the pane bar on wide windows, Split right / down in the session ⋮ menu on a phone; right and down only|
-|Creating, renaming, closing|keys and mouse|new tab (+ in the tab strip, switcher, ⋮), new workspace (switcher), rename tab/workspace (⋮, long press, switcher); closing a pane, tab or workspace asks first, naming the tab or workspace; Close pane is offered only on a split tab (the only pane closes with its tab)|
+|Creating, renaming, closing|keys and mouse|new tab (+ in the tab strip, a labelled New tab in the Tabs header in both List and Two columns, the switcher's workspace ⋮, the session ⋮; with All workspaces and more than one, it asks which), new workspace (switcher), rename tab/workspace (⋮, long press, switcher); closing a pane, tab or workspace asks first, naming the tab or workspace; Close pane is offered only on a split tab (the only pane closes with its tab)|
 |Typing into a pane|keyboard|raw terminal keyboard (IME mirrored line) or the composer (Insert / Send)|
 |Popups and dialogs|drawn by Herdr|drawn by Herdr in the terminal; chat shows a card that opens the terminal and never answers for you|
 |Agent conversation|the agent's own terminal UI|the same terminal, or **Chat** for OMP panes: a read-only view of the same agent's session file|

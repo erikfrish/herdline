@@ -56,7 +56,7 @@ pub(super) fn page(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&query_script(session, pane, expect, &options(read), None))
+            shell_quote(&query_script(session, pane, expect, &options(read)))
         ),
         Duration::from_secs(60),
         PAGE_ROOM,
@@ -76,24 +76,12 @@ fn options(read: Read) -> Value {
     json!({"mode":mode,"cursor":cursor})
 }
 
-/// `environ` replaces `/proc/<pid>/environ` for the fixture tests only; every
-/// production read passes `None`, so no app or host input can point it
-/// elsewhere.
-fn query_script(
-    session: &str,
-    pane: &str,
-    expect: &Identity,
-    options: &Value,
-    environ: Option<&str>,
-) -> String {
+fn query_script(session: &str, pane: &str, expect: &Identity, options: &Value) -> String {
     format!(
-        "python3 - {} {} {}{} <<'HERDLINE_COPILOT_PY'\n{}\nHERDLINE_COPILOT_PY",
+        "python3 - {} {} {} <<'HERDLINE_COPILOT_PY'\n{}\nHERDLINE_COPILOT_PY",
         shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
         shell_quote(&options.to_string()),
         shell_quote(&super::instance_script(session, pane)),
-        environ
-            .map(|path| format!(" {}", shell_quote(path)))
-            .unwrap_or_default(),
         PYTHON
     )
 }
@@ -248,14 +236,14 @@ fn entry(row: &Value) -> Option<Entry> {
     })
 }
 
-/// The host side. Reads of `/proc/<pid>/environ` keep only HOME and
-/// COPILOT_HOME; nothing else from the agent's environment is returned,
-/// logged or stored. An attachment's `path`, a blob's `data` and a
+/// The host side. The store comes from this shell's own HOME and
+/// COPILOT_HOME; no other process's environment is read. An agent started
+/// with a COPILOT_HOME this shell lacks is not found there (missing), never
+/// guessed. An attachment's `path`, a blob's `data` and a
 /// `session.binary_asset` are never returned, and no other file is opened.
 const PYTHON: &str = r#"import json, os, re, stat, subprocess, sys, zlib
 from datetime import datetime
 expect, opts, report = json.loads(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
-environ_path = sys.argv[4] if len(sys.argv) > 4 else None
 LIMIT=200
 BUDGET=1572864
 MAX=32<<20
@@ -305,14 +293,8 @@ def identity():
     got={'pane_id':pane['pane_id'],'terminal_id':pane['terminal_id'],'pid':pid,'path':ref['value'],'agent':ref['agent'],'source':ref.get('source','herdr:copilot'),'kind':ref['kind']}
     return got,pane.get('agent_status','unknown')
 
-def environment(pid):
-    wanted={'HOME','COPILOT_HOME'}
-    env={}
-    for field in open(environ_path or '/proc/%d/environ'%pid,'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        key=key.decode(errors='replace')
-        if sep and key in wanted: env[key]=value.decode(errors='replace')
-    return env
+def environment():
+    return {key:os.environ[key] for key in ('HOME','COPILOT_HOME') if key in os.environ}
 
 class Refused(Exception): pass
 
@@ -422,7 +404,7 @@ def main():
     if got!=expect or got['agent']!='copilot' or got['kind']!='id' or not got['pid']: return {'changed':True}
     sid=got['path']
     if not ID.match(sid): return {'changed':True}
-    path=locate(environment(got['pid']),sid)
+    path=locate(environment(),sid)
     try: data=load(path)
     except LookupError: return {'error':'missing'}
     size=len(data)

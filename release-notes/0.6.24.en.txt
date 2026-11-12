@@ -1,0 +1,7 @@
+Herdline 0.6.24 — Steer with a photo, and a keyboard row laid out like a keyboard
+
+While an OMP agent works, Chat's Steer now takes a staged photo, with or without a caption, through the agent's own endpoint. Without that endpoint, the photo stays in the draft and nothing is sent; Steer in the terminal stays text only. A send you take back from the queue returns to the editor with its photos.
+
+The extra keys default to two rows of seven: Tab, Esc, Home, Up, End, / and Backspace above Ctrl, Alt, Left, Down, Right, | and Enter, so the arrows form an inverted T. A layout you changed yourself is kept.
+
+Not yet verified by QA.

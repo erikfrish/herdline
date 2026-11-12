@@ -36,10 +36,11 @@ fn expected() -> Identity {
     }
 }
 
-/// A scratch host: a fake Herdr, a fake `/proc/<pid>/environ` for the
-/// agent, and its runtime directory.
+/// A scratch host: a fake Herdr, the exec shell's runtime directory (its
+/// `$XDG_RUNTIME_DIR`, or none), and a fake `/run/user` root.
 struct Host {
     home: tempfile::TempDir,
+    xdg: std::cell::RefCell<Option<PathBuf>>,
 }
 
 impl Host {
@@ -80,11 +81,8 @@ impl Host {
                 "valid test fixture or expected ingress reply", error
             )
         });
-        let host = Self { home };
-        host.environ(&format!(
-            "HOME=/home/u\0XDG_RUNTIME_DIR={}\0",
-            host.runtime().display()
-        ));
+        let host = Self { xdg: std::cell::RefCell::new(None), home };
+        host.xdg.replace(Some(host.runtime()));
         fs::create_dir_all(host.runtime()).unwrap_or_else(|error| {
             panic!(
                 "{}: {:?}",
@@ -102,20 +100,19 @@ impl Host {
         self.runtime().join(DIR_NAME)
     }
 
-    fn environ(&self, content: &str) {
-        let proc = self.home.path().join(format!("proc/{PID}"));
-        fs::create_dir_all(&proc).unwrap_or_else(|error| {
+    /// A fallback `/run/user` root, with this user's directory in it.
+    fn run_user(&self) -> PathBuf {
+        self.home.path().join("run-user")
+    }
+
+    fn uid() -> String {
+        let output = Command::new("id").arg("-u").output().unwrap_or_else(|error| {
             panic!(
                 "{}: {:?}",
                 "valid test fixture or expected ingress reply", error
             )
         });
-        fs::write(proc.join("environ"), content).unwrap_or_else(|error| {
-            panic!(
-                "{}: {:?}",
-                "valid test fixture or expected ingress reply", error
-            )
-        });
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
     }
 
     /// The directory the extension makes, private.
@@ -161,6 +158,8 @@ impl Host {
             .arg(script)
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env_remove("XDG_RUNTIME_DIR")
+            .envs(self.xdg.borrow().iter().map(|dir| ("XDG_RUNTIME_DIR", dir.clone())))
             .output()
             .unwrap_or_else(|error| {
                 panic!(
@@ -176,12 +175,13 @@ impl Host {
     }
 
     fn discover(&self, expected: &Identity) -> Discovery {
-        let proc = self.home.path().join("proc");
+        let run_user = self.run_user();
         let (status, bytes) = self.sh(&discovery_script(
             "lab",
             "w1:p1",
             PID,
-            proc.to_str()
+            run_user
+                .to_str()
                 .unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply")),
         ));
         parse_discovery(status, &bytes, expected)
@@ -193,10 +193,45 @@ fn sidecar_json(sid: &str) -> Value {
 }
 
 #[test]
-fn an_agent_without_a_runtime_directory_has_no_endpoint() {
+fn only_the_shells_own_runtime_directory_is_looked_in() {
     let host = Host::new();
-    host.environ("HOME=/home/u\0");
+    // The extension published in the shell's $XDG_RUNTIME_DIR: found.
+    host.publish("s1", &sidecar_json("s1"));
+    assert!(matches!(host.discover(&expected()), Discovery::Found(_)), "{:?}", host.discover(&expected()));
+
+    // The shell names another runtime directory: the agent's endpoint is
+    // not looked for anywhere else, so it is absent and the pane route is used.
+    let other = host.home.path().join("other-run");
+    fs::create_dir_all(&other).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    host.xdg.replace(Some(other));
     assert_eq!(host.discover(&expected()), Discovery::Absent);
+
+    // No $XDG_RUNTIME_DIR: /run/user/<uid> is used, and only it.
+    host.xdg.replace(None);
+    assert_eq!(host.discover(&expected()), Discovery::Absent);
+    let fallback = host.run_user().join(Host::uid());
+    fs::create_dir_all(fallback.parent().unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply"))).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    std::os::unix::fs::symlink(host.runtime(), &fallback).unwrap_or_else(|error| {
+        panic!(
+            "{}: {:?}",
+            "valid test fixture or expected ingress reply", error
+        )
+    });
+    assert!(matches!(host.discover(&expected()), Discovery::Found(_)));
+
+    // A runtime path that is not a plain absolute path refuses.
+    host.xdg.replace(Some(PathBuf::from("run/relative")));
+    assert_eq!(host.discover(&expected()), Discovery::Unusable("runtime"));
 }
 
 #[test]

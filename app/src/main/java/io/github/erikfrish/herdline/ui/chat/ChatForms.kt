@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.chat
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +63,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -130,21 +132,52 @@ internal fun fieldValue(field: FormField, answers: FormAnswers): Any? = when (fi
 }
 
 /**
- * The submitted `data`: hidden values, every text field, and each choice
- * as [choiceValue] gives it. An array field keeps its `[]` when nothing is
- * picked; a single choice with no answer is left out, as a browser leaves
- * an unchecked radio group out of its form data.
+ * The submitted `data`: hidden values, every active text field, and each
+ * active choice as [choiceValue] gives it. An array field keeps its `[]`
+ * when nothing is picked; a single choice with no answer is left out, as a
+ * browser leaves an unchecked radio group out of its form data. A field
+ * whose conditions do not hold is not answerable and is never sent.
  */
-internal fun formData(form: ChatForm, answers: FormAnswers): JSONObject = JSONObject().also { data ->
+internal fun formData(form: ChatForm, answers: FormAnswers): JSONObject = form.active(JSONObject().also { data ->
     form.hidden.forEach { (name, value) -> data.put(name, value) }
     form.fields.forEach { field ->
         fieldValue(field, answers)?.let { data.put(field.name, it) }
     }
+})
+
+/** The fields shown now: those whose conditions hold for the draft. */
+internal fun activeNames(form: ChatForm, answers: FormAnswers): Set<String> =
+    form.activeFields(formData(form, answers)).mapTo(HashSet()) { it.name }
+
+/** The local reason per active field name; the host validates again on submit. */
+internal fun formErrors(form: ChatForm, answers: FormAnswers): Map<String, String> {
+    val active = activeNames(form, answers)
+    return form.fields.filter { it.name in active }.mapNotNull { field -> formFieldError(field, fieldValue(field, answers))?.let { field.name to it } }.toMap()
 }
 
-/** The local reason per field name; OMP validates again on submit. */
-internal fun formErrors(form: ChatForm, answers: FormAnswers): Map<String, String> =
-    form.fields.mapNotNull { field -> formFieldError(field, fieldValue(field, answers))?.let { field.name to it } }.toMap()
+/** A short "what was answered" for a settled question: each active field's chosen labels or typed text. */
+internal fun answerSummary(form: ChatForm, answers: FormAnswers): String {
+    val active = activeNames(form, answers)
+    return form.fields.filter { it.name in active }.mapNotNull { field ->
+        when (field) {
+            is FormField.Text -> answers.text(field).trim().takeIf(String::isNotEmpty)?.let { if (field.type == "password") "••••" else it }
+            is FormField.Choice -> answers.choice(field).let { draft ->
+                val labels = field.options.filter { it.value in draft.selected }.map { formText(it.label).substringBefore(" — ").ifBlank { it.value } }
+                (labels + listOfNotNull(draft.otherText.trim().takeIf { draft.otherOn && it.isNotEmpty() })).joinToString(", ").takeIf(String::isNotEmpty)
+            }
+        }
+    }.joinToString("; ").take(SUMMARY_MAX)
+}
+
+private const val SUMMARY_MAX = 200
+
+/** How a question this phone acted on ended; such a card takes no more input. */
+sealed interface DialogSettled {
+    data class Answered(val summary: String) : DialogSettled
+    data object Declined : DialogSettled
+    data object NoLongerAsked : DialogSettled
+    data object AnsweredElsewhere : DialogSettled
+}
 
 /** [value] without a trailing ".0" when it is whole. */
 internal fun plainNumber(value: Double): String =
@@ -193,6 +226,9 @@ private val CardShape = RoundedCornerShape(16.dp)
  * [ChatDialog.id], so a new dialog never inherits an old answer, and it
  * survives a failed submit. While [submitting], or once the host says the
  * dialog is no longer open, the form shows the answer but takes no input.
+ * [onCancel], when the host takes a decline, is a Decline as easy as Submit:
+ * same row, same size, neither focused first. [settled] shows how it ended
+ * in place of the form.
  */
 @Composable
 fun ChatFormCard(
@@ -200,8 +236,10 @@ fun ChatFormCard(
     colors: ChatColors,
     submitting: Boolean,
     submitError: String?,
-    onSubmit: (JSONObject) -> Unit,
+    onSubmit: (JSONObject, String) -> Unit,
     modifier: Modifier = Modifier,
+    onCancel: (() -> Unit)? = null,
+    settled: DialogSettled? = null,
 ) {
     FormFrame(colors, modifier.testTag("chat:form")) {
         Text(
@@ -211,10 +249,28 @@ fun ChatFormCard(
         val title = dialog.title.ifBlank { stringResource(R.string.form_untitled) }
         Text(title, style = ChatType.heading2.copy(color = colors.text), modifier = Modifier.semantics { heading() })
         val form = dialog.form
-        if (form == null) {
-            Unsupported(dialog.kind, colors)
-        } else {
-            FormEditor(dialog.id, form, colors, submitting, submitError, onSubmit, dialog.submittable)
+        when {
+            settled != null -> Notice(
+                when (settled) {
+                    is DialogSettled.Answered -> stringResource(R.string.form_settled_answered, settled.summary)
+                    DialogSettled.Declined -> stringResource(R.string.form_settled_declined)
+                    DialogSettled.NoLongerAsked -> stringResource(R.string.form_settled_gone)
+                    DialogSettled.AnsweredElsewhere -> stringResource(R.string.form_settled_desktop)
+                },
+                colors,
+                warn = settled is DialogSettled.NoLongerAsked,
+                modifier = Modifier.testTag("chat:form:settled"),
+            )
+            form == null -> {
+                Unsupported(dialog, colors)
+                if (onCancel != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        DeclineButton(colors, enabled = !submitting, onCancel, Modifier.weight(1f))
+                    }
+                    if (submitting) Progress(R.string.form_declining, colors)
+                }
+            }
+            else -> FormEditor(dialog.id, form, colors, submitting, submitError, onSubmit, dialog.submittable, onCancel)
         }
     }
 }
@@ -296,9 +352,39 @@ private fun FormFrame(colors: ChatColors, modifier: Modifier, content: @Composab
 }
 
 @Composable
-private fun Unsupported(kind: String, colors: ChatColors) {
-    Text(stringResource(R.string.form_kind, kind), style = ChatType.meta.copy(color = colors.muted))
-    Notice(stringResource(R.string.form_unsupported), colors, warn = true, modifier = Modifier.testTag("chat:form:unsupported"))
+private fun Unsupported(dialog: ChatDialog, colors: ChatColors) {
+    val why = dialog.unsupported
+    val subject = why?.subject?.takeIf(String::isNotBlank) ?: stringResource(R.string.form_untitled)
+    val text = when (why?.reason) {
+        "field" -> stringResource(R.string.form_unsupported_field, subject)
+        "condition" -> stringResource(R.string.form_unsupported_condition, subject)
+        "link" -> stringResource(R.string.form_unsupported_link, subject)
+        "size" -> stringResource(R.string.form_unsupported_size)
+        else -> null
+    }
+    if (text == null) Text(stringResource(R.string.form_kind, dialog.kind), style = ChatType.meta.copy(color = colors.muted))
+    Notice(text ?: stringResource(R.string.form_unsupported), colors, warn = true, modifier = Modifier.testTag("chat:form:unsupported"))
+}
+
+@Composable
+private fun DeclineButton(colors: ChatColors, enabled: Boolean, onCancel: () -> Unit, modifier: Modifier) {
+    Button(
+        onClick = onCancel,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(containerColor = colors.surf, contentColor = colors.text),
+        border = BorderStroke(1.dp, colors.border),
+        modifier = modifier.heightIn(min = 48.dp).testTag("chat:form:decline"),
+    ) {
+        Text(stringResource(R.string.form_decline), style = ChatType.button)
+    }
+}
+
+@Composable
+private fun Progress(text: Int, colors: ChatColors) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.accent)
+        Text(stringResource(text), style = ChatType.meta.copy(color = colors.muted))
+    }
 }
 
 @Composable
@@ -308,17 +394,20 @@ private fun FormEditor(
     colors: ChatColors,
     submitting: Boolean,
     submitError: String?,
-    onSubmit: (JSONObject) -> Unit,
+    onSubmit: (JSONObject, String) -> Unit,
     submittable: Boolean,
+    onCancel: (() -> Unit)?,
 ) {
     val saver = remember(form) { answersSaver(secretFields(form)) }
     var answers by rememberSaveable(id, stateSaver = saver) { mutableStateOf(initialAnswers(form)) }
     var tried by rememberSaveable(id) { mutableStateOf(false) }
     var touched by rememberSaveable(id) { mutableStateOf(listOf<String>()) }
+    var declining by rememberSaveable(id) { mutableStateOf(false) }
     val closed = submitError == FORM_NOT_OPEN
     val editable = submittable && !submitting && !closed
+    val active = activeNames(form, answers)
     val errors = formErrors(form, answers).filterKeys { tried || it in touched }
-    FormContent(form, answers, colors, editable, errors) { change ->
+    FormContent(form, answers, colors, editable, errors, active) { change ->
         answers = change.answers
         if (change.name !in touched) touched = touched + change.name
     }
@@ -342,24 +431,33 @@ private fun FormEditor(
             style = ChatType.meta.copy(color = colors.err),
         )
     }
-    if (submittable && !closed) {
+    if ((submittable || onCancel != null) && !closed) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    tried = true
-                    if (formErrors(form, answers).isEmpty()) onSubmit(JSONObject().put("data", formData(form, answers)))
-                },
-                enabled = editable,
-                colors = ButtonDefaults.buttonColors(containerColor = colors.accentText, contentColor = colors.bg),
-                modifier = Modifier.heightIn(min = 48.dp).testTag("chat:form:submit"),
-            ) {
-                Text(stringResource(if (submitError != null) R.string.form_submit_again else R.string.form_submit), style = ChatType.button)
+            // Submit and Decline share the row at one size; neither takes focus first.
+            val weight = if (onCancel != null) Modifier.weight(1f) else Modifier
+            if (submittable) {
+                Button(
+                    onClick = {
+                        tried = true
+                        declining = false
+                        if (formErrors(form, answers).isEmpty()) onSubmit(JSONObject().put("data", formData(form, answers)), answerSummary(form, answers))
+                    },
+                    enabled = editable,
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentText, contentColor = colors.bg),
+                    modifier = weight.heightIn(min = 48.dp).testTag("chat:form:submit"),
+                ) {
+                    Text(stringResource(if (submitError != null) R.string.form_submit_again else R.string.form_submit), style = ChatType.button)
+                }
             }
-            if (submitting) {
+            if (onCancel != null) {
+                DeclineButton(colors, enabled = !submitting, { declining = true; onCancel() }, weight)
+            }
+            if (submitting && onCancel == null) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.accent)
                 Text(stringResource(R.string.form_sending), style = ChatType.meta.copy(color = colors.muted))
             }
         }
+        if (submitting && onCancel != null) Progress(if (declining) R.string.form_declining else R.string.form_answering, colors)
     }
 }
 
@@ -374,11 +472,12 @@ private fun FormContent(
     colors: ChatColors,
     editable: Boolean,
     errors: Map<String, String>,
+    active: Set<String>,
     onChange: (FormChange) -> Unit,
 ) {
     val placed = remember(form) { form.sections.flatMap { s -> s.blocks.filterIsInstance<FormBlock.Field>().map { it.field.name } }.toSet() }
     val field = @Composable { f: FormField, groupTitle: String? ->
-        FieldView(f, answers, colors, editable, errors[f.name], groupTitle) { onChange(FormChange(f.name, it)) }
+        if (f.name in active) FieldView(f, answers, colors, editable, errors[f.name], groupTitle) { onChange(FormChange(f.name, it)) }
     }
     form.sections.forEach { section ->
         val groupTitle = formText(section.title).takeIf(String::isNotBlank)
@@ -401,11 +500,28 @@ private fun FormContent(
                 is FormBlock.Table -> FormTable(block, colors)
                 is FormBlock.Field -> field(block.field, groupTitle)
                 is FormBlock.Picture -> FormPicture(block, colors)
+                is FormBlock.Link -> FormLink(block, colors)
                 is FormBlock.Svg -> FormSvg(block, colors)
             }
         }
     }
     form.fields.filterNot { it.name in placed }.forEach { field(it, null) }
+}
+
+/** A page the question points to, opened in the browser on a tap; only http(s), else its address as text. */
+@Composable
+private fun FormLink(block: FormBlock.Link, colors: ChatColors) {
+    val uri = LocalUriHandler.current
+    val web = block.url.startsWith("https://", ignoreCase = true) || block.url.startsWith("http://", ignoreCase = true)
+    val label = formText(block.label).ifBlank { block.url }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.testTag("chat:form:link")) {
+        Text(
+            label,
+            style = ChatType.action.copy(color = if (web) colors.accentText else colors.text),
+            modifier = if (web) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { uri.openUri(block.url) }.padding(vertical = 14.dp) else Modifier,
+        )
+        Text(block.url, style = ChatType.meta.copy(color = colors.muted))
+    }
 }
 
 /** OMP's span styles: `code`, `strong`, `em`, alone or together. */
@@ -625,6 +741,7 @@ private fun FieldView(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FieldLabel(field, colors, groupTitle)
+        if (field.help.isNotEmpty()) Text(spanned(field.help, colors), style = ChatType.meta.copy(color = colors.muted))
         when (field) {
             is FormField.Choice -> {
                 val draft = answers.choice(field)

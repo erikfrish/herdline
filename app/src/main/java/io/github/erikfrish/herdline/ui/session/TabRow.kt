@@ -2,7 +2,6 @@ package io.github.erikfrish.herdline.ui.session
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,11 +18,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Edit
@@ -36,15 +33,17 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -104,26 +103,74 @@ internal fun nextUnseen(before: Map<String, AgentStatus>, now: List<Tab>, select
         t.id.takeIf { it != selectedId && (it in unseen || bumps(before[it], t.status)) }
     }
 
-/** What [TabRow] last applied: each tab's status and the marked tabs. */
-private class SeenTabs {
-    var statuses: Map<String, AgentStatus> = emptyMap()
-    var unseen: Set<String> = emptySet()
+/** What [rememberUnseenTabs] last applied: each tab's status and the marked tabs. */
+internal class SeenTabs(
+    var statuses: Map<String, AgentStatus> = emptyMap(),
+    var unseen: Set<String> = emptySet(),
+)
+
+/**
+ * [SeenTabs] as saved state: tab ids with their status names, then the
+ * marked ids, so a font or locale change or a process death keeps the
+ * marks. A status name this build doesn't know drops that tab's status.
+ */
+internal val SeenTabsSaver: Saver<SeenTabs, Any> = Saver(
+    save = { arrayListOf(ArrayList(it.statuses.keys), ArrayList(it.statuses.values.map(AgentStatus::name)), ArrayList(it.unseen)) },
+    restore = { saved ->
+        @Suppress("UNCHECKED_CAST")
+        val (ids, names, unseen) = saved as List<List<String>>
+        val statuses = ids.zip(names).mapNotNull { (id, name) -> AgentStatus.entries.firstOrNull { it.name == name }?.let { id to it } }
+        SeenTabs(statuses.toMap(), unseen.toSet())
+    },
+)
+
+/**
+ * The tabs marked changed since the user looked ([nextUnseen]), tracked over
+ * recompositions and saved state, per [node] and [session]. Kept by the
+ * session header, so the strip and the place button show one and the same
+ * set, whichever of them is on screen.
+ */
+@Composable
+internal fun rememberUnseenTabs(tabs: List<Tab>, selectedId: String?, node: String, session: String): Set<String> {
+    // Plain fields, written after each applied composition, so a discarded one changes nothing.
+    val seen = rememberSaveable(node, session, saver = SeenTabsSaver) { SeenTabs() }
+    val unseen = nextUnseen(seen.statuses, tabs, selectedId, seen.unseen)
+    SideEffect {
+        seen.statuses = tabs.associate { it.id to it.status }
+        seen.unseen = unseen
+    }
+    return unseen
+}
+
+/** The changed mark: a [color] dot cut out of what is under it by a [halo] ring at [center]. */
+internal fun DrawScope.drawUnseenMark(center: Offset, halo: Color, color: Color) {
+    drawCircle(halo, radius = 4.dp.toPx(), center = center)
+    drawCircle(color, radius = 2.5.dp.toPx(), center = center)
+}
+
+/** A tab's Rename and Close tab, from a long press on it in the strip or on the session's place button. */
+@Composable
+internal fun TabMenu(expanded: Boolean, onDismiss: () -> Unit, onRename: () -> Unit, onClose: () -> Unit) {
+    GlassMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        GlassMenuItem(stringResource(R.string.rename_tab), Icons.Default.Edit, onClick = { onDismiss(); onRename() })
+        GlassMenuItem(stringResource(R.string.session_close_tab), Icons.Default.Close, onClick = { onDismiss(); onClose() }, destructive = true)
+    }
 }
 
 /**
  * The workspace's tabs in Herdr order, one dedicated 48 dp row: ‹ previous,
  * a scrolling strip that keeps the active tab centred and fades where tabs
- * are hidden, › next, and a labelled "Tabs n/N" button for the Tabs sheet.
- * With the sidebar shown ([onTabs] null) the sidebar is the switcher, so the
- * button is left out. ‹ and › stop at the ends instead of wrapping. A long
+ * are hidden, and › next. Where it is shown (a short window's merged header
+ * and the wide layout), the session's place button beside or above it says
+ * n/N and opens Tabs. ‹ and › stop at the ends instead of wrapping. A long
  * press on a tab offers rename and close, as the ⋮ menu does for the focused one.
  * [heldPane] names a tab's pane with an unconfirmed delivery, which marks
  * the tab with a lock and "delivery not confirmed" (AUDIT R7); no tap of its own.
  * [tabState] adds a spoken state of the caller's, such as Chat's "Reading here" (CT-1).
- * A background tab whose agent turns Blocked or Done gets a dot on its
- * glyph's corner and "changed" until it is selected ([nextUnseen]); the
- * glyph's own bump is the one-off cue. [backdrop] is the colour the row is
- * drawn on, so the dot's halo matches it exactly.
+ * A background tab in [unseen] ([rememberUnseenTabs]) gets a dot on its
+ * glyph's corner and "changed" until it is selected; the glyph's own bump is
+ * the one-off cue. [backdrop] is the colour the row is drawn on, so the dot's
+ * halo matches it exactly.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -133,13 +180,14 @@ internal fun TabRow(
     selectedId: String?,
     accent: Color,
     onTab: (String) -> Unit,
-    onTabs: (() -> Unit)?,
     onRename: (Tab) -> Unit,
     onClose: (Tab) -> Unit,
     // Required: the row draws on the header's colour, not surface, and a default would hide a missed caller.
     backdrop: Color,
     heldPane: (Tab) -> String? = { null },
     tabState: (Tab) -> String? = { null },
+    // Required, as the header's: a default would hide a caller that forgot to track it.
+    unseen: Set<String>,
 ) {
     val list = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
@@ -159,13 +207,6 @@ internal fun TabRow(
     val markColor = MaterialTheme.colorScheme.onSurface
     // The halo cuts the dot out of the glyph beneath it, in the row's own backdrop.
     val haloColor = backdrop
-    // Plain fields, written after each applied composition, so a discarded one changes nothing.
-    val seen = remember { SeenTabs() }
-    val unseen = nextUnseen(seen.statuses, tabs, selectedId, seen.unseen)
-    SideEffect {
-        seen.statuses = tabs.associate { it.id to it.status }
-        seen.unseen = unseen
-    }
     Row(
         Modifier.fillMaxWidth().height(48.dp).testTag("session:tabrow"),
         verticalAlignment = Alignment.CenterVertically,
@@ -249,8 +290,7 @@ internal fun TabRow(
                                         drawContent()
                                         if (mark) {
                                             val corner = Offset(if (layoutDirection == LayoutDirection.Ltr) size.width else 0f, 0f)
-                                            drawCircle(haloColor, radius = 4.dp.toPx(), center = corner)
-                                            drawCircle(markColor, radius = 2.5.dp.toPx(), center = corner)
+                                            drawUnseenMark(corner, haloColor, markColor)
                                         }
                                     },
                                 )
@@ -267,10 +307,7 @@ internal fun TabRow(
                                 Icon(Icons.Filled.Lock, null, tint = muted, modifier = Modifier.size(12.dp).testTag("held:$held"))
                             }
                         }
-                        GlassMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            GlassMenuItem(stringResource(R.string.rename_tab), Icons.Default.Edit, onClick = { menu = false; onRename(t) })
-                            GlassMenuItem(stringResource(R.string.session_close_tab), Icons.Default.Close, onClick = { menu = false; onClose(t) }, destructive = true)
-                        }
+                        TabMenu(menu, onDismiss = { menu = false }, onRename = { onRename(t) }, onClose = { onClose(t) })
                     }
                 }
             }
@@ -293,7 +330,6 @@ internal fun TabRow(
                 onTab(tabs[selected + 1].id)
             }
         }
-        if (onTabs != null) TabsButton(position = selected + 1, count = tabs.size, onClick = onTabs)
     }
 }
 
@@ -311,39 +347,5 @@ private fun StepButton(icon: ImageVector, label: String, enabled: Boolean, tag: 
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, null, tint = tint)
-    }
-}
-
-/** "Tabs n/N": where the focused tab sits and how many there are, and the way into the Tabs sheet. */
-@Composable
-private fun TabsButton(position: Int, count: Int, onClick: () -> Unit) {
-    val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-    val description = stringResource(R.string.session_tabs_button, position.coerceAtLeast(0), count)
-    Box(
-        Modifier
-            .height(48.dp)
-            .padding(start = 4.dp, end = 8.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description }
-            .testTag("session:tabs_button"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            Modifier
-                .height(32.dp)
-                .clip(CircleShape)
-                .background(outline.copy(alpha = 0.08f))
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(18.dp))
-            Text(
-                stringResource(R.string.session_tabs_position, position.coerceAtLeast(0), count),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-            )
-        }
     }
 }

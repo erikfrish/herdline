@@ -35,19 +35,26 @@ conn.commit()
 conn.close()
 "#;
 
+/// The storage variables the host script takes from its shell, unset for
+/// every run so only the ones a test names are seen.
+const WANTED: [&str; 10] = [
+    "MASTRA_STORAGE_BACKEND", "MASTRA_DB_URL", "MASTRA_DB_PATH", "MASTRA_APP_DATA_DIR", "XDG_DATA_HOME",
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+];
+
 struct Host {
     home: tempfile::TempDir,
+    /// The exec shell's own variables beyond HOME and PATH.
+    env: std::cell::RefCell<Vec<(String, String)>>,
 }
 
 impl Host {
-    /// A pane whose Herdr report names `agent` on `tid`, and a stand-in for
-    /// the agent's `/proc/<pid>`: its environment (the unrelated variable
-    /// must stay unread) and its cwd, `~/work`.
+    /// A pane whose Herdr report names `agent` on `tid` with its foreground
+    /// process working in `~/work`.
     fn new(tid: &str, agent: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
         fs::create_dir_all(&bin).unwrap();
-        fs::create_dir_all(home.path().join("proc")).unwrap();
         let pane = json!({"id": "cli:pane:get", "result": {"pane": {
             "agent": agent,
             "agent_session": {"agent": agent, "kind": "id", "source": format!("herdr:{agent}"), "value": tid},
@@ -56,7 +63,7 @@ impl Host {
             "terminal_id": "term_1",
         }, "type": "pane_info"}});
         fs::write(home.path().join("pane.json"), pane.to_string()).unwrap();
-        let host = Self { home };
+        let host = Self { home, env: Default::default() };
         host.process(json!({"name": agent, "pid": 42}));
         let herdr = bin.join("herdr");
         fs::write(
@@ -82,20 +89,18 @@ impl Host {
         fs::write(self.home.path().join("proc.next"), info.to_string()).unwrap();
     }
 
-    /// The agent's environment: its HOME, these variables, and one secret.
+    /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        let mut environ = format!("HOME={}\0SECRET_TOKEN=never-read\0", self.home.path().display());
-        for (key, value) in vars {
-            environ.push_str(&format!("{key}={value}\0"));
-        }
-        fs::write(self.home.path().join("proc/environ"), environ).unwrap();
+        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
     }
 
-    /// The agent's cwd, created unless it is meant to be missing.
+    /// Herdr's `foreground_cwd` for the pane, created unless it is meant
+    /// to be missing.
     fn cwd(&self, dir: &Path) {
-        let link = self.home.path().join("proc/cwd");
-        let _ = fs::remove_file(&link);
-        std::os::unix::fs::symlink(dir, &link).unwrap();
+        let file = self.home.path().join("pane.json");
+        let mut pane: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        pane["result"]["pane"]["foreground_cwd"] = json!(dir);
+        fs::write(file, pane.to_string()).unwrap();
         let _ = fs::create_dir_all(dir);
     }
 
@@ -134,10 +139,14 @@ impl Host {
 
     fn page(&self, tid: &str, read: Read) -> Result<Response> {
         let bin = self.home.path().join(".local/bin");
-        let proc = self.home.path().join("proc");
-        let output = Command::new("/bin/sh")
+        let mut command = Command::new("/bin/sh");
+        for key in WANTED {
+            command.env_remove(key);
+        }
+        let output = command
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(tid), &options(read), Some(proc.to_str().unwrap())))
+            .arg(query_script("lab", "w1:p1", &self.expect(tid), &options(read)))
+            .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()

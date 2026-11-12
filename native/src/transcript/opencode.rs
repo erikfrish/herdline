@@ -382,12 +382,11 @@ def file_parts(row):
 def main():
     got,status=identity()
     if got!=expect or got['agent']!='opencode' or got['kind']!='id' or not got['pid']: return {'changed':True}
-    env={}
-    for field in open('/proc/%d/environ'%got['pid'],'rb').read(262144).split(b'\0'):
-        key,sep,value=field.partition(b'=')
-        if sep: env[key.decode(errors='replace')]=value.decode(errors='replace')
-    home=os.path.realpath(env.get('HOME') or os.environ['HOME'])
-    if home!=os.path.realpath(os.environ['HOME']): raise ValueError('home')
+    # The store from this shell's own HOME, XDG_DATA_HOME and OPENCODE_DB; no
+    # other process's environment is read. An agent started with values this
+    # shell lacks is not found here, never guessed.
+    env=os.environ
+    home=os.path.realpath(env['HOME'])
     data=os.path.realpath(os.path.join(env.get('XDG_DATA_HOME') or os.path.join(home,'.local','share'),'opencode'))
     name=env.get('OPENCODE_DB') or 'opencode.db'
     if name==':memory:': raise ValueError('memory')
@@ -507,5 +506,131 @@ mod tests {
         let row = json!({"id":"msg_inline","type":"assistant","seq":2,"data":{"content":[{"type":"text","text":"consumer answer"}]},"parts":[]});
         let parsed = entry(&row).expect("row");
         assert!(matches!(&parsed.blocks[..], [Block::Text {text,..}] if text == "consumer answer"));
+    }
+
+    /// FIXTURE-ONLY: a synthetic store with just the columns the reader
+    /// selects (`session_v2`, `session_message`, `session_part`), not
+    /// captured from a real OpenCode. Each session holds one user turn.
+    const STORE: &str = r#"import json, sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.executescript('''
+CREATE TABLE session_v2 (id TEXT PRIMARY KEY);
+CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);
+CREATE TABLE session_part (session_id TEXT, message_id TEXT, type TEXT, call_id TEXT, data TEXT, ordinal INTEGER);
+''')
+for sid, text in json.loads(sys.argv[2]).items():
+    conn.execute('INSERT INTO session_v2 VALUES (?)', (sid,))
+    conn.execute('INSERT INTO session_message VALUES (?,?,?,?,?,?)', ('msg_' + sid, sid, 'user', 1, 1000, json.dumps({'text': text})))
+conn.commit()
+"#;
+
+    const OLD: &str = "ses_0a1b2c3d4e5fAbCdEfGhIjKlMn";
+    const NEW: &str = "ses_0a1b2c3d4e60ZyXwVuTsRqPoNm";
+
+    /// A host whose fake Herdr reports `pane` and `process` for w1:p1.
+    struct Host(tempfile::TempDir);
+
+    impl Host {
+        fn new(sessions: Value) -> Self {
+            let home = tempfile::tempdir().expect("home");
+            let bin = home.path().join(".local/bin");
+            std::fs::create_dir_all(&bin).expect("bin");
+            let db = home.path().join(".local/share/opencode/opencode.db");
+            std::fs::create_dir_all(db.parent().expect("dir")).expect("data");
+            let made = std::process::Command::new("python3").args(["-c", STORE]).arg(&db).arg(sessions.to_string()).status();
+            assert!(made.expect("python3").success());
+            let herdr = bin.join("herdr");
+            std::fs::write(&herdr, "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n").expect("herdr");
+            std::fs::set_permissions(&herdr, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("mode");
+            Self(home)
+        }
+
+        /// Herdr's pane report: `ref` as the pane's agent_session.
+        fn reports(&self, session_ref: Value) {
+            let pane = json!({"id": "cli:pane:get", "result": {"pane": {"agent": "opencode", "agent_session": session_ref,
+                "agent_status": "idle", "pane_id": "w1:p1", "terminal_id": "term_1"}, "type": "pane_info"}});
+            std::fs::write(self.0.path().join("pane.json"), pane.to_string()).expect("pane");
+        }
+
+        /// The pane's foreground process group as Herdr lists it.
+        fn foreground(&self, members: Value) {
+            let process = json!({"result": {"process_info": {"foreground_processes": members, "pane_id": "w1:p1", "shell_pid": 7}}});
+            std::fs::write(self.0.path().join("proc.json"), process.to_string()).expect("proc");
+        }
+
+        /// Chat's next read of the pane while it shows `expect`.
+        fn read(&self, expect: &Identity, read: Read) -> Result<Response> {
+            let home = self.0.path();
+            let exec = Exec::local(vec![
+                ("HOME".into(), home.display().to_string()),
+                ("PATH".into(), format!("{}:/usr/bin:/bin", home.join(".local/bin").display())),
+            ]);
+            super::super::page(&exec, "lab", &super::super::Request { pane: "w1:p1".into(), expect: Some(expect.clone()), read, media: None })
+        }
+    }
+
+    fn shown(sid: &str) -> Identity {
+        Identity {
+            pane_id: "w1:p1".into(),
+            terminal_id: "term_1".into(),
+            pid: Some(42),
+            path: sid.into(),
+            agent: "opencode".into(),
+            source: "herdr:opencode".into(),
+            kind: "id".into(),
+        }
+    }
+
+    fn id(sid: &str) -> Value {
+        json!({"agent": "opencode", "kind": "id", "source": "herdr:opencode", "value": sid})
+    }
+
+    fn texts(page: &Response) -> Vec<&str> {
+        page.entries.iter().flat_map(|entry| &entry.blocks).filter_map(|block| match block {
+            Block::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        }).collect()
+    }
+
+    #[test]
+    fn a_new_session_herdr_reports_for_the_same_process_restarts_chat_from_its_tail() {
+        let host = Host::new(json!({OLD: "old turn", NEW: "new turn"}));
+        host.foreground(json!([{"name": "opencode", "pid": 42}]));
+        host.reports(id(OLD));
+        let after = Read::After { offset: 2 };
+        // Still the shown session: read on from where Chat is, no restart.
+        let same = host.read(&shown(OLD), after).expect("same session");
+        assert_eq!((same.identity.path.as_str(), same.reset), (OLD, false));
+        // The TUI selected another session (Herdr's opencode select report):
+        // the next read restarts from that session's tail, and only it.
+        host.reports(id(NEW));
+        let moved = host.read(&shown(OLD), after).expect("new session");
+        assert_eq!(moved.identity, shown(NEW));
+        assert!(moved.reset);
+        assert_eq!(texts(&moved), ["new turn"]);
+    }
+
+    #[test]
+    fn an_uncertain_new_session_is_refused_never_read_as_the_old_or_another() {
+        let host = Host::new(json!({OLD: "old turn", NEW: "new turn"}));
+        let refused = |host: &Host| matches!(host.read(&shown(OLD), Read::After { offset: 2 }), Err(Error::NoTranscript));
+        // No foreground opencode: no process vouches for the reported session.
+        host.reports(id(NEW));
+        host.foreground(json!([{"name": "node", "pid": 42}]));
+        assert!(refused(&host), "no opencode process");
+        host.foreground(json!([{"name": "opencode", "pid": 42}]));
+        // A reference that is not an OpenCode session id.
+        for session_ref in [
+            json!({"agent": "opencode", "kind": "path", "source": "herdr:opencode", "value": "/h/s.jsonl"}),
+            json!({"agent": "opencode", "kind": "id", "source": "herdr:opencode", "value": "../ses_x"}),
+        ] {
+            host.reports(session_ref.clone());
+            assert!(refused(&host), "{session_ref}");
+        }
+        // An id this store has no session for: never the store's other one.
+        let missing = Host::new(json!({OLD: "old turn"}));
+        missing.foreground(json!([{"name": "opencode", "pid": 42}]));
+        missing.reports(id(NEW));
+        assert!(refused(&missing), "unknown session");
     }
 }

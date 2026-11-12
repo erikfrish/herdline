@@ -8,6 +8,7 @@ import io.github.erikfrish.herdline.core.NAME_MAX
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.core.attachmentKind
 import io.github.erikfrish.herdline.core.limit
+import io.github.erikfrish.herdline.core.limitFor
 import io.github.erikfrish.herdline.core.safeAttachmentName
 import io.github.erikfrish.herdline.data.Binding
 import io.github.erikfrish.herdline.data.DraftAttachment
@@ -49,12 +50,21 @@ class AttachmentsTest {
         assertEquals(AttachmentKind.FILE, attachmentKind(null))
         assertEquals(20L * 1024 * 1024, AttachmentKind.IMAGE.limit)
         assertEquals(64L * 1024 * 1024, AttachmentKind.FILE.limit)
+        // OpenCode's own 20 MiB per file holds for every kind sent to it, and only to it.
+        assertEquals(20L * 1024 * 1024, AttachmentKind.FILE.limitFor("OpenCode"))
+        assertEquals(20L * 1024 * 1024, AttachmentKind.IMAGE.limitFor("opencode"))
+        assertEquals(64L * 1024 * 1024, AttachmentKind.FILE.limitFor("omp"))
+        // Kilo v7.8.27 caps no data: file part: the native limit holds.
+        assertEquals(64L * 1024 * 1024, AttachmentKind.FILE.limitFor("kilo"))
     }
 
     @Test
-    fun filesAreOfferedOnlyForAnIdleOmpWhoseInstanceWasRead() {
+    fun filesAreOfferedOnlyForAnIdleOmpOpenCodeOrKiloWhoseInstanceWasRead() {
         assertTrue(attachOffered(busy = false, omp, count = 0, max = 10))
         assertTrue(attachOffered(busy = false, omp.copy(agent = "OMP"), count = 9, max = 10))
+        assertTrue(attachOffered(busy = false, omp.copy(agent = "opencode"), count = 0, max = 10))
+        assertTrue(attachOffered(busy = false, omp.copy(agent = "Kilo"), 0, 10))
+        assertFalse(attachOffered(busy = false, omp.copy(agent = "codex"), 0, 10))
         assertFalse(attachOffered(busy = true, omp, 0, 10))
         assertFalse(attachOffered(busy = false, omp.copy(instance = null), 0, 10))
         assertFalse(attachOffered(busy = false, omp.copy(agent = "claude"), 0, 10))
@@ -107,6 +117,7 @@ class AttachmentsTest {
         assertEquals(AttachBlock.Rebind, attachBlock(Binding.AgentRestarted, false, false, null, 0, 10))
         assertEquals(AttachBlock.NeedsAgent, attachBlock(Binding.InstanceUnknown, false, false, omp, 0, 10))
         assertEquals(AttachBlock.NeedsAgent, attachBlock(Binding.Bound, false, false, omp.copy(agent = "claude"), 0, 10))
+        assertEquals(null, attachBlock(Binding.Bound, false, false, omp.copy(agent = "opencode"), 0, 10))
         assertEquals(AttachBlock.Full, attachBlock(Binding.Bound, false, false, omp, 10, 10))
         // Null exactly where the old gate offered the items.
         val targets = listOf(omp, omp.copy(agent = "OMP"), omp.copy(instance = null), omp.copy(agent = "claude"), null)

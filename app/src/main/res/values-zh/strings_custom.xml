@@ -46,7 +46,11 @@
     <string name="section_extra_keys">额外按键</string>
     <string name="show_extra_keys">显示额外按键行</string>
     <string name="extra_key_up">将 %1$s 左移</string>
-    <string name="extra_keys_help">已启用的按键按此顺序显示。箭头把按键前移一位。</string>
+    <string name="extra_keys_help">已启用的按键按此顺序显示。箭头把按键前移一位。保持前 14 个按键的默认顺序即可保留默认布局；新增的按键显示在其旁边或上方。</string>
+    <plurals name="extra_keys_layout_default">
+        <item quantity="other">布局：默认网格 + %d 个额外按键</item>
+    </plurals>
+    <string name="extra_keys_layout_custom">布局：按你的顺序排成两行</string>
     <string name="extra_keys_default">恢复默认按键</string>
     <string name="section_notifications">通知与隐私</string>
     <string name="notify_attention">代理需要你时</string>
@@ -60,10 +64,11 @@
     <string name="lock_state_only">仅状态</string>
     <string name="live_promotion">实时更新状态</string>
     <string name="live_promotion_settings">打开 Android 设置</string>
+    <string name="live_promotion_settings_missing">此 Android 没有 Herdline 通知的设置页面。请打开“设置 › 应用 › Herdline › 通知”。</string>
     <string name="promotion_off">实时更新已关闭。</string>
     <string name="promotion_no_card">现在没有实时更新：没有已固定的代理在工作。</string>
     <string name="promotion_stale">未连接：不显示为实时</string>
-    <string name="promotion_unsupported">需要 Android 16 QPR1（36.1）或更新版本；此版本改为显示普通通知。</string>
+    <string name="promotion_unsupported">需要 Android 16 或更新版本；此版本改为显示普通通知。</string>
     <string name="promotion_not_allowed">Herdline 的实时更新已关闭</string>
     <string name="promotion_not_promotable">普通持续通知：Android 报告它不符合实时更新条件。</string>
     <string name="promotion_requested">已请求；Android 或 Samsung 尚未提升它</string>
@@ -134,6 +139,7 @@
     <string name="terminal_pane_no_room_portrait">%1$s。竖屏时可以显示</string>
     <string name="composer_steer">引导</string>
     <string name="steer_help">代理正在工作，所以空闲前无法发送。“引导”会粘贴你的文字，然后按一次 Enter；如果回合恰好在此之前结束，这段文字会开始一个新回合。</string>
+    <string name="steer_help_endpoint">“引导”会把你的文字和图片排队交给正在运行的代理，与它工作时的“发送”相同。如果回合已经结束，OMP 会让它们等到下一个回合，你可以撤回；Codex 会拒绝，不会发送任何内容。</string>
     <string name="steer_pending">正在引导：粘贴你的文字，然后按一次 Enter…</string>
     <string name="steer_left">引导在按 Enter 前停止：你的文字在窗格的输入框中</string>
     <string name="agent_idle">代理空闲：请使用发送</string>

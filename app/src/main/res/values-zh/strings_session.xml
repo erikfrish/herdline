@@ -11,13 +11,14 @@
     <string name="session_disconnect">断开连接…</string>
     <string name="session_disconnect_title">要断开与 %1$s 的连接吗？</string>
     <string name="session_disconnect_text">Herdr 会在主机上继续运行，所有代理和终端都保留。随时可以重新连接。</string>
-    <plurals name="session_tab_count">
-        <item quantity="other">%1$d 个标签页</item>
-    </plurals>
     <string name="session_tab_previous">上一个标签页</string>
     <string name="session_tab_next">下一个标签页</string>
     <string name="session_tabs_position">%1$d/%2$d</string>
-    <string name="session_tabs_button">标签页，第 %1$d 个，共 %2$d 个</string>
+    <string name="session_place_spoken">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。打开标签页</string>
+    <string name="session_place_spoken_wide">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。显示标签页</string>
+    <string name="session_place_spoken_wide_open">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。隐藏标签页</string>
+    <string name="other_tabs_changed">其他标签页有变化</string>
+    <string name="other_tab_held">另一个标签页的发送未确认</string>
     <string name="session_panes">窗格</string>
     <string name="outage_saved_at">显示的是 %1$s 保存的内容</string>
     <string name="outage_reconnecting">正在重新连接…</string>

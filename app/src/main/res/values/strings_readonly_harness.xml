@@ -11,6 +11,10 @@
     <string name="chat_refused_ambiguous">Chat found more than one %1$s session for this pane and shows none of them. Terminal still works: read and type there.</string>
     <!-- The Copilot log's first record names another session than the one Herdr reports. -->
     <string name="chat_refused_mismatch">The %1$s log for this pane names a different session, so Chat shows none of it. Terminal still works: read and type there.</string>
+    <!-- Grok's own list of open sessions names another session for this pane's process than Herdr reports (after /new). -->
+    <string name="chat_refused_stale">%1$s\'s list of open sessions puts this pane on a different session than the one Herdr reports, so Chat shows neither. Terminal still works: read and type there.</string>
+    <!-- Grok's own list of open sessions has no entry for this pane's process, or cannot be read as one. -->
+    <string name="chat_refused_unregistered">%1$s\'s list of open sessions doesn\'t confirm this pane\'s session, so Chat shows none of it. Terminal still works: read and type there.</string>
     <!-- Any other typed refusal, said as one: %1$s is the agent's display name. -->
     <string name="chat_refused_general">%1$s keeps this session in a form Chat can\'t read. Terminal still works: read and type there.</string>
 </resources>

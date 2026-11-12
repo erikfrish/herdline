@@ -464,7 +464,10 @@ fun SettingsScreen(app: HerdlineApp, onBack: (() -> Unit)?, backLabel: String? =
                             SettingsSection.Terminal -> terminal()
                             SettingsSection.Composer -> composerSettings(app.settings, settings)
                             SettingsSection.Layout -> layoutSettings(app.settings, settings) { child = ChildPage.Controls }
-                            SettingsSection.Notifications -> notificationSettings(app.settings, settings)
+                            SettingsSection.Notifications -> {
+                                notificationSettings(app.settings, settings)
+                                notificationContentSettings(app.settings, settings)
+                            }
                             SettingsSection.Security -> security()
                             SettingsSection.About -> about()
                         }

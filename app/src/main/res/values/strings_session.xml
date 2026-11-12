@@ -12,16 +12,17 @@
     <string name="session_disconnect">Disconnect…</string>
     <string name="session_disconnect_title">Disconnect from %1$s?</string>
     <string name="session_disconnect_text">Herdr keeps running on the host, with every agent and terminal. Connect again at any time.</string>
-    <!-- Header line 2: the host, then how many tabs the workspace has. -->
-    <plurals name="session_tab_count">
-        <item quantity="one">%1$d tab</item>
-        <item quantity="other">%1$d tabs</item>
-    </plurals>
-    <!-- The tab row: previous/next, and the button that opens the Tabs sheet with the position, "3/8". -->
+    <!-- The tab row: previous and next. -->
     <string name="session_tab_previous">Previous tab</string>
     <string name="session_tab_next">Next tab</string>
+    <!-- The header's place button (HEADER-COMPACT): the tab's position, "3/8", and what TalkBack reads. %1$s tab, %2$d position, %3$d count, %4$s workspace. -->
     <string name="session_tabs_position">%1$d/%2$d</string>
-    <string name="session_tabs_button">Tabs, %1$d of %2$d</string>
+    <string name="session_place_spoken">%1$s, tab %2$d of %3$d in %4$s. Opens Tabs</string>
+    <!-- Wide layout: the same button shows or hides the sidebar, which is the switcher there; _open while it is shown. -->
+    <string name="session_place_spoken_wide">%1$s, tab %2$d of %3$d in %4$s. Shows tabs</string>
+    <string name="session_place_spoken_wide_open">%1$s, tab %2$d of %3$d in %4$s. Hides tabs</string>
+    <string name="other_tabs_changed">other tabs changed</string>
+    <string name="other_tab_held">delivery not confirmed on another tab</string>
     <string name="session_panes">Panes</string>
     <!-- FOBS1-R: Chat never comes back by itself, only on a tap. -->
     <string name="session_chat_unreadable">Chat can\'t read this agent right now, so this tab shows Terminal. Tap Chat to try again.</string>
