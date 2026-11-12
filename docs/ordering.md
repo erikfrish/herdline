@@ -75,10 +75,14 @@ empty; a plain search finds them the same way.
 
 ## The Tabs view
 
-The phone Tabs sheet opens as the list (`TabsView.List`, the default), or as
-the same rows in a compact two-column layout (`TabsView.TwoColumns`) chosen
-in Settings › Layout › Tabs view. At most two columns; large accessibility
-fonts fall back to one, where two would make a title illegible. A stored
+The phone Tabs sheet opens as the list (`TabsView.List`, the default), as
+the same rows in a compact two-column layout (`TabsView.TwoColumns`), or as
+workspace rails (`TabsView.Rails`): workspaces scroll down, and each
+workspace's tabs sit in one row that scrolls sideways, ending in a New tab
+tile for that workspace (not while a search or filter narrows the list).
+The view is chosen in Settings › Layout › Tabs view.
+Two columns is at most two; large accessibility fonts fall back to one,
+where two would make a title illegible. A stored
 "Grid" (`tabs_view`) is the removed tile overview and is migrated to List
 once; the value is written back so it never reappears. The old default is
 migrated too, never an explicit List choice.
