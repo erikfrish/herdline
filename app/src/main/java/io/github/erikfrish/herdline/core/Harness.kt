@@ -256,21 +256,21 @@ private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = fals
 /** Keyed by lower-case Herdr name. Columns of each card(…): H L P X S T M Q U A R. */
 private val KNOWN: Map<String, Harness> = (
     listOf(
-        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, NB), steer = true),
-        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, NB)),
-        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, NB)),
-        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, NB), steer = true),
+        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, V), steer = true),
+        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, V)),
+        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, V)),
+        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, V), steer = true),
         // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw, steer-a-queued-entry
         // and the session's children (by title, the cut list marked) go to the already-running server
         // (native agent_chat, opencode_ctl.py + opencode_media.py, pinned v2.2.7 fedc6f2); unit tests only.
-        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, NB), queue = true, steer = true),
+        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, V), queue = true, steer = true),
         // kilo: text Send with staged files (verified data: file parts, the native per-kind limits), status,
         // state and the session's children (by title) through its v1 server (kilo_ctl.py + opencode_media.py,
         // pinned v7.8.27 03a6f07); a send while it works is refused agent_working. No steer, queue,
         // withdraw or promote.
         routed("kilo", SendRoute.Endpoint, card(V, V, V, V, NB, V, V, V, V, V, NB)),
-        routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
-        routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
+        routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
+        routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.
         routed(
             "grok",
@@ -279,11 +279,11 @@ private val KNOWN: Map<String, Harness> = (
             readOnlyHistory = true,
         ),
         routed("copilot", SendRoute.None, card(V, V, NB, NB, NS, V, SM, NC, SS, NS, no(Reason.Rewind)), readOnlyHistory = true),
-        routed("qwen", SendRoute.None, card(V, V, NB, NB, NB, V, SM, no(Reason.Lock), SS, NB, NB), readOnlyHistory = true),
-        routed("hermes", SendRoute.None, card(V, V, NC, NC, NC, V, SM, NC, SS, NB, NB), readOnlyHistory = true),
+        routed("qwen", SendRoute.None, card(V, V, NB, NB, NB, V, SM, no(Reason.Lock), SS, NB, V), readOnlyHistory = true),
+        routed("hermes", SendRoute.None, card(V, V, NC, NC, NC, V, SM, NC, SS, NB, V), readOnlyHistory = true),
         // gemini: read only through the owned launcher binding (native transcript/gemini, v0.68.0); an
         // unwrapped Gemini is refused. Fixtures only: no real SessionStart observed yet.
-        routed("gemini", SendRoute.None, card(V, V, NB, NB, NB, V, NB, NB, SS, NB, NB), readOnlyHistory = true),
+        routed("gemini", SendRoute.None, card(V, V, NB, NB, NB, V, NB, NB, SS, NB, V), readOnlyHistory = true),
         unread("agy", sessionless(no(Reason.FormatUnpinned, "Antigravity"), stop = NB, steer = NS)),
         no(Reason.CloudAuth, "Droid").let { cloud ->
             val attach = no(Reason.NoLiveAttach, "Droid")
