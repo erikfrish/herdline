@@ -113,10 +113,15 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         Engine::Codex if request.deliver_as == Some(DeliverAs::Queue) => {
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
-        // Kilo's server serves only permissions, questions and Stop here.
-        // Its text and checks have no route yet: said as such, never an
-        // absence a send could fall through to the pane on.
-        Engine::Kilo if !control => return Ok(unsupported_op(request.op).to_string()),
+        // Kilo's v1 server (`kilo_ctl.py`) starts a turn on an idle session
+        // only: no steer, no queue, no inbox to withdraw from or promote.
+        // Said as such, never an absence a send could fall through to the
+        // pane on. Permissions, questions and Stop stay in `opencode_ctl.py`.
+        Engine::Kilo if matches!(request.op, Op::Withdraw | Op::Promote) => return Ok(unsupported_op(request.op).to_string()),
+        Engine::Kilo if matches!(request.deliver_as, Some(DeliverAs::Steer | DeliverAs::Queue)) => {
+            let missing = if request.deliver_as == Some(DeliverAs::Steer) { "steer" } else { "queue" };
+            return Ok(json!({"endpoint": "unsupported", "missing": [missing]}).to_string());
+        }
         _ => {}
     }
     let mut submitted = None;
@@ -196,6 +201,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     let mut media = None;
     let step = match engine {
         Engine::Codex => codex_step(&request, &text),
+        Engine::Kilo if !control => kilo_step(&request, &text),
         Engine::OpenCode | Engine::Kilo => {
             let message = format!("msg_{}", request.id);
             let (op, payload) = match request.op {
@@ -469,6 +475,25 @@ HERDLINE_CODEX_CTL"#,
         text = shell_quote(text),
         images = shell_quote(&json!(images).to_string()),
         client = include_str!("agent_chat/codex_ctl.py"),
+    )
+}
+
+/// Kilo's v1 server script for a send, a status check or the state of this
+/// exact session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
+/// `control_reply`'s: the same discovery rule and the same boundary.
+fn kilo_step(request: &Request, text: &str) -> String {
+    let message = format!("msg_{}", request.id);
+    let (op, payload) = match request.op {
+        Op::Send => ("send", json!({"id": message, "text": text}).to_string()),
+        Op::Status => ("status", json!({"id": message}).to_string()),
+        Op::State => ("state", String::from("{}")),
+        _ => unreachable!("answered as unsupported or served by control_step"),
+    };
+    format!(
+        "python3 - {op} {} {} <<'HERDLINE_KILO_CTL'\n{}\nHERDLINE_KILO_CTL",
+        shell_quote(&request.instance.path),
+        shell_quote(&payload),
+        include_str!("agent_chat/kilo_ctl.py"),
     )
 }
 
