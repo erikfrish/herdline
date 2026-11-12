@@ -1,5 +1,6 @@
 package io.github.erikfrish.herdline.ui.session
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -92,6 +93,10 @@ internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone
         is NewTabTarget.Pick -> stringResource(R.string.new_tab_choose)
         NewTabTarget.None -> stringResource(R.string.new_tab)
     }
+    val enabled = target != NewTabTarget.None
+    // The tonal container is about 1.1:1 on the sheet, so the outline is the 3:1 boundary
+    // (POSTNIGHT-TABS-NEWTAB §9). Disabled dims it like the label: inactive controls are exempt.
+    val outline = MaterialTheme.colorScheme.outline.let { if (enabled) it else it.copy(alpha = 0.38f) }
     Box {
         FilledTonalButton(
             onClick = {
@@ -101,7 +106,8 @@ internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone
                     NewTabTarget.None -> Unit
                 }
             },
-            enabled = target != NewTabTarget.None,
+            enabled = enabled,
+            border = BorderStroke(1.dp, outline),
             contentPadding = PaddingValues(horizontal = NEW_TAB_PADDING),
             modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = spoken }.testTag(tag),
         ) {
