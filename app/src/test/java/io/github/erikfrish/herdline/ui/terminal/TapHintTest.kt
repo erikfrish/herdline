@@ -3,7 +3,9 @@ package io.github.erikfrish.herdline.ui.terminal
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.Viewport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -21,7 +23,7 @@ class TapHintTest {
         rows = 6,
         cursor = RenderFrame.Cursor(0, cursorRow, true, RenderFrame.CURSOR_BLOCK),
         foreground = 0,
-        background = 0,
+        background = THEME,
         cursorColor = 0,
         popup = null,
         panes = emptyList(),
@@ -114,5 +116,51 @@ class TapHintTest {
         assertEquals(3..3, tapHintRun(frame(0, 0, extra = painted), viewport(), 1))
         // A viewport drawn from a frame of another height says nothing about this one.
         assertNull(tapHintRun(frame(0, 0), viewport(rows = 7), 1))
+    }
+
+    @Test
+    fun aResentFrameIsTheSameLookAndARealChangeIsNot() {
+        // Herdr resends an unchanged surface: a new object with the same cells.
+        assertTrue(sameLook(frame(2, 0, 1), frame(2, 0, 1)))
+        assertFalse(sameLook(frame(2, 0, 1), frame(3, 0, 1)))
+        assertFalse(sameLook(frame(2, 0, 1), frame(2, 0, 1, extra = listOf(run(4, "x")))))
+        assertFalse(sameLook(frame(2, 0, 1, extra = listOf(run(4, "x"))), frame(2, 0, 1, extra = listOf(run(4, "y")))))
+        assertFalse(sameLook(frame(2, 0, 1), null))
+    }
+
+    @Test
+    fun blanksOnTheThemesOwnBackgroundAreBlank() {
+        val themed = listOf(RenderFrame.Run(5, 0, 20, RenderFrame.BACKGROUND, 0, THEME, " "))
+        assertEquals(5..5, tapHintRun(frame(0, 0, extra = themed), viewport(), 1))
+        val coloured = listOf(RenderFrame.Run(5, 0, 20, RenderFrame.BACKGROUND, 0, THEME + 1, " "))
+        assertEquals(4..4, tapHintRun(frame(0, 0, extra = coloured), viewport(), 1))
+    }
+
+    @Test
+    fun aZoomedPanesBorderLeavesItsInteriorBlank() {
+        // Herdr's border: box rows 0 and 5, side glyphs at columns 0 and 19; the prompt on row 1.
+        val border = listOf(RenderFrame.Run(0, 0, 20, 0, 0, 0, "┌" + "─".repeat(18) + "┐"), RenderFrame.Run(5, 0, 20, 0, 0, 0, "└" + "─".repeat(18) + "┘")) +
+            (1..4).flatMap { listOf(RenderFrame.Run(it, 0, 1, 0, 0, 0, "│"), RenderFrame.Run(it, 19, 1, 0, 0, 0, "│")) }
+        val prompt = RenderFrame.Run(1, 1, 5, 0, 0, 0, "\$ out")
+        fun bordered(vararg extra: RenderFrame.Run) = RenderFrame(
+            cols = 20,
+            rows = 6,
+            cursor = RenderFrame.Cursor(6, 1, true, RenderFrame.CURSOR_BLOCK),
+            foreground = 0,
+            background = THEME,
+            cursorColor = 0,
+            popup = null,
+            panes = listOf(RenderFrame.PaneArea("p", RenderFrame.CellRect(1, 1, 18, 4), focused = true, mouseReporting = false, alternateScreen = false)),
+            runs = border + prompt + extra,
+        )
+        assertEquals(4..4, tapHintRun(bordered(), viewport(), 1))
+        assertEquals(3..3, tapHintRun(bordered(RenderFrame.Run(4, 1, 3, 0, 0, 0, "out")), viewport(), 1))
+        // Centred across the interior's columns, never over the border: 10..190 at 10 px a cell.
+        assertEquals(10 until 190, tapHintSpanPx(bordered(), viewport()))
+    }
+
+    private companion object {
+        /** The fixtures' theme background, unlike the 0 their runs carry. */
+        const val THEME = 0x00FFFFFF
     }
 }
