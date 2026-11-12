@@ -9,7 +9,13 @@ import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +31,7 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +55,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -99,6 +107,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.text.font.FontFamily
@@ -991,31 +1002,56 @@ fun SessionScreen(
                                 modifier = Modifier.align(Alignment.Center).padding(24.dp).testTag("chat:pane_closed"),
                             )
                         }
-                        if (chatWanted && chatPane != null) chatState.SaveableStateProvider(chatPane) {
-                            ChatView(
-                                connection,
-                                chatPane,
-                                accent,
-                                onTerminal = { showChat(false) },
-                                modifier = if (chatUnreadable) Modifier.size(0.dp) else Modifier,
-                                onUnavailable = { unreadable ->
-                                    if (unreadable && !chatUnreadable) {
-                                        // The fallback happens on its own, so it
-                                        // stays long enough to be read (lab.4 G5).
-                                        scope.launch {
-                                            snackbar.showSnackbar(
-                                                context.getString(R.string.session_chat_unreadable),
-                                                duration = SnackbarDuration.Long,
-                                            )
+                        // The pane Chat last read, kept so the fade-out still draws it after it went away.
+                        var shownChatPane by remember { mutableStateOf(chatPane) }
+                        if (chatPane != null) shownChatPane = chatPane
+                        // A fade only (graphicsLayer alpha): no size, focus or scroll change, and with
+                        // animator scale 0 Compose's motion scale makes both ends instant.
+                        AnimatedVisibility(
+                            visible = chatWanted && chatPane != null,
+                            enter = fadeIn(tween(150, easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f))),
+                            exit = fadeOut(tween(100)),
+                        ) {
+                            val leaving = transition.targetState != EnterExitState.Visible
+                            val shown = shownChatPane
+                            if (shown != null) chatState.SaveableStateProvider(shown) {
+                                ChatView(
+                                    connection,
+                                    shown,
+                                    accent,
+                                    onTerminal = { showChat(false) },
+                                    // While it fades out it is a picture of the old view: TalkBack and
+                                    // touches reach Terminal beneath at once.
+                                    modifier = (if (chatUnreadable) Modifier.size(0.dp) else Modifier).then(
+                                        if (leaving) {
+                                            Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                                }
+                                            }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                    onUnavailable = { unreadable ->
+                                        if (unreadable && !chatUnreadable) {
+                                            // The fallback happens on its own, so it
+                                            // stays long enough to be read (lab.4 G5).
+                                            scope.launch {
+                                                snackbar.showSnackbar(
+                                                    context.getString(R.string.session_chat_unreadable),
+                                                    duration = SnackbarDuration.Long,
+                                                )
+                                            }
                                         }
-                                    }
-                                    chatUnreadable = unreadable
-                                },
-                                // The tab's readable title (Titles.kt), never a pane ID.
-                                tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
-                                dense = typingShort,
-                                memory = chatMemory,
-                            )
+                                        chatUnreadable = unreadable
+                                    },
+                                    // The tab's readable title (Titles.kt), never a pane ID.
+                                    tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
+                                    dense = typingShort,
+                                    memory = chatMemory,
+                                )
+                            }
                         }
                         if (state is Connection.State.Connecting) {
                             LinearProgressIndicator(
@@ -1518,7 +1554,7 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
 private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
-    Box(
+    Row(
         Modifier
             .fillMaxHeight()
             .widthIn(min = 52.dp)
@@ -1528,9 +1564,19 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 10.dp)
             .testTag(tag),
-        contentAlignment = Alignment.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
-        Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        // The mark and weight say which mode is on without the fill colour. The slot is
+        // always there, so switching never shifts the label; the selected state is spoken.
+        if (selected) Icon(Icons.Filled.Check, null, Modifier.size(16.dp), tint = text) else Spacer(Modifier.size(16.dp))
+        Text(
+            label,
+            color = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }
 
