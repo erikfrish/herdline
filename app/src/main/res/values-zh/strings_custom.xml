@@ -46,7 +46,7 @@
     <string name="terminal_suggestions">终端中的键盘建议</string>
     <string name="section_extra_keys">额外按键</string>
     <string name="show_extra_keys">显示额外按键行</string>
-    <string name="extra_key_up">将 %1$s 左移</string>
+    <string name="extra_key_up">将 %1$s 前移一位</string>
     <string name="extra_keys_help">已启用的按键按此顺序显示。箭头把按键前移一位。保持前 14 个按键的默认顺序即可保留默认布局；新增的按键显示在其旁边或上方。</string>
     <plurals name="extra_keys_layout_default">
         <item quantity="other">布局：默认网格 + %d 个额外按键</item>

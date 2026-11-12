@@ -21,6 +21,8 @@
     <!-- Wide layout: the same button shows or hides the sidebar, which is the switcher there; _open while it is shown. -->
     <string name="session_place_spoken_wide">%1$s, tab %2$d of %3$d in %4$s. Shows tabs</string>
     <string name="session_place_spoken_wide_open">%1$s, tab %2$d of %3$d in %4$s. Hides tabs</string>
+    <!-- Joins two spoken sentences of the place button; quoted to keep the space. -->
+    <string name="session_spoken_sentence_joiner">". "</string>
     <string name="other_tabs_changed">other tabs changed</string>
     <string name="other_tab_held">delivery not confirmed on another tab</string>
     <string name="session_panes">Panes</string>

@@ -17,6 +17,7 @@
     <string name="session_place_spoken">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。打开标签页</string>
     <string name="session_place_spoken_wide">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。显示标签页</string>
     <string name="session_place_spoken_wide_open">%1$s，%4$s 中第 %2$d 个标签页，共 %3$d 个。隐藏标签页</string>
+    <string name="session_spoken_sentence_joiner">。</string>
     <string name="other_tabs_changed">其他标签页有变化</string>
     <string name="other_tab_held">另一个标签页的发送未确认</string>
     <string name="session_panes">窗格</string>

@@ -1011,7 +1011,7 @@ fun SessionScreen(
                                     append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
                                     // S2: the desktop's pane, said whole even where the line cuts it; both named by their tab, as the header shows them.
                                     desktopOther?.let {
-                                        append(". ")
+                                        append(stringResource(R.string.session_spoken_sentence_joiner))
                                         append(stringResource(R.string.chat_desktop_elsewhere_spoken, tabName, view?.paneTabTitle(it).orEmpty()))
                                     }
                                 }
