@@ -1,0 +1,13 @@
+Herdline 0.6.6 — Grok and GitHub Copilot CLI history in Chat, a steadier Harness card, Chinese for the rest of the app
+
+Chat can now show the history of a Grok session and of a GitHub Copilot CLI session, read only. It reads exactly the session Herdr reports for the pane, and only inside your home folder on the host. Sending to Grok or Copilot from Chat isn't supported. Images from either agent aren't shown, and Copilot sub-agent activity isn't shown.
+
+When Chat can't read a Grok or Copilot session, it says why, in the same words as for the other agents.
+
+In landscape with the keyboard up, the Harness card now steps aside when there is no room for it, and comes back whole when the keyboard closes. Before, it could be squeezed until its header disappeared.
+
+With TalkBack, the tap-to-type hint is read as one piece of text, and the connection-problem strip reads its title and detail together while Retry stays its own button.
+
+The Chinese translation now covers the whole app, including the switcher and its sort options, the overview tab counts, Hosts, Settings and the Chat messages. Chat refusals in Chinese now say 聊天, as the toggle does.
+
+If you had the old tile overview selected, Herdline now saves the list view in its place once, instead of switching on every start.
