@@ -5,55 +5,24 @@
   <img alt="Herdline: herd your coding agents from your phone" src="branding/crook/banner-light.svg">
 </picture>
 
-[Repository](https://github.com/erikfrish/herdline) · [Releases](https://github.com/erikfrish/herdline/releases) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D)
+[Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Release status:** [0.6.22](https://github.com/erikfrish/herdline/releases/tag/v0.6.22)
-> is the latest experimental prerelease, with additional read-only agent history,
-> Chat recovery and terminal/visual improvements. Exact-APK emulator checks are
-> partial; all-harness operation, Terminal Send timing and Samsung verification
-> remain incomplete. Obtainium imports enable prereleases; no stable release is claimed.
+> **Latest public release: [0.6.22](https://github.com/erikfrish/herdline/releases/tag/v0.6.22), experimental prerelease.**
+> Exact-APK emulator checks are partial. Complete all-harness operation,
+> Terminal composer Send through the changed gate, TalkBack and Send timing
+> remain unverified. Small unzoomed split panes may be invisible; Zoom is a
+> workaround, not a layout fix. Stock Samsung Now Bar is not claimed fixed.
+> The published readers use host-process metadata for discovery; removing
+> those reads is a publication gate for the next update, not a completed fix.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
 host owns the terminals, workspaces, tabs, panes and agents, and they keep
 running when the phone disconnects, sleeps or loses signal.
 
-Herdline is independently developed, initially based on
-[Bellterm](https://github.com/nimrc/bellterm) by Terry Wang, and released under
-the Apache License 2.0. See [Origin and licence](#origin-and-licence).
-
-> **Unaffiliated project.** Herdline is not affiliated with, endorsed by or
-> supported by Bellterm, its author, Herdr or herdr.dev.
-
 - Application ID: `io.github.erikfrish.herdline`
-- Android 10 (API 29) or newer, on arm64 and x86_64. The terminal library's
-  Zig code uses ELF thread-local storage, which Android's loader supports only
-  from Android 10.
+- Android 10 (API 29) or newer, on arm64 and x86_64.
 - English and Simplified Chinese.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="branding/crook/banner-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="branding/crook/banner-light.svg">
-    <img src="branding/crook/banner-light.svg" alt="Herdline — a crook mark with an ember accent" width="100%">
-  </picture>
-</p>
-
-## Highlights
-
-- **Sessions that outlive the phone** — Herdline attaches to a [Herdr](https://herdr.dev/)
-  daemon over SSH; terminals, workspaces and agents keep running when the
-  phone disconnects or sleeps.
-- **Terminal you can actually type on** — Ghostty's VT renderer (via
-  libghostty-vt), two compact extra-key rows, CJK input in place, fling scrolling,
-  pinch-to-zoom, and hardware keyboard chords.
-- **Composer and Chat** — per-pane drafts that survive reconnects, bracketed
-  paste without Enter, and OMP, Pi, OpenCode, Codex and Claude Code transcripts
-  as readable conversations with quiet tool heads and foldable summaries.
-- **Reaching hosts** — jump hosts, device-generated and imported keys kept in
-  the Android Keystore, SSH config import, strict host-key checking.
-- **Two languages** — English and Simplified Chinese, Material 3 themes,
-  checked for contrast; JetBrains Mono Nerd Font ships in the app.
 
 ## Quick start
 
@@ -68,20 +37,12 @@ the Apache License 2.0. See [Origin and licence](#origin-and-licence).
 
 ## Install
 
-Herdline is distributed as a GitHub release APK; Android 10 (API 29) or newer,
-arm64 or x86_64. The release keystore is private, so updates install cleanly
-only over a version signed with the same key.
-
-**Public release status:** [**0.6.22**](https://github.com/erikfrish/herdline/releases/tag/v0.6.22)
-is an **experimental prerelease candidate**, published with the exact signed APK
-from the nightly checks. It adds read-only history readers, Chat refusal/recovery
-improvements, functional status signals and terminal visibility/keyboard fixes.
-Small unzoomed split panes may still be invisible; Zoom is a workaround, not a fix.
-The emulator checks used synthetic fixtures. Complete all-harness operation,
-Terminal composer Send through the changed gate, TalkBack, Send timing and an
-upgrade from 0.5.3 remain unverified. Samsung Now Bar is not claimed fixed.
-The in-app candidate feed and Obtainium offer this release; neither installs it
-without an explicit action on the device.
+Download the signed APK from Releases, or add the app to Obtainium below.
+The app's own updater reads `updates/latest.json` from this repository and
+checks the APK's size, SHA-256, package, version and signing certificate.
+Neither updater installs silently; Android asks you to confirm the update.
+Updates must use the same signing key. A self-built or debug-signed APK
+cannot replace the published app without uninstalling it and losing app data.
 
 ### Obtainium (one-click add)
 
@@ -91,9 +52,9 @@ without an explicit action on the device.
   </a>
 </p>
 
-[**Add Herdline to Obtainium →**](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522io.github.erikfrish.herdline%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Ferikfrish%252Fherdline%2522%252C%2522author%2522%253A%2522erikfrish%2522%252C%2522name%2522%253A%2522Herdline%2522%252C%2522additionalSettings%2522%253A%2522%257B%255C%2522includePrereleases%255C%2522%253Atrue%257D%2522%257D)
-(opens [Obtainium](https://obtainium.imranr.dev/) if installed, and offers it
-if not; prereleases are enabled in the imported config. No silent install — Obtainium shows the config for confirmation.)
+The button opens [Obtainium](https://obtainium.imranr.dev/) if installed.
+Prereleases are enabled in the imported configuration; Obtainium shows it
+for confirmation before adding the app.
 
 Manual fallback: in Obtainium use **Add app** with the source URL
 `https://github.com/erikfrish/herdline`, or import this config as-is
@@ -103,11 +64,6 @@ Manual fallback: in Obtainium use **Add app** with the source URL
 ```json
 {"id":"io.github.erikfrish.herdline","url":"https://github.com/erikfrish/herdline","author":"erikfrish","name":"Herdline","additionalSettings":"{\"includePrereleases\":true}"}
 ```
-
-### From source
-
-See [Building](#building) below. A build you make yourself is signed with
-your own key or the debug key and will not install over the published app.
 
 ## What it does
 
@@ -166,28 +122,25 @@ file uploaded for another pane must be uploaded again before it can be sent.
 
 ### Chat
 
-For OMP, Pi, Claude Code, Codex and OpenCode panes, **Chat** shows the
-existing agent conversation: Markdown, tool calls, recorded images and status.
-**Terminal** switches to direct terminal input and the extra-key panel; the
-pane-bound Chat draft stays saved and is not pasted or sent by switching modes.
+**Chat** shows existing agent conversations: Markdown, tool calls, recorded
+images and status. OMP, Pi, Claude Code, Codex and OpenCode have their own
+readers and input routes. Kimi Code, Kilo, Grok, GitHub Copilot CLI, Qwen
+legacy journals, Hermes and Mastra Code add read-only history, with differing
+version and integration requirements. Reading history alone is not full
+harness support.
 
 - Chat follows the pane **read here**, chosen on the phone (a tab, pane,
   switcher row, Agents row, banner or notification). It is kept apart from
   Herdr's shared focus, which the desktop and Terminal show: reading a pane in
   Chat never moves the desktop. When the desktop is elsewhere, Chat says so.
-  An installed, compatible `herdline-ingress` endpoint sends directly to the
-  read agent, including steering while it works, without Terminal Fit or Enter.
 - Terminal shows the desktop's pane as it is. Moving the desktop takes an
   explicit action labelled as such, for example **Show ‹pane› (moves the
   desktop)**.
-- Transcript reading uses only the session reference Herdr reports for that
-  exact pane and foreground process. OMP/Pi, Claude and Codex records are read
-  within their own session roots; OpenCode uses a bounded read-only session
-  query. Chat never starts or resumes a second agent.
+- Transcript reading uses the exact session reference Herdr reports for the
+  pane, within the reader's confined session root or bounded read-only store.
 - OMP sends through its compatible ingress endpoint; Pi/Claude use a validated
   host editor, and Codex/OpenCode use their existing local control APIs. Only
-  OMP exposes the live question/queue/withdrawal interface. Uncertain delivery
-  is kept and never automatically repeated.
+  OMP exposes the live question/queue/withdrawal interface.
 - Newest messages load first; **Load older messages** brings back earlier
   ones, keeping your place.
 - With the compatible endpoint, Chat renders open HTML forms and submits only
@@ -205,13 +158,8 @@ pane-bound Chat draft stays saved and is not pasted or sent by switching modes.
   a duration appears only when transcript timestamps support it. Tool heads
   are quiet rows with one frame around their output. Prose, code and user
   bubbles use the updated spacing; dense Chat keeps its compact line height.
-- **Verification:** the 0.4.0 candidate passed focused app-to-SSH-to-OMP QA
-  with a local mock provider for Send, photos, the live queue, withdrawal,
-  local focus/geometry, recovery and form placement. The verdict was conditional:
-  a duplicated form label was fixed in 0.4.1, but read-only-dialog runtime,
-  Terminal password scrollback, broad accessibility and real LLM consumption
-  were not proven. 0.5.0 changes appearance controls; its proof is recorded
-  separately. A build or phone installation alone is not full QA acceptance.
+- Verification and limitations are recorded per version in the release notes;
+  a build or phone installation alone is not full QA acceptance.
 
 ### Notifications
 
@@ -259,10 +207,8 @@ and can ask for a password after that key is rejected. A saved password can be
 reused for that implicit-identity host. Explicit key choices never downgrade
 automatically; host-key verification is unchanged.
 
-
-The host that runs Herdr needs `/bin/sh` and Herdr 0.9.0 or later. When Herdr
-is missing or too old, the session offers to install or update it, only on
-your tap. Jump hosts need only SSH with TCP forwarding allowed.
+If Herdr is missing or too old, the session offers to install or update it
+only on your tap. Jump hosts need only SSH with TCP forwarding allowed.
 
 ## How it works
 
@@ -341,20 +287,6 @@ Keep the keystore and its passwords out of the repository. Every update must
 be signed with the same key, or Android refuses to install it over the
 existing app.
 
-## Releases
-
-Releases are published as
-[GitHub releases](https://github.com/erikfrish/herdline/releases) of this
-repository. The APK for version `VERSION` is
-`https://github.com/erikfrish/herdline/releases/download/vVERSION/herdline-VERSION.apk`.
-
-The app checks one fixed manifest,
-`https://raw.githubusercontent.com/erikfrish/herdline/main/updates/latest.json`.
-It lists a **stable** and a **candidate** release, each pinned to Herdline's
-public release-certificate fingerprint. A candidate is marked *not tested*.
-The release keystore is private; Android installs an update only over an app
-signed with the same key.
-
 ## Origin and licence
 
 Herdline is based on [Bellterm](https://github.com/nimrc/bellterm),
@@ -362,6 +294,9 @@ Copyright (c) 2026 Terry Wang, licensed under the Apache License 2.0. Herdline
 keeps Bellterm's copyright and notices and adds its own changes under the same
 licence. Files changed from Bellterm carry a notice that they were modified
 for Herdline, beside their original copyright.
+
+Herdline is independently developed and is not affiliated with, endorsed by
+or supported by Bellterm, its author, Herdr or herdr.dev.
 
 - [LICENSE](LICENSE): the Apache License 2.0.
 - [NOTICE](NOTICE): Bellterm's notice and the parts that keep their own
