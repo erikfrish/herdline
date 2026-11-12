@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.terminal
 
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -9,11 +10,20 @@ import kotlin.math.min
  * frame's bottom on the view's bottom while it is taller than the view; under
  * output focus, [hiddenRows] scrolled past the bottom of the area above the
  * [clipBottomPx] strip, by whole rows so the top row is never cut. The native
- * core recomputes it with the same arithmetic (`visible::view_offset`) before
- * it trusts a viewport, so the two must stay identical.
+ * core recomputes it with the same arithmetic (`visible::view_offset_at`)
+ * before it trusts a viewport, so the two must stay identical.
+ *
+ * [cursorRow] is the frame's cursor row when it is shown (visible, inside the
+ * frame), else null. Without output focus, a cursor the bottom anchor would
+ * leave above the view is put on its top row instead (A-27P): a held or
+ * not-yet-refitted grid taller than the view never hides the prompt the
+ * keyboard types into. Whole rows, never past row 0 nor below the anchor.
  */
-internal fun viewOffset(viewHeightPx: Int, clipBottomPx: Int, hiddenRows: Int, cellPx: Float, frameRows: Int): Float {
-    if (hiddenRows <= 0 && clipBottomPx <= 0) return min(0f, viewHeightPx - frameRows * cellPx)
+internal fun viewOffset(viewHeightPx: Int, clipBottomPx: Int, hiddenRows: Int, cellPx: Float, frameRows: Int, cursorRow: Int? = null): Float {
+    if (hiddenRows <= 0 && clipBottomPx <= 0) {
+        val anchor = min(0f, viewHeightPx - frameRows * cellPx)
+        return if (cursorRow == null) anchor else max(anchor, -cursorRow * cellPx)
+    }
     val fits = floor((viewHeightPx - clipBottomPx) / cellPx).toInt()
     return (fits - (frameRows - hiddenRows.coerceAtMost(frameRows - 1))) * cellPx
 }
