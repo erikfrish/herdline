@@ -41,15 +41,33 @@ class UnlistedSteersTest {
 
     @Test
     fun anIdleReadEndsThatSessionsSteersOnlyAndKeepsTheirText() {
-        val settled = steersSettled(idle, sent, "ses_a")!!
+        val settled = queueSettled(idle, sent, unlisted = true, session = "ses_a", editor = "")!!
         assertEquals(QueuePanel.Hidden, unlistedQueuePanel(working, settled, "ses_a"))
         assertEquals(listOf("r3"), settled.waitingSteers("ses_b").map { it.first })
-        // The records stay: a later withdraw still restores exactly what was sent.
+        // No withdraw was in doubt: the editor is untouched, and the records stay for a later withdraw.
+        assertEquals("", settled.text)
         assertEquals("first", settled.withdrawn("r1", "").text)
         // At work, unread, or nothing waiting: nothing to save.
-        assertNull(steersSettled(working, sent, "ses_a"))
-        assertNull(steersSettled(null, sent, "ses_a"))
-        assertNull(steersSettled(idle, settled, "ses_a"))
+        assertNull(queueSettled(working, sent, unlisted = true, session = "ses_a", editor = ""))
+        assertNull(queueSettled(null, sent, unlisted = true, session = "ses_a", editor = ""))
+        assertNull(queueSettled(idle, settled, unlisted = true, session = "ses_a", editor = ""))
+    }
+
+    @Test
+    fun aSendWhoseWithdrawGotNoAnswerComesBackWhenItsChipGoesWithoutARetry() {
+        // Kilo: r1's withdraw had no answer; the session then reads idle. r1 returns after the typed text, r2 does not.
+        val kilo = sent.afterWithdraw("r1", null, "")
+        val back = queueSettled(idle, kilo, unlisted = true, session = "ses_a", editor = "typed")!!
+        assertEquals("typed\n\nfirst", back.text)
+        assertEquals(setOf("r2", "r3", "r4"), back.queued.keys)
+        assertEquals(emptyList<Any>(), back.waitingSteers("ses_a"))
+        // A listed queue (OMP): restored only once the entry leaves the list, never while it is still there.
+        val omp = Draft().queuedWith("o1", "fix it", emptyList()).queuedWith("o2", "other", emptyList()).afterWithdraw("o1", null, "")
+        val stillThere = IngressProbe.Live(IngressState(idle = false, queued = listOf(IngressQueued("o1", "fix it", QUEUE_STEERING))))
+        assertNull(queueSettled(stillThere, omp, unlisted = false, session = null, editor = "typed"))
+        val left = queueSettled(working, omp, unlisted = false, session = null, editor = "typed")!!
+        assertEquals("typed\n\nfix it", left.text)
+        assertEquals(setOf("o2"), left.queued.keys)
     }
 
     @Test

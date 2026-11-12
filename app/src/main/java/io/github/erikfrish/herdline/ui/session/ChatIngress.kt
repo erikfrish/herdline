@@ -123,7 +123,7 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
  * The panel for a program whose server lists no waiting steer (Kilo): [probe]'s own, except that
  * while it reads session [session] at work, the steers this app recorded as waiting there show,
  * by the text each carried. Nothing else is guessed: an idle read shows none, since nothing
- * waits behind no turn (kilo prompt-queue.ts:86-107, 273-286), and [steersSettled] then drops them.
+ * waits behind no turn (kilo prompt-queue.ts:86-107, 273-286), and [queueSettled] then drops them.
  */
 internal fun unlistedQueuePanel(probe: IngressProbe?, draft: Draft, session: String?): QueuePanel {
     if (probe !is IngressProbe.Live || probe.state.idle || session == null) return queuePanel(probe)
@@ -131,10 +131,27 @@ internal fun unlistedQueuePanel(probe: IngressProbe?, draft: Draft, session: Str
     return if (waiting.isEmpty()) QueuePanel.Hidden else QueuePanel.Queue(waiting)
 }
 
-/** [draft] after [probe] read session [session]: idle holds no waiting steer, so none stays recorded there; else null, nothing changes. */
-internal fun steersSettled(probe: IngressProbe?, draft: Draft, session: String?): Draft? {
-    if (probe !is IngressProbe.Live || !probe.state.idle || session == null) return null
-    return draft.steersLeft(draft.waitingSteers(session).map { it.first }).takeIf { it != draft }
+/**
+ * [draft] after [probe]'s read, else null when nothing changes; [editor] is the text typed now.
+ * A send whose withdraw got no answer ([io.github.erikfrish.herdline.data.QueuedSend.withdrawDoubt])
+ * and whose chip goes without a retry may have been taken back by that withdraw: its text and
+ * files come back after [editor], unsent. Losing them is worse than a duplicate. Its chip goes
+ * when the server's listed queue no longer holds it, or, where the server lists none ([unlisted],
+ * Kilo), when session [session] reads idle, which also ends every other steer recorded there.
+ */
+internal fun queueSettled(probe: IngressProbe?, draft: Draft, unlisted: Boolean, session: String?, editor: String): Draft? {
+    if (probe !is IngressProbe.Live) return null
+    val gone = if (unlisted) {
+        if (!probe.state.idle || session == null) return null
+        draft.waitingSteers(session).map { it.first }
+    } else {
+        val listed = probe.state.queued.mapNotNullTo(HashSet()) { it.requestId }
+        draft.queued.keys.filter { it !in listed }
+    }
+    val doubted = gone.filter { draft.queued[it]?.withdrawDoubt == true }
+    val restored = doubted.fold(draft.copy(text = editor)) { d, id -> d.withdrawn(id, d.text) }
+    val settled = (if (doubted.isEmpty()) draft else restored).steersLeft(gone)
+    return settled.takeIf { it != draft }
 }
 
 /**

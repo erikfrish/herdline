@@ -1054,10 +1054,15 @@ private fun Editor(
     }
     val probe = probeFor(probeRead, draft.instance)
     // Kilo lists no waiting steer: its own steers leave the record once the
-    // server reads the session idle, the only answer that says so.
+    // server reads the session idle, the only answer that says so. A send
+    // whose withdraw got no answer comes back into the editor once its chip
+    // goes without a retry; not while a withdraw is on its way, which answers itself.
     val unlistedSteers = agentNamed(draft.agent, Harness.unlistedSteerAgents)
-    LaunchedEffect(probe, unlistedSteers) {
-        if (unlistedSteers) steersSettled(probe, draft, draft.instance?.path)?.let(::save)
+    LaunchedEffect(probe, unlistedSteers, withdrawing) {
+        if (withdrawing != null) return@LaunchedEffect
+        val settled = queueSettled(probe, draft, unlistedSteers, draft.instance?.path, value.text) ?: return@LaunchedEffect
+        if (settled.text != draft.text) value = TextFieldValue(settled.text, TextRange(settled.text.length))
+        save(settled)
     }
     val endpointSteer = endpointSteerReady(reading, draft.instance, probe)
     val queueVerb = sendQueues(reading, draft.instance, probe)
