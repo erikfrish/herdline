@@ -305,6 +305,11 @@ def main():
     try:
         if op == 'send':
             path = '/api/session/' + quoted(session) + '/prompt'
+            # One id end to end (pinned fedc6f2): the prompt id is the inbox
+            # entry's id and the user message's id (core/session/session.ts:
+            # 116-180 admit, inbox.ts:378-402 projectDelivered returns row.id,
+            # projector.ts:1013-1039 inserts the user message with it). So
+            # status, withdraw and promote ask by this same id.
             result = call(base, headers, 'POST', path, sent, timeout=30)['data']
             if result.get('sessionID') == session and result.get('id') == sent['id']:
                 return 'queued'
@@ -321,19 +326,19 @@ def main():
             try:
                 call(base, headers, 'PATCH', path, {'delivery': 'steer'})
             except urllib.error.HTTPError as error:
-                # Conflict or not found: not a pending item any more. Only
-                # an entry gone from the inbox proves nothing was moved.
-                if error.code in (404, 409) and not listed(base, headers, inbox_id):
-                    return 'promoted\tfalse'
+                # 404/409 moved nothing (no session, or the entry is no longer
+                # queued). An entry already steering conflicts too: the inbox
+                # listing it as a steer says it is one.
+                if error.code in (404, 409):
+                    entry = entry_of(base, headers, inbox_id)
+                    return 'promoted\t' + json.dumps(entry is not None and entry.get('delivery') == 'steer')
                 return 'doubt'
-            # A 204 alone is no proof: the update may meet an item that just
-            # left or stayed (session.inbox.update, pinned v2.2.7). Only the
-            # inbox listing it as a steer says it is one. Gone: it ran or
-            # left, as a steer or not, which nothing here can tell.
-            entry = entry_of(base, headers, inbox_id)
-            if entry is not None and entry.get('delivery') == 'steer':
-                return 'promoted\ttrue'
-            return 'doubt'
+            # The 204 is the steer (pinned fedc6f2): projectDelivery moves only
+            # a row still queued, else LifecycleConflict rolls back to a 409
+            # (core/session/inbox.ts:378-402, server/handlers/session.ts:555-566).
+            # The wake may drain it before any re-read, so none is made. Unlike
+            # DELETE, which swallows the conflict as a 204 (session.ts:545-554).
+            return 'promoted\ttrue'
         if op == 'submit':
             if flavor == 'opencode':
                 path = '/api/session/' + quoted(session) + '/permission/' + quoted(request_id) + '/reply'

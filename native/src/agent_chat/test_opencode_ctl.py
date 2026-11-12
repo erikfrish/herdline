@@ -160,31 +160,41 @@ class OpenCode(unittest.TestCase):
                     {'requestId': None, 'text': 'from desktop', 'queue': 'steering'},
                 ]})
                 self.assertEqual(run(home, 'opencode', 'status', json.dumps({'id': mine})), 'accepted')
-                # A 204 the inbox does not bear out is never a steer: still a
-                # follow-up is doubt, and so is an entry gone right after it
-                # (it ran or left, as a steer or not).
-                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'doubt')
-                self.assertEqual(service.seen[-2][:3], ('PATCH', '/api/session/ses_test/inbox/' + mine, {'delivery': 'steer'}))
+                # Pinned fedc6f2: PATCH delivery steer is one atomic queue->steer
+                # move (core/session/inbox.ts:378-402 projectDelivery updates only
+                # a row still queued; 0 rows is LifecycleConflict, rolled back,
+                # 409 at server/handlers/session.ts:555-566). So a 204 is the
+                # steer, even with the entry drained by the wake before any
+                # re-read; it is asked once and never re-read or resent.
                 inbox, patch = ('GET', '/api/session/ses_test/inbox'), ('PATCH', '/api/session/ses_test/inbox/' + mine)
                 listing = service.routes[inbox]
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\ttrue')
+                self.assertEqual(service.seen[-1][:3], ('PATCH', '/api/session/ses_test/inbox/' + mine, {'delivery': 'steer'}))
 
                 def drained():
                     service.routes[inbox] = (200, {'data': [desktop]})
                     return 204, None
 
                 service.routes[patch] = (0, drained)
-                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'doubt')
-                # A conflict on an entry that left: nothing was moved.
-                def settled():
-                    service.routes[inbox] = (200, {'data': [desktop]})
-                    return 409, {'name': 'Conflict'}
-
-                service.routes[inbox] = listing
-                service.routes[patch] = (0, settled)
-                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\tfalse')
-                service.routes[inbox] = (200, {'data': [dict(queued, delivery='steer'), desktop]})
-                service.routes[patch] = (204, None)
                 self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'promoted\ttrue')
+                self.assertEqual([m for m, _, _, _ in service.seen].count('PATCH'), 2)
+                # 404/409 moved nothing: false, unless the inbox already lists
+                # it as a steer (an earlier steer conflicts too).
+                for after, word in ((listing, 'promoted\tfalse'), ((200, {'data': [desktop]}), 'promoted\tfalse'),
+                                    ((200, {'data': [dict(queued, delivery='steer'), desktop]}), 'promoted\ttrue')):
+                    for code in (404, 409):
+                        def refused(after=after, code=code):
+                            service.routes[inbox] = after
+                            return code, {'name': 'Conflict'}
+
+                        service.routes[inbox] = listing
+                        service.routes[patch] = (0, refused)
+                        self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), word)
+                # Any other answer may hide the move: doubt, never retried.
+                service.routes[inbox] = listing
+                service.routes[patch] = (500, {'name': 'Internal'})
+                self.assertEqual(run(home, 'opencode', 'promote', json.dumps({'id': mine})), 'doubt')
+                service.routes[patch] = (204, None)
                 service.routes[inbox] = listing
                 # A cancel the inbox still lists is not a withdrawal.
                 self.assertEqual(run(home, 'opencode', 'withdraw', json.dumps({'id': mine})), 'doubt')
