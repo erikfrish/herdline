@@ -1535,11 +1535,9 @@ private fun Editor(
         }
     }
 
-    // The draft's target title, for the placeholder, the field's hint and the notices.
-    val title = view?.paneTitle(key.pane) ?: ""
+    // The draft's target title, for the placeholder, the field's hint and the notices: its tab, as the header says it.
     val titleWhere = view?.paneWhere(key.pane) ?: ""
-    val qualified = view?.takeIf { it.titleCollides(key.pane) }?.let { titleWhere }?.takeIf { it.isNotEmpty() }
-    val draftTitle = qualified ?: title
+    val draftTitle = view?.composerTitle(key.pane) ?: ""
     // The "Draft for …" strip names the destination in Herdr's own terms
     // ("workspace › tab"), never the agent's task title, which changes as
     // the agent works (lab.3 D2).
@@ -2015,7 +2013,7 @@ private fun Editor(
     // A held source or target refuses the move: the dialog's Replace and
     // Append are never offered onto text that may already be in its pane.
     moveConflict?.takeIf { !moveRefused(busy, store.get(key.copy(pane = it))) }?.let { to ->
-        val toTitle = view?.paneTitle(to) ?: to
+        val toTitle = view?.composerTitle(to) ?: to
         AlertDialog(
             onDismissRequest = { moveConflict = null },
             title = { Text(stringResource(R.string.composer_has_draft, toTitle)) },

@@ -62,10 +62,16 @@ fun ShellView.paneWhere(paneId: String): String {
     return listOfNotNull(workspace, tab).joinToString(" › ")
 }
 
-/** Whether another pane in the session carries the same title as [paneId]. */
-fun ShellView.titleCollides(paneId: String): Boolean {
-    val title = paneTitle(paneId)
-    return panes.any { it.id != paneId && paneTitle(it.id) == title }
+/**
+ * What the composer calls [paneId] in its placeholder, hint and notices: its tab as the header names
+ * it ([paneTabTitle]), whatever the harness titles its terminal; "workspace › tab" when a pane of
+ * another tab reads the same.
+ */
+fun ShellView.composerTitle(paneId: String): String {
+    val title = paneTabTitle(paneId)
+    val tab = panes.firstOrNull { it.id == paneId }?.tab
+    val collides = panes.any { it.id != paneId && it.tab != tab && paneTabTitle(it.id) == title }
+    return paneWhere(paneId).takeIf { collides && it.isNotEmpty() } ?: title
 }
 
 /**
