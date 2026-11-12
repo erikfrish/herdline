@@ -1196,7 +1196,8 @@ private fun Editor(
                 // OMP holds it: the text and its files leave the editor. Nothing
                 // was typed into the pane, so the terminal is not brought up.
                 write(if (value.text == text) "" else value.text)
-                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }))
+                // Kept by request id: a withdrawal of this send puts the same files back (PHOTO-STEER-W).
+                save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in carried }).queuedWith(id, draft.attachments.filter { it.id in carried }))
                 outcome.state?.let { probeRead = ProbeRead(instance, IngressProbe.Live(it)) }
             } else {
                 save(draft.copy(sent = sent))
@@ -1365,8 +1366,12 @@ private fun Editor(
             withdrawing = null
             probeRead = fresh.getOrNull()?.let { ProbeRead(instance, it) }
             withdrawNote = done.fold({ if (it) null else R.string.ingress_withdraw_gone }, { R.string.ingress_withdraw_failed })
-            // Withdrawn is taken back, not lost: into an empty, free editor.
-            if (done.getOrNull() == true && value.text.isEmpty() && !sending && !draft.unsettled) write(entry.text)
+            // Withdrawn is taken back, not lost: its text and files into an empty, free editor.
+            if (done.getOrNull() == true && value.text.isEmpty() && !sending && !draft.unsettled) {
+                val back = draft.withdrawn(requestId, entry.text)
+                value = TextFieldValue(back.text, TextRange(back.text.length))
+                save(back)
+            }
         }
     }
 

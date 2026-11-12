@@ -59,6 +59,14 @@ data class Draft(
     val instance: TranscriptIdentity? = null,
     /** Files picked for this draft (UR3), kept with it across navigation and restarts. */
     val attachments: List<DraftAttachment> = emptyList(),
+    /**
+     * The files of each send OMP holds in its queue, by request id, newest
+     * last: a withdrawal puts them back into the draft (PHOTO-STEER-W). They
+     * stay staged on the host, since only removing them from the draft
+     * discards them. Bounded to [QUEUED_FILES_KEPT]. An entry the agent
+     * already took can no longer be withdrawn, so an older record is simply never used.
+     */
+    val queuedFiles: Map<String, List<DraftAttachment>> = emptyMap(),
 ) {
     /** Nothing written and nothing attached: the draft follows the pane as it is. */
     val blank: Boolean get() = text.isBlank() && attachments.isEmpty()
@@ -116,6 +124,27 @@ data class Draft(
     /** Whether this draft may be delivered under [binding], before the native checks. */
     fun mayDeliver(binding: Binding): Boolean = binding == Binding.Bound && !blank && !unsettled
 
+    /** This draft remembering [files] as the ones send [requestId] carried into OMP's queue. */
+    fun queuedWith(requestId: String, files: List<DraftAttachment>): Draft =
+        if (files.isEmpty()) this
+        else copy(queuedFiles = (queuedFiles - requestId + (requestId to files)).entries.toList().takeLast(QUEUED_FILES_KEPT).associate { it.toPair() })
+
+    /**
+     * The draft after OMP withdrew send [requestId]: its [text] and the files
+     * it carried back in the editor. The same staged files, so nothing is
+     * uploaded again; a file still in the draft is not doubled.
+     */
+    fun withdrawn(requestId: String, text: String): Draft {
+        val files = queuedFiles[requestId].orEmpty().filter { file -> attachments.none { it.id == file.id } }
+        return copy(
+            text = text,
+            selectionStart = text.length,
+            selectionEnd = text.length,
+            attachments = attachments + files,
+            queuedFiles = queuedFiles - requestId,
+        )
+    }
+
     /**
      * This draft's text written onto another pane, bound to that pane as it
      * is now ([current], [currentAgent]): moving is the user confirming the
@@ -165,6 +194,10 @@ data class Draft(
         )
         .put("instance", instance?.toJson() ?: JSONObject.NULL)
         .put("attachments", JSONArray(attachments.map { it.toJson() }))
+        .put(
+            "queuedFiles",
+            JSONArray(queuedFiles.map { (id, files) -> JSONObject().put("id", id).put("files", JSONArray(files.map { it.toJson() })) }),
+        )
 
     companion object {
         fun fromJson(o: JSONObject): Draft {
@@ -193,10 +226,22 @@ data class Draft(
                 attachments = o.optJSONArray("attachments")?.let { array ->
                     (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let(DraftAttachment::fromJson) }
                 }.orEmpty(),
+                queuedFiles = o.optJSONArray("queuedFiles")?.let { array ->
+                    (0 until array.length()).mapNotNull { i ->
+                        val entry = array.optJSONObject(i) ?: return@mapNotNull null
+                        val files = entry.optJSONArray("files") ?: return@mapNotNull null
+                        entry.optString("id").takeIf { it.isNotEmpty() }?.let { id ->
+                            id to (0 until files.length()).mapNotNull { j -> files.optJSONObject(j)?.let(DraftAttachment::fromJson) }
+                        }
+                    }.toMap()
+                }.orEmpty(),
             )
         }
     }
 }
+
+/** How many queued sends' files a draft remembers for a withdrawal. */
+const val QUEUED_FILES_KEPT = 16
 
 /** [ours] added after [theirs] on one pane: theirs, a newline, then ours. */
 fun appendText(theirs: String, ours: String): String = when {
@@ -314,7 +359,7 @@ class DraftStore internal constructor(private val prefs: SharedPreferences) {
      */
     fun put(key: DraftKey, draft: Draft, generation: Long = generation(key)) = synchronized(generations) {
         if ((generations[key] ?: 0L) != generation) return@synchronized
-        if (draft.text.isEmpty() && draft.attachments.isEmpty() && draft.sent == null) {
+        if (draft.text.isEmpty() && draft.attachments.isEmpty() && draft.sent == null && draft.queuedFiles.isEmpty()) {
             prefs.edit().remove(key.encode()).apply()
         } else {
             prefs.edit().putString(key.encode(), draft.toJson().toString()).apply()

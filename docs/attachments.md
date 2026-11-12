@@ -123,6 +123,10 @@ instance was read, or the draft already holds its 10 files
   host's whole empty-editor check and the uncertain-delivery care.
 - **Sent once.** A confirmed delivery takes its files out of the draft. A
   refused or uncertain one keeps them, and the hold applies as for text.
+- **Withdrawn, not lost.** The draft remembers the files of each send OMP
+  accepted, by request id (the newest 16, across restarts). Withdrawing that
+  send from OMP's queue puts its text and the same staged files back into an
+  empty, free editor: nothing is uploaded or sent again.
 - **Remove** cancels an upload under way and deletes a staged copy from the
   host.
 
