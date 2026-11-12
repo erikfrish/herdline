@@ -406,11 +406,11 @@
     <string name="reason_empty">没有可发送的内容：既无文字也无图片。</string>
     <string name="reason_dropped">OMP 未接收该消息。没有任何内容进入队列。</string>
     <string name="reason_endpoint_unsupported">此 OMP 缺少聊天发送所需的钩子。未发送任何内容，也未向窗格输入。</string>
-    <string name="reason_endpoint_unusable">聊天到 OMP 的通道现在无法安全使用。未发送任何内容，也未向窗格输入。</string>
-    <string name="ingress_uncertain">未确认：OMP 可能已将其排入队列。没有重新发送。</string>
-    <string name="ingress_check_description">询问 OMP 是否已收到该消息</string>
-    <string name="ingress_check_unknown">仍然未知：OMP 没有该消息的确定记录。没有重新发送。</string>
-    <string name="ingress_queue_title">OMP 队列中等待的消息</string>
+    <string name="reason_endpoint_unusable">聊天到代理的通道现在无法安全使用。未发送任何内容，也未向窗格输入。</string>
+    <string name="ingress_uncertain">未确认：代理可能已将其排入队列。没有重新发送。</string>
+    <string name="ingress_check_description">询问代理是否已收到该消息</string>
+    <string name="ingress_check_unknown">仍然未知：代理没有该消息的确定记录。没有重新发送。</string>
+    <string name="ingress_queue_title">代理队列中等待的消息</string>
     <string name="ingress_queue_steering">引导</string>
     <string name="ingress_queue_follow_up">后续</string>
     <string name="ingress_queue_no_text">（仅图片）</string>
@@ -420,7 +420,7 @@
     <string name="ingress_withdraw_failed">无法撤回：它可能仍在队列中。</string>
     <string name="ingress_withdraw_editor">未撤回：请先清空编辑框，以便请求放回其中。它仍在队列中。</string>
     <string name="ingress_unsupported">Herdline 扩展已运行，但此 OMP 缺少所需的钩子（%1$s）。聊天发送被拒绝，不会向窗格输入。</string>
-    <string name="ingress_unusable">聊天到 OMP 的通道存在但无法使用（%1$s）。聊天发送被拒绝，不会向窗格输入。</string>
+    <string name="ingress_unusable">聊天到代理的通道存在但无法使用（%1$s）。聊天发送被拒绝，不会向窗格输入。</string>
     <string name="dest_agents">代理</string>
     <string name="agents_none_match">没有匹配的代理。</string>
     <string name="inbox_no_hosts">未连接主机。已连接主机上的代理会显示在这里。</string>

@@ -168,9 +168,9 @@ internal inline fun <T> afterWriteAhead(writeAhead: () -> Boolean, refused: T, c
 /** The refusal of a delivery whose write-ahead record could not be stored. */
 internal const val WRITE_AHEAD_FAILED = "write_ahead_failed"
 
-/** Image steering needs Chat's live OMP endpoint; the PTY route is text-only. */
+/** Image steering needs a live, working endpoint (OMP's, Codex's daemon); the PTY route is text-only. */
 internal fun endpointSteerReady(reading: Boolean, instance: io.github.erikfrish.herdline.core.TranscriptIdentity?, probe: IngressProbe?): Boolean =
-    reading && instance?.agent.equals("omp", ignoreCase = true) && probe is IngressProbe.Live && !probe.state.idle
+    reading && agentNamed(instance?.agent, Harness.endpointAgents) && probe is IngressProbe.Live && !probe.state.idle
 
 /**
  * The draft after an edit to [text] with the selection [start]..[end], or

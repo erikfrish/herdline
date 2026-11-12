@@ -161,16 +161,15 @@ fn codex_reply(word: &str, payload: &str, op: Op, id: &str) -> Result<Value> {
         value
     };
     Ok(match word {
-        // No daemon, or it would not speak: nothing reached the thread.
+        // No daemon for this user, no CLI, or a thread the daemon has not
+        // loaded (the pane's TUI runs its own app server): this route does
+        // not reach the pane's agent, so the caller's validated PTY route
+        // takes the send, as for any agent without an endpoint.
+        "nodaemon" | "cli" | "notloaded" => absent(),
+        // The daemon is there and would not speak, or cannot serve the
+        // thread: nothing reached the thread.
         "daemon" => unavailable("codex_daemon"),
-        "cli" => unavailable("codex_cli"),
-        // The daemon has the thread on disk only: acting could load it.
-        "notloaded" => unavailable("codex_not_loaded"),
         "error" => unavailable("codex_error"),
-        "gone" => match op {
-            Op::Send => refused(composer::Refusal::AgentRestarted),
-            _ => unavailable(refusal_name(composer::Refusal::AgentRestarted)),
-        },
         "blocked" if op == Op::Send => refused(composer::Refusal::AgentBlocked),
         // Steer has no running turn to join.
         "not_working" if op == Op::Send => refused(composer::Refusal::AgentIdle),

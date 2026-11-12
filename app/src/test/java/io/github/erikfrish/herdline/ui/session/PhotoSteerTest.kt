@@ -12,11 +12,12 @@ class PhotoSteerTest {
     private val working = IngressProbe.Live(IngressState(idle = false, queued = emptyList()))
 
     @Test
-    fun imageSteeringUsesOnlyTheCurrentWorkingOmpEndpoint() {
+    fun imageSteeringUsesOnlyTheCurrentWorkingEndpoint() {
         assertTrue(endpointSteerReady(true, omp, working))
         assertFalse(endpointSteerReady(false, omp, working))
         assertFalse(endpointSteerReady(true, null, working))
         assertFalse(endpointSteerReady(true, omp.copy(agent = "pi"), working))
+        assertTrue(endpointSteerReady(true, omp.copy(agent = "codex"), working))
         for (unusable in listOf(null, IngressProbe.Absent, IngressProbe.Unsupported(listOf("queue")), IngressProbe.Unusable("socket"), IngressProbe.Live(IngressState(true, emptyList())))) {
             assertFalse(endpointSteerReady(true, omp, unusable))
         }

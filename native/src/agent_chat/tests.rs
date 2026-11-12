@@ -184,14 +184,16 @@ fn the_unsupported_answers_name_what_is_missing() {
 
 #[test]
 fn codex_daemon_words_say_nothing_sent_only_before_any_change() {
-    // No daemon, a thread it has not loaded, or one it cannot serve: the
-    // client stopped before asking the thread anything.
-    for (word, reason) in [
-        ("daemon", "codex_daemon"),
-        ("cli", "codex_cli"),
-        ("notloaded", "codex_not_loaded"),
-        ("error", "codex_error"),
-    ] {
+    // No daemon, no CLI, or a thread the daemon has not loaded: no endpoint,
+    // so the validated PTY route takes the send.
+    for word in ["nodaemon", "cli", "notloaded"] {
+        for op in [Op::Send, Op::Status, Op::State, Op::Withdraw] {
+            assert_eq!(absent(), codex_reply(word, "null", op, ID).unwrap());
+        }
+    }
+    // A daemon that would not speak or cannot serve the thread: the client
+    // stopped before asking the thread anything.
+    for (word, reason) in [("daemon", "codex_daemon"), ("error", "codex_error")] {
         for op in [Op::Send, Op::Status, Op::State, Op::Withdraw] {
             assert_eq!(unavailable(reason), codex_reply(word, "null", op, ID).unwrap());
         }
@@ -204,13 +206,9 @@ fn codex_daemon_words_say_nothing_sent_only_before_any_change() {
         refused(composer::Refusal::AgentIdle),
         codex_reply("not_working", "null", Op::Send, ID).unwrap()
     );
-    assert_eq!(
-        refused(composer::Refusal::AgentRestarted),
-        codex_reply("gone", "null", Op::Send, ID).unwrap()
-    );
     // Past a change asked of the thread, an unreadable answer is a doubt:
     // a send stays uncertain and is never sent again; a check fails.
-    for word in ["doubt", "", "queued", "withdrawn", "state"] {
+    for word in ["doubt", "", "queued", "gone", "withdrawn", "state"] {
         assert_eq!(uncertain(ID), codex_reply(word, "null", Op::Send, ID).unwrap(), "{word:?}");
     }
     assert!(codex_reply("doubt", "null", Op::Withdraw, ID).is_err());

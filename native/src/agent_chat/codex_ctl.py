@@ -9,9 +9,10 @@ starts one. The socket is looked for first, so no daemon means nothing runs.
 A thread the daemon has not loaded is never acted on: acting could load
 (resume) it, which would be a second agent on that session.
 
-Words: daemon, cli, gone, notloaded, error, blocked, not_working (nothing
-was asked of the thread); accepted, state, unknown, withdrawn (the daemon
-answered); doubt (a change was asked and its fate is unread).
+Words: nodaemon, cli, notloaded (this route does not reach the pane's
+agent); daemon, error, blocked, not_working (nothing was asked of the
+thread); accepted, state, unknown, withdrawn (the daemon answered); doubt
+(a change was asked and its fate is unread).
 """
 
 import json
@@ -22,7 +23,7 @@ import sys
 import time
 
 WAIT = 20.0
-MUTATIONS = ("turn/start", "turn/steer", "thread/queue/add", "thread/queue/delete")
+MUTATIONS = ("turn/start", "turn/steer", "thread/queue/delete")
 # Each queued text as the queue panel shows it, so a long queue fits the reply.
 SHOWN = 2000
 
@@ -120,8 +121,10 @@ def run(daemon, op, thread, rid, deliver, text, images):
     daemon.write({"method": "initialized"})
 
     read = daemon.call("thread/read", {"threadId": thread})
+    # The pane's own session was just verified; a daemon that cannot read it
+    # keeps its threads elsewhere, so it is not the pane's agent either.
     if "error" in read:
-        out("gone")
+        out("notloaded")
     status = ((read.get("result") or {}).get("thread") or {}).get("status") or {}
     kind = status.get("type")
     if kind == "notLoaded":
@@ -157,32 +160,30 @@ def run(daemon, op, thread, rid, deliver, text, images):
         out("blocked")
     parts = [{"type": "text", "text": text, "text_elements": []}] if text else []
     parts += [{"type": "localImage", "path": path} for path in images]
-    if deliver == "steer":
-        if idle:
-            out("not_working")
-        turns = daemon.result("thread/turns/list", {"threadId": thread, "limit": 1, "sortDirection": "desc"})
-        live = [t for t in turns.get("data") or [] if isinstance(t, dict) and t.get("status") == "inProgress"]
-        if not live:
-            out("not_working")
-        turn = live[0].get("id")
-        got = daemon.result(
-            "turn/steer",
-            {"threadId": thread, "expectedTurnId": turn, "input": parts, "clientUserMessageId": rid},
-        )
-        out("accepted" if got.get("turnId") == turn else "doubt", after(daemon, thread, False))
     if idle:
+        if deliver == "steer":
+            out("not_working")
         got = daemon.result("turn/start", {"threadId": thread, "input": parts, "clientUserMessageId": rid})
         out("accepted" if isinstance(got.get("turn"), dict) else "doubt", after(daemon, thread, False))
-    got = daemon.result("thread/queue/add", {"threadId": thread, "clientUserMessageId": rid, "input": parts})
-    held = got.get("queuedSubmission") or {}
-    out("accepted" if held.get("clientUserMessageId") == rid else "doubt", after(daemon, thread, False))
+    # Auto on a working agent steers it, as OMP's endpoint does: Send never
+    # turns into a queued follow-up without saying so.
+    turns = daemon.result("thread/turns/list", {"threadId": thread, "limit": 1, "sortDirection": "desc"})
+    live = [t for t in turns.get("data") or [] if isinstance(t, dict) and t.get("status") == "inProgress"]
+    if not live:
+        out("not_working")
+    turn = live[0].get("id")
+    got = daemon.result(
+        "turn/steer",
+        {"threadId": thread, "expectedTurnId": turn, "input": parts, "clientUserMessageId": rid},
+    )
+    out("accepted" if got.get("turnId") == turn else "doubt", after(daemon, thread, False))
 
 
 def main():
     codex, op, thread, rid, deliver, text, images = sys.argv[1:8]
     home = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
     if not os.path.exists(os.path.join(home, "app-server-control", "app-server-control.sock")):
-        out("daemon")
+        out("nodaemon")
     try:
         daemon = Daemon(codex)
     except OSError:

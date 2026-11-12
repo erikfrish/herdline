@@ -45,8 +45,9 @@ class IngressRouteTest {
         }
         assertFalse("OpenCode sends prompts but exposes no ingress queue", agentNamed("OpenCode", Harness.endpointAgents))
         assertTrue(agentNamed("OpenCode", Harness.apiAgents))
-        assertTrue(agentNamed("CODEX", Harness.apiAgents))
-        assertFalse(agentNamed("codex", Harness.endpointAgents))
+        // Codex's queue is its running app-server daemon's own.
+        assertTrue(agentNamed("CODEX", Harness.endpointAgents))
+        assertFalse(agentNamed("codex", Harness.apiAgents))
         assertFalse(agentNamed("claude", Harness.endpointAgents))
         assertFalse(agentNamed(null, Harness.endpointAgents))
         assertFalse(agentNamed(null, Harness.apiAgents))

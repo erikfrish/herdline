@@ -145,14 +145,15 @@ private val KNOWN: Map<String, Harness> = listOf(
         subagents = Proof.None,
         media = Proof.Verified,
     ),
-    // codex: one transcript/codex.rs test; the API send is routed by unit
-    // tests only, never run end to end; images have code but no test.
+    // codex: one transcript/codex.rs test. Send, Steer, the queue and
+    // withdraw go to the running app-server daemon (native agent_chat,
+    // codex_ctl.py); unit tests only, never run end to end yet.
     Harness(
         "codex",
         history = Proof.Verified,
-        send = SendRoute.Api,
+        send = SendRoute.Endpoint,
         sendProof = Proof.Unverified,
-        steer = Proof.None,
+        steer = Proof.Unverified,
         status = Proof.Verified,
         questions = Proof.None,
         subagents = Proof.None,
