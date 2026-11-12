@@ -1,6 +1,11 @@
 package io.github.erikfrish.herdline.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -113,6 +119,7 @@ import io.github.erikfrish.herdline.core.TranscriptSteer
 import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.ui.glass.GlassButton
+import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.session.OutageStrip
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
@@ -431,15 +438,25 @@ private fun ChatContent(
     // The terminal stays laid out underneath so its pane keeps its size; touches stop here.
     Column(modifier.fillMaxSize().background(colors.bg).pointerInput(Unit) {}.testTag("chat")) {
         val since = outage.since
-        if (shown != null && linkLive && outage.strip && since != null) {
-            OutageStrip(
-                title = stringResource(R.string.outage_saved_at, outageTime(since)),
-                detail = stringResource(R.string.chat_not_refreshed),
-                retrying = false,
-                onRetry = { wake.trySend(Unit) },
-                onDismiss = { outage = outage.dismiss() },
-                tag = "chat:offline",
-            )
+        // Fades out once the link refreshes (M2b), still naming the saved time it showed.
+        val stripShown = shown != null && linkLive && outage.strip && since != null
+        var stripSince by remember { mutableStateOf(since) }
+        SideEffect { if (stripShown) stripSince = since }
+        AnimatedVisibility(
+            visible = stripShown,
+            enter = EnterTransition.None,
+            exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
+        ) {
+            stripSince?.let { saved ->
+                OutageStrip(
+                    title = stringResource(R.string.outage_saved_at, outageTime(saved)),
+                    detail = stringResource(R.string.chat_not_refreshed),
+                    retrying = false,
+                    onRetry = { wake.trySend(Unit) },
+                    onDismiss = { outage = outage.dismiss() },
+                    tag = "chat:offline",
+                )
+            }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {

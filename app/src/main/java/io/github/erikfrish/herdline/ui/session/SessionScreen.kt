@@ -9,7 +9,11 @@ import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -154,6 +159,7 @@ import io.github.erikfrish.herdline.ui.sessionSidebar
 import io.github.erikfrish.herdline.ui.sideComposerWidthDp
 import io.github.erikfrish.herdline.ui.components.PasswordsDialog
 import io.github.erikfrish.herdline.ui.components.ConnectionGlyph
+import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.menuColor
 import io.github.erikfrish.herdline.ui.glass.GlassIconButton
@@ -177,6 +183,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
@@ -233,6 +240,8 @@ fun SessionScreen(
     val snackbar = remember { SnackbarHostState() }
     // Herdr's notifications and the host's problems, as the top banner (BN-1), one shown at a time.
     var banners by remember { mutableStateOf(BannerQueue()) }
+    // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
+    var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
     var latched by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
@@ -502,6 +511,10 @@ fun SessionScreen(
         view?.tab
     }
     val workspace = tab?.workspace?.let { id -> view?.workspaces?.firstOrNull { it.id == id } } ?: view?.workspace
+    val currentProgram = focusedPane?.let { view?.agentIn(it) }?.agent
+    LaunchedEffect(focusedPane, tab?.id, currentProgram) {
+        if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
+    }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
@@ -602,15 +615,8 @@ fun SessionScreen(
             }
             chat == chatWanted -> Unit
             chat && chatPane == null -> {
-                val shown = view
-                val tabName = tab?.let { shown?.tabTitle(it.id) }.orEmpty()
-                val program = focusedPane?.let { shown?.agentIn(it) }?.let { it.agent ?: it.name }
-                val text = if (program == null) {
-                    context.getString(R.string.session_chat_shell, tabName)
-                } else {
-                    context.getString(R.string.session_chat_other_agent, tabName, program)
-                }
-                scope.launch { snackbar.showSnackbar(text) }
+                // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
+                harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
             }
             else -> showChat(chat)
         }
@@ -1029,25 +1035,43 @@ fun SessionScreen(
                         val rejected = (state as? Connection.State.AuthRejected)?.let { rejection ->
                             app.nodes.route(app.nodes.get(node.id) ?: node).getOrNull()?.getOrNull(rejection.hop)
                         }
-                        outage.since?.takeIf { outage.strip }?.let { since ->
-                            val lost = state as? Connection.State.Disconnected
-                            if (lost != null || state is Connection.State.Connecting) {
+                        // The strip fades out on reconnect (M2b); its words stay the last ones shown while it goes.
+                        val stripSince = outage.since
+                        val stripLost = state as? Connection.State.Disconnected
+                        val stripShown = stripSince != null && outage.strip && (stripLost != null || state is Connection.State.Connecting)
+                        val stripNow = if (stripShown && stripSince != null) {
+                            OutageWords(
+                                title = if (stripLost != null) {
+                                    stringResource(R.string.outage_saved_at, outageTime(stripSince))
+                                } else {
+                                    stringResource(R.string.outage_reconnecting)
+                                },
+                                detail = if (stripLost != null) {
+                                    stringResource(R.string.outage_not_connected, stripLost.reason)
+                                } else {
+                                    stringResource(R.string.outage_last_live, outageTime(stripSince))
+                                },
+                                retrying = stripLost == null,
+                            )
+                        } else {
+                            null
+                        }
+                        var stripLast by remember { mutableStateOf<OutageWords?>(null) }
+                        SideEffect { if (stripNow != null) stripLast = stripNow }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = stripShown,
+                            enter = EnterTransition.None,
+                            exit = if (motionAllowed()) fadeOut(tween(150)) else ExitTransition.None,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        ) {
+                            (stripNow ?: stripLast)?.let { words ->
                                 // A retry is a new Connection, whose screen starts empty: it says so.
                                 OutageStrip(
-                                    title = if (lost != null) {
-                                        stringResource(R.string.outage_saved_at, outageTime(since))
-                                    } else {
-                                        stringResource(R.string.outage_reconnecting)
-                                    },
-                                    detail = if (lost != null) {
-                                        stringResource(R.string.outage_not_connected, lost.reason)
-                                    } else {
-                                        stringResource(R.string.outage_last_live, outageTime(since))
-                                    },
-                                    retrying = lost == null,
+                                    title = words.title,
+                                    detail = words.detail,
+                                    retrying = words.retrying,
                                     onRetry = ::retry,
                                     onDismiss = { outage = outage.dismiss() },
-                                    modifier = Modifier.align(Alignment.TopCenter),
                                     tag = "session:outage",
                                 )
                             }
@@ -1070,6 +1094,11 @@ fun SessionScreen(
                         // Over the terminal's top edge, under the tab row: an overlay that never resizes the grid (BN-1).
                         val note = banners.settle(viewedPane, blockedPanes).shown
                         val notePane = note?.pane?.takeIf { pane -> view?.panes?.any { it.id == pane } == true }
+                        // First in source order, so a banner draws over the card.
+                        val cardTab = tab?.let { view?.tabTitle(it.id) }.orEmpty()
+                        harnessCard?.let { card ->
+                            HarnessCardSlot(card.program, cardTab, onTerminal = { harnessCard = null; showChat(false) }, onClose = { harnessCard = null })
+                        }
                         AgentBannerSlot(
                             note,
                             openable = notePane != null && notePane != viewedPane,
@@ -1510,15 +1539,16 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
             .selectableGroup()
             .testTag("session:mode"),
     ) {
-        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, accent, "session:chat") { onMode(true) }
+        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, accent, "session:chat", state = stringResource(R.string.harness_chat_state)) { onMode(true) }
         ModeSegment(stringResource(R.string.chat_terminal), !chat, true, accent, "session:terminal") { onMode(false) }
     }
 }
 
 @Composable
-private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, onClick: () -> Unit) {
+private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, state: String? = null, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
+    val unavailable = state?.takeIf { !enabled }
     Box(
         Modifier
             .fillMaxHeight()
@@ -1528,7 +1558,8 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
             .then(if (selected) Modifier.border(1.dp, accent, CircleShape) else Modifier)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 10.dp)
-            .testTag(tag),
+            .testTag(tag)
+            .then(if (unavailable != null) Modifier.semantics { stateDescription = unavailable } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
@@ -1758,6 +1789,12 @@ private fun StateCard(
 
 /** Marks the terminal and transcript box among [SessionColumn]'s children. */
 private object ContentSlot
+
+/** The pane and Herdr program a harness card was opened for; null [program] is a shell. */
+private data class HarnessCardKey(val pane: String?, val program: String?)
+
+/** The outage strip's words, kept so the strip leaving does not change them mid-fade. */
+private data class OutageWords(val title: String, val detail: String, val retrying: Boolean)
 
 /**
  * The session column: what comes before the [ContentSlot] child stacks on

@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -75,6 +77,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
@@ -1999,6 +2004,8 @@ internal fun ComposerBand(
                 if (focusAt == menuItems.size) focusItem()
             }
         }
+        // The field's inner width, which the To-line is fitted to by display columns (U1-1).
+        var fieldPx by remember { mutableIntStateOf(0) }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -2019,6 +2026,7 @@ internal fun ComposerBand(
                 .padding(horizontal = 6.dp)
                 .onFieldFocus(onFieldFocus)
                 .fieldState(locked, inFlight, lockedDescription, sendingDescription, hint)
+                .onSizeChanged { fieldPx = it.width }
                 .testTag("composer:field"),
             decorationBox = { inner ->
                 // Two rows in every state (UR2, design 528f5b8 and 4bced42): the
@@ -2045,14 +2053,22 @@ internal fun ComposerBand(
                         // Where no chip row shows, the files' state leads the line,
                         // also while the strip names another destination: it is
                         // what a Send held for attachments waits on.
+                        val toFont = if (fit.compact) 12.sp else 11.sp
+                        val toEnd = with(LocalDensity.current) { (if (expand) EXPAND_TARGET.dp else 0.dp).roundToPx() }
+                        // What leads the line on it takes its own columns and a separator first.
+                        val ahead = listOfNotNull(attachmentsLine, inlineNotice).sumOf { columns(it) + DESTINATION_SEPARATOR.length }
+                        val toColumns = columnsIn(fieldPx - toEnd, toFont) - ahead
+                        val label = if (to && !lockLine) toLabel(view, toPane, agentStatus, inFlight, toColumns) else null
+                        val spoken = label?.let { destinationDescription(it) }
                         val line = listOfNotNull(
                             attachmentsLine,
                             when {
                                 lockLine -> stringResource(R.string.composer_locked_line)
-                                to -> toLine(view, toPane, agentStatus, inFlight)
+                                to -> label?.shown
                                 else -> null
                             },
                         ).joinToString(" · ").ifEmpty { null }
+                        val lineSpoken = spoken?.let { listOfNotNull(attachmentsLine, it).joinToString(" · ") }
                         Row(
                             Modifier
                                 .height(toLineDp)
@@ -2075,12 +2091,14 @@ internal fun ComposerBand(
                                 if (lockLine) LockGlyph()
                                 Text(
                                     line,
-                                    fontSize = if (fit.compact) 12.sp else 11.sp,
+                                    fontSize = toFont,
                                     lineHeight = fit.toLine.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = inlineNotice == null),
+                                    modifier = Modifier
+                                        .weight(1f, fill = inlineNotice == null)
+                                        .then(if (lineSpoken != null) Modifier.semantics { contentDescription = lineSpoken } else Modifier),
                                 )
                             }
                         }
@@ -2164,20 +2182,30 @@ internal fun ComposerBand(
 }
 
 /**
- * The muted "To ‹tab› · ‹status› · ‹title›" line inside a non-empty field; the
- * title takes the ellipsis. While a delivery is [inFlight] the status slot
- * says so: the agent's own status beside it would read as nothing happening.
+ * The To-line for [pane] fitted to [maxColumns] (U1-1): who among its
+ * workspace's panes, its state and the workspace; null for a pane not in view.
+ * While a delivery is [inFlight] the state says so: the agent's own status
+ * beside it would read as nothing happening.
  */
 @Composable
-private fun toLine(view: ShellView?, pane: String?, status: AgentStatus?, inFlight: Boolean): String {
-    pane ?: return ""
-    view ?: return ""
-    val tab = view.paneWhere(pane)
-    return listOfNotNull(
-        tab.takeIf { it.isNotEmpty() },
-        if (inFlight) stringResource(R.string.composer_sending) else status?.let { statusLabel(it) },
-        view.paneTitle(pane).takeIf { it.isNotEmpty() },
-    ).joinToString(" · ")
+private fun toLabel(view: ShellView?, pane: String?, status: AgentStatus?, inFlight: Boolean, maxColumns: Int): DestinationLabel? {
+    pane ?: return null
+    val state = if (inFlight) stringResource(R.string.composer_sending) else status?.let { statusLabel(it) }
+    return view?.destinationOf(pane, state, maxColumns.coerceAtLeast(1))
+}
+
+/** The To-line spoken uncut: pane, workspace and state, whatever the room cut from the line. */
+@Composable
+private fun destinationDescription(label: DestinationLabel): String = label.state?.let {
+    stringResource(R.string.composer_destination_description, label.who, label.workspace, it)
+} ?: stringResource(R.string.composer_destination_description_nostate, label.who, label.workspace)
+
+/** How many digit-wide display columns fit [widthPx] at [fontSize]. */
+@Composable
+private fun columnsIn(widthPx: Int, fontSize: TextUnit): Int {
+    val measurer = rememberTextMeasurer()
+    val advance = remember(measurer, fontSize) { measurer.measure("0", TextStyle(fontSize = fontSize)).size.width }
+    return if (advance <= 0 || widthPx <= 0) 1 else widthPx / advance
 }
 
 /** The 16 dp lock before a held draft's line (R1); the line itself says why. */
@@ -2373,16 +2401,20 @@ private fun LargerEditor(
                     ) {
                         Icon(Icons.Default.Close, stringResource(R.string.composer_close))
                     }
-                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    var titlePx by remember { mutableIntStateOf(0) }
+                    Column(Modifier.weight(1f).padding(horizontal = 4.dp).onSizeChanged { titlePx = it.width }) {
                         Text(stringResource(R.string.composer_draft), style = MaterialTheme.typography.titleMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (locked) LockGlyph()
+                            val label = if (locked) null else toLabel(view, toPane, agentStatus, inFlight, columnsIn(titlePx, MaterialTheme.typography.labelSmall.fontSize))
+                            val spoken = label?.let { destinationDescription(it) }
                             Text(
-                                if (locked) stringResource(R.string.composer_locked_line) else toLine(view, toPane, agentStatus, inFlight),
+                                if (locked) stringResource(R.string.composer_locked_line) else label?.shown.orEmpty(),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier,
                             )
                         }
                     }

@@ -1,0 +1,13 @@
+Herdline 0.6.1 — honest Chat availability, safer agent input, clearer host state
+
+Chat is offered only where it is connected for the pane's program. Tapping Chat on a shell or an unsupported program opens a card naming the program as Herdr reports it and what does work there; Open Terminal and Close dismiss it, and it leaves on its own when the pane, tab or program changes. TalkBack hears why Chat is off. OpenCode offers Send while idle or done, never Steer while working.
+
+Codex and OpenCode input now requires the agent's live foreground process in that exact pane and session; a retained session without its process is refused. OpenCode sends only to its own registered loopback service, with no proxy routing and no redirects. An unknown acknowledgement after sending stays uncertain and is never repeated.
+
+The composer's To line names the destination pane distinctly among its workspace's panes, fitted to the room, and TalkBack reads it uncut with the workspace and state.
+
+Host rows name failures that need different actions differently, say which side to update when Herdr and the app are incompatible, and badge only real faults. A disconnect you chose reads as closed, not lost.
+
+The offline strip fades out on reconnect, and stays still when animations are reduced. The selected tab's halo keeps its contrast on the session header.
+
+Hidden-column handling and the remaining status-glyph work are held for a later build.
