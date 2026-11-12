@@ -130,6 +130,7 @@ import io.github.erikfrish.herdline.core.Routes
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.readableTitle
+import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TabsView
@@ -1057,7 +1058,9 @@ fun SessionScreen(
                             }
                         }
                         if (!lostLive) {
-                            val passwordUsed = rejected != null && app.usedPassword(node.id, rejected.id)
+                            // A password host signs in with its saved password, which never enters the
+                            // attempt's secrets: its rejection is the password's even when none was typed.
+                            val passwordUsed = rejected != null && (rejected.auth == AuthMethod.Password || app.usedPassword(node.id, rejected.id))
                             StateCard(
                                 state = state,
                                 accent = accent,
