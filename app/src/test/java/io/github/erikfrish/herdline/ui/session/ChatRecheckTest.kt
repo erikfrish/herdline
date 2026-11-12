@@ -43,4 +43,18 @@ class ChatRecheckTest {
         assertFalse(fallbackEnds(readable = false, pending = tap, pane = "w1:p2", tab = "w1:t1"))
         assertTrue(fallbackEnds(readable = true, pending = tap, pane = "w1:p2", tab = "w1:t1"))
     }
+
+    @Test
+    fun a_failed_recheck_answers_its_own_tap_or_one_that_waited_on_it() {
+        val tap = PendingChatTap("w1:p2", "w1:t1")
+        // The tap's own re-check failed.
+        assertTrue(tapAnswered(tap = true, pending = tap, pane = "w1:p2", tab = "w1:t1"))
+        // An agent-change re-check was in flight when Chat was tapped: its failure is that tap's.
+        assertTrue(tapAnswered(tap = false, pending = tap, pane = "w1:p2", tab = "w1:t1"))
+        // No tap waiting: an agent-change re-check fails silently, as before.
+        assertFalse(tapAnswered(tap = false, pending = null, pane = "w1:p2", tab = "w1:t1"))
+        // A tap made on another pane or tab is not this re-check's.
+        assertFalse(tapAnswered(tap = false, pending = tap, pane = "w1:p3", tab = "w1:t1"))
+        assertFalse(tapAnswered(tap = false, pending = tap, pane = "w1:p2", tab = "w1:t2"))
+    }
 }
