@@ -231,8 +231,14 @@ def main():
             found = call(base, headers, 'GET', '/session/' + quoted(session) + '/children')
             if not isinstance(found, list):
                 raise ValueError('not a list')
-            mine = [entry for entry in found if isinstance(entry, dict) and entry.get('parentID') == session and isinstance(entry.get('id'), str)]
-            return 'children\t' + json.dumps([child(entry) for entry in mine[:MAX_CHILDREN]], separators=(',', ':'))
+            # A list naming another parent, an id that is no string, or one
+            # seen twice is no list at all: nothing is dropped quietly.
+            ids = [entry.get('id') if isinstance(entry, dict) and entry.get('parentID') == session else None for entry in found]
+            if not all(isinstance(child_id, str) and child_id for child_id in ids) or len(set(ids)) != len(ids):
+                raise ValueError('not this session\'s children')
+            # Past MAX_CHILDREN the first ones go, marked as such (opencode_ctl's word).
+            word = 'children_more' if len(found) > MAX_CHILDREN else 'children'
+            return word + '\t' + json.dumps([child(entry) for entry in found[:MAX_CHILDREN]], separators=(',', ':'))
         if op == 'answer':
             asked = json.loads(payload)
             request_id = asked['id']

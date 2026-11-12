@@ -409,9 +409,9 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
             _ => return Err(Error::BadReply),
         },
         // The sessions this one started, by id and title, no state claimed:
-        // Kilo's (`kilo_ctl.py`) and OpenCode's (`opencode_ctl.py`, which
-        // says `children_more` with the first MAX_CHILDREN when there are
-        // others, never a cut list as the whole).
+        // Kilo's (`kilo_ctl.py`) and OpenCode's (`opencode_ctl.py`). Both say
+        // `children_more` with the first MAX_CHILDREN when there are others,
+        // never a cut list as the whole.
         ("children", Op::Children) => live(json!({"children": children_list(payload, false)?})),
         ("children_more", Op::Children) => live(json!({"children": children_list(payload, true)?, "more": true})),
         _ => return unreadable(op, id),

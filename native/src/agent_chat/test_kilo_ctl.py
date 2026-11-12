@@ -149,12 +149,17 @@ class Questions(Daemon):
 
 class Children(Daemon):
     # session.ts:176 children -> [Session.Info].
-    def test_only_sessions_naming_this_one_as_parent_are_children(self):
-        home, _ = self.serve({('GET', '/session/ses_test/children'): (200, [
-            {'id': 'ses_kid', 'parentID': 'ses_test', 'title': 'Explore', 'directory': DIRECTORY},
-            {'id': 'ses_stray', 'parentID': 'ses_other', 'title': 'Other'},
-        ])})
+    def test_a_list_is_only_this_sessions_children_and_a_cut_one_says_so(self):
+        kid = {'id': 'ses_kid', 'parentID': 'ses_test', 'title': 'Explore', 'directory': DIRECTORY}
+        home, server = self.serve({('GET', '/session/ses_test/children'): (200, [kid])})
+        routes = server.routes
         self.assertEqual(run(home, 'children'), 'children\t[{"id":"ses_kid","title":"Explore"}]')
+        for bad in ({'id': 'ses_stray', 'parentID': 'ses_other'}, {'id': 7, 'parentID': 'ses_test'}, kid):
+            routes[('GET', '/session/ses_test/children')] = (200, [kid, bad])
+            self.assertEqual(run(home, 'children'), 'local', bad)
+        routes[('GET', '/session/ses_test/children')] = (200, [dict(kid, id='ses_k%02d' % n) for n in range(51)])
+        word, listed = run(home, 'children').split('\t')
+        self.assertEqual((word, len(json.loads(listed))), ('children_more', 50))
 
 
 class Discovery(unittest.TestCase):
