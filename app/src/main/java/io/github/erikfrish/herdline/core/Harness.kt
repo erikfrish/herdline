@@ -134,8 +134,9 @@ sealed interface Cell {
 
 /** Why a cell is not in Herdline yet (card §2.3, `harness_reason_*`). */
 enum class Reason {
-    NotBuilt, NoSource, NoRef, Closed, ServerHistory, NoControl, Lock, FormatUnpinned,
+    NotBuilt, NoSource, NoRef, Closed, NoControl, Lock, FormatUnpinned,
     SendMedia, ScreenStatus, NeedsHook, NeedsServer, StaleId, Rewind, NoSessionYet, UnknownProgram, NoLiveAttach, CloudAuth,
+    BlindKey, NoSocket, InputUnproved, AmbiguousSession, ServerUnattachable, LocalUnread,
 }
 
 /** The missing half of an Unverified two-verb cell (card §2.4, `harness_note_*`). */
@@ -151,6 +152,8 @@ data class HarnessRuntime(
     val server: ServerProbe = ServerProbe.Unknown,
     /** mastracode: Herdr still reports the session as `session-init`. */
     val sessionInit: Boolean = false,
+    /** grok: more than one candidate session for the pane; Chat refuses (`grok_session_ambiguous`). */
+    val ambiguousSession: Boolean = false,
 )
 
 /** What the native core said of a program's server. */
@@ -210,11 +213,14 @@ private fun served(name: String, key: HarnessKey, runtime: HarnessRuntime): Show
 
 private fun replaced(name: String, key: HarnessKey, runtime: HarnessRuntime): Cell? = when {
     runtime.sessionInit && key == HarnessKey.History && name == "mastracode" -> Cell.NotYet(Reason.NoSessionYet)
+    // Nothing guessed: the rows that read the candidate session say they can't tell which (card §7.3).
+    runtime.ambiguousSession && key in GROK_SESSION_KEYS && name == "grok" -> Cell.NotYet(Reason.AmbiguousSession, "Grok")
     else -> null
 }
 
 private val SERVER_KEYS = setOf(HarnessKey.Send, HarnessKey.Stop, HarnessKey.SteerQueue, HarnessKey.Questions)
 private val SERVER_PROGRAMS = mapOf("opencode" to "OpenCode", "kilo" to "Kilo")
+private val GROK_SESSION_KEYS = setOf(HarnessKey.History, HarnessKey.Live, HarnessKey.Tools, HarnessKey.Media)
 
 // The claims, one plain table (card §4). Columns: H L P X S T M Q U A R.
 private val V = Cell.Unverified()
@@ -248,7 +254,13 @@ private val KNOWN: Map<String, Harness> = (
         routed("kilo", SendRoute.None, card(V, V, NB, V, NB, V, NB, Vn(Note.PermissionsOnly), V, NB, NB), readOnlyHistory = true),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, NB), readOnlyHistory = true),
-        routed("grok", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, SS, NB, no(Reason.StaleId)), readOnlyHistory = true),
+        // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.
+        routed(
+            "grok",
+            SendRoute.None,
+            card(V, V, no(Reason.InputUnproved, "Grok"), no(Reason.BlindKey, "Grok"), no(Reason.NoSocket, "Grok"), V, SM, no(Reason.NoSocket, "Grok"), SS, NB, no(Reason.StaleId)),
+            readOnlyHistory = true,
+        ),
         routed("copilot", SendRoute.None, card(V, V, NB, NB, NS, V, SM, NC, SS, NS, no(Reason.Rewind)), readOnlyHistory = true),
         routed("qwen", SendRoute.None, card(V, V, NB, NB, NB, V, SM, no(Reason.Lock), SS, NB, NB), readOnlyHistory = true),
         routed("hermes", SendRoute.None, card(V, V, NC, NC, NC, V, SM, NC, SS, NB, NB), readOnlyHistory = true),
@@ -260,7 +272,11 @@ private val KNOWN: Map<String, Harness> = (
             val attach = no(Reason.NoLiveAttach, "Droid")
             unread("droid", card(cloud, cloud, attach, attach, attach, cloud, cloud, attach, SS, cloud, cloud))
         },
-        unread("letta", sessionless(no(Reason.ServerHistory), stop = NB, steer = NB)),
+        // letta: no codec for its local history yet, no safe attach to its server mode (card §8, letta-code 5eb817d6).
+        no(Reason.LocalUnread, "Letta").let { local ->
+            val attach = no(Reason.ServerUnattachable, "Letta")
+            unread("letta", card(local, local, attach, attach, attach, local, local, attach, SS, local, local))
+        },
     ) +
         listOf("cline", "maki", "muse").map { unread(it, sessionless(no(Reason.NoRef), stop = NB, steer = NB)) } +
         listOf("kiro", "amp").map { unread(it, sessionless(no(Reason.NoRef), stop = NB, steer = NS)) } +

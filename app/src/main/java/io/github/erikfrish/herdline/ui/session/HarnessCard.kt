@@ -317,7 +317,6 @@ internal fun reasonText(cell: Cell.NotYet): String {
         Reason.NoSource -> R.string.harness_reason_no_source
         Reason.NoRef -> R.string.harness_reason_no_ref
         Reason.Closed -> R.string.harness_reason_closed
-        Reason.ServerHistory -> R.string.harness_reason_server_history
         Reason.NoControl -> R.string.harness_reason_no_control
         Reason.Lock -> R.string.harness_reason_lock
         Reason.FormatUnpinned -> R.string.harness_reason_format_unpinned
@@ -331,6 +330,12 @@ internal fun reasonText(cell: Cell.NotYet): String {
         Reason.UnknownProgram -> R.string.harness_reason_unknown_program
         Reason.NoLiveAttach -> R.string.harness_reason_no_live_attach
         Reason.CloudAuth -> R.string.harness_reason_cloud_auth
+        Reason.BlindKey -> R.string.harness_reason_blind_key
+        Reason.NoSocket -> R.string.harness_reason_no_socket
+        Reason.InputUnproved -> R.string.harness_reason_input_unproved
+        Reason.AmbiguousSession -> R.string.harness_reason_ambiguous_session
+        Reason.ServerUnattachable -> R.string.harness_reason_server_unattachable
+        Reason.LocalUnread -> R.string.harness_reason_local_unread
     }
     return if (cell.subject != null) stringResource(id, cell.subject) else stringResource(id)
 }

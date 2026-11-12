@@ -35,7 +35,6 @@
     <string name="harness_reason_no_source">尚无可据以实现的公开源码。</string>
     <string name="harness_reason_no_ref">Herdr 未提供此会话的标识。</string>
     <string name="harness_reason_closed">其历史记录没有公开格式。</string>
-    <string name="harness_reason_server_history">其历史记录保存在 Letta 服务器上。</string>
     <string name="harness_reason_no_control">尚无安全控制运行中会话的方式。</string>
     <string name="harness_reason_lock">只能通过占用运行中会话的锁实现，Herdline 从不这样做。</string>
     <string name="harness_reason_format_unpinned">%1$s 的会话记录格式尚未公开或固定。</string>
@@ -58,4 +57,10 @@
     <string name="control_cant_check">暂时无法检查 %1$s：%2$s</string>
     <string name="harness_reason_no_live_attach">%1$s 目前没有公开的方式连接或控制正在运行的会话。</string>
     <string name="harness_reason_cloud_auth">没有固定的本地格式，且 %1$s 的云端会话需要 Herdline 没有的组织账号登录。</string>
+    <string name="harness_reason_blind_key">%1$s 的 Ctrl+C 会先清除已输入的草稿，Esc 也无法取消，因此 Herdline 不会盲发按键。</string>
+    <string name="harness_reason_no_socket">%1$s 的默认 TUI 没有公开的控制套接字。</string>
+    <string name="harness_reason_input_unproved">尚未证实可以安全地向 %1$s 输入。</string>
+    <string name="harness_reason_ambiguous_session">无法确定哪个 %1$s 会话属于此窗格。</string>
+    <string name="harness_reason_server_unattachable">%1$s 的默认 TUI 没有控制通道，Herdline 也无法找到或安全连接其独立的服务器模式。</string>
+    <string name="harness_reason_local_unread">Herdline 尚不读取 %1$s 的本地历史记录，其云端历史记录需要 Herdline 没有的账号登录。</string>
 </resources>

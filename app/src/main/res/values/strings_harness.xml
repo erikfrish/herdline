@@ -40,7 +40,6 @@
     <string name="harness_reason_no_source">No published source to build it from yet.</string>
     <string name="harness_reason_no_ref">Herdr doesn\'t name this session.</string>
     <string name="harness_reason_closed">No public format for its history.</string>
-    <string name="harness_reason_server_history">Its history lives on the Letta server.</string>
     <string name="harness_reason_no_control">No safe way to control the running session yet.</string>
     <string name="harness_reason_lock">Only by taking the running session\'s lock, which Herdline never does.</string>
     <string name="harness_reason_format_unpinned">%1$s\'s session record format isn\'t published or pinned yet.</string>
@@ -64,4 +63,10 @@
     <string name="control_cant_check">Can\'t check %1$s now: %2$s</string>
     <string name="harness_reason_no_live_attach">%1$s offers no public way to attach to or control a running session yet.</string>
     <string name="harness_reason_cloud_auth">No pinned local format, and %1$s\'s cloud sessions need an organisation sign-in Herdline doesn\'t have.</string>
+    <string name="harness_reason_blind_key">%1$s\'s Ctrl+C clears a typed draft first and Esc doesn\'t cancel, so Herdline won\'t send a blind key.</string>
+    <string name="harness_reason_no_socket">%1$s\'s default TUI has no public control socket.</string>
+    <string name="harness_reason_input_unproved">Safe input into %1$s isn\'t proven yet.</string>
+    <string name="harness_reason_ambiguous_session">Can\'t tell which %1$s session belongs to this pane.</string>
+    <string name="harness_reason_server_unattachable">%1$s\'s default TUI has no control channel, and Herdline can\'t find or safely attach to its separate server mode.</string>
+    <string name="harness_reason_local_unread">Herdline doesn\'t read %1$s\'s local history yet, and its cloud history needs an account sign-in Herdline doesn\'t have.</string>
 </resources>
