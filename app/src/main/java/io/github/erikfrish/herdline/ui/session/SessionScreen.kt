@@ -210,9 +210,17 @@ import io.github.erikfrish.herdline.ui.theme.sessionAccent
 import io.github.erikfrish.herdline.ui.theme.terminalScheme
 import io.github.erikfrish.herdline.ui.theme.color
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.max
+import kotlin.math.roundToInt
 import java.util.Locale
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.layout
+import io.github.erikfrish.herdline.ui.terminal.rowCentrePx
+import io.github.erikfrish.herdline.ui.terminal.tapHintRow
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
 private val MergedHeaderHeight: Dp = 480.dp
@@ -1045,10 +1053,22 @@ fun SessionScreen(
                             OutputFocusStrip(hiddenRows, onOff = { setOutputFocus(false) }, modifier = Modifier.align(Alignment.BottomCenter))
                         }
                         if (!chatMode && !imeVisible && !typedOnce && !focusApplies && view != null && state is Connection.State.Connected) {
+                            // QF-9: over the lowest blank row the view drew wholly, so it covers no output
+                            // and no prompt. Placed only once the frame has settled, never per keystroke or
+                            // output byte, and moved without animation. Null before that and while no row is
+                            // blank: then not drawn, though TalkBack still reads it.
+                            var hintCentre by remember { mutableStateOf<Float?>(null) }
+                            LaunchedEffect(Unit) {
+                                snapshotFlow { frame to drawnViewport }.collectLatest { (shown, drawn) ->
+                                    delay(TAP_HINT_SETTLE_MS)
+                                    hintCentre = if (shown == null || drawn == null) null else tapHintRow(shown, drawn)?.let { rowCentrePx(drawn, it) }
+                                }
+                            }
+                            val centre = hintCentre
                             // An overlay, so it never changes the terminal's height: the extra keys have no room to
-                            // spare. It sits over the bottom row, often the prompt, so it lasts only until the user
-                            // first opens the keyboard, sends a key or scrolls. Opaque, as OutputFocusStrip is: a
-                            // translucent pill let glyphs through and lost contrast. No input: a tap falls through.
+                            // spare. It lasts only until the user first opens the keyboard, sends a key or scrolls.
+                            // Opaque, as OutputFocusStrip is: a translucent pill let glyphs through and lost
+                            // contrast. No input: a tap falls through to the terminal, which opens the keyboard.
                             // Plain text, so TalkBack reads it and tests find the tag; no role, so it is no button.
                             Text(
                                 stringResource(R.string.terminal_tap_to_type),
@@ -1057,11 +1077,17 @@ fun SessionScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 6.dp)
+                                    .align(if (centre == null) Alignment.BottomCenter else Alignment.TopCenter)
+                                    .layout { measurable, constraints ->
+                                        val pill = measurable.measure(constraints)
+                                        // Centred on the row, kept inside the terminal.
+                                        val y = centre?.let { (it - pill.height / 2f).roundToInt().coerceIn(0, max(0, contentPx - pill.height)) } ?: 0
+                                        layout(pill.width, pill.height) { pill.place(0, y) }
+                                    }
+                                    .alpha(if (centre == null) 0f else 1f)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .padding(horizontal = 12.dp, vertical = 2.dp)
                                     .testTag("session:tap_to_type"),
                             )
                         }
@@ -1437,6 +1463,9 @@ fun SessionScreen(
 
 /** How much of a failed install or update the state card shows. */
 private const val SETUP_OUTPUT_LINES = 40
+
+/** How long the frame must stay unchanged before the tap-to-type hint moves (QF-9). */
+private const val TAP_HINT_SETTLE_MS = 300L
 
 /** REJECT, the closest haptic to a bell, exists from API 30; older devices get a long press. */
 private val BellHaptic =
