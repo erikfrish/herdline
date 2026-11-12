@@ -10,6 +10,6 @@
     <!-- Shown in the same frame as the refusals above, so they read in one language. -->
     <string name="chat_open_terminal">打开终端</string>
     <string name="chat_unavailable">聊天无法读取此代理：%1$s</string>
-    <string name="session_chat_unreadable">聊天现在无法读取此代理，因此此标签页显示终端。聊天能读取时会自动切回。</string>
+    <string name="session_chat_unreadable">聊天现在无法读取此代理，因此此标签页显示终端。点按“聊天”可重试。</string>
     <string name="session_chat_unreadable_host">聊天无法在此主机上读取 %1$s。需要 Herdr 为它提供会话集成。</string>
 </resources>

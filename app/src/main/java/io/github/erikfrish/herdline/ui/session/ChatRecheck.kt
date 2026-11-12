@@ -32,3 +32,13 @@ internal data class PendingChatTap(val pane: String, val tab: String?)
  */
 internal fun switchesToChat(pending: PendingChatTap?, pane: String?, tab: String?): Boolean =
     pending != null && pending.pane == pane && pending.tab == tab
+
+/**
+ * Whether Chat's fallback to Terminal ends on a report that the pane is
+ * [readable] (FOBS1-R): only for a tap still [pending] there, as
+ * [switchesToChat] says. The hidden Chat keeps polling, and a read that comes
+ * good on its own (the session dir it was refused for is gone) never switches
+ * by itself: the user is in Terminal, perhaps typing.
+ */
+internal fun fallbackEnds(readable: Boolean, pending: PendingChatTap?, pane: String?, tab: String?): Boolean =
+    readable && switchesToChat(pending, pane, tab)
