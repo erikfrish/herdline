@@ -320,7 +320,6 @@ internal fun reasonText(cell: Cell.NotYet): String {
         Reason.ServerHistory -> R.string.harness_reason_server_history
         Reason.NoControl -> R.string.harness_reason_no_control
         Reason.Lock -> R.string.harness_reason_lock
-        Reason.NoBinding -> R.string.harness_reason_no_binding
         Reason.FormatUnpinned -> R.string.harness_reason_format_unpinned
         Reason.SendMedia -> R.string.harness_reason_send_media
         Reason.ScreenStatus -> R.string.harness_reason_screen_status

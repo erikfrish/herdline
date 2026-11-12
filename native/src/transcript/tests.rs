@@ -159,6 +159,27 @@ fn identity_refuses_panes_without_an_omp_session_file() {
     ));
 }
 
+#[test]
+fn a_gemini_pane_is_named_only_by_its_binding_never_by_a_reported_ref() {
+    // Even beside a session ref Herdr could report, a Gemini pane without
+    // the owned launcher's tokens is refused, not read as that ref.
+    let mut pane: Value = serde_json::from_str(&pane_json("/home/u/.omp/agent/sessions/x/s.jsonl")).unwrap();
+    pane["result"]["pane"]["agent"] = "gemini".into();
+    assert!(matches!(
+        identity(&pane, &Value::Null),
+        Err(Error::UnsupportedFormat("gemini_session_unbound"))
+    ));
+    let id = "0b9c6f1e-1a2b-4c3d-8e9f-0123456789ab";
+    pane["result"]["pane"]["tokens"] = serde_json::json!({
+        "hl_gemini_id": id, "hl_gemini_pid": "42", "hl_gemini_gen": "0123456789abcdef0123456789abcdef",
+    });
+    let launcher = serde_json::json!({"result": {"process_info": {"foreground_processes": [
+        {"pid": 42, "argv": ["/usr/bin/node", "/home/u/.local/share/herdline/gemini"]},
+    ]}}});
+    let (identity, status) = identity(&pane, &launcher).unwrap();
+    assert_eq!((identity.agent.as_str(), identity.path.as_str(), identity.pid, status.as_str()), ("gemini", id, Some(42), "blocked"));
+}
+
 /// Reads `bytes[start..start + len]` of `content` like the host does.
 fn file(content: &[u8], start: u64, len: u64) -> File<'_> {
     let from = usize::try_from(start).unwrap().min(content.len());

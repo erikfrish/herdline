@@ -16,7 +16,7 @@ class HarnessTest {
 
     @Test
     fun an_unread_or_unknown_agent_never_offers_chat_only_its_terminal() {
-        for (name in listOf("agy", "Gemini", "not-an-agent", "")) {
+        for (name in listOf("agy", "Droid", "not-an-agent", "")) {
             val other = Harness.of(name)
             assertEquals(name, other.name)
             assertFalse(name, other.chat)

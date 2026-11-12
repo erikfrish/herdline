@@ -11,9 +11,8 @@
 //! and `partListUnionToString` from the same release's bundle.
 //!
 //! Which file belongs to a pane (the owned launcher, its sidecar and the
-//! `hl_gemini_*` pane tokens) is [`binding`]. The module is not in the
-//! agent lists yet: nothing calls it outside its tests.
-#![cfg_attr(not(test), allow(dead_code))]
+//! `hl_gemini_*` pane tokens) is [`binding`]; transcript.rs asks it first
+//! for every pane Herdr names `gemini`.
 
 use super::{ARGS_LIMIT, Block, Entry, Kind, RESULT_LIMIT, Usage, cap, iso_timestamp, text_block};
 use serde_json::{Map, Value};
@@ -25,6 +24,8 @@ pub(super) mod binding;
 #[derive(Debug)]
 pub(super) struct Conversation {
     pub session_id: String,
+    /// Checked against the slug dir on the host (binding.rs); kept for the fold's own tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub project_hash: String,
     pub messages: Vec<Value>,
 }

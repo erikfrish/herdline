@@ -134,7 +134,7 @@ sealed interface Cell {
 
 /** Why a cell is not in Herdline yet (card §2.3, `harness_reason_*`). */
 enum class Reason {
-    NotBuilt, NoSource, NoRef, Closed, ServerHistory, NoControl, Lock, NoBinding, FormatUnpinned,
+    NotBuilt, NoSource, NoRef, Closed, ServerHistory, NoControl, Lock, FormatUnpinned,
     SendMedia, ScreenStatus, NeedsHook, NeedsServer, StaleId, Rewind, NoSessionYet, UnknownProgram, NoLiveAttach, CloudAuth,
 }
 
@@ -252,7 +252,9 @@ private val KNOWN: Map<String, Harness> = (
         routed("copilot", SendRoute.None, card(V, V, NB, NB, NS, V, SM, NC, SS, NS, no(Reason.Rewind)), readOnlyHistory = true),
         routed("qwen", SendRoute.None, card(V, V, NB, NB, NB, V, SM, no(Reason.Lock), SS, NB, NB), readOnlyHistory = true),
         routed("hermes", SendRoute.None, card(V, V, NC, NC, NC, V, SM, NC, SS, NB, NB), readOnlyHistory = true),
-        unread("gemini", sessionless(no(Reason.NoBinding, "Gemini"), stop = NB, steer = NB)),
+        // gemini: read only through the owned launcher binding (native transcript/gemini, v0.68.0); an
+        // unwrapped Gemini is refused. Fixtures only: no real SessionStart observed yet.
+        routed("gemini", SendRoute.None, card(V, V, NB, NB, NB, V, NB, NB, SS, NB, NB), readOnlyHistory = true),
         unread("agy", sessionless(no(Reason.FormatUnpinned, "Antigravity"), stop = NB, steer = NS)),
         no(Reason.CloudAuth, "Droid").let { cloud ->
             val attach = no(Reason.NoLiveAttach, "Droid")

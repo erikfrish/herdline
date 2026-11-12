@@ -43,7 +43,6 @@
     <string name="harness_reason_server_history">Its history lives on the Letta server.</string>
     <string name="harness_reason_no_control">No safe way to control the running session yet.</string>
     <string name="harness_reason_lock">Only by taking the running session\'s lock, which Herdline never does.</string>
-    <string name="harness_reason_no_binding">Herdline doesn\'t read %1$s\'s session yet.</string>
     <string name="harness_reason_format_unpinned">%1$s\'s session record format isn\'t published or pinned yet.</string>
     <string name="harness_reason_send_media">Shows images from the session; can\'t send images or files yet.</string>
     <string name="harness_reason_screen_status">Status is read from the screen only.</string>

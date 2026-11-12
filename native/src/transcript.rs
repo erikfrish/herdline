@@ -22,7 +22,7 @@
 //! store beside the session folder, for the same agent instance only.
 
 /// Per-engine transcript row parsers: one module per agent core speaks.
-/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`mastracode`/`kimi` own their line/row formats; the
+/// `pi`/`claude`/`codex`/`opencode`/`qwen`/`hermes`/`kilo`/`grok`/`copilot`/`mastracode`/`kimi`/`gemini` own their line/row formats; the
 /// shared OMP record parser below handles `omp` and serves as the base for `pi`.
 mod claude;
 mod codex;
@@ -134,7 +134,7 @@ pub struct Identity {
     /// rewritten to a resolved path, so identity cannot drift between reads.
     pub path: String,
     /// The canonical agent name: `omp`, `pi`, `claude`, `codex`, `opencode`,
-    /// `qwen`, `hermes`, `kilo`, `copilot`, `mastracode`, `kimi`.
+    /// `qwen`, `hermes`, `kilo`, `copilot`, `mastracode`, `kimi`, `gemini`.
     #[serde(default = "omp")]
     pub agent: String,
     /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
@@ -450,12 +450,13 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             // chain (a tree, not a byte range), Hermes its SQLite `messages`
             // ids, Kilo its messages' places in (time_created, id) order,
             // Grok its rewind-filtered update rows, Copilot its checked event
-            // log, Mastra Code its thread's (createdAt, id) order and Kimi its
-            // whole active wire chain, read only, each via its module.
+            // log, Mastra Code its thread's (createdAt, id) order, Kimi its
+            // whole active wire chain and Gemini its whole folded chat, read
+            // only, each via its module.
             Some(identity)
                 if matches!(
                     identity.agent.as_str(),
-                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi"
+                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini"
                 ) =>
             {
                 let page = match identity.agent.as_str() {
@@ -466,6 +467,7 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                     "copilot" => copilot::page(exec, session, &request.pane, identity, read, reset),
                     "mastracode" => mastracode::page(exec, session, &request.pane, identity, read, reset),
                     "kimi" => kimi::page(exec, session, &request.pane, identity, read, reset),
+                    "gemini" => gemini::binding::page(exec, session, &request.pane, identity, read, reset),
                     _ => opencode::page(exec, session, &request.pane, identity, read, reset),
                 };
                 match page {
@@ -580,9 +582,9 @@ fn image(
         return opencode::image(exec, session, pane, expect, media);
     }
     // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
-    // Copilot, Mastra Code and Kimi history is read without its media: chat
-    // never fetches any, so every image is Unreadable.
-    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi") {
+    // Copilot, Mastra Code, Kimi and Gemini history is read without its
+    // media: chat never fetches any, so every image is Unreadable.
+    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini") {
         return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
@@ -1067,6 +1069,12 @@ fn split<'a>(bytes: &'a [u8], marker: &[u8]) -> Option<(&'a [u8], &'a [u8])> {
 /// The pane's transcript identity and agent status, from `pane get` and
 /// `pane process-info`.
 fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
+    // Gemini reports no session to Herdr: only the owned launcher's binding
+    // names one, and a Gemini pane without it is refused, never matched by
+    // its cwd or latest file. So `gemini` is not in the reported-ref list.
+    if let Some(identity) = gemini::binding::identity(pane, process)? {
+        return Ok((identity, agent_status(&pane["result"]["pane"])));
+    }
     let pane = &pane["result"]["pane"];
     let session = &pane["agent_session"];
     let agent = session["agent"]
@@ -1116,7 +1124,12 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
         kind: kind.to_owned(),
     };
-    let status = pane["agent_status"]
+    Ok((identity, agent_status(pane)))
+}
+
+/// Herdr's agent status for the pane, when it is a plain word.
+fn agent_status(pane: &Value) -> String {
+    pane["agent_status"]
         .as_str()
         .filter(|status| {
             status.len() <= 32
@@ -1125,8 +1138,7 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
                     .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
         })
         .unwrap_or("unknown")
-        .to_owned();
-    Ok((identity, status))
+        .to_owned()
 }
 
 /// A session id (`[A-Za-z0-9._-]+`, no `/`, `..`, leading `.`) exactly as
