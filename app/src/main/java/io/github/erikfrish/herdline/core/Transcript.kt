@@ -91,6 +91,8 @@ sealed interface TranscriptBlock {
     ) : TranscriptBlock
     /** An image at [part] of its message's content. */
     data class Image(val part: Int, val source: ImageSource) : TranscriptBlock
+    /** A turn's stop or one plan item; the app words [kind], [text] is the item's own (empty for a stop). */
+    data class Marker(val kind: MarkerKind, val text: String, val truncated: Boolean) : TranscriptBlock
 
     companion object {
         fun parse(json: JSONObject): TranscriptBlock? = when (json.optString("type")) {
@@ -116,11 +118,31 @@ sealed interface TranscriptBlock {
                 subagents = json.optJSONArray("subagents").objects().mapNotNull(TranscriptSubagent.Companion::parse).take(MAX_SUBAGENTS),
             )
             "image" -> image(json)
+            "marker" -> marker(json)
             else -> null
         }
 
         private fun image(json: JSONObject) = Image(json.optInt("part"), ImageSource.parse(json.optJSONObject("source")))
+
+        // A kind from a newer core keeps its words when it has any, so nothing is lost and nothing crashes.
+        private fun marker(json: JSONObject): TranscriptBlock? {
+            val text = json.optString("text")
+            val truncated = json.optBoolean("truncated")
+            val kind = MarkerKind.entries.firstOrNull { it.wire == json.optString("marker") }
+            return when {
+                kind != null -> Marker(kind, text, truncated)
+                text.isNotBlank() -> Text(text, truncated)
+                else -> null
+            }
+        }
     }
+}
+
+enum class MarkerKind(val wire: String) {
+    StoppedByYou("stopped_by_you"),
+    Stopped("stopped"),
+    Done("done"),
+    ToDo("to_do"),
 }
 
 /** How many children one call's snapshot and one entry's ends may carry (wire bounds). */

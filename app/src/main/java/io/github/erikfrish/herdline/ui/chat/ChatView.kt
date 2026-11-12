@@ -120,6 +120,7 @@ import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressSubagent
+import io.github.erikfrish.herdline.core.MarkerKind
 import io.github.erikfrish.herdline.core.visibleDialogs
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptRead
@@ -787,6 +788,7 @@ private fun ChatRow(item: ChatItem, colors: ChatColors, expanded: MutableMap<Str
             Markdown(item.summary, colors, color = colors.muted, dense = dense)
         }
         is ChatItem.Boundary -> HistoryBoundary(colors)
+        is ChatItem.Marker -> MarkerRow(item, colors)
         is ChatItem.Image -> Box(Modifier.widthIn(max = ProseMaxWidth).fillMaxWidth(), contentAlignment = if (item.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
             ChatImageThumb(item.image, colors)
         }
@@ -843,6 +845,48 @@ private fun CompactionDivider(colors: ChatColors, open: Boolean, onToggle: () ->
             Box(Modifier.weight(1f).height(1.dp).background(colors.border))
         }
         if (open) Barred(colors.rule, 2.dp) { content() }
+    }
+}
+
+/**
+ * A stop or one plan item in the app's own words. The glyph is decoration:
+ * TalkBack hears the word, then the item, as one line.
+ */
+@Composable
+private fun MarkerRow(item: ChatItem.Marker, colors: ChatColors) {
+    val word = stringResource(
+        when (item.kind) {
+            MarkerKind.StoppedByYou -> R.string.chat_marker_stopped_by_you
+            MarkerKind.Stopped -> R.string.chat_marker_stopped
+            MarkerKind.Done -> R.string.chat_marker_done
+            MarkerKind.ToDo -> R.string.chat_marker_to_do
+        },
+    )
+    val glyph = when (item.kind) {
+        MarkerKind.Done -> "✓"
+        MarkerKind.ToDo -> "○"
+        MarkerKind.StoppedByYou, MarkerKind.Stopped -> null
+    }
+    val spoken = if (item.text.isBlank()) word else stringResource(R.string.chat_marker_item_spoken, word, item.text)
+    Row(
+        Modifier
+            .widthIn(max = ProseMaxWidth)
+            .fillMaxWidth()
+            .clearAndSetSemantics { contentDescription = spoken }
+            .testTag("chat:marker"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (glyph != null) Text(glyph, style = ChatType.meta.copy(color = colors.dim))
+        Text(
+            buildAnnotatedString {
+                withStyle(ChatType.meta.toSpanStyle().copy(color = colors.muted)) { append(word) }
+                if (item.text.isNotBlank()) {
+                    append("  ")
+                    append(item.text)
+                }
+            },
+            style = ChatType.aside.copy(color = colors.text),
+        )
     }
 }
 

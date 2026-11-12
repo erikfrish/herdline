@@ -354,3 +354,30 @@ fn a_grok_pane_needs_its_own_process() {
     assert_eq!(report("grok").unwrap(), expect());
     assert_eq!(report("node").unwrap().pid, None);
 }
+
+#[test]
+fn a_plan_reads_as_one_marker_per_item() {
+    let host = Host::new(SID, "grok");
+    append(
+        &host.file("%2Fw"),
+        &[acp(json!({"sessionUpdate": "plan", "entries": [
+            {"content": "read the log", "status": "completed", "priority": "high"},
+            {"content": "fix the bug", "status": "in_progress", "priority": "high"},
+            {"content": "ship", "status": "pending", "priority": "low"},
+        ]}))],
+    );
+    let page = host.page(Read::Tail).unwrap();
+    let marker = |marker: Marker, text: &str| Block::Marker { marker, text: text.to_owned(), truncated: false };
+    assert_eq!(
+        page.entries[0].blocks,
+        [marker(Marker::Done, "read the log"), marker(Marker::ToDo, "fix the bug"), marker(Marker::ToDo, "ship")]
+    );
+}
+
+#[test]
+fn a_plan_row_without_items_still_reads_as_its_text() {
+    let row = entry(&json!({"id": 3, "kind": "plan", "ts": 1, "text": "[completed] read the log"})).unwrap();
+    assert_eq!(row.blocks, [Block::Text { text: "[completed] read the log".to_owned(), truncated: false }]);
+    let empty = entry(&json!({"id": 4, "kind": "plan", "text": "[plan]", "entries": []})).unwrap();
+    assert_eq!(empty.blocks, [Block::Text { text: "[plan]".to_owned(), truncated: false }]);
+}

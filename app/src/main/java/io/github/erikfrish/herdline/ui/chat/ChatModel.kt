@@ -3,6 +3,7 @@ package io.github.erikfrish.herdline.ui.chat
 import io.github.erikfrish.herdline.core.Agent
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.IngressSubagent
+import io.github.erikfrish.herdline.core.MarkerKind
 import io.github.erikfrish.herdline.core.TranscriptBlock
 import io.github.erikfrish.herdline.core.TranscriptEntry
 import io.github.erikfrish.herdline.core.TranscriptIdentity
@@ -99,6 +100,8 @@ sealed interface ChatItem {
     data class Boundary(override val key: String, override val timestamp: Long? = null) : ChatItem
     /** An image of a message; [fromUser] draws it in the user's turn. */
     data class Image(override val key: String, val image: TranscriptImage, val fromUser: Boolean, override val timestamp: Long? = null) : ChatItem
+    /** A stop or one plan item, worded by [kind]; [text] is the item's own, empty for a stop. */
+    data class Marker(override val key: String, val kind: MarkerKind, val text: String, override val timestamp: Long? = null) : ChatItem
 }
 
 /** A row of the user's turn: their text or an image they sent. */
@@ -175,6 +178,7 @@ fun chatItems(entries: List<TranscriptEntry>): List<ChatItem> {
                         }
                     }
                     is TranscriptBlock.Image -> items += ChatItem.Image(key, block.at(entry), entry.role == "user", at)
+                    is TranscriptBlock.Marker -> items += ChatItem.Marker(key, block.kind, block.text, at)
                 }
             }
         }

@@ -10,7 +10,7 @@
 //! Every rule below names the pinned source it mirrors, Kilo-Org/kilocode tag
 //! v7.8.27 (commit 03a6f07d053cd7e6aa88fa1e258e93510335259f).
 
-use super::{Block, Entry, Identity, Image, Kind, Read, Response, Source, Usage, cap, text_block};
+use super::{Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, Usage, cap, text_block};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
 use serde_json::{Value, json};
@@ -206,8 +206,13 @@ fn entry(row: &Value) -> Option<Entry> {
         }
     }
     if let Some(name) = info["error"]["name"].as_str() {
-        let message = info["error"]["message"].as_str().filter(|text| !text.is_empty());
-        blocks.push(text_block(&format!("[{}]", cap(message.unwrap_or(name), 512).0), false));
+        // MessageAbortedError (schema MessageV2): the turn was stopped; it names no one.
+        if name == "MessageAbortedError" {
+            blocks.push(Block::Marker { marker: Marker::Stopped, text: String::new(), truncated: false });
+        } else {
+            let message = info["error"]["message"].as_str().filter(|text| !text.is_empty());
+            blocks.push(text_block(&format!("[{}]", cap(message.unwrap_or(name), 512).0), false));
+        }
     }
     if kind == Kind::Other {
         blocks.clear();

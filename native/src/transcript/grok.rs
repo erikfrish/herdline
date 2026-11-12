@@ -11,7 +11,7 @@
 //! Known limit: after an in-process `/new`, Herdr may keep reporting the old
 //! session id (herdrdev/herdr#2681), so Chat shows the previous session.
 
-use super::{Block, Entry, Identity, Image, Kind, Read, Response, Source, cap, text_block};
+use super::{Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, cap, text_block};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
 use serde_json::{Value, json};
@@ -156,7 +156,15 @@ fn entry(row: &Value) -> Option<Entry> {
             "assistant"
         }
         "plan" => {
-            blocks.push(text_block(row["text"].as_str().unwrap_or_default(), false));
+            // Each item a marker the app words; a host script without `entries` sends the joined text.
+            match row["entries"].as_array().filter(|items| !items.is_empty()) {
+                Some(items) => blocks.extend(items.iter().map(|item| {
+                    let (text, truncated) = cap(item["text"].as_str().unwrap_or_default(), 512);
+                    let marker = if item["done"] == true { Marker::Done } else { Marker::ToDo };
+                    Block::Marker { marker, text, truncated }
+                })),
+                None => blocks.push(text_block(row["text"].as_str().unwrap_or_default(), false)),
+            }
             "assistant"
         }
         other => {
@@ -415,6 +423,10 @@ def plan(u):
     entries=u.get('entries') if isinstance(u.get('entries'),list) else []
     return '\n'.join('[%s] %s'%(text(e.get('status')),text(e.get('content'))) for e in entries if isinstance(e,dict)) or '[plan]'
 
+def plan_items(u):
+    entries=u.get('entries') if isinstance(u.get('entries'),list) else []
+    return [{'done':e.get('status')=='completed','text':text(e.get('content'))} for e in entries if isinstance(e,dict)]
+
 def stamp(value):
     ts=value.get('timestamp') if value else None
     return ts*1000 if index(ts) is not None else None
@@ -464,7 +476,7 @@ def rows_of(items):
                 else: rows.append({'id':at,'kind':'result','ts':stamp(value),'result':result})
             continue
         if not xai and kind=='plan':
-            rows.append({'id':at,'kind':'plan','ts':stamp(value),'text':plan(u)}); continue
+            rows.append({'id':at,'kind':'plan','ts':stamp(value),'text':plan(u),'entries':plan_items(u)}); continue
         if not xai and kind in QUIET: continue
         rows.append({'id':at,'kind':'unknown','name':kind})
     return rows
