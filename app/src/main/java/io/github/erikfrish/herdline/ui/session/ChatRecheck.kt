@@ -4,21 +4,21 @@ package io.github.erikfrish.herdline.ui.session
 internal enum class ChatRecheck {
     /** Read the pane once. */
     Read,
-    /** Say why Chat is unreadable, as before; no read. */
-    Notice,
     Nothing,
 }
 
 /**
- * A Chat tap on an unreadable pane reads it once, unless the reason is a
- * typed refusal, which no read ends. An [agentChanged] update reads only
- * while no composed Chat polls the pane already ([polling]): a status-only
- * tick is not a change.
+ * A Chat tap on an unreadable pane always reads it once, even under a typed
+ * refusal (FOBS1-R3): the refusal may have gone (a session dir removed), and
+ * a read that fails again says why once (`tapAnswered`). An [agentChanged]
+ * update reads only while no composed Chat polls the pane already
+ * ([polling]) and never under a typed refusal: a status-only tick is not a
+ * change.
  */
 internal fun chatRecheck(tap: Boolean, agentChanged: Boolean, unreadable: Boolean, lasting: Boolean, polling: Boolean): ChatRecheck = when {
     !unreadable -> ChatRecheck.Nothing
-    lasting -> if (tap) ChatRecheck.Notice else ChatRecheck.Nothing
     tap -> ChatRecheck.Read
+    lasting -> ChatRecheck.Nothing
     agentChanged && !polling -> ChatRecheck.Read
     else -> ChatRecheck.Nothing
 }

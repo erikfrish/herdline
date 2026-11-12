@@ -7,11 +7,18 @@ import org.junit.Test
 
 class ChatRecheckTest {
     @Test
-    fun a_tap_reads_a_transient_reason_once_and_only_says_a_typed_refusal() {
+    fun a_tap_reads_a_transient_reason_once() {
         assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = false))
         // A hidden Chat that polls is no reason to leave the tap unanswered.
         assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = true))
-        assertEquals(ChatRecheck.Notice, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = false))
+    }
+
+    @Test
+    fun m25_a_tap_with_a_lasting_refusal_reads() {
+        // QA m25: the refusal's session dir was removed; a tap that only said the old
+        // refusal never read again, so Chat stayed shut until a cold restart.
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = false))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = true))
     }
 
     @Test

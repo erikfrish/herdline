@@ -727,12 +727,12 @@ fun SessionScreen(
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
             chat && chatUnreadable -> {
+                // FOBS1-R3: a tap always reads once, even under a typed refusal; a read that
+                // fails again says why once, in recheckChat (tapAnswered).
                 val pane = chatPane
                 if (pane != null && chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
                     pendingChatTap = PendingChatTap(pane, tab?.id)
                     scope.launch { recheckChat(pane, tap = true) }
-                } else {
-                    scope.launch { sayChatUnreadable(chatRefusal, SnackbarDuration.Short) }
                 }
             }
             desktopAgent != null -> {
