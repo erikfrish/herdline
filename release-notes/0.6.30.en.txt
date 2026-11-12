@@ -1,0 +1,7 @@
+Herdline 0.6.30 — Stop from the phone, a divider for a new session, and a card of what works
+
+- Chat: when the agent in a pane starts a new session, Chat shows only that session, under a "New session in this pane" divider. A restart that resumes the same session is not a new one.
+- Chat: Stop now also works for omp, pi, Claude Code and Codex while they work. Herdline presses Esc once, and only when the pane shows the agent can take it. For omp and pi it says Stopped only after the session's history records the stop; otherwise it says it is not confirmed. Nothing is retried.
+- More › What works here: a card lists, for the agent in this pane, what works, what is not verified yet, and what is not in Herdline.
+
+Not yet verified by QA.
