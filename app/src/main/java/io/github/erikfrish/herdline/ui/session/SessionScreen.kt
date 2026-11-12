@@ -981,11 +981,14 @@ fun SessionScreen(
                                 val position = if (at >= 0) stringResource(R.string.session_tabs_position, at + 1, tabs.size) else null
                                 val heldElsewhere = held.isNotEmpty() && view?.let { v -> tabs.any { it.id != tab?.id && v.heldPaneOf(it.id, held) != null } } == true
                                 val changedElsewhere = unseenTabs.any { it != tab?.id }
+                                // Wide, the tap shows or hides the sidebar, so say which; settings is collected state, so it follows a toggle.
+                                val placeSpokenRes = when {
+                                    !wide -> R.string.session_place_spoken
+                                    settings.sidebarOpen -> R.string.session_place_spoken_wide_open
+                                    else -> R.string.session_place_spoken_wide
+                                }
                                 val placeSpoken = buildString {
-                                    append(
-                                        if (at < 0) title
-                                        else stringResource(if (wide) R.string.session_place_spoken_wide else R.string.session_place_spoken, tabName, at + 1, tabs.size, title),
-                                    )
+                                    append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
                                     // S2: the desktop's pane, said whole even where the line cuts it.
                                     desktopOther?.let {
                                         append(". ")
