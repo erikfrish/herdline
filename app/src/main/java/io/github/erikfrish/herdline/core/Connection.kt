@@ -559,9 +559,10 @@ class Connection(val node: Node) {
     }
 
     /**
-     * Stop the turn running on exactly [target]'s instance, through the
-     * agent's own server (OpenCode, Kilo). True when one was stopped, false
-     * when none was running. Blocks on the host.
+     * Stop the turn running on exactly [target]'s instance: through the
+     * agent's own server (OpenCode, Kilo), else with one key in its pane
+     * ([StopRoute.Pty]). True when one was stopped, false when the server
+     * found none running; an unconfirmed key fails. Blocks on the host.
      */
     fun ingressAbort(target: ComposerTarget): Result<Boolean> {
         val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))

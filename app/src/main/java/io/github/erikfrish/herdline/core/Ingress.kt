@@ -153,9 +153,19 @@ internal fun ingressSubmitOutcome(dialogId: String, call: () -> String): Result<
     return Result.success(result)
 }
 
-/** Stop's answer: whether a running turn was stopped. Anything less fails. */
+/**
+ * Stop's answer: whether a running turn was stopped. Anything less fails.
+ * A PTY stop (`route: pty`) is `stopped` only once the history recorded it;
+ * `uncertain` and `refused` fail with their reason.
+ */
 internal fun ingressAbortOutcome(call: () -> String): Result<Boolean> {
     val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    if (reply.optString("route") == "pty") {
+        return when (val outcome = reply.optString("outcome")) {
+            "stopped" -> Result.success(true)
+            else -> Result.failure(IOException("${outcome.ifEmpty { "unknown" }}: ${reply.optString("reason").ifEmpty { "unknown" }}"))
+        }
+    }
     val aborted = reply.opt("aborted")
     if (reply.optString("endpoint") != "live" || aborted !is Boolean) {
         return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))

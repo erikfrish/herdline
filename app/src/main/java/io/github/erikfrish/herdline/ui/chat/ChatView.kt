@@ -114,6 +114,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.Harness
+import io.github.erikfrish.herdline.core.StopRoute
+import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressSubagent
@@ -336,10 +339,10 @@ private fun ChatContent(
         val reads = identity?.agent == "omp" || serverAgent && asked
         if (boot == null || identity == null || !reads) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
-    // Stop reaches OpenCode and Kilo through the same server.
+    // Stop goes where the program's Harness row says: its server, or one key in its pane.
     val stopTarget = remember(connection, view?.boot, identity, pane) {
         val boot = view?.boot
-        if (boot == null || identity == null || !serverAgent) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+        if (boot == null || identity == null || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
     var stopping by remember(stopTarget) { mutableStateOf(false) }
     var stopProblem by remember(stopTarget) { mutableStateOf(false) }

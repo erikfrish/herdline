@@ -146,6 +146,11 @@ pub fn enter() -> ClientPaneInputEvent {
     press(ClientKeyCode::Enter, Modifiers::default(), false)
 }
 
+/// One Esc press, as a stop sends it.
+pub fn esc() -> ClientPaneInputEvent {
+    press(ClientKeyCode::Esc, Modifiers::default(), false)
+}
+
 /// Committed text without control characters other than tab and newline,
 /// which a keyboard can legitimately produce. Newlines become Enter presses
 /// so a multi-line commit submits like typing would.

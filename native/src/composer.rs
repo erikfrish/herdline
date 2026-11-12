@@ -1101,7 +1101,7 @@ pub fn pi_editor(rows: &[String]) -> Result<Editor, Unseen> {
 /// Claude's on-screen blocker of its own input: its dialogue, approval or
 /// interrupt line, where Enter answers the question instead of sending a
 /// draft. Claude's exact words, matched lowercase anywhere on screen.
-fn claude_blocker(row: &str) -> bool {
+pub(crate) fn claude_blocker(row: &str) -> bool {
     let row = row.to_lowercase();
     [
         "esc to cancel",
