@@ -1,0 +1,7 @@
+Herdline 0.6.9 — OMP profiles in Chat, a hint that stays off your prompt, Chat that remembers why it can't read
+
+Chat now finds an OMP session under the profile OMP itself runs with, whether you chose it on the command line or in the environment, and images in that session come from the same profile. A profile folder outside your home folder on the host is refused instead of read.
+
+The "Tap to type" hint now sits over an empty line of the terminal instead of over the bottom line, which is often your prompt. It moves only when the screen has settled, never while output scrolls or as you type. When no line is empty it isn't shown, and tapping the terminal still opens the keyboard.
+
+When Chat can't reach or can't read a session, leaving the pane and coming back now keeps the notice and when it started, instead of showing the old history as if it were current. A refusal keeps its own explanation.
