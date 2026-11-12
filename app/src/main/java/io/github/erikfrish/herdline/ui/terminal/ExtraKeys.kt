@@ -252,12 +252,12 @@ internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
     return if (tight >= 48f - 0.01f) CapLayout(tight.coerceAtLeast(48f), TightKeyGap, scrolls = false) else null
 }
 
-/** The row of [extras] above the grid: the [grid]'s caps when they fit, else a row that scrolls and shows half a cap at the edge. */
-internal fun aboveLayout(panel: Float, extras: Int, grid: CapLayout): CapLayout {
-    val inner = panel - KeyRowPad.value * 2
-    if (extras * grid.width + (extras - 1) * grid.gap <= inner + 0.01f) return grid.copy(scrolls = false)
-    return CapLayout(scrollingCapWidth(inner, grid.gap), grid.gap, scrolls = true)
-}
+/**
+ * The added keys' rows above the grid, seven a row on the grid's columns, so
+ * they wrap instead of scrolling. With 22 keys in [AllExtraKeys] a
+ * default-based set has at most 8 extras, so two rows at most (POSTNIGHT-KEYS §7.2).
+ */
+internal fun extraRowsAbove(extras: List<ExtraKey>): List<List<ExtraKey>> = extras.chunked(GridColumns)
 
 /** How TalkBack reads the caps whose glyphs name nothing. */
 private val Spoken: Map<String, String> = mapOf(
@@ -269,8 +269,8 @@ private val Spoken: Map<String, String> = mapOf(
  * The panel of keys a phone keyboard lacks, drawn as two compact rows (one
  * on a landscape phone typing) — Gboard-sized caps on 48dp rows — above the keyboard in raw input.
  * A default-based set ([extraKeyPanel]) keeps the default grid and shows its
- * added keys beside it when they fit ([besideLayout]), else in one row above
- * it ([aboveLayout]); typing in landscape they stay beside, never a third row. Ctrl and
+ * added keys beside it when they fit ([besideLayout]), else in rows above it on
+ * the grid's columns ([extraRowsAbove]), wrapping and never scrolling. Ctrl and
  * Alt latch for the next key or character, as on Termux; arrows and paging
  * keys repeat while held and stop at the moment the cap is released. A latched
  * modifier fills with the session's [accent] and carries a bar under its
@@ -459,28 +459,21 @@ fun ExtraKeysRow(
                 // and no cap is ever narrower than a 48 dp target ([capLayout]).
                 for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth())
             }
-            beside != null || rowsOf == 1 -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
-                // The grid at its own width, an 8 dp separator, then the added keys two
-                // rows high, column by column. Typing in landscape with no room beside,
-                // the grid takes its narrowest and the added keys scroll beside it.
-                val grid = beside ?: CapLayout(48f, TightKeyGap, scrolls = false)
-                Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier) }
+            beside != null -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
+                // The grid, an 8 dp separator, then the added keys two rows high, column by column.
+                Column(gridOrder) { for (row in panel.grid) capRow(row, beside, Modifier) }
                 Box(Modifier.width(ClusterGap).height(KeyRowHeight * 2), contentAlignment = Alignment.Center) {
                     Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
                 }
-                val extras = grid.copy(scrolls = beside == null)
-                Row(
-                    extrasOrder.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(extras.gap.dp),
-                ) {
-                    for (column in panel.extras.chunked(2)) Column { for (key in column) cap(key, extras.width.dp, extras.scrolls) }
+                Row(extrasOrder, horizontalArrangement = Arrangement.spacedBy(beside.gap.dp)) {
+                    for (column in panel.extras.chunked(2)) Column { for (key in column) cap(key, beside.width.dp, false) }
                 }
             }
             else -> Column(padded) {
-                // No room beside: the added keys take one row above the grid, the grid's cap
-                // width, left-aligned; only that row scrolls when it runs past the edge.
+                // No room beside (portrait, split screen, typing included): the added keys
+                // wrap in rows above the grid, on its caps and columns.
                 val grid = capLayout(panelWidth, GridColumns)
-                capRow(panel.extras, aboveLayout(panelWidth, panel.extras.size, grid), extrasOrder.fillMaxWidth())
+                Column(extrasOrder) { for (row in extraRowsAbove(panel.extras)) capRow(row, grid, Modifier.fillMaxWidth()) }
                 Column(gridOrder) { for (row in panel.grid) capRow(row, grid, Modifier.fillMaxWidth()) }
             }
         }

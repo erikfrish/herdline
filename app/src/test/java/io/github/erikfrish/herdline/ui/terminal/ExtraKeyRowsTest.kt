@@ -112,24 +112,32 @@ class ExtraKeyRowsTest {
     }
 
     @Test
-    fun addedKeysGoBesideOnlyWhereTheyFitWith48DpCaps() {
-        // POSTNIGHT-KEYS §7.2: (7 + c) × 48 + (6 + c − 1) × 2 + 8 + 12 ≤ panel, c = ceil(n / 2).
-        for (panel in listOf(360f, 411f, 890f)) {
-            for (n in 1..9) {
+    fun everyAddedKeyShowsWithoutScrollingBesideOrWrappedAbove() {
+        // POSTNIGHT-KEYS §7.2: beside iff (7 + c) × 48 + (6 + c − 1) × 2 + 8 + 12 ≤ panel, c = ceil(n / 2).
+        val all = DEFAULT_EXTRA_KEY_IDS + AllExtraKeys.keys.filter { it !in DEFAULT_EXTRA_KEY_IDS }
+        val extras = extraKeyPanel(extraKeysFrom(all)).extras
+        assertEquals(8, extras.size) // every key the app has: the most a default-based set can add
+        // Portrait 360 and 411, a split-screen half at 450, landscape 566 (the 8-extra minimum) and 890.
+        for (panel in listOf(360f, 411f, 450f, 566f, 890f)) {
+            for (n in 1..extras.size) {
                 val c = (n + 1) / 2
                 val fits = (7 + c) * 48 + (6 + c - 1) * 2 + 8 + 12 <= panel
                 val beside = besideLayout(panel, n)
                 assertEquals("$panel dp, $n extras", fits, beside != null)
-                if (beside != null) assertTrue("$beside", beside.width >= 48f && !beside.scrolls)
+                if (beside != null) {
+                    assertTrue("$beside", beside.width >= 48f && !beside.scrolls)
+                } else {
+                    // Above: rows of at most seven on the grid's unscrolled 48 dp caps, two rows at most.
+                    val grid = capLayout(panel, 7)
+                    val rows = extraRowsAbove(extras.take(n))
+                    assertTrue("$panel dp: $grid", !grid.scrolls && grid.width >= 48f)
+                    assertTrue("$panel dp, $n extras: $rows", rows.size <= 2 && rows.all { it.size <= 7 })
+                    assertEquals(extras.take(n), rows.flatten())
+                }
             }
         }
-        assertNull(besideLayout(411f, 1))
-        assertNotNull(besideLayout(890f, 1))
-        // Above, at 411 dp: one extra uses the grid's caps; nine run past the edge and scroll, caps still 48 dp.
-        val grid = capLayout(411f, 7)
-        assertEquals(grid, aboveLayout(411f, 1, grid))
-        val nine = aboveLayout(411f, 9, grid)
-        assertTrue("$nine", nine.scrolls && nine.width >= 48f)
+        assertNull(besideLayout(450f, 8))
+        assertNotNull(besideLayout(566f, 8))
     }
 
     @Test
