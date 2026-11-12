@@ -32,6 +32,9 @@ data class IngressSubagent(val parentCallId: String?, val child: TranscriptSubag
 /** OMP's queue as the extension reports it, and whether the agent is idle. */
 data class IngressState(val idle: Boolean, val queued: List<IngressQueued>, val subagents: List<IngressSubagent> = emptyList())
 
+/** One session this one started, as its program's server lists it (Kilo): its id and title, no state claimed. */
+data class IngressChild(val id: String, val title: String)
+
 /** What one send through the endpoint amounts to. */
 sealed interface IngressSend {
     /** This instance publishes no endpoint: nothing was sent, and the pane route may be used. */
@@ -149,6 +152,20 @@ internal fun ingressDialogsOutcome(call: () -> String): Result<JSONArray> {
         return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
     }
     return Result.success(dialogs)
+}
+
+/** The sessions [ingressChildren][Connection.ingressChildren] listed; anything but a live list fails. */
+internal fun ingressChildrenOutcome(call: () -> String): Result<List<IngressChild>> {
+    val reply = ingressReply(call) ?: return Result.failure(IOException("no answer"))
+    val children = reply.optJSONArray("children")
+    if (reply.optString("endpoint") != "live" || children == null) {
+        return Result.failure(IOException("endpoint ${reply.optString("endpoint").ifEmpty { "unknown" }}"))
+    }
+    return try {
+        Result.success((0 until children.length()).map { children.getJSONObject(it).let { c -> IngressChild(c.getString("id"), c.getString("title")) } })
+    } catch (error: JSONException) {
+        Result.failure(IOException("children unreadable", error))
+    }
 }
 
 /**

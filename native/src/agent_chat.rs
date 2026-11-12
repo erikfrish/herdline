@@ -84,6 +84,8 @@ const MAX_TEXT_BYTES: usize = composer::MAX_TEXT_BYTES;
 /// Longest form answer passed on: a form's own fields and options bound it
 /// far below this, and the script's argument stays small.
 const MAX_ANSWER_BYTES: usize = 32 * 1024;
+/// Most children one list carries, as `kilo_ctl.py` cuts it.
+const MAX_CHILDREN: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
@@ -108,13 +110,18 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort);
     match engine {
-        // Dialogs, Stop and Promote have no Codex path here: a truthful
-        // absence of that op, not a request Kotlin may treat as done.
-        Engine::Codex if control || request.op == Op::Promote => return Ok(unsupported_op(request.op).to_string()),
+        // Dialogs, Stop, Promote and children have no Codex path here: a
+        // truthful absence of that op, not a request Kotlin may treat as done.
+        Engine::Codex if control || matches!(request.op, Op::Promote | Op::Children) => return Ok(unsupported_op(request.op).to_string()),
         // Its daemon steers or starts a turn; it never queues behind one.
         Engine::Codex if request.deliver_as == Some(DeliverAs::Queue) => {
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
+        // OpenCode 2.2.7 names a session's children only as a list filter
+        // (schema/src/session.ts:74-109 ListFilter.parentID, read through
+        // GET /api/session); the reply's envelope and paging are not pinned,
+        // so that read is not built: said as such, never guessed.
+        Engine::OpenCode if request.op == Op::Children => return Ok(unsupported_op(request.op).to_string()),
         // Kilo's v1 server (`kilo_ctl.py`) starts a turn on an idle session
         // only: no steer, no queue, no inbox to withdraw from or promote.
         // Said as such, never an absence a send could fall through to the
@@ -227,6 +234,7 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
                 Op::DialogSubmit => ("submit", submitted.unwrap_or_else(|| String::from("{}"))),
                 Op::DialogCancel => ("cancel", submitted.unwrap_or_else(|| String::from("{}"))),
                 Op::Abort => ("abort", String::from("{}")),
+                Op::Children => unreachable!("Kilo's in kilo_step, OpenCode's answered as unsupported"),
             };
             control_step(engine, op, &request.instance, &payload, media.is_some())
         }
@@ -405,6 +413,23 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
             "true" | "false" => live(json!({"aborted": payload == "true"})),
             _ => return Err(Error::BadReply),
         },
+        // Kilo's own list of the sessions this one started (kilo_ctl.py
+        // `children`): an id and a title each, no state claimed.
+        ("children", Op::Children) => {
+            let children: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
+            let named = children.as_array().is_some_and(|all| {
+                all.len() <= MAX_CHILDREN
+                    && all.iter().all(|c| {
+                        c.as_object().is_some_and(|c| c.len() == 2)
+                            && c["id"].as_str().is_some_and(|id| !id.is_empty() && id.len() <= 128 && safe_id(id))
+                            && c["title"].as_str().is_some_and(|title| title.chars().count() <= 200)
+                    })
+            });
+            if !named {
+                return Err(Error::BadReply);
+            }
+            live(json!({"children": children}))
+        }
         _ => return unreadable(op, id),
     })
 }
@@ -457,7 +482,7 @@ fn codex_step(request: &Request, text: &str) -> String {
         Op::Status => "status",
         Op::State => "state",
         Op::Withdraw => "withdraw",
-        Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort | Op::Promote => unreachable!("answered as unsupported"),
+        Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort | Op::Promote | Op::Children => unreachable!("answered as unsupported"),
     };
     let deliver = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
@@ -480,8 +505,8 @@ HERDLINE_CODEX_CTL"#,
     )
 }
 
-/// Kilo's v1 server script for a send, a status check or the state of this
-/// exact session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
+/// Kilo's v1 server script for a send, a status check, the state or the
+/// children of this exact session (`kilo_ctl.py`, pinned Kilo v7.8.27 03a6f07). Its words are
 /// `control_reply`'s: the same discovery rule and the same boundary.
 fn kilo_step(request: &Request, text: &str) -> String {
     let message = format!("msg_{}", request.id);
@@ -489,6 +514,7 @@ fn kilo_step(request: &Request, text: &str) -> String {
         Op::Send => ("send", json!({"id": message, "text": text}).to_string()),
         Op::Status => ("status", json!({"id": message}).to_string()),
         Op::State => ("state", String::from("{}")),
+        Op::Children => ("children", String::from("{}")),
         _ => unreachable!("answered as unsupported or served by control_step"),
     };
     format!(
@@ -681,6 +707,7 @@ fn unsupported_op(op: Op) -> Value {
         Op::DialogSubmit => "dialog_submit",
         Op::DialogCancel => "dialog_cancel",
         Op::Abort => "abort",
+        Op::Children => "children",
     };
     json!({"endpoint": "unsupported", "missing": [op]})
 }

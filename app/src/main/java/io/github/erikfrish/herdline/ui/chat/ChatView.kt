@@ -126,6 +126,7 @@ import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.DIALOG_ANSWERED_ELSEWHERE
 import io.github.erikfrish.herdline.core.IngressProbe
+import io.github.erikfrish.herdline.core.IngressChild
 import io.github.erikfrish.herdline.core.IngressSubagent
 import io.github.erikfrish.herdline.core.MarkerKind
 import io.github.erikfrish.herdline.core.visibleDialogs
@@ -350,6 +351,8 @@ private fun ChatContent(
     val linkLive = connection.state.collectAsState().value is Connection.State.Connected
     val view by connection.view.collectAsState()
     var serverRunning by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, Boolean>?>(null) }
+    // The sessions Kilo's server says this one started, for exactly the instance shown.
+    var serverChildren by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, List<IngressChild>>?>(null) }
     val status = chatStatus(linkLive, pane, view?.agentIn(pane), serverRunning?.takeIf { it.first == history?.identity }?.second)
     val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
@@ -397,6 +400,7 @@ private fun ChatContent(
     }
     LaunchedEffect(stateTarget, linkLive) {
         serverRunning = null
+        serverChildren = null
         val target = stateTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
         if (!linkLive) return@LaunchedEffect
@@ -404,6 +408,10 @@ private fun ChatContent(
             while (true) {
                 val probe = withContext(Dispatchers.IO) { connection.ingressState(target) }.getOrNull()
                 serverRunning = (probe as? IngressProbe.Live)?.let { instance to !it.state.idle }
+                // Only Kilo's server lists a session's children; a failed read shows none, never an old list.
+                if (target.agent == "kilo") {
+                    serverChildren = withContext(Dispatchers.IO) { connection.ingressChildren(target) }.getOrNull()?.let { instance to it }
+                }
                 delay(if (busy) BUSY_POLL_MS else IDLE_POLL_MS)
             }
         }
@@ -750,6 +758,10 @@ private fun ChatContent(
                         item(key = "dialog:" + dialog.id) {
                             LiveGap { ChatFormCard(dialog, colors, submitting = false, submitError = null, onSubmit = { _, _ -> }, settled = outcome) }
                         }
+                    }
+                    val children = serverChildren?.takeIf { it.first == identity }?.second.orEmpty()
+                    if (children.isNotEmpty()) {
+                        item(key = "children") { LiveGap { ChildrenRow(children, colors) } }
                     }
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
@@ -1578,6 +1590,22 @@ private fun WorkingRow(
                 if (stopProblem == STOP_UNCONFIRMED) stringResource(R.string.chat_stop_failed) else stringResource(stopRefusalRes(stopProblem)),
                 style = ChatType.meta.copy(color = colors.muted),
                 modifier = Modifier.testTag("chat:stop:problem"),
+            )
+        }
+    }
+}
+
+/** The sessions this one started, by title (the id where it has none); the server gives no state for them, so none is shown. */
+@Composable
+private fun ChildrenRow(children: List<IngressChild>, colors: ChatColors) {
+    StateRow(colors.muted, colors.border, Color.Transparent, "chat:children") {
+        Text(stringResource(R.string.chat_children, children.size), style = ChatType.meta.copy(color = colors.muted))
+        children.forEach { child ->
+            Text(
+                child.title.ifBlank { child.id },
+                style = ChatType.body.copy(color = colors.text),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

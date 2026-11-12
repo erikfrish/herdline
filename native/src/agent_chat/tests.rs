@@ -138,7 +138,7 @@ fn opencode_inbox_answers_read_as_the_live_endpoint_kotlin_parses() {
     assert!(control_reply("busy", Op::State, ID, "").is_err());
     // No server is an unusable route with its reason, never an absence the
     // pane route could take a send over on.
-    for op in [Op::Send, Op::State, Op::Status, Op::Withdraw, Op::Promote, Op::Dialogs, Op::Abort] {
+    for op in [Op::Send, Op::State, Op::Status, Op::Withdraw, Op::Promote, Op::Dialogs, Op::Abort, Op::Children] {
         assert_eq!(unavailable("needs_server"), control_reply("no_server", op, ID, "").unwrap());
     }
     let state = format!(r#"state	{{"idle":false,"queued":[{{"requestId":"{ID}","text":"next","queue":"followUp"}},{{"requestId":null,"text":"desktop","queue":"steering"}},{{"text":"x","queue":"later"}}]}}"#);
@@ -156,6 +156,31 @@ fn opencode_inbox_answers_read_as_the_live_endpoint_kotlin_parses() {
     // A cancel or a move whose fate could not be read is never settled.
     assert!(control_reply("doubt", Op::Withdraw, ID, "").is_err());
     assert!(control_reply("promoted\tmaybe", Op::Promote, ID, "").is_err());
+}
+
+#[test]
+fn kilo_children_are_named_by_id_and_title_or_not_at_all() {
+    let list = r#"children	[{"id":"ses_kid","title":"Explore"},{"id":"ses_two","title":""}]"#;
+    assert_eq!(
+        control_reply(list, Op::Children, ID, "").unwrap(),
+        json!({"endpoint": "live", "children": [{"id": "ses_kid", "title": "Explore"}, {"id": "ses_two", "title": ""}]})
+    );
+    assert_eq!(control_reply("children\t[]", Op::Children, ID, "").unwrap(), json!({"endpoint": "live", "children": []}));
+    // A child claiming more than its name, an id that is a path, or no list
+    // is no answer: Chat shows nothing rather than a guess.
+    for bad in [
+        r#"children	[{"id":"ses_kid","title":"x","status":"running"}]"#,
+        r#"children	[{"id":"../x","title":"x"}]"#,
+        r#"children	[{"id":"ses_kid"}]"#,
+        r#"children	{"id":"ses_kid"}"#,
+        "children",
+        "doubt",
+    ] {
+        assert!(control_reply(bad, Op::Children, ID, "").is_err(), "{bad:?}");
+    }
+    assert_eq!(unavailable("server_discovery"), control_reply("discovery", Op::Children, ID, "").unwrap());
+    let many = format!("children\t[{}]", vec![r#"{"id":"ses_a","title":"a"}"#; MAX_CHILDREN + 1].join(","));
+    assert!(control_reply(&many, Op::Children, ID, "").is_err());
 }
 
 #[test]

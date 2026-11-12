@@ -63,6 +63,10 @@ pub enum Op {
     /// Move a follow-up queued entry, named by its request id, into the
     /// running turn. Only OpenCode's inbox takes it.
     Promote,
+    /// The sessions this instance's session started, as its own server lists
+    /// them: id and title only. Only Kilo's server answers it; OMP folds its
+    /// children into [`Op::State`].
+    Children,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -167,11 +171,13 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
-    if matches!(request.op, Op::Abort | Op::Promote | Op::DialogCancel) {
-        // The extension speaks no stop, promote or decline: say so, nothing was sent.
+    if matches!(request.op, Op::Abort | Op::Promote | Op::DialogCancel | Op::Children) {
+        // The extension speaks no stop, promote, decline or children list
+        // (its children ride on the state): say so, nothing was sent.
         let missing = match request.op {
             Op::Abort => "abort",
             Op::Promote => "promote",
+            Op::Children => "children",
             _ => "dialog_cancel",
         };
         return Ok(json!({"endpoint": "unsupported", "missing": [missing]}).to_string());
@@ -241,7 +247,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
             .to_string(),
             _ => return Err(Error::BadReply),
         },
-        Op::Abort | Op::Promote | Op::DialogCancel => unreachable!("answered above"),
+        Op::Abort | Op::Promote | Op::DialogCancel | Op::Children => unreachable!("answered above"),
     };
     if line.len() > LINE_MAX {
         return Ok(refused(Refusal::TooLarge));
@@ -624,7 +630,7 @@ fn answer_reply(op: Op, id: &str, dialog_id: Option<&str>, answer: &Value) -> Op
                 reply.insert("state".into(), state);
             }
         }
-        Op::Abort | Op::Promote | Op::DialogCancel => return None,
+        Op::Abort | Op::Promote | Op::DialogCancel | Op::Children => return None,
     }
     Some(Value::Object(reply).to_string())
 }

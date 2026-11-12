@@ -79,6 +79,7 @@
     <string name="chat_truncated">Shortened for chat; the terminal has the rest</string>
     <string name="chat_working">Working</string>
     <string name="chat_working_on">Working · %1$s</string>
+    <string name="chat_children">Sessions it started: %1$d</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_stop_failed">Stop was not confirmed. Check the terminal.</string>
     <!-- X1: why a terminal Stop pressed no key; nothing reached the pane. -->

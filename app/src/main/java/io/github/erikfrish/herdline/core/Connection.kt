@@ -552,6 +552,14 @@ class Connection(val node: Node) {
         }
     }
 
+    /** The sessions exactly [target]'s session started, as its server lists them; it changes nothing. Blocks on the host. */
+    fun ingressChildren(target: ComposerTarget): Result<List<IngressChild>> {
+        val session = ingressSession(target) ?: return Result.failure(IOException("not connected"))
+        return ingressChildrenOutcome {
+            Native.ingress(session, ingressRequest("children", target, UUID.randomUUID().toString()).toString())
+        }
+    }
+
     /**
      * Whether [target]'s program runs without its server, for the card's
      * runtime row (card §3.4). Asks the dialogs read, the one op both
