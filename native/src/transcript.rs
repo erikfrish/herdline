@@ -31,6 +31,7 @@ mod gemini;
 mod grok;
 mod hermes;
 mod kilo;
+mod letta;
 mod mastracode;
 mod kimi;
 mod opencode;
