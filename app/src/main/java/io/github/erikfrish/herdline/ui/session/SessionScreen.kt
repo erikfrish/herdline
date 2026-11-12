@@ -525,10 +525,14 @@ fun SessionScreen(
     // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
     // D3-5: the Herdr agent kinds whose transcript has loaded on this connection, kept as long as
-    // chatMemory. A kind never read here is most likely one the host has no session integration for.
+    // chatMemory. A kind never read here names no cause: nothing typed says why (C9).
     val readKinds = remember(connection) { mutableSetOf<String>() }
     val chatKind = chatPane?.let { view?.agentIn(it)?.agent }?.lowercase(Locale.ROOT)
     val chatLoaded = chatPane?.let { chatMemory.of(it).history } != null
+    // C9: what a Chat tap may show at once: the pane's history of the agent kind there now. Display
+    // only: Chat's own poll checks the instance from there, under its outage strip if that fails.
+    val chatCached = chatPane?.let { chatMemory.of(it).history }?.identity?.agent?.equals(chatKind, ignoreCase = true) == true
+    val bootNow by rememberUpdatedState(view?.boot)
     LaunchedEffect(chatKind, chatLoaded) { if (chatLoaded && chatKind != null) readKinds += chatKind }
     var help by remember { mutableStateOf(false) }
     val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
@@ -700,11 +704,16 @@ fun SessionScreen(
     val tabNow by rememberUpdatedState(tab?.id)
     /**
      * Reads unreadable [pane] once while Chat does not poll it. Only a good
-     * read clears the fallback, and only a tap still pending switches.
+     * read clears the fallback, and only a tap still pending switches; an
+     * outcome for a pane the screen left, or a failure once a read came
+     * good, changes nothing (chatOutcomeApplies).
      */
     suspend fun recheckChat(pane: String, tap: Boolean) {
         val kept = chatMemory.of(pane)
-        when (kept.recheck(connection, pane)) {
+        val boot = bootNow
+        val ok = kept.recheck(connection::transcript, pane)
+        if (ok != null && !chatOutcomeApplies(unreadable = !ok, readPane = pane, readBoot = boot, pane = chatPaneNow, boot = bootNow, leaving = false, cached = kept.history != null)) return
+        when (ok) {
             true -> {
                 chatRefusal = null
                 if (fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
@@ -733,7 +742,7 @@ fun SessionScreen(
         val changed = chatAgentKey != seenAgentKey
         seenAgentKey = chatAgentKey
         val pane = chatPane ?: return@LaunchedEffect
-        if (chatRecheck(tap = false, agentChanged = changed, unreadable = chatUnreadable, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
+        if (chatRecheck(tap = false, agentChanged = changed, unreadable = chatUnreadable, lasting = chatRefusal != null, polling = chatWanted, cached = chatCached) == ChatRecheck.Read) {
             recheckChat(pane, tap = false)
         }
     }
@@ -743,12 +752,21 @@ fun SessionScreen(
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
             chat && chatUnreadable -> {
-                // FOBS1-R3: a tap always reads once, even under a typed refusal; a read that
-                // fails again says why once, in recheckChat (tapAnswered).
+                // FOBS1-R3: a tap always answers, even under a typed refusal: on the history a
+                // read since loaded, else by one read whose failure says why once (tapAnswered).
                 val pane = chatPane
-                if (pane != null && chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
-                    pendingChatTap = PendingChatTap(pane, tab?.id)
-                    scope.launch { recheckChat(pane, tap = true) }
+                if (pane != null) when (chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted, cached = chatCached)) {
+                    ChatRecheck.Show -> {
+                        chatRefusal = null
+                        chatUnreadable = false
+                        pendingChatTap = null
+                        showChat(true, pane)
+                    }
+                    ChatRecheck.Read -> {
+                        pendingChatTap = PendingChatTap(pane, tab?.id)
+                        scope.launch { recheckChat(pane, tap = true) }
+                    }
+                    ChatRecheck.Nothing -> Unit
                 }
             }
             desktopAgent != null -> {
@@ -1265,6 +1283,9 @@ fun SessionScreen(
                                         },
                                     ),
                                     onUnavailable = { unreadable, refusal ->
+                                        // Only this pane's own Chat, not one fading out, and never a report
+                                        // queued before a read of it came good.
+                                        if (!chatOutcomeApplies(unreadable, shown, bootNow, chatPaneNow, bootNow, leaving, cached = chatMemory.of(shown).history != null)) return@ChatView
                                         if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
                                             // The fallback happens on its own, so it
                                             // stays long enough to be read (lab.4 G5).

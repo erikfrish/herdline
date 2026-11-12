@@ -4,24 +4,41 @@ package io.github.erikfrish.herdline.ui.session
 internal enum class ChatRecheck {
     /** Read the pane once. */
     Read,
+    /** Show Chat now on the history this connection holds for the pane; its own poll goes on from there. */
+    Show,
     Nothing,
 }
 
 /**
- * A Chat tap on an unreadable pane always reads it once, even under a typed
- * refusal (FOBS1-R3): the refusal may have gone (a session dir removed), and
- * a read that fails again says why once (`tapAnswered`). An [agentChanged]
- * update reads only while no composed Chat polls the pane already
- * ([polling]) and never under a typed refusal: a status-only tick is not a
- * change.
+ * A Chat tap on an unreadable pane always answers, even under a typed
+ * refusal (FOBS1-R3): on the pane's history when one is [cached] (a read
+ * came good since the fallback; Chat shows it under its own outage strip if
+ * the next read fails), else by reading it once, since the refusal may have
+ * gone (a session dir removed); a read that fails again says why once
+ * (`tapAnswered`). An [agentChanged] update reads only while no composed
+ * Chat polls the pane already ([polling]) and never under a typed refusal:
+ * a status-only tick is not a change.
  */
-internal fun chatRecheck(tap: Boolean, agentChanged: Boolean, unreadable: Boolean, lasting: Boolean, polling: Boolean): ChatRecheck = when {
+internal fun chatRecheck(tap: Boolean, agentChanged: Boolean, unreadable: Boolean, lasting: Boolean, polling: Boolean, cached: Boolean): ChatRecheck = when {
     !unreadable -> ChatRecheck.Nothing
+    tap && cached -> ChatRecheck.Show
     tap -> ChatRecheck.Read
     lasting -> ChatRecheck.Nothing
     agentChanged && !polling -> ChatRecheck.Read
     else -> ChatRecheck.Nothing
 }
+
+/**
+ * Whether a read's outcome for [readPane], asked on daemon boot [readBoot],
+ * may change the screen's Chat state (the fallback, the refusal, a pending
+ * tap): only for the pane read now ([pane]) on the same [boot] (a restarted
+ * daemon may reuse pane ids), never from a Chat still fading out
+ * ([leaving]), and a report that the pane is [unreadable] only while no
+ * history is [cached] for it: one queued before a read came good, or a
+ * slow read that failed after the screen moved on, is stale.
+ */
+internal fun chatOutcomeApplies(unreadable: Boolean, readPane: String, readBoot: String?, pane: String?, boot: String?, leaving: Boolean, cached: Boolean): Boolean =
+    !leaving && readPane == pane && readBoot == boot && !(unreadable && cached)
 
 /** A Chat tap still waiting for its re-check: the pane and tab it was made on. */
 internal data class PendingChatTap(val pane: String, val tab: String?)

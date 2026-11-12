@@ -138,6 +138,7 @@ import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
+import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
@@ -155,6 +156,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 
 /** How often chat rereads the transcript while the agent is busy or waiting, and otherwise. */
 private const val BUSY_POLL_MS = 1_500L
@@ -247,7 +250,7 @@ fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: Str
         if (pane == null || boot == null || !server || !linkLive) return@produceState
         // Its history landing changes [identity] and asks again with it.
         if (identity == null) {
-            memory.of(pane).recheck(connection, pane)
+            memory.of(pane).recheck(connection::transcript, pane)
             return@produceState
         }
         if (identity.agent !in SERVER_AGENTS) return@produceState
@@ -264,30 +267,37 @@ internal class ChatKept {
     val read = ChatReadState()
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
-    val media = ChatMedia()
+    // Made on the first image row: a pane that shows none never builds its caches.
+    val media by lazy { ChatMedia() }
     private val rechecking = Mutex()
+    // The poll's reads and the re-checks', one at a time: a slow read never lands over a newer answer.
+    private val reading = Mutex()
 
-    /** One read of [pane]'s next page, the poll's and a re-check's alike; it records how it went. */
-    suspend fun readNext(connection: Connection, pane: String): Boolean {
+    /**
+     * One read of [pane]'s next page through [transcript]
+     * ([Connection.transcript]), the poll's and a re-check's alike; it
+     * records how it went.
+     */
+    suspend fun readNext(transcript: (JSONObject) -> Result<TranscriptPage>, pane: String): Boolean = reading.withLock {
         val known = history
         val at = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
-        val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, at)) }
+        val page = withContext(Dispatchers.IO) { transcript(transcriptRequest(pane, known?.identity, at)) }
         page.onSuccess { read ->
             // Merged into whatever is current now: a load of older entries may have finished meanwhile.
             history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
             this.read.succeeded()
         }.onFailure { read.failed(it) }
-        return page.isSuccess
+        page.isSuccess
     }
 
     /**
      * One read while Chat is not composed to poll (F-OBS1); null when one is
      * already in flight, so repeated asks never stack reads.
      */
-    suspend fun recheck(connection: Connection, pane: String): Boolean? {
+    suspend fun recheck(transcript: (JSONObject) -> Result<TranscriptPage>, pane: String): Boolean? {
         if (!rechecking.tryLock()) return null
         try {
-            return readNext(connection, pane)
+            return readNext(transcript, pane)
         } finally {
             rechecking.unlock()
         }
@@ -324,6 +334,14 @@ internal class ChatReadState {
  */
 internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? TranscriptRefused)?.refusal
 
+/**
+ * Whether Chat has nothing to show and says so: nothing [loaded], its last
+ * read [failed], and that read was this Chat's own ([readHere]). A failure
+ * kept in the pane's memory from before is no report on the pane now: Chat
+ * opened again reads first, and only then falls back or shows.
+ */
+internal fun chatUnavailable(loaded: Boolean, failed: Boolean, readHere: Boolean): Boolean = !loaded && failed && readHere
+
 @Composable
 private fun ChatContent(
     connection: Connection,
@@ -359,10 +377,15 @@ private fun ChatContent(
     val status = chatStatus(linkLive, pane, view?.agentIn(pane), serverRunning?.takeIf { it.first == history?.identity }?.second)
     val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
+    // Whether this Chat has read the pane itself yet: until then a failure kept from an earlier one
+    // (another pane read, or Chat closed meanwhile) says nothing about the pane now.
+    var readHere by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                val ok = kept.readNext(connection, pane)
+                val ok = kept.readNext(connection::transcript, pane)
+                readHere = true
                 withTimeoutOrNull(
                     when {
                         !ok -> ERROR_POLL_MS
@@ -551,7 +574,7 @@ private fun ChatContent(
     // Runs a reply ended, drawn as the "Worked" fold, each with that reply.
     val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
-    val unavailable = shown == null && problem != null
+    val unavailable = chatUnavailable(shown != null, problem != null, readHere)
     val refused = refusal.takeIf { unavailable }
     val report by rememberUpdatedState(onUnavailable)
     LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
@@ -687,7 +710,7 @@ private fun ChatContent(
         moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
-                shown == null && problem != null -> Column(
+                unavailable -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),

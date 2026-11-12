@@ -8,27 +8,27 @@ import org.junit.Test
 class ChatRecheckTest {
     @Test
     fun a_tap_reads_a_transient_reason_once() {
-        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = false))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = false, cached = false))
         // A hidden Chat that polls is no reason to leave the tap unanswered.
-        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = true))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = false, polling = true, cached = false))
     }
 
     @Test
     fun m25_a_tap_with_a_lasting_refusal_reads() {
         // QA m25: the refusal's session dir was removed; a tap that only said the old
         // refusal never read again, so Chat stayed shut until a cold restart.
-        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = false))
-        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = true))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = false, cached = false))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = true, polling = true, cached = false))
     }
 
     @Test
     fun only_a_new_agent_reads_a_pane_no_chat_polls_and_never_a_refused_one() {
-        assertEquals(ChatRecheck.Read, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = false, polling = false))
+        assertEquals(ChatRecheck.Read, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = false, polling = false, cached = false))
         // A status tick is no change; a polling Chat reads on its own; a typed refusal never reads.
-        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = false, unreadable = true, lasting = false, polling = false))
-        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = false, polling = true))
-        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = true, polling = false))
-        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = false, lasting = false, polling = false))
+        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = false, unreadable = true, lasting = false, polling = false, cached = false))
+        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = false, polling = true, cached = false))
+        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = true, lasting = true, polling = false, cached = false))
+        assertEquals(ChatRecheck.Nothing, chatRecheck(tap = false, agentChanged = true, unreadable = false, lasting = false, polling = false, cached = false))
     }
 
     @Test

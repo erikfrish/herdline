@@ -11,7 +11,7 @@ class ChatUnreadableTest {
     private val host = UnreadableNotice(RefusalWords(R.string.session_chat_unreadable_host, listOf("Claude Code")), help = true)
 
     @Test
-    fun a_kind_never_read_on_this_connection_names_the_missing_integration_and_offers_help() {
+    fun an_untyped_failure_of_a_kind_never_read_on_this_connection_offers_help_without_naming_a_cause() {
         assertEquals(host, unreadableNotice(null, "Claude Code", everRead = false))
     }
 

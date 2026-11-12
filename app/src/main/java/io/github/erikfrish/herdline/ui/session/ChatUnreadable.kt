@@ -11,10 +11,11 @@ internal data class UnreadableNotice(val words: RefusalWords, val help: Boolean 
 /**
  * The words for Chat falling back to Terminal on [agent] (its display name).
  * A typed refusal names its own cause, so it is said as such and never
- * blamed on the host. Otherwise, if [everRead] (a transcript of this agent
- * kind loaded on this connection), the host can read it and the failure is
- * passing; if never, the host most likely lacks Herdr's session integration
- * for it and Chat will not switch back, so the words say so and offer Help.
+ * blamed on the host. An untyped failure (a timeout, a lost link, a session
+ * Herdr has not reported) names no cause: if [everRead] (a transcript of
+ * this agent kind loaded on this connection) the passing text; if never,
+ * the agent's current session cannot be read yet, with Help as diagnosis.
+ * Nothing here can tell that an integration is missing (C9).
  */
 internal fun unreadableNotice(refusal: TranscriptRefusal?, agent: String, everRead: Boolean): UnreadableNotice = when {
     refusal != null -> UnreadableNotice(refusalWords(refusal, agent))
