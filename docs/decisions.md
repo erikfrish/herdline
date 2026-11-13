@@ -477,6 +477,9 @@ Switcher:
   three spaces per tab and ECMAScript edge trimming. The recorded entry is
   compared whole, unchanged and untruncated; other programs remain exact.
   A missing match keeps the hold. Nothing is resent or unlocked on a timer.
+  The watch advances a separate read cursor across contiguous pages without
+  changing that pre-send boundary. A gap, reversed range, reset or changed
+  instance ends the watch unconfirmed; the existing deadline still applies.
   OMP steers use the same comparison. Runtime-dependent rewrites (emoticon
   expansion, extensions or prompt templates) are not guessed: if they change
   the stored text, confirmation remains held rather than accepting another

@@ -3,6 +3,11 @@ package io.github.erikfrish.herdline.ui.session
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AttachmentKind
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.TranscriptBlock
+import io.github.erikfrish.herdline.core.TranscriptEntry
+import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.TranscriptKind
+import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.data.Binding
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.DraftAttachment
@@ -132,6 +137,46 @@ class HandedReceiptTest {
         for (state in listOf(SentState.InPane, SentState.Uncertain, SentState.Unlocked)) {
             assertFalse(sentNoticeShown(a.copy(state = state), "", live = true))
         }
+    }
+
+    @Test
+    fun aReceiptWatchReadsPastTheFirstWindowWithoutMovingItsSendBoundary() = runBlocking {
+        val instance = TranscriptIdentity("p1", "term1", 42, "/h/.omp/agent/sessions/x/a.jsonl")
+        val sent = SentRecord("sent turn", "r1", true, SentState.InPane, answeredAt, historyFrom = 100)
+        val next = 100L + 256 * 1024
+        val turn = TranscriptEntry("u1", null, next, next + 80, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("sent turn", false)))
+        var now = answeredAt
+        val requested = mutableListOf<Long>()
+        val landed = awaitPtyTurn(
+            sent, instance,
+            read = { offset ->
+                requested += offset
+                if (offset == 100L) TranscriptPage(instance, false, next + 80, 100, next, emptyList())
+                else TranscriptPage(instance, false, next + 80, next, next + 80, listOf(turn))
+            },
+            working = { false }, clock = { now }, sleep = { now += it },
+        )
+        assertTrue("a new user turn on the second page confirms", landed)
+        assertEquals(listOf(100L, next), requested)
+        assertEquals(100L, sent.historyFrom)
+    }
+
+    @Test
+    fun aReceiptWatchNeverSkipsAHistoryGapOrConfirmsAnotherInstance() = runBlocking {
+        val instance = TranscriptIdentity("p1", "term1", 42, "/h/.omp/agent/sessions/x/a.jsonl")
+        val sent = SentRecord("sent turn", "r1", true, SentState.InPane, answeredAt, historyFrom = 100)
+        val turn = TranscriptEntry("u1", null, 200, 280, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("sent turn", false)))
+        val gap = TranscriptPage(instance, false, 280, 200, 280, listOf(turn))
+        for (page in listOf(gap, gap.copy(start = 100, end = 99), gap.copy(start = 100, reset = true), gap.copy(start = 100, identity = instance.copy(pid = 43)))) {
+            var reads = 0
+            assertFalse(awaitPtyTurn(sent, instance, read = { reads++; page }, working = { false }, clock = { answeredAt }, sleep = { error("invalid page must end the watch") }))
+            assertEquals(1, reads)
+        }
+        var now = answeredAt
+        var reads = 0
+        assertFalse(awaitPtyTurn(sent, instance, read = { reads++; null }, working = { false }, clock = { now }, sleep = { now += it }))
+        assertEquals(20, reads)
+        assertEquals(answeredAt + 20_000, now)
     }
 
     private companion object {
