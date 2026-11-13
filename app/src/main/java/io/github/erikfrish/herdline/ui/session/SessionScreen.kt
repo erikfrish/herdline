@@ -260,10 +260,6 @@ private val PlaceNarrow: Dp = 96.dp
 private val PlaceMin: Dp = 48.dp
 /** The header's fixed share beside the place and Chat | Terminal: its 6 dp side padding twice, ← and ⋮ at 48 dp each. */
 private val HeaderFixed: Dp = 12.dp + 48.dp * 2
-/** The need-you chip's width around its count: 12 dp padding each side, the 8 dp dot and its 6 dp gap. */
-private val NeedChipChrome: Dp = 12.dp * 2 + 8.dp + 6.dp
-/** A Chat | Terminal segment's width for a label [text] wide: its 10 dp padding each side, at least 52 dp. */
-private fun modeSegmentWidth(text: Dp): Dp = (text + 20.dp).coerceAtLeast(52.dp)
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
@@ -947,15 +943,16 @@ fun SessionScreen(
                                 // The need-you count stays finite: past 99 it shows 99+, and TalkBack says the exact count.
                                 val needLabel = if (blocked.size > 99) "99+" else blocked.size.toString()
                                 val trailing = @Composable { compactMode: Boolean, modifier: Modifier ->
-                                    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    // Compact, 1 dp gaps: at 308 dp ←, the place, the chip, two glyph segments and ⋮ (48 dp each) fit.
+                                    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 1.dp else 4.dp)) {
                                         if (blocked.isNotEmpty()) {
-                                            // Measured last, so where the row is bounded it is the one that gives way, never ⋮ or Chat | Terminal.
+                                            // Measured last and at least 48 dp: where the row is bounded only its count ellipsizes, never ⋮ or Chat | Terminal.
                                             AttentionChip(
                                                 needLabel,
                                                 AgentStatus.Blocked.color(),
                                                 "session:need_you",
                                                 spokenLabel = pluralStringResource(R.plurals.need_you_chip, blocked.size, blocked.size),
-                                                modifier = Modifier.weight(1f, fill = false),
+                                                modifier = Modifier.weight(1f, fill = false).widthIn(min = 48.dp),
                                             ) {
                                                 groups.nextNeedingInput(focusedPane)?.let(::go)
                                             }
@@ -994,20 +991,23 @@ fun SessionScreen(
                                         }
                                     }
                                 }
-                                // SESSION-HDR-308: the width Chat | Terminal takes with its words, and the need-you chip's,
-                                // in this font and language, so the header knows before measuring the row whether the
-                                // words leave the place button its room.
+                                // SESSION-HDR-308: the width Chat | Terminal takes with its words in this font and
+                                // language, so the header knows before measuring the row whether they leave the place
+                                // its room. A segment is its label plus 10 dp each side, at least 52 dp.
                                 val headerDensity = LocalDensity.current
                                 val modeMeasurer = rememberTextMeasurer()
                                 val labelStyle = MaterialTheme.typography.labelLarge
                                 val chatWord = stringResource(R.string.chat)
                                 val terminalWord = stringResource(R.string.chat_terminal)
-                                val textWidth: (String) -> Dp = { with(headerDensity) { modeMeasurer.measure(it, labelStyle, maxLines = 1).size.width.toDp() } }
                                 val modeWords = remember(chatWord, terminalWord, labelStyle, headerDensity) {
-                                    modeSegmentWidth(textWidth(chatWord)) + modeSegmentWidth(textWidth(terminalWord))
+                                    with(headerDensity) {
+                                        listOf(chatWord, terminalWord).fold(0.dp) { sum, word ->
+                                            sum + (modeMeasurer.measure(word, labelStyle, maxLines = 1).size.width.toDp() + 20.dp).coerceAtLeast(52.dp)
+                                        }
+                                    }
                                 }
-                                val needWidth = remember(needLabel, labelStyle, headerDensity) { textWidth(needLabel) + NeedChipChrome }
-                                val chipShare = if (blocked.isNotEmpty()) needWidth + 4.dp else 0.dp
+                                // The need-you chip at its 48 dp minimum and its gap.
+                                val chipShare = if (blocked.isNotEmpty()) 48.dp + 4.dp else 0.dp
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
@@ -1118,15 +1118,17 @@ fun SessionScreen(
                                         val placeRoom = if (short) MergedPlaceWidth + PlaceNarrow else PlaceNarrow
                                         val gaps = 4.dp * (if (short) 4 else 3)
                                         val compactMode = maxWidth - HeaderFixed - gaps - chipShare - modeWords < placeRoom
-                                        // What follows the place in the one-row header: all but ←, its gaps and the place's 48 dp.
-                                        val trailingMax = (maxWidth - 12.dp - 48.dp - 4.dp * 2 - PlaceMin).coerceAtLeast(0.dp)
+                                        // The words keep the 4 dp gaps; the glyphs close them to 1 dp, as inside trailing.
+                                        val gap = if (compactMode) 1.dp else 4.dp
+                                        // What follows the place in the one-row header: all but the padding, ←, its two gaps and the place's 48 dp.
+                                        val trailingMax = (maxWidth - 12.dp - 48.dp - gap * 2 - PlaceMin).coerceAtLeast(0.dp)
                                         if (short) {
                                             // Sideways phone: one row, so the content keeps the height. The place
                                             // button on one line (tab, n/N, marks), then the strip.
                                             Row(
                                                 Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp).testTag("session:header_merged"),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(gap),
                                             ) {
                                                 up()
                                                 place(false, Modifier.widthIn(max = MergedPlaceWidth))
@@ -1140,16 +1142,17 @@ fun SessionScreen(
                                             Row(
                                                 Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(gap),
                                             ) {
                                                 up()
                                                 place(true, Modifier.weight(1f))
                                                 trailing(compactMode, Modifier.widthIn(max = trailingMax))
                                             }
-                                            // A phone has no strip: the place button and the Tabs sheet are the ways to move.
-                                            if (wide) tabRow()
                                         }
                                     }
+                                    // A phone has no strip: the place button and the Tabs sheet are the ways to move.
+                                    // The strip stacks under the header in the Column, outside the measuring Box.
+                                    if (!short && wide) tabRow()
                                 }
                                 val shown = view
                                 if (paneBar && shown != null && tab != null) {

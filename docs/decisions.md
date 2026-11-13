@@ -183,15 +183,18 @@ screen follows the same rules.
 
 In both rows the place button never shrinks below one 48 dp target
 (SESSION-HDR-308). One width rule, the same in Chat and Terminal and in any
-language, measures the Chat \| Terminal words and the need-you chip in the
-current font: when they would leave the place button less than 96 dp (in
-the merged row, less than 220 dp for it plus 96 dp for the tab row),
-Chat \| Terminal shows a chat glyph and a terminal glyph instead of its
-words. Each glyph segment is at least 48 dp wide, is still a selectable tab
-and is read by TalkBack as Chat or Terminal with its selected or unavailable
-state. The need-you chip shows at most 99+ (TalkBack says the exact count);
-in the one-row header it is the part that gives way when nothing else fits,
-never ⋮ or Chat \| Terminal.
+language, measures the Chat \| Terminal words in the current font, with the
+need-you chip counted at its 48 dp minimum: when they would leave the place
+button less than 96 dp (in the merged row, less than 220 dp for it plus 96 dp
+for the tab row), Chat \| Terminal shows a chat glyph and a terminal glyph
+instead of its words, and the header's gaps close from 4 dp to 1 dp. At
+308 dp with the chip that is 12 + 48 + 1 + 48 + 1 + 48 + 1 + 96 + 1 + 48 =
+304 dp, every target 48 dp wide.
+Each glyph segment is at least 48 dp wide, is still a selectable tab and is
+read by TalkBack as Chat or Terminal with its selected or unavailable state.
+The need-you chip is at least 48 dp and shows at most 99+; where the row is
+tight only its count is shortened with an ellipsis, and TalkBack says the
+exact count. ⋮ and Chat \| Terminal never give way.
 
 While the keyboard is up in such a window, it leaves about 138 dp. The
 status bar, the merged row and the composer would fill that, and no content
