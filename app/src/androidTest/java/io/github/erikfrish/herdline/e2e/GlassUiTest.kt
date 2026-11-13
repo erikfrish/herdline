@@ -80,6 +80,12 @@ class GlassUiTest {
         need(By.res("add_node")).click()
         need(By.res("field:name"))
         assertFalse("save starts disabled", need(By.res("save")).isEnabled)
+        // QF-8: one Save; while it is off, its reason is on screen.
+        assertEquals("one Save while blocked", 1, device.findObjects(By.text(string(R.string.save))).size)
+        assertTrue(
+            "the blocked reason shows",
+            need(By.res("save:blocked")).text.startsWith(string(R.string.editor_save_needs, "").trim()),
+        )
         shot("02_editor_empty")
 
         type("field:name", NODE)
@@ -87,6 +93,8 @@ class GlassUiTest {
         type("field:user", "tester")
         type("field:port", "2222")
         assertTrue("save enables once the form is valid", waitEnabled(By.res("save")))
+        assertEquals("one Save once valid", 1, device.findObjects(By.text(string(R.string.save))).size)
+        assertTrue("no reason once valid", device.wait(Until.gone(By.res("save:blocked")), TIMEOUT))
         shot("03_editor_filled")
         need(By.res("save")).click()
 
