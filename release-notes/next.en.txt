@@ -1,6 +1,0 @@
-Carried into the next release's notes; this file goes away in that release commit.
-
-1. TC-RCPT-6 (design/TC-RCPT.md Addendum 4). Add, as the first line of the list:
-- Chat: on Claude Code with Herdr 0.9.5, a refused Send now says the agent's caret can't be confirmed, instead of asking to send again.
-
-The carried TC-RCPT-5 line (the notice without Append) stays as in 0.6.60.
