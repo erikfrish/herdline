@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -67,6 +69,8 @@ import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.session.SwitcherFilter
 import io.github.erikfrish.herdline.ui.session.statusLabel
 import io.github.erikfrish.herdline.ui.session.switcherFilter
+import io.github.erikfrish.herdline.ui.session.PinSheet
+import io.github.erikfrish.herdline.service.MonitorKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -105,6 +109,8 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
     // Opens on the saved start filter; a chip tap changes only this visit.
     var filter by rememberSaveable { mutableStateOf(app.settings.settings.value.startFilter.switcherFilter) }
     var scope by rememberSaveable(stateSaver = ScopeSaver) { mutableStateOf<ScopeKey?>(null) }
+    val monitored by app.monitor.monitored.collectAsState()
+    var pinFor by remember { mutableStateOf<InboxRow?>(null) }
 
     val all = agentRows(hosts)
     val groups = scopeGroups(hosts, all, keep = scope)
@@ -151,10 +157,35 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
                 item(key = "empty") { Empty(stringResource(if (loading) R.string.agents_loading else R.string.agents_none_match)) }
             } else {
                 items(shown, key = { it.nodeId + ":" + it.paneId }) { row ->
-                    InboxItem(row, onOpen = { onOpen(row.nodeId, row.paneId) })
+                    val pinned = MonitorKey(row.nodeId, row.paneId) in monitored
+                    InboxItem(
+                        row, pinned,
+                        onPin = {
+                            if (pinned) app.monitor.unpin(setOf(MonitorKey(row.nodeId, row.paneId)))
+                            else pinFor = row
+                        },
+                        onOpen = { onOpen(row.nodeId, row.paneId) },
+                    )
                 }
             }
         }
+    }
+    pinFor?.let { row ->
+        PinSheet(
+            live = app.settings.liveLockDetail.value,
+            saved = remember { app.settings.savedLockDetail() },
+            nodeId = row.nodeId, node = row.host, pane = row.paneId,
+            agent = hosts.firstOrNull { it.node.id == row.nodeId }?.view?.agentIn(row.paneId)?.displayName ?: row.title,
+            onPin = { level ->
+                // A closed or detached pane is never pinned by an old sheet.
+                if (app.connections.value[row.nodeId]?.view?.value?.agents?.any { it.pane == row.paneId } == true) {
+                    app.settings.chooseLiveLockDetail(level)
+                    app.monitor.pin(row.nodeId, row.paneId)
+                }
+                pinFor = null
+            },
+            onDismiss = { pinFor = null },
+        )
     }
 }
 
@@ -330,10 +361,11 @@ private fun Empty(text: String) {
 }
 
 @Composable
-private fun InboxItem(row: InboxRow, onOpen: () -> Unit) {
+private fun InboxItem(row: InboxRow, pinned: Boolean, onPin: () -> Unit, onOpen: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
     Column(
         Modifier
-            .fillMaxWidth()
+            .weight(1f)
             .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .padding(horizontal = 20.dp, vertical = 10.dp),
@@ -347,6 +379,7 @@ private fun InboxItem(row: InboxRow, onOpen: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            if (pinned) Text(stringResource(R.string.monitor_badge), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             statusLabel(row.status)?.let { label ->
                 Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -359,5 +392,17 @@ private fun InboxItem(row: InboxRow, onOpen: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+        val action = stringResource(if (pinned) R.string.monitor_stop else R.string.monitor_agent)
+        val spoken = stringResource(R.string.monitor_action_for, action, row.title)
+        IconButton(
+            onClick = onPin,
+            modifier = Modifier.size(48.dp).testTag("inbox:pin:${row.nodeId}:${row.paneId}").semantics {
+                contentDescription = spoken
+                selected = pinned
+            },
+        ) {
+            Icon(painterResource(if (pinned) R.drawable.ic_pin_filled else R.drawable.ic_pin_outline), null, tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

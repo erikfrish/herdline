@@ -142,6 +142,7 @@ import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
+import io.github.erikfrish.herdline.ui.session.ompControlMissing
 import io.github.erikfrish.herdline.ui.session.outageTime
 import io.github.erikfrish.herdline.ui.session.rememberOutage
 import kotlinx.coroutines.async
@@ -498,6 +499,8 @@ private fun ChatContent(
     val dialogErrors = remember(dialogTarget) { mutableStateMapOf<String, String>() }
     // Questions this phone answered or declined, shown as they ended; never resent.
     val settledDialogs = remember(dialogTarget) { mutableStateMapOf<String, Pair<ChatDialog, DialogSettled>>() }
+    // The endpoint's last read for an OMP pane: without a usable one, the questionnaire says why (ompControlMissing).
+    var ompProbe by remember(dialogTarget) { mutableStateOf<IngressProbe?>(null) }
     LaunchedEffect(dialogTarget, linkLive) {
         val target = dialogTarget ?: return@LaunchedEffect
         if (!linkLive) return@LaunchedEffect
@@ -523,8 +526,9 @@ private fun ChatContent(
                 }
                 // The live state names each child under the tool call that spawned it; a read
                 // that fails keeps the last one. Only OMP's endpoint has one.
-                if (target.agent == "omp") {
+                if (target.agent.equals("omp", ignoreCase = true)) {
                     withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
+                        ompProbe = probe
                         liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()
                     }
                 }
@@ -832,8 +836,10 @@ private fun ChatContent(
                     val failure = (items.lastOrNull() as? ChatItem.Tool)?.takeIf { it.failed }
                     when {
                         status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") {
-                            val answerReason = controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
-                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem, answerReason) }
+                            // An OMP with no control endpoint: why Chat can't answer, never the raw read failure.
+                            val noControl = ompControlMissing(identity?.agent, ompProbe)
+                            val answerReason = if (noControl) stringResource(R.string.omp_no_control) else controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
+                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem.takeUnless { noControl }, answerReason) }
                         }
                         status == AgentStatus.Working -> item(key = "working") {
                             LiveGap {

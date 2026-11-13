@@ -63,6 +63,7 @@
     <string name="reason_popup_open">Herdr 弹窗已打开：请先关闭</string>
     <string name="reason_agent_blocked">代理在提问：请在终端中回答</string>
     <string name="reason_agent_working">代理正在工作：空闲前无法发送</string>
+    <string name="omp_no_control">没有可用的 OMP 控制端点：图片和问卷回答需要 OMP 控制钩子，目前尚无公开版本提供。此处无法带图片引导，也无法在 Chat 中回答问卷。</string>
     <string name="reason_unsupported_program">发送仅适用于空闲且 Herdline 能读取其输入框的代理；请用“插入（不按 Enter）”，再自己按 Enter</string>
     <string name="reason_not_visible">窗格的输入框不在屏幕上或暂时无法读取。请打开它的标签页，再发送一次。未发送任何内容。</string>
     <string name="reason_scrolled">窗格已向上滚动。请滚动到底部，再发送一次。未发送任何内容。</string>

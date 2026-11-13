@@ -2,7 +2,7 @@
 <!-- TB1: the phone Tabs overview and its pane picker. -->
 <resources>
     <string name="overview_title">Tabs</string>
-    <!-- The header's state line under the host (H1-O1): %1$s the tab count, %2$s the workspace count. -->
+    <!-- Header totals beside the host: %1$s the tab count, %2$s the workspace count. -->
     <string name="overview_counts">%1$s in %2$s</string>
     <plurals name="overview_tabs">
         <item quantity="one">%d tab</item>

@@ -76,6 +76,7 @@
     <string name="promotion_off">Live updates are off.</string>
     <string name="promotion_no_card">No live update now: no pinned agent is working.</string>
     <string name="promotion_stale">Not connected: not shown as live</string>
+    <string name="promotion_finished">Finished: the brief Done card is an ordinary notification, not a live update</string>
     <string name="promotion_unsupported">Android 16 or newer is required; this version shows an ordinary notification instead.</string>
     <string name="promotion_not_allowed">Live Updates are off for Herdline</string>
     <string name="promotion_not_promotable">Ordinary ongoing notification: Android reports it does not qualify as a Live Update.</string>
@@ -94,7 +95,9 @@
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">Mono</string>
     <string name="icon_contrast">Contrast</string>
-    <string name="icon_help">The selected colourway is used on the home screen, in Recents, full-colour notification icons and the app logo. Android app-info screens and the initial system splash use the installed icon. Status icons remain monochrome. Some launchers take a moment and may move a home-screen shortcut.</string>
+    <string name="icon_help">The selected colourway is used on the home screen, in Recents and for the in-app logo. The notification app badge and Android App info show the installed icon instead: Android and the phone maker draw it, and no app can change it. Status icons remain monochrome. Some launchers take a moment and may move a home-screen shortcut.</string>
+    <string name="icon_installed">Notification app badge and App info: %1$s, the installed icon.</string>
+    <string name="icon_installed_unknown">Notification app badge and App info: the installed icon.</string>
 
     <string name="preview_title">Preview</string>
     <string name="preview_description">Preview of the session with the current settings</string>

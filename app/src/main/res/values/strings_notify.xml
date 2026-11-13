@@ -36,6 +36,7 @@
     <string name="monitor_agent">Pin live update</string>
     <string name="monitor_stop">Unpin</string>
     <string name="monitor_badge">Live</string>
+    <string name="monitor_action_for">%1$s: %2$s</string>
     <string name="pin_title">Pin live update</string>
     <string name="pin_level_hidden">Hidden</string>
     <string name="pin_level_hidden_help">The Herdline icon only: no state, time or names</string>

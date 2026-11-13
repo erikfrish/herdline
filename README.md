@@ -7,10 +7,11 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.63](https://github.com/erikfrish/herdline/releases/tag/v0.6.63), experimental prerelease.**
-> Partial emulator QA only; no phone verification or complete all-harness claim.
-> Claude Code Send remains blocked with Herdr 0.9.5. Old unconfirmed deliveries
-> may need one explicit Unlock after upgrading. See the release notes for limits.
+> **Latest public release: [0.6.67](https://github.com/erikfrish/herdline/releases/tag/v0.6.67), experimental prerelease.**
+> Focused automated keyboard and gesture checks passed on emulators.
+> The signed release APK itself and phones were not runtime-tested.
+> Support for every agent harness is not complete; stock OMP remote image/form
+> control and stock Samsung Now Bar placement are not claimed supported.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
@@ -82,8 +83,9 @@ wide characters, colours and the cursor come from Ghostty.
   place. Two compact key rows add Esc, Tab, latching Ctrl and Alt, arrows,
   Enter, Backspace and shell symbols. Terminal has no Chat field; the keyboard
   types directly into the agent, including its autocomplete navigation.
-- Drag or fling to scroll, pinch to change the font size, long-press to select
-  and copy.
+- Drag or fling to scroll. Starting a one-finger vertical scroll hides the
+  soft keyboard; tap the terminal to open it again. Pinch zoom and selection
+  do not dismiss it. Pinch to change the font size, long-press to select and copy.
 - Closing a pane, tab or workspace asks first, because Herdr ends the programs
   in it.
 
@@ -263,6 +265,48 @@ just test       # Rust core tests on the host, then Kotlin unit tests
 
 Gradle runs cargo-ndk before every build. If Zig cannot fetch Ghostty's
 dependencies, prefetch each URL it reports with `zig fetch <url>`.
+
+### Fast changed-feature checks
+
+Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`, `terminal`)
+for the changed area only. The runner executes selected test owners, fails
+on failures or skipped owners, and writes timing plus logs under
+`app/build/reports/fast-check/`. Its check deadline is 120 seconds; a timeout
+is a failure, not a reduced test set. `just test` remains an explicit full
+check, not the default after every change.
+
+For rendered header or pin tests on an assigned emulator:
+
+```sh
+just check-ui header emulator-5558
+just check-ui pin emulator-5558
+just check-ui terminal emulator-5558
+# For an isolated ADB server, pass its exact transport and your own wrapper:
+just check-ui header localfilesystem:/bridge/guest.sock /path/to/owned-adb-wrapper
+```
+
+UI checks incrementally build the current test APKs inside the same deadline,
+then install `io.github.erikfrish.herdline.qa` beside the release app. They never
+uninstall or clear release data and require no SSH connection, provider or
+host-agent fixture. Native libraries must already be built; UI-only checks
+skip rebuilding unchanged Rust. For a cold setup, add `--prepare-ui` to the
+Python runner: preparation is then measured separately. The explicit QA
+variant uses `-Pherdline.testBuildType=qa`; default debug tests stay unchanged.
+
+Measured on the warm QA2 API 37 emulator: `header --ui` passed in 19.0 s
+(8 unit tests plus one real Compose test covering eight width/locale/count
+combinations); `pin --ui` passed in 10.7 s (6 unit tests plus 3 Android
+storage/privacy tests). Both times include incremental APK checks, installation
+and instrumentation. First dependency preparation took 28.5 s separately.
+Pin storage recreation is in-process; this does not claim a cold process or
+live SSH end-to-end check. `terminal --ui` passed on the warm API 36 emulator
+in 25.8 s (13 unit tests plus 8 real IME gesture tests). Its emulator-only
+hardware-keyboard setting is enabled temporarily and restored in `finally`.
+Only these three UI profiles have measured timings.
+
+QA agents inspect only fresh functionality or a changed path after its fix.
+Previously covered behavior runs through the selected automated check;
+another manual regression matrix needs a separate explicit request.
 
 ### Release signing
 

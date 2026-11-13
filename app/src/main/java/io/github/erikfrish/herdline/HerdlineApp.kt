@@ -83,10 +83,6 @@ class HerdlineApp : Application() {
         scope.launch {
             settings.settings.map { it.iconVariant }.distinctUntilChanged().collect { variant ->
                 withContext(Dispatchers.IO) { IconVariants.apply(this@HerdlineApp, variant) }
-                // Re-posts held notes with the new large icon, like the
-                // privacy re-word below. Never ConnectionService.update:
-                // foreground start limits would refuse the call.
-                AgentNotifications.republish(this@HerdlineApp, settings.settings.value.lockDetail)
             }
         }
         // The privacy setting re-words the agent notes even with no service

@@ -112,6 +112,8 @@ import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Viewport
 import io.github.erikfrish.herdline.core.TranscriptRead
 import io.github.erikfrish.herdline.core.transcriptRequest
+import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.data.AttachConsent
 import io.github.erikfrish.herdline.data.ComposerAction
 import io.github.erikfrish.herdline.data.ComposerMenu
@@ -238,6 +240,32 @@ internal suspend fun awaitSentNoticeEnd(
     sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
     sentNoticeLeft(sent, clock())?.let { sleep(it) }
+}
+
+/** Reads the bound send's history until its turn lands or the existing watch ends. Never sends input. */
+internal suspend fun awaitPtyTurn(
+    sent: SentRecord,
+    instance: TranscriptIdentity,
+    read: suspend (Long) -> TranscriptPage?,
+    working: () -> Boolean,
+    clock: () -> Long = System::currentTimeMillis,
+    sleep: suspend (Long) -> Unit = { delay(it) },
+): Boolean {
+    val from = sent.historyFrom ?: return false
+    var cursor = from
+    var until = sent.at + PTY_TURN_WATCH_MS
+    do {
+        val page = read(cursor)
+        if (page != null) {
+            if (page.reset || page.identity != instance || page.end < page.start) return false
+            if (ptyTurnLanded(page, instance, from, sent.text)) return true
+            cursor = maxOf(cursor, page.end)
+        }
+        sleep(PTY_TURN_POLL_MS)
+        val now = clock()
+        until = ptyWatchDeadline(sent, until, working(), now, PTY_TURN_WATCH_MS)
+    } while (now < until)
+    return false
 }
 
 /** Whether the slot shows [sent]'s notice and its Reuse: while its window is [live] and [editor] is empty. */
@@ -1094,24 +1122,20 @@ private fun Editor(
             return@LaunchedEffect
         }
         val via = connection
-        var until = sent.at + PTY_TURN_WATCH_MS
-        do {
-            val page = withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(from))) }.getOrNull()
-            if (page != null && ptyTurnLanded(page, instance, from, sent.text)) {
-                if (draft.sent != sent) return@LaunchedEffect
-                write(if (value.text == sent.text) "" else value.text)
-                // The draft is held since the tap, so the files it holds are the ones sent.
-                save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
-                via.unlock(key.nodeId, key.session, key.pane)
-                delivered()
-                return@LaunchedEffect
-            }
-            // Another session, or a history that started over: this turn can no longer be shown.
-            if (page != null && (page.reset || page.identity != instance)) break
-            delay(PTY_TURN_POLL_MS)
-            val now = System.currentTimeMillis()
-            until = ptyWatchDeadline(sent, until, paneWorking, now, PTY_TURN_WATCH_MS)
-        } while (now < until)
+        val landed = awaitPtyTurn(
+            sent, instance,
+            read = { offset -> withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(offset))) }.getOrNull() },
+            working = { paneWorking },
+        )
+        if (landed) {
+            if (draft.sent != sent) return@LaunchedEffect
+            write(if (value.text == sent.text) "" else value.text)
+            // The draft is held since the tap, so the files it holds are the ones sent.
+            save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
+            via.unlock(key.nodeId, key.session, key.pane)
+            delivered()
+            return@LaunchedEffect
+        }
         inPaneWatched = true
     }
 
@@ -1823,11 +1847,15 @@ private fun Editor(
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
                 // Steer is its own labelled action; Send stays disabled.
                 val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
-                // Where there is no Steer, the reason the card gives for it (§3.5), else the plain one.
-                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null }
+                // Staged images on an OMP pane need a usable control endpoint: that is why there is
+                // no Steer, ahead of any other reason. Else, where there is no Steer, the reason the
+                // card gives for it (§3.5), else the plain one.
+                val noControl = steerAction == null && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
+                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null && !noControl }
                 Notice(
                     noSteer ?: stringResource(
                         when {
+                            noControl -> R.string.omp_no_control
                             steerAction == null -> R.string.reason_agent_working
                             endpointSteer -> R.string.steer_help_endpoint
                             else -> R.string.steer_help

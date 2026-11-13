@@ -102,8 +102,13 @@ fields; `ConnectionService.build` posts them).
   saved until Pin. The sheet preselects the live level chosen before, else
   the notification lock detail the user ever saved (Hidden included), else
   State only, marked "Suggested".
+  Agents also exposes the same pin as a separate 48 dp action on each row,
+  with a visible Live mark. Pin opens the same privacy sheet; Cancel saves
+  nothing. Unpin is immediate. Neither action opens a session or moves its
+  desktop focus, and pins survive navigation and app restarts.
 - **States.** Shown only while a pinned agent is Working (promoted) or just
-  finished. Done is shown once with the run's length, then hidden after 10 s
+  finished. Done is shown once with the run's length as an ordinary,
+  unpromoted card (a past activity is not a Live Update), then hidden after 10 s
   without deleting the pin; the next Working episode is live again. Blocked hands off: one
   attention notification is posted per Blocked episode, on the same slot
   and alert policy as Herdr's own, so the two never alert twice. Idle or
@@ -130,7 +135,7 @@ fields; `ConnectionService.build` posts them).
 ## Promotion reporting
 
 Herdline asks for promotion (`setRequestPromotedOngoing`) only while a pinned
-agent is Working or just finished. The OS, the OEM and the user decide
+agent is Working; a just-finished Done card stays ordinary. The OS, the OEM and the user decide
 whether it is shown as a Live Update or on the Now Bar. Settings ›
 Notifications › "Live Update status" reports, re-read whenever Settings
 resumes:
@@ -140,6 +145,7 @@ resumes:
 | off | live updates setting off |
 | no card | no pinned agent is working or just finished |
 | stale | link down; promotion not requested |
+| finished | the brief Done card; promotion not requested |
 | ordinary, unsupported | Android before 16 (API 36) |
 | ordinary, not allowed | `NotificationManager.canPostPromotedNotifications()` is false |
 | ordinary, not qualifying | the posted card fails `Notification.hasPromotableCharacteristics()` |
@@ -158,9 +164,14 @@ extra, so it is the same request on 36.0; the framework's own
 called.
 See [Android Live Updates](https://developer.android.com/develop/ui/views/notifications/live-update).
 
-"Open Android settings" opens the app's promotion page on Android 16
-(`ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS`) and the app's notification
-settings before that.
+"Open Android settings" is always offered beside the status, so it is the
+route when the permission is off. It opens the app's promotion page on
+Android 16 (`ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS`) and the app's
+notification settings before that. The Live Updates guide names this action
+`ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`; the SDK (android-37 `android.jar`)
+and AOSP `Settings.java` define only
+`ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS`
+(`android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS`).
 
 ## Lock-screen privacy
 
@@ -194,9 +205,13 @@ showing. A new notification while locked still alerts.
 
 ## App icon on notifications
 
-Herdline keeps the required small state icon and Android's system-owned app
-icon. It adds no large logo or custom artwork to attached, lost, agent,
-summary or pinned live notifications. Launcher icon variants are unchanged.
+Herdline keeps the required small state icon (a monochrome mask) and
+Android's system-owned app badge, which is the installed application icon:
+Wood (`IconVariant.Default`, `@mipmap/ic_launcher`), whatever launcher
+variant is selected. No app can change it at runtime. Herdline adds no large
+icon or custom artwork to attached, lost, agent, summary or pinned live
+notifications. The selected variant reaches the launcher, Recents and the
+in-app logo only, and the icon picker says so.
 
 ## Configurable live notification content
 

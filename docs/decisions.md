@@ -181,6 +181,26 @@ button opens the Tabs sheet there too.
 Height and width come from the session window, not the device, so split
 screen follows the same rules.
 
+In both rows the place button never shrinks below one 48 dp target
+(SESSION-HDR-308). One width rule, the same in Chat and Terminal and in any
+language, measures the Chat \| Terminal words and the need-you chip (its
+whole count, at least 48 dp) in the current font: when they would leave the
+place button less than 96 dp (in the merged row, less than 220 dp for it plus
+96 dp for the tab row), Chat \| Terminal shows a chat glyph and a terminal
+glyph instead of its words, and the header's gaps close from 4 dp to 1 dp.
+Without the chip that glyph row is always one row. With the chip, in the
+phone header (SESSION-HDR-WRAP), when even the glyph row would leave the
+place button less than 96 dp, the chip, Chat \| Terminal and ⋮ move to a
+second 48 dp row, at its end, under ← and the place button: the place keeps
+its tab name and the chip its whole count. That row shows the words when
+they fit there, else the glyphs. At font 2.0 with a one-digit chip (about
+53 dp) one row would leave the place 47 dp at 308 dp and 59 dp at 320 dp, so
+both wrap.
+Each glyph segment is at least 48 dp wide, is still a selectable tab and is
+read by TalkBack as Chat or Terminal with its selected or unavailable state.
+The need-you chip is at least 48 dp and shows at most 99+, and TalkBack says
+the exact count. ⋮ and Chat \| Terminal never give way.
+
 While the keyboard is up in such a window, it leaves about 138 dp. The
 status bar, the merged row and the composer would fill that, and no content
 row would show. So while the keyboard is up there:
@@ -446,12 +466,20 @@ Switcher:
   spawning call) folds into the rows between file reads, and a closed
   session loses it — nothing fabricates it. The live state needs OMP's
   public `pi.events` API; without it the persisted fallback above still
-  draws children from `subagents[]` snapshots and `subagent_ends`. The
-  extension is a repository asset of two files that must both be copied
-  into the same folder, `host/omp/herdline-ingress.ts` and
-  `host/omp/live-subagents.ts`, followed by the user restarting or
-  reloading their own OMP by hand: installing it is the user's own choice,
-  never an app-side auto-setup.
+  draws children from `subagents[]` snapshots and `subagent_ends`.
+  **Upstream prerequisite.** The extension's control endpoint
+  (`host/omp/herdline-ingress.ts`, with `host/omp/live-subagents.ts`) needs
+  OMP control hooks that no public OMP release offers (checked up to
+  v18.20.0): `ctx.getQueuedMessages` with request-id entries,
+  `ctx.withdrawQueuedMessage`, `ctx.ui.hasOpenDialog`,
+  `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog` and `ctx.isCollabSession`
+  (asked per request: without it each request is refused as
+  `collab_state_unknown`). On stock
+  OMP the extension reports Unsupported with the missing hook names, and
+  Chat refuses through it, never typing into the pane instead. Image Steer, Chat
+  questionnaire answers and acknowledged Steer stay unavailable until
+  upstream OMP offers these hooks; without an endpoint, text Send and Steer
+  keep the pane route with its own checks, Check and Unlock.
   A task tool never claims Done while one of its children runs, and such a
   run keeps its steps visible instead of folding away.
 - **Reading width.** Prose (paragraphs, headings, lists, quotes, rules and
@@ -477,6 +505,10 @@ Switcher:
   three spaces per tab and ECMAScript edge trimming. The recorded entry is
   compared whole, unchanged and untruncated; other programs remain exact.
   A missing match keeps the hold. Nothing is resent or unlocked on a timer.
+  The watch advances a separate read cursor to each page's end without
+  changing that pre-send boundary. Native readers may overlap their previous
+  row; their reset flag marks rewrites or gaps. A reset, reversed range or
+  changed instance ends the watch unconfirmed; the existing deadline applies.
   OMP steers use the same comparison. Runtime-dependent rewrites (emoticon
   expansion, extensions or prompt templates) are not guessed: if they change
   the stored text, confirmation remains held rather than accepting another
@@ -598,8 +630,9 @@ User, assistant and tool-result images are read through the existing
 
 Chat's Send goes into OMP through the `herdline-ingress` extension
 (`host/omp/herdline-ingress.ts`, a repository asset: installed only on the
-user's own decision), using only OMP's public extension API (Slices O and
-O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
+user's own decision), using extension hooks that are not present in the
+checked public OMP releases (see the upstream prerequisite above). Installing
+the extension alone does not add those hooks to OMP.
 
 - **Route.** With a Live endpoint for exactly the draft's instance, Send and
   steer go through it and the PTY box checks do not gate them; `auto`

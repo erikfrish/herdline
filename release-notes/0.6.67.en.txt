@@ -1,0 +1,11 @@
+Herdline 0.6.67 (Experimental)
+
+- Terminal: starting a one-finger vertical scroll hides the keyboard. A horizontal drag, pinch, two-finger gesture or text selection does not dismiss it; a tap still opens it.
+- Tabs: the compact header keeps the host and counts readable at narrow widths and large fonts. Session controls wrap when needed instead of replacing the tab name and attention count with ellipses.
+- Agents: separate Pin/Unpin controls, a privacy sheet and persistent live-update pins.
+- Notifications: the installed badge is Wood; launcher colour variants remain selectable. Only Working is offered for Android Live Update promotion; Done stays ordinary for about 10 seconds.
+- Chat explains why image steering and questionnaire answers are unavailable on stock OMP. Receipt pagination fixes and fast, area-selected automated checks are included.
+
+Verification: 13 unit tests and 8 real-keyboard Android tests passed; the complete warm terminal check took 25.8 seconds. A second tester passed two gesture-edge tests on a separate emulator. Header, pin, icon and promotion checks passed with documented limits on earlier unchanged paths. No phone or Samsung Now Bar verification. The signed release APK itself was not run on a device.
+
+Known limits: experimental, not full support for every harness. Stock OMP lacks the public control APIs needed for image steering and remote questionnaires. Claude/Gemini Send remains restricted by upstream caret provenance. Attachment deliveries can remain unconfirmed; check the terminal before re-sending. Notification text can be stale after a Done cycle or language change; Chat answer-button accessibility bounds can extend into the header. No automatic-reconnect guarantee.

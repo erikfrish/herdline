@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ButtonDefaults
@@ -72,8 +73,8 @@ internal fun newTabButtonWidth(): Dp {
 }
 
 /**
- * The Tabs sheet's labelled New tab, on its own row under the one phone
- * header ([TabsHeader]) and in the sidebar's host line. A tap only opens the existing
+ * The Tabs sheet's New tab action, inline in the compact phone header
+ * ([TabsHeader]) and in the sidebar's host line. A tap only opens the existing
  * New tab dialog through [newTab] (Prompt.NewTab): nothing reaches Herdr
  * before its Create, and the scope, search, order and drafts stay as they
  * are. When the workspace is ambiguous it first lists the workspaces, none
@@ -82,7 +83,11 @@ internal fun newTabButtonWidth(): Dp {
  * offers New workspace instead.
  */
 @Composable
-internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone: Boolean, newTab: (Workspace) -> Unit, menuWidth: Dp, tag: String) {
+internal fun NewTabButton(
+    view: ShellView?, live: Boolean, chosen: String?, gone: Boolean,
+    newTab: (Workspace) -> Unit, menuWidth: Dp, tag: String,
+    compact: Boolean = false, showLabel: Boolean = true,
+) {
     val workspaces = view?.workspaces.orEmpty()
     if (live && workspaces.isEmpty()) return
     val target = if (live) newTabTarget(workspaces, chosen, gone) else NewTabTarget.None
@@ -98,23 +103,30 @@ internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone
     // Disabled dims it like the label: inactive controls are exempt.
     val outline = MaterialTheme.colorScheme.outline.let { if (enabled) it else it.copy(alpha = 0.38f) }
     Box {
-        FilledTonalButton(
-            onClick = {
-                when (target) {
-                    is NewTabTarget.In -> newTab(target.workspace)
-                    is NewTabTarget.Pick -> picking = true
-                    NewTabTarget.None -> Unit
-                }
-            },
-            enabled = enabled,
-            border = BorderStroke(1.dp, outline),
-            contentPadding = PaddingValues(horizontal = NEW_TAB_PADDING),
-            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = spoken }.testTag(tag),
-        ) {
-            Icon(Icons.Default.Add, null, Modifier.size(ButtonDefaults.IconSize))
-            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-            // Never ellipsized: the phone header gives it its own row, and the sidebar wraps it to one first.
-            Text(stringResource(R.string.new_tab), maxLines = 1, softWrap = false)
+        val open = {
+            when (target) {
+                is NewTabTarget.In -> newTab(target.workspace)
+                is NewTabTarget.Pick -> picking = true
+                NewTabTarget.None -> Unit
+            }
+        }
+        val button = Modifier.heightIn(min = 48.dp)
+            .then(if (showLabel) Modifier else Modifier.width(48.dp))
+            .semantics { contentDescription = spoken }.testTag(tag)
+        val content: @Composable () -> Unit = {
+            Icon(Icons.Default.Add, null, Modifier.size(if (compact) 18.dp else ButtonDefaults.IconSize))
+            if (showLabel) {
+                Spacer(Modifier.size(if (compact) 4.dp else ButtonDefaults.IconSpacing))
+                Text(stringResource(R.string.new_tab), style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+            }
+        }
+        if (compact) {
+            TextButton(onClick = open, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp), modifier = button) { content() }
+        } else {
+            FilledTonalButton(
+                onClick = open, enabled = enabled, border = BorderStroke(1.dp, outline),
+                contentPadding = PaddingValues(horizontal = NEW_TAB_PADDING), modifier = button,
+            ) { content() }
         }
         if (target is NewTabTarget.Pick && view != null) {
             GlassMenu(expanded = picking, onDismissRequest = { picking = false }, modifier = Modifier.width(menuWidth)) {

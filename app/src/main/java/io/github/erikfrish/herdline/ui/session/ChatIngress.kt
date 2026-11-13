@@ -129,6 +129,16 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
 }
 
 /**
+ * Whether an OMP pane's endpoint-only controls (an image Steer, a Chat
+ * questionnaire answer) are unavailable because [probe] read no usable
+ * control endpoint: none published, or one on an OMP without the control
+ * hooks no public release offers yet (docs/decisions.md). Where it holds,
+ * the missing control says so rather than vanish without a reason.
+ */
+internal fun ompControlMissing(agent: String?, probe: IngressProbe?): Boolean =
+    agent.equals("omp", ignoreCase = true) && (probe == IngressProbe.Absent || probe is IngressProbe.Unsupported)
+
+/**
  * Whether the composer's notice of [cause] says what [panel] says: one unusable endpoint, named
  * by a Send refused for it or by Send's precheck. A server the session does not run, or one that
  * can't be told apart, is that same cause only by name; any other failed check is the general

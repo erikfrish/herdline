@@ -576,8 +576,12 @@ class TerminalView(context: Context) : View(context) {
         return Triple(pane, column - pane.rect.x, row - pane.rect.y)
     }
 
+    private var scrollDirectionDecided = false
+    private var multiTouchGesture = false
+
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean {
+            scrollDirectionDecided = false
             scroller.forceFinished(true)
             scrollRemainder = 0f
             scrollPin = cellAt(e.x, e.y)?.let { target(it[0], it[1]) }?.let { (pane, column, row) ->
@@ -609,6 +613,10 @@ class TerminalView(context: Context) : View(context) {
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
             if (selection != null || e2.pointerCount > 1) return false
+            if (!scrollDirectionDecided) {
+                scrollDirectionDecided = true
+                if (!multiTouchGesture && scrollPin != null && abs(distanceY) > abs(distanceX)) hideKeyboard()
+            }
             scrollBy(distanceY)
             return true
         }
@@ -679,6 +687,8 @@ class TerminalView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) multiTouchGesture = false
+        else if (event.pointerCount > 1) multiTouchGesture = true
         scaler.onTouchEvent(event)
         if (selecting) {
             when (event.actionMasked) {

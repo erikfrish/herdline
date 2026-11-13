@@ -32,6 +32,7 @@
     <string name="monitor_agent">固定实时更新</string>
     <string name="monitor_stop">取消固定</string>
     <string name="monitor_badge">实时</string>
+    <string name="monitor_action_for">%1$s：%2$s</string>
     <string name="pin_title">固定实时更新</string>
     <string name="pin_level_hidden">隐藏</string>
     <string name="pin_level_hidden_help">仅显示 Herdline 图标：没有状态、时间或名称</string>

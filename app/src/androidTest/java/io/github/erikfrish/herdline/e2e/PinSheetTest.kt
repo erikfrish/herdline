@@ -45,4 +45,27 @@ class PinSheetTest {
         compose.waitForIdle()
         assertEquals(listOf(LockDetail.Full), pinned)
     }
+
+    @Test
+    fun cancelAfterChangingTheLevelPinsNothing() {
+        val pinned = mutableListOf<LockDetail>()
+        var dismissed = 0
+        compose.setContent {
+            PinSheet(
+                live = null,
+                saved = LockDetail.Hidden,
+                nodeId = "n",
+                node = "lab",
+                pane = "w1:p1",
+                agent = "omp",
+                onPin = { pinned += it },
+                onDismiss = { dismissed++ },
+            )
+        }
+        compose.onNodeWithTag("pin:level:Full").performClick()
+        compose.onNodeWithTag("pin:cancel").performClick()
+        compose.waitForIdle()
+        assertEquals(1, dismissed)
+        assertTrue(pinned.isEmpty())
+    }
 }

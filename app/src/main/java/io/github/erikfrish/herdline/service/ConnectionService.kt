@@ -22,7 +22,6 @@ import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AppLanguages
-import io.github.erikfrish.herdline.data.IconVariant
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.data.Settings
 import io.github.erikfrish.herdline.ui.MainActivity
@@ -66,7 +65,6 @@ class ConnectionService : Service() {
         val lock: LockDetail,
         val live: LockDetail,
         val promote: Boolean,
-        val variant: IconVariant = IconVariant.Default,
         val fields: List<String> = io.github.erikfrish.herdline.data.NotificationFields.DEFAULT,
         val agents: Int = 0,
         val needYou: Int = 0,
@@ -79,7 +77,6 @@ class ConnectionService : Service() {
 
     /** The lock-screen privacy last applied to the lost notes, to notice setting changes. */
     private var appliedLock: LockDetail? = null
-    private var appliedIcon: IconVariant? = null
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(AppLanguages.wrap(base))
 
@@ -112,7 +109,7 @@ class ConnectionService : Service() {
         }
         val live = liveLevel(app.settings.liveLockDetail.value, settings.lockDetail)
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
-            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, variant = settings.iconVariant, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }))
+            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }))
         shown = state
         ServiceCompat.startForeground(
             this,
@@ -212,9 +209,8 @@ class ConnectionService : Service() {
                 // A privacy-setting change re-posts the lost note: it is not re-posted
                 // on the lock edge, so a note posted under Names would keep the host
                 // under Hidden (P8). HerdlineApp re-posts the agent notes.
-                if (appliedLock != settings.lockDetail || appliedIcon != settings.iconVariant) {
+                if (appliedLock != settings.lockDetail) {
                     appliedLock = settings.lockDetail
-                    appliedIcon = settings.iconVariant
                     val active = context.getSystemService(NotificationManager::class.java).activeNotifications
                     lost.values.toList().forEach { connection ->
                         if (active.any { it.id == LOST_ID && it.tag == lostTag(connection) }) {
@@ -269,18 +265,13 @@ class ConnectionService : Service() {
                     lock = settings.lockDetail,
                     live = level,
                     promote = settings.liveActivity,
-                    variant = settings.iconVariant,
                     fields = settings.notificationFields,
                     agents = snapshots.sumOf { it.view?.agents?.size ?: 0 },
                     needYou = snapshots.sumOf { snapshot -> snapshot.view?.agents?.count { it.status == AgentStatus.Blocked } ?: 0 },
                     connection = attachedState(list.map { it.second }),
                     minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
                 )
-                AgentNotifications.card = when (live?.let(::liveState)) {
-                    null -> Promotion.NoCard
-                    LiveState.Disconnected -> Promotion.Stale
-                    else -> Promotion.Requested
-                }
+                AgentNotifications.card = cardPromotion(live?.let(::liveState))
                 if (next != shown && next.count > 0) {
                     shown = next
                     if (AgentNotifications.canNotify(context)) NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, build(next))

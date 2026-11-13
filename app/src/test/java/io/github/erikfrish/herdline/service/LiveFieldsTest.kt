@@ -119,6 +119,9 @@ class LiveFieldsTest {
         assertEquals("p2", f.top.pane)
         assertTrue(f.promote)
         val done = fields(LiveCard(listOf(row(AgentStatus.Done)), null), LockDetail.Full)
+        // A finished run keeps its brief card, but a past activity is never a Live Update.
+        assertEquals(LiveState.Done, done.state)
+        assertFalse(done.promote)
         assertNull(done.main.since)
         assertTrue(words(done.main).contains("4 min total"))
         assertTrue(done.unpin)
@@ -138,5 +141,14 @@ class LiveFieldsTest {
         assertEquals(LockDetail.Hidden, liveLevel(null, LockDetail.Hidden))
         assertEquals(LockDetail.Full, liveLevel(null, LockDetail.Full))
         assertEquals(LockDetail.StateOnly, liveLevel(LockDetail.StateOnly, LockDetail.Full))
+    }
+
+    // The service's own report, before Android's three facts (permission, eligibility, flag).
+    @Test
+    fun reportedCardStateNeverCallsAFinishedCardRequested() {
+        assertEquals(Promotion.NoCard, cardPromotion(null))
+        assertEquals(Promotion.Stale, cardPromotion(LiveState.Disconnected))
+        assertEquals(Promotion.Finished, cardPromotion(LiveState.Done))
+        assertEquals(Promotion.Requested, cardPromotion(LiveState.Working))
     }
 }

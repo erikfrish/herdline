@@ -69,6 +69,7 @@
     <string name="promotion_off">实时更新已关闭。</string>
     <string name="promotion_no_card">现在没有实时更新：没有已固定的代理在工作。</string>
     <string name="promotion_stale">未连接：不显示为实时</string>
+    <string name="promotion_finished">已完成：简短的完成卡片是普通通知，不是实时更新</string>
     <string name="promotion_unsupported">需要 Android 16 或更新版本；此版本改为显示普通通知。</string>
     <string name="promotion_not_allowed">Herdline 的实时更新已关闭</string>
     <string name="promotion_not_promotable">普通持续通知：Android 报告它不符合实时更新条件。</string>
@@ -86,7 +87,9 @@
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">单色</string>
     <string name="icon_contrast">高对比度</string>
-    <string name="icon_help">所选配色用于主屏幕、最近任务、全彩通知图标和应用标志。Android 应用信息页面和系统初始启动画面使用已安装的图标。状态图标保持单色。部分启动器需要一点时间，并可能移动主屏幕快捷方式。</string>
+    <string name="icon_help">所选配色用于主屏幕、最近任务和应用内标志。通知上的应用徽标和 Android 应用信息改为显示已安装的图标：由 Android 和手机厂商绘制，任何应用都无法更改。状态图标保持单色。部分启动器需要一点时间，并可能移动主屏幕快捷方式。</string>
+    <string name="icon_installed">通知应用徽标和应用信息：%1$s，即已安装的图标。</string>
+    <string name="icon_installed_unknown">通知应用徽标和应用信息：已安装的图标。</string>
     <string name="preview_title">预览</string>
     <string name="preview_description">以当前设置预览会话</string>
     <string name="preview_header">work · qa-host</string>

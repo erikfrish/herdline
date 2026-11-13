@@ -10,6 +10,14 @@ test:
     cargo test --workspace --locked
     ./gradlew testDebugUnitTest
 
+# Run only the changed area's automated checks; no full regression by default.
+check area:
+    python3 scripts/fast-check.py {{area}}
+
+# Isolated .qa UI tests on an explicitly assigned QA emulator, never the release app.
+check-ui area serial adb="adb":
+    python3 scripts/fast-check.py {{area}} --ui --serial {{serial}} --adb {{adb}}
+
 format:
     cargo fmt --all
 

@@ -47,7 +47,11 @@ internal data class LiveFace(
 
 internal data class LiveFields(
     val state: LiveState,
-    /** Ask Android to promote it: only while a task is actually running or just finished. */
+    /**
+     * Ask Android to promote it: only while a task is actually running. A
+     * finished one is a past activity, not a Live Update; its brief card stays
+     * ordinary, and a lost link is old news.
+     */
     val promote: Boolean,
     /** A durable pin may be removed explicitly in every live state. */
     val unpin: Boolean,
@@ -67,6 +71,14 @@ internal fun liveState(card: LiveCard): LiveState? = when {
     card.rows.any { it.status == AgentStatus.Working } -> LiveState.Working
     card.rows.any { it.status == AgentStatus.Done } -> LiveState.Done
     else -> null
+}
+
+/** What the service reports for a live card in [state] (null: no card) before Android has a say. */
+internal fun cardPromotion(state: LiveState?): Promotion = when (state) {
+    null -> Promotion.NoCard
+    LiveState.Disconnected -> Promotion.Stale
+    LiveState.Done -> Promotion.Finished
+    LiveState.Working -> Promotion.Requested
 }
 
 /** Hides finished episodes without deleting the user's durable monitoring pins. */
@@ -106,8 +118,7 @@ internal fun liveFields(t: LiveTexts, card: LiveCard?, level: LockDetail, locked
     val permitted = face(t, card, state, top, level, now, fields, time)
     return LiveFields(
         state = state,
-        // Link lost: demoted at once; it is old news, not a live task.
-        promote = state != LiveState.Disconnected,
+        promote = state == LiveState.Working,
         unpin = true,
         main = permitted,
         public = permitted,

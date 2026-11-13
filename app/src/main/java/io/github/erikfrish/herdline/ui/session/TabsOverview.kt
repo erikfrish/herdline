@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -54,8 +55,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip as MaterialFilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,6 +96,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -225,17 +225,16 @@ fun TabsOverview(
             Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
                 SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = tabsSearchMinHeight())
             }
-            if (view != null) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    ScopeSelector(view, groups, chosen, scoped.gone, onScope)
-                }
-            }
-            if (filtersShown) {
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                val menuWidth = maxWidth
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                        .horizontalScroll(rememberScrollState()).selectableGroup().testTag("overview:filters"),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .selectableGroup().testTag("overview:filters"),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope, menuWidth)
+                    if (filtersShown) {
                     OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null, "all") { onFilter(SwitcherFilter.All) }
                     OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked, "needs_you") {
                         onFilter(SwitcherFilter.NeedsYou)
@@ -245,6 +244,7 @@ fun TabsOverview(
                     }
                     OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null, "ready") {
                         onFilter(SwitcherFilter.Ready)
+                    }
                     }
                 }
             }
@@ -726,26 +726,23 @@ class RailsScroll private constructor(
  * one only filters. A [gone] choice reads as a closed workspace, not All.
  */
 @Composable
-internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen: String?, gone: Boolean, onScope: (String?) -> Unit) {
+internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen: String?, gone: Boolean, onScope: (String?) -> Unit, dropdownWidth: Dp = Dp.Unspecified) {
     var open by remember { mutableStateOf(false) }
     val suffixes = remember(view.workspaces) { workspaceSuffixes(view.workspaces) }
     val picked = groups.firstOrNull { it.workspace.id == chosen }?.workspace
     val name = picked?.let { workspaceName(it, suffixes[it.id]) } ?: stringResource(if (gone) R.string.scope_gone else R.string.scope_all)
     val spoken = stringResource(R.string.scope_button, name)
     BoxWithConstraints {
-        val menuWidth = maxWidth
-        MaterialFilterChip(
-            selected = picked != null || gone,
+        val menuWidth = if (dropdownWidth != Dp.Unspecified) dropdownWidth else maxWidth
+        TextButton(
             onClick = { open = true },
-            label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = if (picked != null || gone) {
-                { Icon(Icons.Filled.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
-            } else {
-                null
-            },
-            trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(FilterChipDefaults.IconSize)) },
-            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = spoken }.testTag("overview:scope"),
-        )
+            modifier = Modifier.heightIn(min = 48.dp).widthIn(max = if (dropdownWidth != Dp.Unspecified) menuWidth.coerceAtMost(180.dp) else menuWidth)
+                .semantics { contentDescription = spoken; selected = picked != null || gone }.testTag("overview:scope"),
+        ) {
+            if (picked != null || gone) Icon(Icons.Filled.Check, null, Modifier.size(16.dp))
+            Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp))
+        }
         GlassMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.width(menuWidth)) {
             ScopeItem(
                 name = stringResource(R.string.scope_all),

@@ -71,6 +71,7 @@
     <string name="reason_popup_open">A Herdr popup is open: close it first</string>
     <string name="reason_agent_blocked">The agent is asking something: answer in the terminal</string>
     <string name="reason_agent_working">The agent is working: Send is off until it is idle</string>
+    <string name="omp_no_control">No usable OMP control endpoint is available: images and questionnaire answers need OMP control hooks that no public release has yet. Steer with images and answering in Chat are unavailable here.</string>
     <string name="reason_unsupported_program">Send is only for an agent at rest whose input box Herdline reads; use Insert without Enter, then Enter yourself</string>
     <string name="reason_not_visible">The pane\'s input box isn\'t on screen or can\'t be read yet. Open its tab, then send again. Nothing sent.</string>
     <string name="reason_scrolled">The pane is scrolled back. Scroll it to the bottom, then send again. Nothing sent.</string>
