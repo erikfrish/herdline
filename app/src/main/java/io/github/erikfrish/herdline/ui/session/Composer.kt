@@ -1847,11 +1847,15 @@ private fun Editor(
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
                 // Steer is its own labelled action; Send stays disabled.
                 val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
-                // Where there is no Steer, the reason the card gives for it (§3.5), else the plain one.
-                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null }
+                // Staged images on an OMP pane need a usable control endpoint: that is why there is
+                // no Steer, ahead of any other reason. Else, where there is no Steer, the reason the
+                // card gives for it (§3.5), else the plain one.
+                val noControl = steerAction == null && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
+                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null && !noControl }
                 Notice(
                     noSteer ?: stringResource(
                         when {
+                            noControl -> R.string.omp_no_control
                             steerAction == null -> R.string.reason_agent_working
                             endpointSteer -> R.string.steer_help_endpoint
                             else -> R.string.steer_help

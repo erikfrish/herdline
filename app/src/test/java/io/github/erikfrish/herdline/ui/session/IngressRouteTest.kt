@@ -192,6 +192,17 @@ class IngressRouteTest {
     }
 
     @Test
+    fun anOmpPaneWithoutAUsableControlEndpointSaysSoAndNoOtherPaneOrReadDoes() {
+        assertTrue(ompControlMissing("omp", IngressProbe.Absent))
+        assertTrue(ompControlMissing("OMP", IngressProbe.Unsupported(listOf("getOpenDialogs"))))
+        // No read yet, a live endpoint, or a broken one each say something else (or nothing yet).
+        assertFalse(ompControlMissing("omp", null))
+        assertFalse(ompControlMissing("omp", IngressProbe.Live(IngressState(idle = false, queued = emptyList()))))
+        assertFalse(ompControlMissing("omp", IngressProbe.Unusable("stale")))
+        assertFalse(ompControlMissing("codex", IngressProbe.Absent))
+    }
+
+    @Test
     fun theQueuePanelSaysUnsupportedApartFromUnusableAndHidesWhenNothingWaits() {
         assertEquals(QueuePanel.Hidden, queuePanel(null))
         assertEquals(QueuePanel.Hidden, queuePanel(IngressProbe.Absent))
