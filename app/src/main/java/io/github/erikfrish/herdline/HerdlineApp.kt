@@ -3,6 +3,10 @@ package io.github.erikfrish.herdline
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.Build
+import android.os.LocaleList
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.HerdrSetup
 import io.github.erikfrish.herdline.core.Native
@@ -28,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -70,6 +75,27 @@ class HerdlineApp : Application() {
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(AppLanguages.wrap(base))
 
+    /** The locales the channels and agent notes were last worded for. */
+    private var locales: LocaleList? = null
+
+    /**
+     * A system language change, and from Android 13 the per-app language,
+     * re-words the channel names and every shown agent note with its group
+     * summary, service or not; ConnectionService re-words its own live and
+     * lost cards. Other configuration changes re-post nothing.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (newConfig.locales == locales) return
+        locales = newConfig.locales
+        relocalize()
+    }
+
+    private fun relocalize() {
+        AgentNotifications.createChannels(this)
+        AgentNotifications.republish(this, settings.settings.value.lockDetail)
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -93,6 +119,11 @@ class HerdlineApp : Application() {
         }
         AgentNotifications.createChannels(this)
         AgentNotifications.dropOrphans(this)
+        // Below Android 13 the wrapped resources keep the stored language, so
+        // the configuration's own locales are the system's.
+        locales = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) resources else Resources.getSystem()).configuration.locales
+        // Below Android 13 an in-app language change reaches no configuration callback.
+        scope.launch { AppLanguages.changes.drop(1).collect { relocalize() } }
         scope.launch(Dispatchers.IO) { keychain.device(getString(R.string.device_key_name)) }
     }
 

@@ -15,7 +15,9 @@
 //! runtime whose history this core cannot read for a stop is answered as
 //! unconfirmed, never as stopped.
 
-use crate::composer::{Editor, Registry, Surface, claude_blocker, claude_editor, omp_editor, pane_rows, pi_editor};
+use crate::composer::{
+    Editor, Registry, Surface, claude_blocker, claude_editor, omp_editor, pane_rows, pi_editor,
+};
 use crate::ssh::Exec;
 use crate::transcript::Entry;
 use herdr_client::{HERDR_CANDIDATES, protocol::AgentStatus, shell_quote};
@@ -112,9 +114,12 @@ fn rule(agent: &str) -> Option<Rule> {
 fn claude_hint(row: &str) -> bool {
     let row = row.trim_start();
     (row.starts_with('⏸') || row.starts_with('⏵'))
-        && row
-            .match_indices("esc to interrupt")
-            .any(|(at, hint)| row[at + hint.len()..].chars().next().is_none_or(|c| c.is_whitespace() || c == '·'))
+        && row.match_indices("esc to interrupt").any(|(at, hint)| {
+            row[at + hint.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| c.is_whitespace() || c == '·')
+        })
 }
 
 fn codex_hint(row: &str) -> bool {
@@ -127,9 +132,11 @@ fn codex_hint(row: &str) -> bool {
     };
     let timer = &row[open + 1..end];
     timer.ends_with('s')
-        && timer
-            .split(' ')
-            .all(|part| part.len() > 1 && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit()) && part.ends_with(['h', 'm', 's']))
+        && timer.split(' ').all(|part| {
+            part.len() > 1
+                && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit())
+                && part.ends_with(['h', 'm', 's'])
+        })
 }
 
 /// Gemini's empty input row: its prompt and the default placeholder, which
@@ -144,7 +151,11 @@ fn gemini_stoppable(rows: &[String]) -> bool {
     // whenever it holds a message (interactiveCli-ZJ2ZELJM.js:23893-23900),
     // is sent as the next turn as soon as the cancel leaves it idle
     // (:32131-32136): that Esc would start a turn, not stop one.
-    if rows.iter().any(|row| row.contains(" to unfocus)") || row.contains(" to focus)") || row.trim() == "Queued (press ↑ to edit):") {
+    if rows.iter().any(|row| {
+        row.contains(" to unfocus)")
+            || row.contains(" to focus)")
+            || row.trim() == "Queued (press ↑ to edit):"
+    }) {
         return false;
     }
     let border = |row: &str, stroke: char| {
@@ -171,9 +182,11 @@ fn gemini_hint(row: &str) -> bool {
         rest.find(')').is_some_and(|end| {
             let timer = &rest[..end];
             !timer.is_empty()
-                && timer
-                    .split(' ')
-                    .all(|part| part.len() > 1 && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit()) && part.ends_with(['h', 'm', 's']))
+                && timer.split(' ').all(|part| {
+                    part.len() > 1
+                        && part[..part.len() - 1].bytes().all(|b| b.is_ascii_digit())
+                        && part.ends_with(['h', 'm', 's'])
+                })
         })
     })
 }
@@ -197,12 +210,23 @@ pub fn decide(agent: &str, status: Option<AgentStatus>, rows: &[String]) -> Resu
 /// shared view (the tab the desktop shows); for a pane not on it (Chat reads
 /// a pane apart from the desktop's tab), `read`, its own visible screen from
 /// [`read_screen`]. Neither is `NotVisible`, never pressed blind.
-pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str, agent: &str, read: Option<&[String]>) -> Result<Key, Refusal> {
+pub fn admit(
+    registry: &Registry,
+    surface: &Surface<'_>,
+    boot: &str,
+    pane: &str,
+    agent: &str,
+    read: Option<&[String]>,
+) -> Result<Key, Refusal> {
     if registry.boot.as_deref() != Some(boot) {
         return Err(Refusal::BootChanged);
     }
     let facts = registry.panes.get(pane).ok_or(Refusal::PaneMissing)?;
-    if !facts.agent.as_deref().is_some_and(|now| now.eq_ignore_ascii_case(agent)) {
+    if !facts
+        .agent
+        .as_deref()
+        .is_some_and(|now| now.eq_ignore_ascii_case(agent))
+    {
         return Err(Refusal::AgentChanged);
     }
     if surface.popup_open {
@@ -210,7 +234,11 @@ pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str,
     }
     let shown = surface.frame.and_then(|frame| pane_rows(frame, pane));
     let rows = shown.as_deref().or(read).ok_or(Refusal::NotVisible)?;
-    if surface.scroll.and_then(|scroll| scroll.get(pane)).is_some_and(|scroll| scroll.scrolled) {
+    if surface
+        .scroll
+        .and_then(|scroll| scroll.get(pane))
+        .is_some_and(|scroll| scroll.scrolled)
+    {
         return Err(Refusal::Scrolled);
     }
     decide(agent, facts.status, rows)
@@ -218,7 +246,9 @@ pub fn admit(registry: &Registry, surface: &Surface<'_>, boot: &str, pane: &str,
 
 /// Whether `pane` is drawn on Herdr's shared surface the phone holds.
 pub fn on_surface(surface: &Surface<'_>, pane: &str) -> bool {
-    surface.frame.is_some_and(|frame| frame.panes.iter().any(|area| area.id == pane))
+    surface
+        .frame
+        .is_some_and(|frame| frame.panes.iter().any(|area| area.id == pane))
 }
 
 /// Longest screen a read takes: a phone-sized or desktop pane is far less.
@@ -241,7 +271,11 @@ exec "$herdr" --session {session} pane read {pane} --source visible --format tex
         pane = shell_quote(pane),
     );
     let output = exec
-        .run(format!("/bin/sh -c {}", shell_quote(&script)), SCREEN_WAIT, SCREEN_ROOM + 1)
+        .run(
+            format!("/bin/sh -c {}", shell_quote(&script)),
+            SCREEN_WAIT,
+            SCREEN_ROOM + 1,
+        )
         .map_err(|error| {
             tracing::warn!(%error, "pane screen not read for stop");
             Refusal::ScreenUnread
@@ -284,7 +318,11 @@ exec "$herdr" --session {session} pane send-keys {pane} esc </dev/null"#,
 /// Press `key` once in `pane` off the surface; see [`press_script`].
 pub fn press(exec: &Exec, session: &str, pane: &str, key: Key) -> Press {
     let script = press_script(session, pane, key);
-    match exec.run(format!("/bin/sh -c {}", shell_quote(&script)), SCREEN_WAIT, 4096) {
+    match exec.run(
+        format!("/bin/sh -c {}", shell_quote(&script)),
+        SCREEN_WAIT,
+        4096,
+    ) {
         Ok(output) => {
             let pressed = press_outcome(output.exit_status);
             // The phone's own record of the send-keys answer (QA saw no Herdr log line for a press that worked).
@@ -320,7 +358,11 @@ pub fn screen_rows(text: &[u8]) -> Option<Vec<String>> {
     }
     let text = std::str::from_utf8(text).ok()?;
     let text = text.strip_suffix('\n').unwrap_or(text);
-    Some(text.split('\n').map(|row| row.trim_end().to_owned()).collect())
+    Some(
+        text.split('\n')
+            .map(|row| row.trim_end().to_owned())
+            .collect(),
+    )
 }
 
 /// The pane's last [`HINT_ROWS`] drawn rows.
@@ -330,7 +372,10 @@ fn footer(rows: &[String]) -> impl Iterator<Item = &String> {
 
 /// Where in `rows` the last [`HINT_ROWS`] drawn rows stand.
 fn footer_rows(rows: &[String]) -> impl Iterator<Item = usize> + '_ {
-    (0..rows.len()).rev().filter(|&at| !rows[at].trim().is_empty()).take(HINT_ROWS)
+    (0..rows.len())
+        .rev()
+        .filter(|&at| !rows[at].trim().is_empty())
+        .take(HINT_ROWS)
 }
 
 /// Whether this core reads `agent`'s history for a stop at all.
@@ -340,9 +385,10 @@ pub fn confirms(agent: &str) -> bool {
 
 /// Whether `entries`, appended after the tap, record a stopped turn.
 pub fn shows_stop(entries: &[Entry]) -> bool {
-    entries
-        .iter()
-        .any(|entry| entry.role.as_deref() == Some("assistant") && entry.stop_reason.as_deref() == Some("aborted"))
+    entries.iter().any(|entry| {
+        entry.role.as_deref() == Some("assistant")
+            && entry.stop_reason.as_deref() == Some("aborted")
+    })
 }
 
 #[cfg(test)]

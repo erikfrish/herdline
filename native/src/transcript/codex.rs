@@ -96,7 +96,7 @@ pub(super) fn entry(
     let (kind, role, blocks) = match record_type {
         "message" => (
             Kind::Message,
-            Some(cap(item["role"].as_str().unwrap_or_else(|| "unknown"), 32).0),
+            Some(cap(item["role"].as_str().unwrap_or("unknown"), 32).0),
             content(&item["content"]),
         ),
         "reasoning" => (Kind::Message, Some("reasoning".to_owned()), reasoning(item)),

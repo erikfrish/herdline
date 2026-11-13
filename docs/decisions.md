@@ -65,20 +65,20 @@ they start with `native/`.
   shows its bottom rows. The daemon's pane stays tall, so Send stays allowed
   with the keyboard up; the rule itself is unchanged. Columns still follow the
   view's width, so the side composer never hides a column the grid kept.
-- **Output focus.** In landscape, while typing in the side column, the user
-  can arm a window over the terminal from the composer's + menu or the
-  session ⋮ (phone). It scrolls the grid's bottom rows past the view, by
-  whole rows. Nothing is removed and Herdr is not told: the grid stays the
-  one reported for the whole view. A 48 dp strip under it counts the hidden
-  rows and shows them all in one tap.
-  - The count comes from a best-effort match (`ui/terminal/OutputFocus.kt`):
-    the nearest full-width top border at most 3 rows above the cursor in the
-    bottom-most pane. It is kept only if it hides 1 to min(8, rows − 3)
-    rows, and no string says what the rows hold.
-  - Detection only ever shows more, never hides more, and stops once the user
-    drags or selects.
-  - A delivery disarms it. A receipt notice, raw keys or Chat show the full
-    terminal, and a reconnect starts with it off.
+- **No Output focus switch.** Terminal has no side composer, so the former
+  output-focus condition could never apply. Its menus, screen state and
+  Android output-window processing are removed. Terminal keeps its ordinary
+  bottom anchoring, cursor visibility and receipt viewport checks; Chat does
+  not gain control of the shared terminal grid.
+- **Route support is authoritative.** Each Harness row owns its Stop route
+  and file-delivery support. The card's Stop and Media claims must agree with
+  those routes; display confidence never enables a control. Unknown programs
+  keep Terminal only.
+- **Bell feedback is foreground touch feedback.** The saved bell toggle
+  applies to the attached session view in Chat and Terminal, only while that
+  session is resumed and unlocked. It follows Android's touch-feedback
+  setting and requires device haptic hardware. It is not a background alarm
+  and does not request independent vibration permission.
 - **Landscape keeps the rule.** A phone held sideways with the keyboard up is
   for reading, and for Insert where its own checks pass. A refused Send names
   the reason and the pane's actual rows. Zoom (shared) is offered, never

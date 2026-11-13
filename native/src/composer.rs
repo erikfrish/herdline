@@ -1153,7 +1153,10 @@ pub(crate) fn claude_blocker(row: &str) -> bool {
 const CLAUDE_FOOTERS: [(&str, &str); 4] = [
     ("⏵⏵ auto mode on (shift+tab to cycle)", "⏵⏵ auto mode on"),
     ("⏸ manual mode on · ? for shortcuts", "⏸ manual mode on"),
-    ("⏵⏵ accept edits on (shift+tab to cycle)", "⏵⏵ accept edits on"),
+    (
+        "⏵⏵ accept edits on (shift+tab to cycle)",
+        "⏵⏵ accept edits on",
+    ),
     ("⏸ plan mode on (shift+tab to cycle)", "⏸ plan mode on"),
 ];
 

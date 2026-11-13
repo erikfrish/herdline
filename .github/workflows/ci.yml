@@ -6,11 +6,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +32,7 @@ jobs:
       - name: Install native test dependencies
         run: sudo apt-get update && sudo apt-get install --yes socat
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
@@ -55,7 +56,7 @@ jobs:
           rustup toolchain install
           cargo install cargo-ndk --version 4.1.2 --locked
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Rust workspace
         run: |
@@ -63,10 +64,45 @@ jobs:
           cargo clippy --workspace --locked --all-targets -- -D warnings
           cargo test --workspace --locked
 
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Unit tests and APKs
         run: ./gradlew --console=plain testDebugUnitTest assembleDebug assembleRelease
+
+      - name: Critical rendered UI checks
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+          sudo chmod a+rw /dev/kvm
+          sdkmanager --install "emulator" "system-images;android-35;google_apis;x86_64"
+          echo no | avdmanager create avd --name qa-ci --package "system-images;android-35;google_apis;x86_64"
+          emulator -avd qa-ci -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          timeout 180 adb -s emulator-5554 wait-for-device
+          timeout 180 python3 - <<'PY'
+          import subprocess
+          import time
+          while subprocess.check_output(["adb", "-s", "emulator-5554", "shell", "getprop", "sys.boot_completed"], text=True).strip() != "1":
+              time.sleep(1)
+          PY
+          adb -s emulator-5554 shell input keyevent 82
+          adb -s emulator-5554 shell settings put secure show_ime_with_hard_keyboard 1
+          export ANDROID_SERIAL=emulator-5554
+          ./gradlew --console=plain :app:connectedDebugAndroidTest \
+            -Pandroid.testInstrumentationRunnerArguments.class=io.github.erikfrish.herdline.ui.session.TabsHeaderTest,io.github.erikfrish.herdline.e2e.PinSheetTest,io.github.erikfrish.herdline.ui.terminal.TerminalViewImeTest
+
+      - name: Upload UI failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: critical-ui-failure
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+            ${{ runner.temp }}/emulator.log
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

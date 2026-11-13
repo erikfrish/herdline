@@ -56,11 +56,6 @@ class TerminalView(context: Context) : View(context) {
         /** Ctrl or Alt latched by the extra-keys row was used up. */
         fun onModifiersConsumed()
         /**
-         * A drag of [towardBottom] lines (negative: toward scrollback) before
-         * Herdr sees it; returns how many lines the output-focus window used.
-         */
-        fun onWindowDrag(towardBottom: Int): Int = 0
-        /**
          * What the view drew changed ([viewport]); posted after the draw,
          * never from inside it. Null until a frame with a whole row is drawn.
          */
@@ -263,41 +258,21 @@ class TerminalView(context: Context) : View(context) {
      */
     fun freezeAt() = freeze.tap(lastGrid[1], cellHeight, width, SystemClock.uptimeMillis())
 
-
-    /**
-     * Output focus: [hiddenRows] rows at the grid's bottom are
-     * scrolled past, never removed, and a drag toward the bottom shows them
-     * again through [Listener.onWindowDrag]; [clipBottomPx] at the view's
-     * bottom is left to the strip drawn over it. The grid itself stays the
-     * one [Listener.onGrid] reported for the whole view, so Herdr is not told.
-     */
-    fun showWindow(hiddenRows: Int, clipBottomPx: Int) {
-        if (hiddenRows == this.hiddenRows && clipBottomPx == this.clipBottomPx) return
-        this.hiddenRows = hiddenRows
-        this.clipBottomPx = clipBottomPx
-        invalidate()
-    }
-
-    var hiddenRows = 0
-        private set
-    private var clipBottomPx = 0
-
-    /** Whether a selection is up: output focus then holds its window still. */
+    /** Whether a selection is up. */
     val hasSelection: Boolean get() = selection != null
 
     /**
-     * How far the grid is drawn above the view's top: while a held grid is
-     * taller than the view, or by whole rows while output focus shows a
-     * window over it, so the top visible row is never cut. The row
-     * [shownAnchorRow] picks (the cursor drawCursor draws, or the focused
-     * pane's top) is passed so the window keeps it (A-27P, QF9-U2); the native
-     * core takes the same row from the same frame.
+     * How far the grid is drawn above the view's top while a held grid is
+     * taller than the view, by whole rows so the top visible row is never
+     * cut. The row [shownAnchorRow] picks (the cursor drawCursor draws, or the
+     * focused pane's top) is passed so the window keeps it (A-27P, QF9-U2);
+     * the native core takes the same row from the same frame.
      */
     private val offsetY: Float
         get() {
             val frame = frame ?: return 0f
-            val anchorRow = shownAnchorRow(frame, height, clipBottomPx, hiddenRows, cellHeight)
-            return viewOffset(height, clipBottomPx, hiddenRows, cellHeight, frame.rows, anchorRow)
+            val anchorRow = shownAnchorRow(frame, height, cellHeight)
+            return viewOffset(height, cellHeight, frame.rows, anchorRow)
         }
 
     /** What [onDraw] last drew, as the native core checks it (HG-VIS). */
@@ -313,7 +288,7 @@ class TerminalView(context: Context) : View(context) {
     private fun record(frame: RenderFrame?) {
         val seen = frame?.let {
             val offset = offsetY
-            val area = height - clipBottomPx
+            val area = height
             drawnRows(area.toFloat(), offset, cellHeight, it.rows)?.let { rows ->
                 Viewport(
                     frameRows = it.rows,
@@ -324,8 +299,6 @@ class TerminalView(context: Context) : View(context) {
                     last = rows.last,
                     rect = Viewport.Rect(0, 0, width, area),
                     offsetYPx = offset,
-                    hiddenRows = hiddenRows,
-                    clipBottomPx = clipBottomPx,
                     cellWidthPx = cellWidth,
                     cellHeightPx = cellHeight,
                 )
@@ -444,7 +417,6 @@ class TerminalView(context: Context) : View(context) {
         }
         canvas.drawColor(frame.background)
         canvas.save()
-        if (clipBottomPx > 0) canvas.clipRect(0f, 0f, width.toFloat(), (height - clipBottomPx).toFloat())
         canvas.translate(0f, offsetY)
         for (run in frame.runs) {
             if (run.has(RenderFrame.BACKGROUND)) {
@@ -559,7 +531,6 @@ class TerminalView(context: Context) : View(context) {
     private fun cellAt(ex: Float, ey: Float): IntArray? {
         val frame = frame ?: return null
         val column = floor(ex / cellWidth).toInt()
-        if (ey >= height - clipBottomPx) return null
         val row = floor((ey - offsetY) / cellHeight).toInt()
         if (column < 0 || row < 0 || column >= frame.cols || row >= frame.rows) return null
         return intArrayOf(column, row)
@@ -672,10 +643,8 @@ class TerminalView(context: Context) : View(context) {
         val lines = (scrollRemainder / cellHeight).toInt()
         if (lines == 0) return
         scrollRemainder -= lines * cellHeight
-        val rest = lines - (listener?.onWindowDrag(lines) ?: 0)
-        if (rest == 0) return
         // Dragging the content up reveals what is below it.
-        listener?.onScroll(target.first, target.second, target.third, up = rest < 0, lines = abs(rest))
+        listener?.onScroll(target.first, target.second, target.third, up = lines < 0, lines = abs(lines))
     }
 
     private fun stepFling() {

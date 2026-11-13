@@ -7,8 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.LocaleList
 import android.os.IBinder
 import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
@@ -32,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -78,7 +81,38 @@ class ConnectionService : Service() {
     /** The lock-screen privacy last applied to the lost notes, to notice setting changes. */
     private var appliedLock: LockDetail? = null
 
-    override fun attachBaseContext(base: Context) = super.attachBaseContext(AppLanguages.wrap(base))
+    /** The locales this service's cards were last worded for, to skip other configuration changes. */
+    private var locales: LocaleList? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        locales = resources.configuration.locales
+    }
+
+    /**
+     * A system language change, and from Android 13 the per-app language,
+     * arrives here: this service's cards are re-posted in the new language
+     * (HerdlineApp re-words the channels and agent notes). Rotation, night
+     * mode and the like re-post nothing.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (newConfig.locales == locales) return
+        locales = newConfig.locales
+        relocalize()
+    }
+
+    /**
+     * Re-posts this service's cards in place and silently, with the text of
+     * the language in effect now ([AppLanguages.localized]): the live or
+     * Attached card and the lost-connection notes. Same IDs, tags, privacy,
+     * promotion request and tap targets; nothing reconnects.
+     */
+    private fun relocalize() {
+        if (!AgentNotifications.canNotify(this)) return
+        shown?.let { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, build(it)) }
+        repostLost((application as HerdlineApp).settings.settings.value.lockDetail)
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -198,6 +232,8 @@ class ConnectionService : Service() {
                 }
             }
         }
+        // Below Android 13 an in-app language change reaches no configuration callback.
+        launch { AppLanguages.changes.drop(1).collect { relocalize() } }
         val choices = combine(app.monitor.monitored, app.settings.settings, app.settings.liveLockDetail) { monitored, settings, live ->
             Triple(monitored, settings, liveLevel(live, settings.lockDetail))
         }
@@ -211,14 +247,7 @@ class ConnectionService : Service() {
                 // under Hidden (P8). HerdlineApp re-posts the agent notes.
                 if (appliedLock != settings.lockDetail) {
                     appliedLock = settings.lockDetail
-                    val active = context.getSystemService(NotificationManager::class.java).activeNotifications
-                    lost.values.toList().forEach { connection ->
-                        if (active.any { it.id == LOST_ID && it.tag == lostTag(connection) }) {
-                            postLost(connection, settings.lockDetail)
-                        } else {
-                            lost.remove(connection.node.id)
-                        }
-                    }
+                    repostLost(settings.lockDetail)
                 }
                 // A node detached by the user: its notifications are no longer current either.
                 val present = list.map { it.first.node.id }.toSet()
@@ -329,9 +358,21 @@ class ConnectionService : Service() {
         postLost(connection, settings.lockDetail)
     }
 
+    /** Re-posts the lost notes still shown, with [lock]'s words; forgets the ones the user swiped. */
+    private fun repostLost(lock: LockDetail) {
+        val active = getSystemService(NotificationManager::class.java).activeNotifications
+        lost.values.toList().forEach { connection ->
+            if (active.any { it.id == LOST_ID && it.tag == lostTag(connection) }) {
+                postLost(connection, lock)
+            } else {
+                lost.remove(connection.node.id)
+            }
+        }
+    }
+
     private fun postLost(connection: Connection, lock: LockDetail) {
         val tag = lostTag(connection)
-        val words = lostContent(ResourceTexts(this), connection.node.title, lock)
+        val words = lostContent(ResourceTexts(AppLanguages.localized(this)), connection.node.title, lock)
         val notification = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_CONNECTION)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(words.main.title)
@@ -358,8 +399,9 @@ class ConnectionService : Service() {
         // unlock edges (onLockChange), so the lock screen shows only the
         // permitted words whatever Android's own redaction is (D10, lab.6 I1).
         val locked = LockGate.isDeviceLocked(this)
-        val time = DateFormat.getTimeFormat(this)
-        val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
+        val local = AppLanguages.localized(this)
+        val time = DateFormat.getTimeFormat(local)
+        val fields = liveFields(ResourceLiveTexts(local), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
         val requestPromotion = shown.promote && fields?.promote == true
         AgentNotifications.promotionRequested = requestPromotion
         preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live, shown.connection)
@@ -382,13 +424,13 @@ class ConnectionService : Service() {
             val disconnect = PendingIntent.getService(
                 this, 1, Intent(this, ConnectionService::class.java).setAction(ACTION_DISCONNECT_ALL), PendingIntent.FLAG_IMMUTABLE,
             )
-            val words = attachedContent(ResourceTexts(this), shown.count, shown.title, shown.lock, locked, shown.fields, shown.agents, shown.needYou, shown.connection, attachedTitle(this, shown.connection))
+            val words = attachedContent(ResourceTexts(local), shown.count, shown.title, shown.lock, locked, shown.fields, shown.agents, shown.needYou, shown.connection, attachedTitle(local, shown.connection))
             return builder
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(words.main.title)
                 .setContentText(words.main.text)
                 .setShowWhen(false)
-                .addAction(0, getString(R.string.disconnect), disconnect)
+                .addAction(0, local.getString(R.string.disconnect), disconnect)
                 .setVisibility(AgentNotifications.visibility(shown.lock))
                 .setPublicVersion(AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_LIVE, words.public).setOngoing(true).setShowWhen(false).build())
                 .build()
@@ -408,7 +450,7 @@ class ConnectionService : Service() {
             val unpin = PendingIntent.getService(
                 this, 3, Intent(this, ConnectionService::class.java).setAction(ACTION_UNPIN), PendingIntent.FLAG_IMMUTABLE,
             )
-            builder.addAction(0, getString(R.string.live_unpin), unpin)
+            builder.addAction(0, local.getString(R.string.live_unpin), unpin)
         }
         val public = fields.public
         val publicBuilder = AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_LIVE, NoteContent(public.title, public.text), glyphIcon(public.glyph))

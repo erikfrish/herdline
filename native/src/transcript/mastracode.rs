@@ -115,10 +115,18 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [STORE_LAYOUT, OUTSIDE_HOME, REMOTE, IN_MEMORY, UNREADABLE, UNKNOWN, TOO_LARGE]
-                .into_iter()
-                .find(|known| *known == format)
-                .ok_or(Error::BadReply)?,
+            [
+                STORE_LAYOUT,
+                OUTSIDE_HOME,
+                REMOTE,
+                IN_MEMORY,
+                UNREADABLE,
+                UNKNOWN,
+                TOO_LARGE,
+            ]
+            .into_iter()
+            .find(|known| *known == format)
+            .ok_or(Error::BadReply)?,
         ));
     }
     if reply.get("error").is_some() {
@@ -160,14 +168,20 @@ fn entry(row: &Value) -> Option<Entry> {
         // shows, never their parts.
         Some("signal") => {
             let kind = row["signal"].as_str().unwrap_or("unknown");
-            blocks.push(text_block(&format!("[Mastra Code {} signal]", cap(kind, 32).0), false));
+            blocks.push(text_block(
+                &format!("[Mastra Code {} signal]", cap(kind, 32).0),
+                false,
+            ));
             parts = None;
             "system"
         }
         Some("system" | "tool") => "system",
         other => {
             let name = other.unwrap_or("none");
-            blocks.push(text_block(&format!("Unsupported Mastra Code message: {}", cap(name, 32).0), false));
+            blocks.push(text_block(
+                &format!("Unsupported Mastra Code message: {}", cap(name, 32).0),
+                false,
+            ));
             "system"
         }
     };
@@ -175,7 +189,10 @@ fn entry(row: &Value) -> Option<Entry> {
     let mut image = || {
         let part = images;
         images += 1;
-        Image { part, source: Source::Unreadable }
+        Image {
+            part,
+            source: Source::Unreadable,
+        }
     };
     for part in parts.into_iter().flatten() {
         match part["t"].as_str().unwrap_or_default() {
@@ -195,7 +212,10 @@ fn entry(row: &Value) -> Option<Entry> {
             "tool" => {
                 let call_id = part["call"].as_str().unwrap_or_default().to_owned();
                 let name = cap(part["name"].as_str().unwrap_or_default(), 128).0;
-                let (args, truncated) = cap(part["input"].as_str().unwrap_or_default(), super::ARGS_LIMIT);
+                let (args, truncated) = cap(
+                    part["input"].as_str().unwrap_or_default(),
+                    super::ARGS_LIMIT,
+                );
                 blocks.push(Block::ToolCall {
                     call_id: call_id.clone(),
                     name: name.clone(),
@@ -206,8 +226,10 @@ fn entry(row: &Value) -> Option<Entry> {
                 let is_error = part["status"] == "error";
                 if is_error || part["status"] == "completed" {
                     let output = part["output"].as_str().unwrap_or_default();
-                    let (text, truncated) =
-                        cap(&crate::herdr_setup::plain_text(output.as_bytes()), super::RESULT_LIMIT);
+                    let (text, truncated) = cap(
+                        &crate::herdr_setup::plain_text(output.as_bytes()),
+                        super::RESULT_LIMIT,
+                    );
                     blocks.push(Block::ToolResult {
                         call_id,
                         name,

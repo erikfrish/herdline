@@ -156,7 +156,10 @@ fn entry(row: &Value) -> Option<Entry> {
     let mut image = || {
         let part = images;
         images += 1;
-        Image { part, source: Source::Unreadable }
+        Image {
+            part,
+            source: Source::Unreadable,
+        }
     };
     let (kind, role, blocks) = match string("t") {
         // UserMessageData: `content` as the timeline shows it, and the
@@ -173,8 +176,16 @@ fn entry(row: &Value) -> Option<Entry> {
             }
             (Kind::Message, "user", blocks)
         }
-        "assistant" => (Kind::Message, "assistant", vec![text_block(string("text"), false)]),
-        "reasoning" => (Kind::Message, "reasoning", vec![text_block(string("text"), true)]),
+        "assistant" => (
+            Kind::Message,
+            "assistant",
+            vec![text_block(string("text"), false)],
+        ),
+        "reasoning" => (
+            Kind::Message,
+            "reasoning",
+            vec![text_block(string("text"), true)],
+        ),
         // ToolExecutionStartData.
         "call" => {
             let (args, truncated) = cap(string("args"), super::ARGS_LIMIT);
@@ -190,8 +201,10 @@ fn entry(row: &Value) -> Option<Entry> {
         // ToolExecutionCompleteData: `success`, the result's text or the
         // error's message, and its image content blocks.
         "result" => {
-            let (text, truncated) =
-                cap(&crate::herdr_setup::plain_text(string("text").as_bytes()), super::RESULT_LIMIT);
+            let (text, truncated) = cap(
+                &crate::herdr_setup::plain_text(string("text").as_bytes()),
+                super::RESULT_LIMIT,
+            );
             let count = row["images"].as_u64().unwrap_or(0).min(64);
             let block = Block::ToolResult {
                 call_id: string("call").to_owned(),
@@ -209,14 +222,40 @@ fn entry(row: &Value) -> Option<Entry> {
         }
         // AbortData.reason: only the person's own stop says so; any other reason is a plain stop.
         "abort" => {
-            let marker = if matches!(string("reason"), "user" | "user_initiated") { Marker::StoppedByYou } else { Marker::Stopped };
-            (Kind::Message, "error", vec![Block::Marker { marker, text: String::new(), truncated: false }])
+            let marker = if matches!(string("reason"), "user" | "user_initiated") {
+                Marker::StoppedByYou
+            } else {
+                Marker::Stopped
+            };
+            (
+                Kind::Message,
+                "error",
+                vec![Block::Marker {
+                    marker,
+                    text: String::new(),
+                    truncated: false,
+                }],
+            )
         }
-        "error" => (Kind::Message, "error", vec![text_block(&format!("[{}]", cap(string("text"), 512).0), false)]),
+        "error" => (
+            Kind::Message,
+            "error",
+            vec![text_block(
+                &format!("[{}]", cap(string("text"), 512).0),
+                false,
+            )],
+        ),
         "compaction" => (Kind::Compaction, "", Vec::new()),
         _ => {
             let name = cap(row["name"].as_str().unwrap_or("unreadable"), 64).0;
-            (Kind::Message, "system", vec![text_block(&format!("Unsupported Copilot event: {name}"), false)])
+            (
+                Kind::Message,
+                "system",
+                vec![text_block(
+                    &format!("Unsupported Copilot event: {name}"),
+                    false,
+                )],
+            )
         }
     };
     Some(Entry {

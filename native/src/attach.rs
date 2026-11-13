@@ -413,11 +413,7 @@ pub fn start(exec: Exec, begin: Begin) -> Result<String> {
     if begin.size.is_some_and(|size| size > begin.limit()) {
         return Ok(refused(Refusal::TooLarge));
     }
-    let upload = exec.upload(
-        sh(&begin_script(&begin.name, begin.limit())),
-        IDLE,
-        OUTPUT,
-    )?;
+    let upload = exec.upload(sh(&begin_script(&begin.name, begin.limit())), IDLE, OUTPUT)?;
     let staging = Staging {
         writer: Mutex::new(upload.writer()),
         upload: Mutex::new(Some(upload)),

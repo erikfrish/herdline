@@ -179,7 +179,9 @@ fn entry(row: &Value) -> Option<Entry> {
         let mut images = 0;
         for part in row["parts"].as_array().into_iter().flatten() {
             match part["t"].as_str() {
-                Some("text") => blocks.push(text_block(part["text"].as_str().unwrap_or_default(), false)),
+                Some("text") => {
+                    blocks.push(text_block(part["text"].as_str().unwrap_or_default(), false))
+                }
                 // The bytes stay on the host: H-3 reads no media, so the
                 // image shows as a placeholder that cannot be opened.
                 Some("image") => {

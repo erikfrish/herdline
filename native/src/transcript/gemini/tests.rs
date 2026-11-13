@@ -12,7 +12,11 @@ use serde_json::json;
 const SID: &str = "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b";
 
 fn jsonl(records: &[Value]) -> Vec<u8> {
-    records.iter().map(|record| record.to_string() + "\n").collect::<String>().into_bytes()
+    records
+        .iter()
+        .map(|record| record.to_string() + "\n")
+        .collect::<String>()
+        .into_bytes()
 }
 
 fn header() -> Value {
@@ -64,21 +68,55 @@ fn a_turn_shows_thoughts_then_text_then_tools_with_tokens() {
         ],
     });
     let conversation = fold(&jsonl(&[header(), user("m1", "list it"), turn])).unwrap();
-    assert_eq!((conversation.session_id.as_str(), conversation.project_hash.as_str()), (SID, "ab12"));
+    assert_eq!(
+        (
+            conversation.session_id.as_str(),
+            conversation.project_hash.as_str()
+        ),
+        (SID, "ab12")
+    );
     let entries = conversation.entries();
     assert_eq!(entries.len(), 2);
-    assert_eq!((entries[0].role.as_deref(), entries[0].id.as_deref()), (Some("user"), Some("m1")));
-    assert_eq!(entries[0].timestamp, iso_timestamp("2026-11-12T10:00:01.000Z"));
+    assert_eq!(
+        (entries[0].role.as_deref(), entries[0].id.as_deref()),
+        (Some("user"), Some("m1"))
+    );
+    assert_eq!(
+        entries[0].timestamp,
+        iso_timestamp("2026-11-12T10:00:01.000Z")
+    );
     let turn = &entries[1];
-    assert_eq!((turn.offset, turn.end, turn.role.as_deref()), (1, 2, Some("assistant")));
-    assert_eq!(texts(turn), vec![(true, "Plan\nlook first".to_owned()), (false, "Listing.".to_owned())]);
-    assert_eq!(turn.usage, Some(Usage { input: 120, output: 30, total_tokens: 150, cost: None }));
+    assert_eq!(
+        (turn.offset, turn.end, turn.role.as_deref()),
+        (1, 2, Some("assistant"))
+    );
+    assert_eq!(
+        texts(turn),
+        vec![
+            (true, "Plan\nlook first".to_owned()),
+            (false, "Listing.".to_owned())
+        ]
+    );
+    assert_eq!(
+        turn.usage,
+        Some(Usage {
+            input: 120,
+            output: 30,
+            total_tokens: 150,
+            cost: None
+        })
+    );
     let tools: Vec<_> = turn
         .blocks
         .iter()
         .filter_map(|block| match block {
             Block::ToolCall { call_id, name, .. } => Some(format!("call {call_id} {name}")),
-            Block::ToolResult { call_id, text, is_error, .. } => Some(format!("result {call_id} {is_error} {text}")),
+            Block::ToolResult {
+                call_id,
+                text,
+                is_error,
+                ..
+            } => Some(format!("result {call_id} {is_error} {text}")),
             _ => None,
         })
         .collect();
@@ -97,7 +135,13 @@ fn a_turn_shows_thoughts_then_text_then_tools_with_tokens() {
 
 #[test]
 fn rewind_drops_the_target_and_everything_after_it_and_an_unknown_target_drops_all() {
-    let base = [header(), user("a", "1"), gemini("b", "2"), user("c", "3"), gemini("d", "4")];
+    let base = [
+        header(),
+        user("a", "1"),
+        gemini("b", "2"),
+        user("c", "3"),
+        gemini("d", "4"),
+    ];
     let mut lines = base.to_vec();
     lines.push(json!({"$rewindTo": "c"}));
     lines.push(user("e", "5"));
@@ -127,9 +171,18 @@ fn patches_replace_in_place_remove_and_move_listed_ids_to_the_end() {
     ]);
     assert_eq!(ids(&data), ["m2", "m5", "m3", "m1"]);
     let entries = fold(&data).unwrap().entries();
-    let shown: Vec<_> = entries.iter().flat_map(texts).map(|(_, text)| text).collect();
+    let shown: Vec<_> = entries
+        .iter()
+        .flat_map(texts)
+        .map(|(_, text)| text)
+        .collect();
     assert_eq!(shown, ["fifth", "third, patched", "first, edited"]);
-    assert!(entries[0].blocks.iter().any(|block| matches!(block, Block::ToolResult { text, .. } if text == "body")));
+    assert!(
+        entries[0]
+            .blocks
+            .iter()
+            .any(|block| matches!(block, Block::ToolResult { text, .. } if text == "body"))
+    );
 }
 
 #[test]
@@ -168,10 +221,24 @@ fn no_session_without_both_ids_unless_the_whole_file_is_a_legacy_record() {
     data.extend_from_slice(b"{\"half\": \n");
     assert!(fold(&data).is_none());
     // Truthy but not a string: Gemini would load it; no id is trusted here.
-    assert!(fold(&jsonl(&[json!({"$set": {"sessionId": 5, "projectHash": "h"}})])).is_none());
-    let legacy = serde_json::to_string_pretty(&json!({"sessionId": SID, "messages": [user("a", "old"), user("a", "twice")]})).unwrap();
+    assert!(
+        fold(&jsonl(&[
+            json!({"$set": {"sessionId": 5, "projectHash": "h"}})
+        ]))
+        .is_none()
+    );
+    let legacy = serde_json::to_string_pretty(
+        &json!({"sessionId": SID, "messages": [user("a", "old"), user("a", "twice")]}),
+    )
+    .unwrap();
     let conversation = fold(legacy.as_bytes()).unwrap();
-    assert_eq!((conversation.session_id.as_str(), conversation.messages.len()), (SID, 2));
+    assert_eq!(
+        (
+            conversation.session_id.as_str(),
+            conversation.messages.len()
+        ),
+        (SID, 2)
+    );
 }
 
 #[test]
@@ -188,16 +255,33 @@ fn shown_text_follows_geminis_resumed_view() {
     let entries = fold(&data).unwrap().entries();
     let shown: Vec<_> = entries
         .iter()
-        .map(|entry| (entry.role.clone().unwrap(), texts(entry).into_iter().map(|(_, text)| text).collect::<String>(), entry.blocks.len()))
+        .map(|entry| {
+            (
+                entry.role.clone().unwrap(),
+                texts(entry)
+                    .into_iter()
+                    .map(|(_, text)| text)
+                    .collect::<String>(),
+                entry.blocks.len(),
+            )
+        })
         .collect();
     assert_eq!(
         shown,
         [
             ("user".to_owned(), "@a.txt".to_owned(), 1),
             // A user message's tool calls are never shown.
-            ("user".to_owned(), "see [Image: image/png, 0.0 KB]".to_owned(), 1),
+            (
+                "user".to_owned(),
+                "see [Image: image/png, 0.0 KB]".to_owned(),
+                1
+            ),
             ("system".to_owned(), "Quota exceeded".to_owned(), 1),
-            ("assistant".to_owned(), "a[Function Call: ls][Thought: true]".to_owned(), 1),
+            (
+                "assistant".to_owned(),
+                "a[Function Call: ls][Thought: true]".to_owned(),
+                1
+            ),
         ]
     );
 }
@@ -257,8 +341,17 @@ fn a_child_left_running_ends_as_its_call_did_and_a_failure_keeps_its_error() {
         {"id": "c4", "name": "read_file", "status": "success", "timestamp": "t", "resultDisplay": {"agentName": "x", "state": "completed"}}
     ]});
     let found = children(&jsonl(&[header(), user("m1", "go"), turn]));
-    let shown: Vec<_> = found.iter().map(|child| (child.id.as_str(), child.status, child.error.as_deref())).collect();
-    assert_eq!(shown, vec![("c1", "cancelled", None), ("c2", "failed", Some("Error: quota"))]);
+    let shown: Vec<_> = found
+        .iter()
+        .map(|child| (child.id.as_str(), child.status, child.error.as_deref()))
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            ("c1", "cancelled", None),
+            ("c2", "failed", Some("Error: quota"))
+        ]
+    );
 }
 
 /// Captured, not synthetic: one `invoke_agent` run read while its child
@@ -300,28 +393,43 @@ fn running(parent: &[u8], children: &[(&str, &[u8])]) -> Vec<Subagent> {
 }
 
 fn rows(found: &[Subagent]) -> Vec<(&str, &str, Option<&str>)> {
-    found.iter().map(|child| (child.id.as_str(), child.status, child.stage.as_deref())).collect()
+    found
+        .iter()
+        .map(|child| (child.id.as_str(), child.status, child.stage.as_deref()))
+        .collect()
 }
 
 #[test]
 fn a_child_the_session_has_not_recorded_yet_shows_running_from_its_own_record() {
     let live = running(LIVE_MID, &[(CHILD, LIVE_MID_CHILD)]);
     assert_eq!(rows(&live), vec![(CHILD, "running", Some("ReadFolder"))]);
-    assert!(live[0].task.as_deref().unwrap().contains("Investigate the work dir"));
+    assert!(
+        live[0]
+            .task
+            .as_deref()
+            .unwrap()
+            .contains("Investigate the work dir")
+    );
     assert!(children(LIVE_MID).is_empty());
 }
 
 #[test]
 fn once_the_session_records_the_child_only_its_finished_row_shows() {
     assert!(running(LIVE_END, &[(CHILD, LIVE_END_CHILD)]).is_empty());
-    let done: Vec<_> = children(LIVE_END).iter().map(|child| (child.id.clone(), child.status)).collect();
+    let done: Vec<_> = children(LIVE_END)
+        .iter()
+        .map(|child| (child.id.clone(), child.status))
+        .collect();
     assert_eq!(done, vec![(CHILD.to_owned(), "completed")]);
 }
 
 #[test]
 fn a_sibling_that_finished_reads_done_from_its_own_record_while_the_other_runs() {
     let live = running(TWO_MID, &[(A, TWO_A), (B, TWO_B_MID)]);
-    assert_eq!(rows(&live), vec![(A, "completed", None), (B, "running", Some("ReadFolder"))]);
+    assert_eq!(
+        rows(&live),
+        vec![(A, "completed", None), (B, "running", Some("ReadFolder"))]
+    );
     assert!(children(TWO_MID).is_empty());
 }
 
@@ -334,13 +442,19 @@ fn esc_cancels_the_running_child_into_the_sessions_cancelled_call() {
     // After Esc the session records the call cancelled with no agentId,
     // stamped after C started: the live row is gone, the call's own row stays.
     assert!(running(CANCEL, &[(A, TWO_A), (B, TWO_B), (C, CANCEL_C)]).is_empty());
-    let ended: Vec<_> = children(CANCEL).iter().map(|child| (child.id.clone(), child.status)).collect();
+    let ended: Vec<_> = children(CANCEL)
+        .iter()
+        .map(|child| (child.id.clone(), child.status))
+        .collect();
     assert_eq!(
         ended,
         vec![
             (A.to_owned(), "completed"),
             (B.to_owned(), "completed"),
-            ("invoke_agent__invoke_agent_1794526978849_0".to_owned(), "cancelled")
+            (
+                "invoke_agent__invoke_agent_1794526978849_0".to_owned(),
+                "cancelled"
+            )
         ]
     );
 }
@@ -354,8 +468,23 @@ fn a_child_ends_when_the_session_moves_on_and_never_from_another_project() {
         data
     };
     // Recorded before the child started: still running.
-    assert_eq!(running(&with(at("2026-11-12T23:15:48.000Z")), &[(CHILD, LIVE_MID_CHILD)]).len(), 1);
-    assert!(running(&with(at("2026-11-12T23:16:00.000Z")), &[(CHILD, LIVE_MID_CHILD)]).is_empty());
-    let foreign = String::from_utf8(LIVE_MID_CHILD.to_vec()).unwrap().replacen("\"projectHash\":\"", "\"projectHash\":\"0", 1);
+    assert_eq!(
+        running(
+            &with(at("2026-11-12T23:15:48.000Z")),
+            &[(CHILD, LIVE_MID_CHILD)]
+        )
+        .len(),
+        1
+    );
+    assert!(
+        running(
+            &with(at("2026-11-12T23:16:00.000Z")),
+            &[(CHILD, LIVE_MID_CHILD)]
+        )
+        .is_empty()
+    );
+    let foreign = String::from_utf8(LIVE_MID_CHILD.to_vec())
+        .unwrap()
+        .replacen("\"projectHash\":\"", "\"projectHash\":\"0", 1);
     assert!(running(LIVE_MID, &[(CHILD, foreign.as_bytes())]).is_empty());
 }

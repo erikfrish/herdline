@@ -7,9 +7,11 @@ import java.util.Locale
  * "What works here" card says about it.
  *
  * Two separate facts per program, never mixed:
- * - the route ([chat], [send], [readOnlyHistory]): only this gates a control;
+ * - the route ([chat], [send], [stop], [files], [readOnlyHistory]): only
+ *   this gates a control;
  * - the claim ([cell]): the card's words. A claim never enables, disables
- *   or hides a control.
+ *   or hides a control. Stop's and Media's claims follow from [stop] and
+ *   [files]: Unverified where the route exists, else the row's own reason.
  *
  * Herdr names its agents itself (`herdr agent start --kind`, the hooks'
  * `agent` field); the name is kept exactly as reported. A name not in the
@@ -22,6 +24,13 @@ data class Harness(
     /** Chat reads this program's existing session at all. */
     val chat: Boolean,
     val send: SendRoute,
+    /** Where Stop goes for this program; the native core still decides at the tap. */
+    val stop: StopRoute = StopRoute.None,
+    /**
+     * A delivery carries staged files to it: OMP by its pasted paths,
+     * OpenCode and Kilo as the prompt's files. Gates the composer's attach.
+     */
+    val files: Boolean = false,
     /**
      * Chat shows this program's history and never offers to type: the
      * composer gives way to a read-only footer. Only an explicit row sets
@@ -46,11 +55,16 @@ data class Harness(
      * says otherwise (a withdraw's answer, the session read idle).
      */
     val unlistedSteers: Boolean = false,
-    /** The card's claims, one per [HarnessKey] in key order. */
+    /**
+     * The card's claims, one per [HarnessKey] in key order. Stop and Media
+     * are NotYet exactly where [stop] and [files] say the route is missing.
+     */
     private val claims: List<Cell>,
 ) {
     init {
         require(claims.size == HarnessKey.entries.size) { "$name: ${claims.size} claims" }
+        require((cell(HarnessKey.Stop) is Cell.NotYet) == (stop == StopRoute.None)) { "$name: Stop claim against route $stop" }
+        require((cell(HarnessKey.Media) is Cell.NotYet) == !files) { "$name: Media claim against files=$files" }
     }
 
     /** The static claim for [key]; [shown] applies the runtime rules on top. */
@@ -101,15 +115,6 @@ enum class StopRoute {
     /** Chat offers no Stop. */
     None,
 }
-
-/** Where Stop goes for this program; the native core still decides at the tap. */
-val Harness.stop: StopRoute
-    get() = when (name.lowercase(Locale.ROOT)) {
-        "opencode", "kilo" -> StopRoute.Server
-        "omp", "pi", "claude", "codex", "gemini" -> StopRoute.Pty
-        else -> StopRoute.None
-    }
-
 
 /** How Chat's Send reaches the program. */
 enum class SendRoute {
@@ -253,34 +258,51 @@ private val NC = no(Reason.NoControl)
 private val SM = no(Reason.SendMedia)
 private val SS = no(Reason.ScreenStatus)
 
-private fun card(vararg cells: Cell) = cells.toList()
+/** In X or M: the row's route exists, so the claim is the route's own (Unverified); else that slot names why not. */
+private val ON: Cell.NotYet? = null
 
-private fun sessionless(all: Cell, stop: Cell, steer: Cell) = card(all, all, all, stop, steer, all, all, all, SS, all, all)
+private fun card(h: Cell, l: Cell, p: Cell, x: Cell.NotYet?, s: Cell, t: Cell, m: Cell.NotYet?, q: Cell, u: Cell, a: Cell, r: Cell) =
+    listOf(h, l, p, x ?: V, s, t, m ?: V, q, u, a, r)
+
+private fun sessionless(all: Cell.NotYet, stop: Cell.NotYet, steer: Cell) = card(all, all, all, stop, steer, all, all, all, SS, all, all)
 
 private fun routed(
-    name: String, send: SendRoute, claims: List<Cell>, readOnlyHistory: Boolean = false, queue: Boolean = false, steer: Boolean = false,
-    unlistedSteers: Boolean = false,
-) = Harness(name, chat = true, send = send, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue, steer = steer, unlistedSteers = unlistedSteers)
+    name: String, send: SendRoute, claims: List<Cell>, stop: StopRoute = StopRoute.None, files: Boolean = false, readOnlyHistory: Boolean = false,
+    queue: Boolean = false, steer: Boolean = false, unlistedSteers: Boolean = false,
+) = Harness(
+    name, chat = true, send = send, stop = stop, files = files, readOnlyHistory = readOnlyHistory, claims = claims, queue = queue, steer = steer,
+    unlistedSteers = unlistedSteers,
+)
 
 private fun unread(name: String, claims: List<Cell>) = Harness(name, chat = false, send = SendRoute.None, claims = claims)
 
-/** Keyed by lower-case Herdr name. Columns of each card(…): H L P X S T M Q U A R. */
+/** Keyed by lower-case Herdr name. Columns of each card(…): H L P X S T M Q U A R; X and M are [ON] where the row routes Stop / files. */
 private val KNOWN: Map<String, Harness> = (
     listOf(
-        routed("omp", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, V), steer = true),
-        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, V)),
-        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), V, NS, V, SM, NC, SS, NB, V)),
-        routed("codex", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, SM, NC, V, NB, V), steer = true),
+        routed("omp", SendRoute.Endpoint, card(V, V, V, ON, Vn(Note.QueueMissing), V, ON, V, V, V, V), stop = StopRoute.Pty, files = true, steer = true),
+        routed("pi", SendRoute.Pty, card(V, V, Vn(Note.Typed), ON, NB, V, SM, NC, no(Reason.NeedsHook, "pi"), NB, V), stop = StopRoute.Pty),
+        routed("claude", SendRoute.Pty, card(V, V, Vn(Note.Typed), ON, NS, V, SM, NC, SS, NB, V), stop = StopRoute.Pty),
+        routed("codex", SendRoute.Endpoint, card(V, V, V, ON, Vn(Note.QueueMissing), V, SM, NC, V, NB, V), stop = StopRoute.Pty, steer = true),
         // opencode: Send (Auto, Steer, Queue) with staged files, its inbox, withdraw, steer-a-queued-entry
         // and the session's children (by title, the cut list marked) go to the already-running server
         // (native agent_chat, opencode_ctl.py + opencode_media.py, pinned v2.2.7 fedc6f2); unit tests only.
-        routed("opencode", SendRoute.Endpoint, card(V, V, V, V, V, V, V, V, V, V, V), queue = true, steer = true),
+        routed(
+            "opencode", SendRoute.Endpoint, card(V, V, V, ON, V, V, ON, V, V, V, V), stop = StopRoute.Server, files = true, queue = true, steer = true,
+        ),
         // kilo: text Send with staged files (verified data: file parts, the native per-kind limits), Steer
         // into a turn at work, withdraw of the app's own waiting steer, status, state and the session's
         // children (by title) through its v1 server (kilo_ctl.py + opencode_media.py, pinned v7.8.27
         // 03a6f07); a plain send while it works is refused agent_working. Kilo has no queue behind the turn,
         // no promote and lists no waiting prompt, so Chat shows its own steers only.
-        routed("kilo", SendRoute.Endpoint, card(V, V, V, V, Vn(Note.QueueMissing), V, V, V, V, V, no(Reason.StaleId)), steer = true, unlistedSteers = true),
+        routed(
+            "kilo",
+            SendRoute.Endpoint,
+            card(V, V, V, ON, Vn(Note.QueueMissing), V, ON, V, V, V, no(Reason.StaleId)),
+            stop = StopRoute.Server,
+            files = true,
+            steer = true,
+            unlistedSteers = true,
+        ),
         routed("kimi", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         routed("mastracode", SendRoute.None, card(V, V, NB, NB, NB, V, SM, NC, V, NB, V), readOnlyHistory = true),
         // grok: the history of the candidate session only (card §7, PARENT, source 559751fd); no Not in, no Works.
@@ -305,7 +327,8 @@ private val KNOWN: Map<String, Harness> = (
         routed(
             "gemini",
             SendRoute.None,
-            card(V, V, no(Reason.InputUnproved, "Gemini"), V, no(Reason.NoSocket, "Gemini"), V, no(Reason.InputUnproved, "Gemini"), NC, SS, V, V),
+            card(V, V, no(Reason.InputUnproved, "Gemini"), ON, no(Reason.NoSocket, "Gemini"), V, no(Reason.InputUnproved, "Gemini"), NC, SS, V, V),
+            stop = StopRoute.Pty,
             readOnlyHistory = true,
         ),
         unread("agy", sessionless(no(Reason.FormatUnpinned, "Antigravity"), stop = NB, steer = NS)),

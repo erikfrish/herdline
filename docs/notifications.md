@@ -236,6 +236,27 @@ eligible and actually promoted separately; none proves Samsung Now Bar
 placement. Stock Samsung proof remains open until the actual capsule is seen.
 
 
+## Language changes
+
+Changing the app language re-renders existing notification text and action
+labels without reconnecting or restarting the service. Android 13+ delivers
+per-app locale changes through configuration callbacks; earlier versions use
+the saved language preference and an in-process change signal. System locale
+changes also refresh the text. Below Android 13, notification resources come
+from a context resolved for the current preference or current system locales,
+not a service context frozen when the connection began.
+
+The application owns channel names and retained agent notes with their group
+summaries, including when no service is running. The service refreshes its live,
+Attached and lost-link cards. Reposts stay silent and preserve privacy caps,
+notification identities, tap targets and promotion rules.
+
+State text and chip text remain optional selected fields. With State deselected
+at State only privacy, a Working card can correctly show the app name and an
+empty chip while its elapsed clock and promotion request remain active. A
+Working → Done → Working check must record the selected fields as well as the
+agent status; that appearance alone does not prove a stale state.
+
 ## Known gaps
 
 - The native layer maps every Herdr notification kind other than

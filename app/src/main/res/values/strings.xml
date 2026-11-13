@@ -128,22 +128,6 @@
     <string name="connection_connecting">Connecting</string>
     <string name="connection_lost">Connection lost</string>
     <string name="connection_failed">Can’t connect</string>
-    <!-- J2 F: output focus while typing. -->
-    <string name="output_focus_on">Focus on output</string>
-    <string name="output_focus_off">Show full terminal</string>
-    <string name="output_focus_menu">Output focus while typing</string>
-    <string name="output_focus_help">Hides the bottom rows while the keyboard is up. Nothing is deleted.</string>
-    <plurals name="output_focus_hidden">
-        <item quantity="one">Bottom %1$d row hidden</item>
-        <item quantity="other">Bottom %1$d rows hidden</item>
-    </plurals>
-    <string name="output_focus_show_all">Show all</string>
-    <string name="output_focus_nothing">Output focus · nothing hidden</string>
-    <string name="output_focus_turn_off">Turn off</string>
-    <plurals name="output_focus_strip_description">
-        <item quantity="one">Output focus is on. The bottom %1$d terminal row is hidden.</item>
-        <item quantity="other">Output focus is on. The bottom %1$d terminal rows are hidden.</item>
-    </plurals>
     <string name="split_right">Split right</string>
     <string name="split_down">Split down</string>
     <string name="zoom_pane">Zoom pane</string>
@@ -236,7 +220,8 @@
     <string name="font_size">Font size: %1$d sp</string>
     <string name="font_size_help">You can also pinch the terminal to zoom.</string>
     <string name="section_terminal">Terminal</string>
-    <string name="vibrate_on_bell">Vibrate on bell</string>
+    <string name="vibrate_on_bell">Touch feedback on bell</string>
+    <string name="vibrate_on_bell_help">Only while a session is on screen, in Chat or Terminal. Follows Android touch feedback settings and needs haptic hardware.</string>
     <string name="keep_screen_on">Keep screen on</string>
     <string name="keep_screen_on_help">While a session is on screen</string>
     <string name="section_about">About</string>

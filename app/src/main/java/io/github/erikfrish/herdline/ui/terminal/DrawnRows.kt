@@ -8,25 +8,20 @@ import kotlin.math.min
 
 /**
  * Where [TerminalView] draws a frame's row 0, in px from the view's top: the
- * frame's bottom on the view's bottom while it is taller than the view; under
- * output focus, [hiddenRows] scrolled past the bottom of the area above the
- * [clipBottomPx] strip, by whole rows so the top row is never cut. The native
- * core recomputes it with the same arithmetic (`visible::view_offset_at`)
- * before it trusts a viewport, so the two must stay identical.
+ * frame's bottom on the view's bottom while it is taller than the view. The
+ * native core recomputes it with the same arithmetic (`visible::view_offset_at`,
+ * with no hidden rows and no bottom clip, which the app always reports) before
+ * it trusts a viewport, so the two must stay identical.
  *
- * [cursorRow] is the row to keep in view ([shownAnchorRow]), else null.
- * Without output focus, a row the bottom anchor would leave above the view is
- * put on its top row instead (A-27P): a held or not-yet-refitted grid taller
- * than the view never hides the prompt the keyboard types into, nor the
- * focused pane (QF9-U2). Whole rows, never past row 0 nor below the anchor.
+ * [cursorRow] is the row to keep in view ([shownAnchorRow]), else null. A row
+ * the bottom anchor would leave above the view is put on its top row instead
+ * (A-27P): a held or not-yet-refitted grid taller than the view never hides
+ * the prompt the keyboard types into, nor the focused pane (QF9-U2). Whole
+ * rows, never past row 0 nor below the anchor.
  */
-internal fun viewOffset(viewHeightPx: Int, clipBottomPx: Int, hiddenRows: Int, cellPx: Float, frameRows: Int, cursorRow: Int? = null): Float {
-    if (hiddenRows <= 0 && clipBottomPx <= 0) {
-        val anchor = min(0f, viewHeightPx - frameRows * cellPx)
-        return if (cursorRow == null) anchor else max(anchor, -cursorRow * cellPx)
-    }
-    val fits = floor((viewHeightPx - clipBottomPx) / cellPx).toInt()
-    return (fits - (frameRows - hiddenRows.coerceAtMost(frameRows - 1))) * cellPx
+internal fun viewOffset(viewHeightPx: Int, cellPx: Float, frameRows: Int, cursorRow: Int? = null): Float {
+    val anchor = min(0f, viewHeightPx - frameRows * cellPx)
+    return if (cursorRow == null) anchor else max(anchor, -cursorRow * cellPx)
 }
 
 /**
@@ -38,7 +33,7 @@ internal fun viewOffset(viewHeightPx: Int, clipBottomPx: Int, hiddenRows: Int, c
  * never left off screen. A focused pane already drawn, or none, keeps the
  * base. The native core takes the same row (`visible::shown_anchor_row`).
  */
-internal fun shownAnchorRow(frame: RenderFrame, viewHeightPx: Int, clipBottomPx: Int, hiddenRows: Int, cellPx: Float): Int? {
+internal fun shownAnchorRow(frame: RenderFrame, viewHeightPx: Int, cellPx: Float): Int? {
     val cursor = frame.cursor
     val shown = if (cursor.visible && cursor.x < frame.cols && cursor.y < frame.rows) cursor.y else null
     val pane = frame.panes.firstOrNull { it.focused }?.rect ?: return shown
@@ -46,8 +41,8 @@ internal fun shownAnchorRow(frame: RenderFrame, viewHeightPx: Int, clipBottomPx:
     val bottom = min(frame.rows, pane.y + pane.height) - 1
     if (bottom < top) return shown
     if (shown != null && pane.contains(cursor.x, cursor.y)) return shown
-    val offset = viewOffset(viewHeightPx, clipBottomPx, hiddenRows, cellPx, frame.rows, shown)
-    val drawn = drawnRows((viewHeightPx - clipBottomPx).toFloat(), offset, cellPx, frame.rows)
+    val offset = viewOffset(viewHeightPx, cellPx, frame.rows, shown)
+    val drawn = drawnRows(viewHeightPx.toFloat(), offset, cellPx, frame.rows)
     return if (drawn != null && drawn.first <= bottom && drawn.last >= top) shown else top
 }
 

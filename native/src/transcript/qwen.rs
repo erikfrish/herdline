@@ -119,8 +119,7 @@ fn records(data: &[u8]) -> Vec<Value> {
 fn managed(record: &Value) -> bool {
     let subtype = record["subtype"].as_str().unwrap_or_default();
     subtype.starts_with("managed_session_")
-        || (subtype == "session_execution_engine"
-            && record["systemPayload"]["engine"] == "managed")
+        || (subtype == "session_execution_engine" && record["systemPayload"]["engine"] == "managed")
 }
 
 /// Records that are not part of the conversation tree
@@ -210,10 +209,17 @@ fn merge(first: &mut Value, next: &Value) {
 /// already the branch, and the app's own branch walk must not stop at a
 /// record left out here.
 fn project(record: &Value) -> Option<Entry> {
-    let parts = record["message"]["parts"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let parts = record["message"]["parts"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let (role, blocks, usage) = match record["type"].as_str()? {
         "user" => ("user", user(record, parts), None),
-        "assistant" => ("assistant", assistant(parts), usage(&record["usageMetadata"])),
+        "assistant" => (
+            "assistant",
+            assistant(parts),
+            usage(&record["usageMetadata"]),
+        ),
         "tool_result" if record["subtype"] != "code_mode_tool_result" => {
             ("user", tool_results(record, parts), None)
         }
@@ -261,7 +267,10 @@ fn user(record: &Value, parts: &[Value]) -> Vec<Block> {
     }
     for (part, value) in parts.iter().enumerate() {
         let inline = &value["inlineData"];
-        if inline["mimeType"].as_str().is_some_and(|mime| mime.starts_with("image/")) {
+        if inline["mimeType"]
+            .as_str()
+            .is_some_and(|mime| mime.starts_with("image/"))
+        {
             let source = match inline["data"].as_str() {
                 Some(data) if !data.is_empty() => Source::Inline {
                     bytes: inline_bytes(data),
@@ -271,7 +280,10 @@ fn user(record: &Value, parts: &[Value]) -> Vec<Block> {
             blocks.push(Block::Image(Image { part, source }));
         }
     }
-    let references = payload["attachmentReferences"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let references = payload["attachmentReferences"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     for (index, reference) in references.iter().enumerate() {
         if reference["type"] == "image" {
             blocks.push(Block::Image(Image {
@@ -338,7 +350,10 @@ fn tool_results(record: &Value, parts: &[Value]) -> Vec<Block> {
     let is_error = matches!(result["status"].as_str(), Some("error" | "cancelled"));
     parts
         .iter()
-        .filter_map(|part| part.get("functionResponse").filter(|response| response.is_object()))
+        .filter_map(|part| {
+            part.get("functionResponse")
+                .filter(|response| response.is_object())
+        })
         .map(|response| {
             let call_id = result["callId"]
                 .as_str()
@@ -542,8 +557,11 @@ mod tests {
         let ids: Vec<_> = entries.iter().map(|e| e.id.as_deref().unwrap()).collect();
         assert_eq!(ids, ["r1", "r2", "r4"]);
 
-        let [Block::Text { text, .. }, Block::Image(inline), Block::Image(reference)] =
-            entries[0].blocks.as_slice()
+        let [
+            Block::Text { text, .. },
+            Block::Image(inline),
+            Block::Image(reference),
+        ] = entries[0].blocks.as_slice()
         else {
             panic!("user text and two images expected: {:?}", entries[0].blocks);
         };
@@ -553,25 +571,47 @@ mod tests {
         assert_eq!(reference.part, 2);
         assert_eq!(reference.source, Source::Unreadable);
 
-        let [Block::Thinking { text, .. }, Block::ToolCall { call_id, name, .. }] =
-            entries[1].blocks.as_slice()
+        let [
+            Block::Thinking { text, .. },
+            Block::ToolCall { call_id, name, .. },
+        ] = entries[1].blocks.as_slice()
         else {
             panic!("thought then call expected: {:?}", entries[1].blocks);
         };
-        assert_eq!((text.as_str(), call_id.as_str(), name.as_str()), ("plan", "call_1", "read_file"));
+        assert_eq!(
+            (text.as_str(), call_id.as_str(), name.as_str()),
+            ("plan", "call_1", "read_file")
+        );
         // Cached tokens are part of the input, not added to it.
         let usage = entries[1].usage.unwrap();
-        assert_eq!((usage.input, usage.output, usage.total_tokens), (100, 25, 125));
+        assert_eq!(
+            (usage.input, usage.output, usage.total_tokens),
+            (100, 25, 125)
+        );
         // The later fragment's time wins.
         assert_eq!(entries[1].timestamp, iso_timestamp("2026-11-12T00:00:03Z"));
 
-        let [Block::ToolResult { call_id, text, is_error, .. }] = entries[2].blocks.as_slice() else {
+        let [
+            Block::ToolResult {
+                call_id,
+                text,
+                is_error,
+                ..
+            },
+        ] = entries[2].blocks.as_slice()
+        else {
             panic!("tool result expected: {:?}", entries[2].blocks);
         };
-        assert_eq!((call_id.as_str(), text.as_str(), *is_error), ("call_1", "ok", false));
+        assert_eq!(
+            (call_id.as_str(), text.as_str(), *is_error),
+            ("call_1", "ok", false)
+        );
         // The chain is already the branch: no parent for the app to walk.
         assert!(entries.iter().all(|e| e.parent_id.is_none()));
-        assert_eq!(entries.iter().map(|e| e.offset).collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(
+            entries.iter().map(|e| e.offset).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
     }
 
     /// FIXTURE-ONLY. A managed record anywhere is a typed refusal, never an
@@ -592,9 +632,15 @@ mod tests {
         let legacy = json!({"uuid":"e","type":"system","subtype":"session_execution_engine","systemPayload":{"engine":"legacy"}});
         assert!(chain(&[legacy]).unwrap().is_empty());
 
-        let a = json!({"uuid":"a","parentUuid":"b","type":"user","message":{"parts":[{"text":"a"}]}});
-        let b = json!({"uuid":"b","parentUuid":"a","type":"user","message":{"parts":[{"text":"b"}]}});
-        let ids: Vec<_> = chain(&[a, b]).unwrap().into_iter().map(|e| e.id.unwrap()).collect();
+        let a =
+            json!({"uuid":"a","parentUuid":"b","type":"user","message":{"parts":[{"text":"a"}]}});
+        let b =
+            json!({"uuid":"b","parentUuid":"a","type":"user","message":{"parts":[{"text":"b"}]}});
+        let ids: Vec<_> = chain(&[a, b])
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id.unwrap())
+            .collect();
         assert_eq!(ids, ["a", "b"]);
     }
 
@@ -602,19 +648,35 @@ mod tests {
     fn session_id_gate() {
         assert!(session_id(SID));
         assert!(session_id("550e8400e29b41d4a716446655440000"));
-        for bad in ["bad", "../etc/passwd", "550e8400-e29b-41d4-a716-44665544000/", "550e8400-e29b-41d4-a716-4466554400zz"] {
+        for bad in [
+            "bad",
+            "../etc/passwd",
+            "550e8400-e29b-41d4-a716-44665544000/",
+            "550e8400-e29b-41d4-a716-4466554400zz",
+        ] {
             assert!(!session_id(bad), "{bad}");
         }
     }
 
     /// The real host script against a pane report printed by `printf`, in a
     /// shell whose environment holds HOME and exactly `env`.
-    fn host(home: &Path, env: &[(&str, &Path)], cwd: &str, sid: &str, stamp: u64) -> Result<Response> {
+    fn host(
+        home: &Path,
+        env: &[(&str, &Path)],
+        cwd: &str,
+        sid: &str,
+        stamp: u64,
+    ) -> Result<Response> {
         let pid = 42;
         let pane = json!({"result":{"pane":{"pane_id":"p1","terminal_id":"t1","agent_status":"idle",
             "foreground_cwd":cwd,"agent_session":{"agent":"qwen","kind":"id","value":sid,"source":"herdr:qwen"}}}});
-        let process = json!({"result":{"process_info":{"foreground_processes":[{"name":"qwen","pid":pid}]}}});
-        let report = format!("printf '@@pane\\n%s\\n@@proc\\n%s' {} {}", shell_quote(&pane.to_string()), shell_quote(&process.to_string()));
+        let process =
+            json!({"result":{"process_info":{"foreground_processes":[{"name":"qwen","pid":pid}]}}});
+        let report = format!(
+            "printf '@@pane\\n%s\\n@@proc\\n%s' {} {}",
+            shell_quote(&pane.to_string()),
+            shell_quote(&process.to_string())
+        );
         let mut expect = identity(pid);
         expect.path = sid.to_owned();
         let mut child = Command::new("python3")
@@ -637,7 +699,10 @@ mod tests {
     }
 
     fn chats(base: &Path, cwd: &str) -> std::path::PathBuf {
-        let dir = base.join("projects").join(cwd.replace(|c: char| !c.is_ascii_alphanumeric(), "-")).join("chats");
+        let dir = base
+            .join("projects")
+            .join(cwd.replace(|c: char| !c.is_ascii_alphanumeric(), "-"))
+            .join("chats");
         std::fs::create_dir_all(dir.join("archive")).unwrap();
         dir
     }
@@ -651,9 +716,14 @@ mod tests {
         let home = std::fs::canonicalize(home.path()).unwrap();
         let base = home.join("runtime");
         let cwd = "/tmp/proj-a";
-        let file = chats(&base, cwd).join("archive").join(format!("{SID}.jsonl"));
+        let file = chats(&base, cwd)
+            .join("archive")
+            .join(format!("{SID}.jsonl"));
         std::fs::write(&file, fixture_a(cwd)).unwrap();
-        let env = [("QWEN_RUNTIME_DIR", base.as_path()), ("QWEN_HOME", &home.join("unused"))];
+        let env = [
+            ("QWEN_RUNTIME_DIR", base.as_path()),
+            ("QWEN_HOME", &home.join("unused")),
+        ];
 
         let first = host(&home, &env, cwd, SID, 0).unwrap();
         assert!(first.reset);
@@ -671,7 +741,10 @@ mod tests {
         assert_eq!(changed.entries.len(), 4);
         // Set only for the agent, the runtime dir is not known here: the
         // default ~/.qwen has no such session, and nothing else is searched.
-        assert!(matches!(host(&home, &[], cwd, SID, 0), Err(Error::NoTranscript)));
+        assert!(matches!(
+            host(&home, &[], cwd, SID, 0),
+            Err(Error::NoTranscript)
+        ));
     }
 
     /// FIXTURE-ONLY. Fixture B and C on the host: a link out, a runtime
@@ -689,26 +762,58 @@ mod tests {
         let cwd = "/tmp/proj-a";
         let target = outside.path().join("outside.jsonl");
         std::fs::write(&target, fixture_a(cwd)).unwrap();
-        std::os::unix::fs::symlink(&target, chats(&base, cwd).join(format!("{SID}.jsonl"))).unwrap();
-        assert!(matches!(host(&home, none, cwd, SID, 0), Err(Error::TranscriptUnconfined)));
+        std::os::unix::fs::symlink(&target, chats(&base, cwd).join(format!("{SID}.jsonl")))
+            .unwrap();
+        assert!(matches!(
+            host(&home, none, cwd, SID, 0),
+            Err(Error::TranscriptUnconfined)
+        ));
 
         // `/tmp/a/b` and `/tmp/a-b` share a folder; the first record's cwd tells them apart.
-        std::fs::write(chats(&base, "/tmp/a/b").join(format!("{SID}.jsonl")), fixture_a("/tmp/a-b")).unwrap();
-        assert!(matches!(host(&home, none, "/tmp/a/b", SID, 0), Err(Error::TranscriptUnconfined)));
-        assert_eq!(host(&home, none, "/tmp/a-b", SID, 0).unwrap().entries.len(), 3);
+        std::fs::write(
+            chats(&base, "/tmp/a/b").join(format!("{SID}.jsonl")),
+            fixture_a("/tmp/a-b"),
+        )
+        .unwrap();
+        assert!(matches!(
+            host(&home, none, "/tmp/a/b", SID, 0),
+            Err(Error::TranscriptUnconfined)
+        ));
+        assert_eq!(
+            host(&home, none, "/tmp/a-b", SID, 0).unwrap().entries.len(),
+            3
+        );
 
         // Refused before any file is looked at.
-        assert!(matches!(host(&home, none, cwd, "bad", 0), Err(Error::NoTranscript)));
+        assert!(matches!(
+            host(&home, none, cwd, "bad", 0),
+            Err(Error::NoTranscript)
+        ));
 
         let managed = "/tmp/managed";
         std::fs::write(chats(&base, managed).join(format!("{SID}.jsonl")),
             line(json!({"uuid":"h","type":"system","subtype":"managed_session_header_v1","sessionId":SID}))).unwrap();
-        assert!(matches!(host(&home, none, managed, SID, 0), Err(Error::UnsupportedFormat(MANAGED))));
+        assert!(matches!(
+            host(&home, none, managed, SID, 0),
+            Err(Error::UnsupportedFormat(MANAGED))
+        ));
 
         // A runtime dir outside HOME is its own refusal, so Chat can say where the session is.
-        assert!(matches!(host(&home, &[("QWEN_RUNTIME_DIR", outside.path())], cwd, SID, 0), Err(Error::SessionRootOutsideHome)));
+        assert!(matches!(
+            host(&home, &[("QWEN_RUNTIME_DIR", outside.path())], cwd, SID, 0),
+            Err(Error::SessionRootOutsideHome)
+        ));
 
         // A relative one names no place at all: unconfined, not "outside".
-        assert!(matches!(host(&home, &[("QWEN_RUNTIME_DIR", Path::new("rel/dir"))], cwd, SID, 0), Err(Error::TranscriptUnconfined)));
+        assert!(matches!(
+            host(
+                &home,
+                &[("QWEN_RUNTIME_DIR", Path::new("rel/dir"))],
+                cwd,
+                SID,
+                0
+            ),
+            Err(Error::TranscriptUnconfined)
+        ));
     }
 }

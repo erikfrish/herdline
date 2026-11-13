@@ -32,6 +32,10 @@
     <string name="composer_locked_description">草稿，已锁定，投递未确认</string>
     <string name="composer_locked_reason">已锁定：上次投递未确认</string>
     <string name="composer_insert_off_desktop">不可用：桌面焦点不在此标签页</string>
+    <string name="composer_insert_withdrawing">不可用：排队中的请求正在退回草稿</string>
+    <string name="composer_insert_uploading">不可用：文件仍在上传</string>
+    <string name="composer_insert_files_not_ready">不可用：文件尚未上传到此窗格</string>
+    <string name="composer_insert_unchecked">不可用：尚未检查窗格</string>
     <string name="composer_sending">正在发送…</string>
     <string name="composer_sending_description">草稿，发送中，正在等待 Herdr</string>
     <string name="composer_unlock_warning">第一条消息可能已在窗格中。解锁后可以编辑并再次发送；不会自动重发。</string>

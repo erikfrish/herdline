@@ -5,8 +5,11 @@ import android.app.Activity
 import android.app.LocaleManager
 import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.os.Build
 import android.os.LocaleList
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The app's display language. [System] follows the device; the others pin
@@ -44,6 +47,16 @@ object AppLanguages {
             AppLanguage.fromTag(stored(context))
         }
 
+    /**
+     * Bumped when [set] changes the language below Android 13, where no
+     * configuration change reaches the app or the running service: on each
+     * bump HerdlineApp re-words the channels and agent notes, and
+     * ConnectionService its live and lost cards. From Android 13 the
+     * per-app locale arrives as a configuration change instead.
+     */
+    private val _changes = MutableStateFlow(0)
+    val changes: StateFlow<Int> = _changes
+
     /** Switches the app to [language]; the activity is recreated to show it. */
     fun set(activity: Activity, language: AppLanguage) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -52,6 +65,7 @@ object AppLanguages {
                 language.tag?.let(LocaleList::forLanguageTags) ?: LocaleList.getEmptyLocaleList()
         } else {
             activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, language.tag).commit()
+            _changes.value++
             activity.recreate()
         }
     }
@@ -66,6 +80,31 @@ object AppLanguages {
         val configuration = Configuration(base.resources.configuration)
         configuration.setLocales(LocaleList.forLanguageTags(tag))
         return base.createConfigurationContext(configuration)
+    }
+
+    /** The last [localized] context, with the stored tag and system locales it was made for. */
+    private class Localized(val tag: String?, val system: LocaleList, val context: Context)
+
+    @Volatile
+    private var localizedCache: Localized? = null
+
+    /**
+     * A context whose resources speak the language in effect now, for text
+     * built outside an activity (notifications). From Android 13 the system
+     * applies the per-app locale to every context, so [context] itself.
+     * Before that the language of a context wrapped at its creation never
+     * changes, so this one follows the stored choice, else the current
+     * system locales, and is rebuilt only when either changed.
+     */
+    fun localized(context: Context): Context {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return context
+        val app = context.applicationContext
+        val tag = AppLanguage.fromTag(stored(app)).tag
+        val system = Resources.getSystem().configuration.locales
+        localizedCache?.let { if (it.tag == tag && it.system == system) return it.context }
+        val configuration = Configuration(app.resources.configuration)
+        configuration.setLocales(tag?.let(LocaleList::forLanguageTags) ?: system)
+        return app.createConfigurationContext(configuration).also { localizedCache = Localized(tag, system, it) }
     }
 
     private fun stored(context: Context): String? =

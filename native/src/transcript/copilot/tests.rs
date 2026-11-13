@@ -4,7 +4,13 @@
 //! live Copilot writes; it pins what the reader does with such a log.
 
 use super::*;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::{Duration, Instant}};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 const SID: &str = "0b8f9c1e-2d3a-4b5c-8d6e-7f8091a2b3c4";
 const OTHER: &str = "1c9fad2f-3e4b-4c6d-9e7f-8091a2b3c4d5";
@@ -41,12 +47,19 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Default::default() }
+        Self {
+            home,
+            env: Default::default(),
+        }
     }
 
     /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
+        self.env.replace(
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        );
     }
 
     /// `events.jsonl` of `sid` under the store `root`.
@@ -80,15 +93,28 @@ impl Host {
         let bin = self.home.path().join(".local/bin");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .arg(query_script(
+                "lab",
+                "w1:p1",
+                &self.expect(sid),
+                &options(read),
+            ))
             .env_remove("COPILOT_HOME")
             .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        response(&serde_json::from_slice(&output.stdout).unwrap(), &self.expect(sid), false)
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        response(
+            &serde_json::from_slice(&output.stdout).unwrap(),
+            &self.expect(sid),
+            false,
+        )
     }
 }
 
@@ -102,7 +128,11 @@ fn event(id: &str, kind: &str, data: Value) -> Value {
 }
 
 fn start(sid: &str) -> Value {
-    event("e-start", "session.start", json!({"sessionId": sid, "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.109"}))
+    event(
+        "e-start",
+        "session.start",
+        json!({"sessionId": sid, "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.109"}),
+    )
 }
 
 fn user(id: &str, words: &str) -> Value {
@@ -130,11 +160,23 @@ fn refused(result: Result<Response>) -> &'static str {
 #[test]
 fn events_map_to_chat_and_hidden_secret_or_model_facing_parts_never_show() {
     let host = Host::new(SID, "copilot");
-    let mut hidden = event("e-skill", "user.message", json!({"content": "skill body", "source": "skill-pdf"}));
+    let mut hidden = event(
+        "e-skill",
+        "user.message",
+        json!({"content": "skill body", "source": "skill-pdf"}),
+    );
     hidden["parentId"] = json!("e-1");
-    let mut sub = event("e-sub", "assistant.message", json!({"messageId": "m9", "content": "from a subagent"}));
+    let mut sub = event(
+        "e-sub",
+        "assistant.message",
+        json!({"messageId": "m9", "content": "from a subagent"}),
+    );
     sub["agentId"] = json!("agent-1");
-    let mut passing = event("e-eph", "assistant.message", json!({"messageId": "m8", "content": "ephemeral"}));
+    let mut passing = event(
+        "e-eph",
+        "assistant.message",
+        json!({"messageId": "m8", "content": "ephemeral"}),
+    );
     passing["ephemeral"] = json!(true);
     host.write(SID, &[
         start(SID),
@@ -164,28 +206,77 @@ fn events_map_to_chat_and_hidden_secret_or_model_facing_parts_never_show() {
     let page = host.page(SID, Read::Tail).unwrap();
     assert_eq!(
         texts(&page),
-        ["fix it", "[file: shadow]", "thinking out loud", "on it", "[rate limited]", "Unsupported Copilot event: brand.new_thing"]
+        [
+            "fix it",
+            "[file: shadow]",
+            "thinking out loud",
+            "on it",
+            "[rate limited]",
+            "Unsupported Copilot event: brand.new_thing"
+        ]
     );
     let all = format!("{page:?}");
-    for leak in ["INTERNAL", "SECRET", "SYSTEM PROMPT", "skill body", "from a subagent", "ephemeral", "/etc/shadow", "aGVsbG8"] {
+    for leak in [
+        "INTERNAL",
+        "SECRET",
+        "SYSTEM PROMPT",
+        "skill body",
+        "from a subagent",
+        "ephemeral",
+        "/etc/shadow",
+        "aGVsbG8",
+    ] {
         assert!(!all.contains(leak), "{leak}");
     }
     let user = &page.entries[0];
     assert_eq!(user.role.as_deref(), Some("user"));
     assert_eq!(user.timestamp, Some(1_794_452_400_000));
-    assert!(matches!(&user.blocks[2], Block::Image(Image { part: 0, source: Source::Unreadable })));
-    let tools: Vec<_> = page.entries.iter().flat_map(|entry| &entry.blocks).filter_map(|block| match block {
-        Block::ToolCall { call_id, name, args, .. } => Some(format!("call {call_id} {name} {args}")),
-        Block::ToolResult { call_id, name, text, is_error, images, .. } => Some(format!("result {call_id} {name} {text:?} {is_error} {}", images.len())),
-        _ => None,
-    }).collect();
-    assert_eq!(tools, [
-        r#"call c1 bash {"command":"ls"}"#,
-        r#"result c1 bash "a\nb" false 1"#,
-        "call c2 view {}",
-        r#"result c2 view "denied" true 0"#,
-    ]);
-    assert!(page.entries.iter().any(|entry| entry.kind == Kind::Compaction));
+    assert!(matches!(
+        &user.blocks[2],
+        Block::Image(Image {
+            part: 0,
+            source: Source::Unreadable
+        })
+    ));
+    let tools: Vec<_> = page
+        .entries
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .filter_map(|block| match block {
+            Block::ToolCall {
+                call_id,
+                name,
+                args,
+                ..
+            } => Some(format!("call {call_id} {name} {args}")),
+            Block::ToolResult {
+                call_id,
+                name,
+                text,
+                is_error,
+                images,
+                ..
+            } => Some(format!(
+                "result {call_id} {name} {text:?} {is_error} {}",
+                images.len()
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        tools,
+        [
+            r#"call c1 bash {"command":"ls"}"#,
+            r#"result c1 bash "a\nb" false 1"#,
+            "call c2 view {}",
+            r#"result c2 view "denied" true 0"#,
+        ]
+    );
+    assert!(
+        page.entries
+            .iter()
+            .any(|entry| entry.kind == Kind::Compaction)
+    );
     assert!(!page.has_older);
 }
 
@@ -201,11 +292,26 @@ fn pages_back_and_forth_by_anchored_cursors_and_any_entry_offset_is_a_cursor() {
     assert_eq!(texts(&tail)[0], "m50");
     let older = host.page(SID, Read::Before { offset: tail.start }).unwrap();
     assert!(!older.reset && !older.has_older);
-    assert_eq!(texts(&older), (0..50).map(|n| format!("m{n}")).collect::<Vec<_>>());
-    let mid = host.page(SID, Read::Before { offset: tail.entries[10].offset }).unwrap();
+    assert_eq!(
+        texts(&older),
+        (0..50).map(|n| format!("m{n}")).collect::<Vec<_>>()
+    );
+    let mid = host
+        .page(
+            SID,
+            Read::Before {
+                offset: tail.entries[10].offset,
+            },
+        )
+        .unwrap();
     assert!(!mid.reset);
     assert_eq!(texts(&mid).last().unwrap(), "m59");
-    assert!(host.page(SID, Read::After { offset: tail.end }).unwrap().entries.is_empty());
+    assert!(
+        host.page(SID, Read::After { offset: tail.end })
+            .unwrap()
+            .entries
+            .is_empty()
+    );
     events.push(user("u-new", "appended"));
     host.write(SID, &events);
     let newer = host.page(SID, Read::After { offset: tail.end }).unwrap();
@@ -217,10 +323,27 @@ fn pages_back_and_forth_by_anchored_cursors_and_any_entry_offset_is_a_cursor() {
 #[test]
 fn a_rewind_that_rewrites_the_log_starts_over_from_the_tail() {
     let host = Host::new(SID, "copilot");
-    host.write(SID, &[start(SID), user("u1", "first"), user("u2", "second"), user("u3", "third")]);
+    host.write(
+        SID,
+        &[
+            start(SID),
+            user("u1", "first"),
+            user("u2", "second"),
+            user("u3", "third"),
+        ],
+    );
     let tail = host.page(SID, Read::Tail).unwrap();
     // Same length up to the cursor, other events there.
-    host.write(SID, &[start(SID), user("u1", "first"), user("x2", "SECOND"), user("x3", "THIRD"), user("u4", "after")]);
+    host.write(
+        SID,
+        &[
+            start(SID),
+            user("u1", "first"),
+            user("x2", "SECOND"),
+            user("x3", "THIRD"),
+            user("u4", "after"),
+        ],
+    );
     let page = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert!(page.reset);
     assert_eq!(texts(&page), ["first", "SECOND", "THIRD", "after"]);
@@ -229,7 +352,14 @@ fn a_rewind_that_rewrites_the_log_starts_over_from_the_tail() {
     let page = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert!(page.reset);
     assert_eq!(texts(&page), ["first"]);
-    let page = host.page(SID, Read::Before { offset: tail.entries[2].offset }).unwrap();
+    let page = host
+        .page(
+            SID,
+            Read::Before {
+                offset: tail.entries[2].offset,
+            },
+        )
+        .unwrap();
     assert!(page.reset);
 }
 
@@ -238,11 +368,18 @@ fn a_rotated_head_shows_a_boundary_and_never_its_checkpoint_copies() {
     let host = Host::new(SID, "copilot");
     let mut copy = user("c1", "replayed copy");
     copy["checkpoint"] = json!(true);
-    host.write(SID, &[
-        event("e-link", "session.journal_link", json!({"sessionId": SID, "previousJournal": "events.1.jsonl"})),
-        copy,
-        user("u1", "live"),
-    ]);
+    host.write(
+        SID,
+        &[
+            event(
+                "e-link",
+                "session.journal_link",
+                json!({"sessionId": SID, "previousJournal": "events.1.jsonl"}),
+            ),
+            copy,
+            user("u1", "live"),
+        ],
+    );
     let page = host.page(SID, Read::Tail).unwrap();
     assert_eq!(page.entries[0].kind, Kind::Boundary);
     assert_eq!(texts(&page), ["live"]);
@@ -256,13 +393,28 @@ fn a_rotated_head_shows_a_boundary_and_never_its_checkpoint_copies() {
     events.push(user("u2", "next"));
     host.write(SID, &events);
     let after = host.page(SID, Read::After { offset: tail.end }).unwrap();
-    assert!(after.entries.iter().all(|entry| entry.kind != Kind::Boundary));
+    assert!(
+        after
+            .entries
+            .iter()
+            .all(|entry| entry.kind != Kind::Boundary)
+    );
 }
 
 #[test]
 fn a_head_naming_another_session_is_refused() {
     let host = Host::new(SID, "copilot");
-    host.write(SID, &[event("e-link", "session.journal_link", json!({"sessionId": OTHER})), user("u1", "x")]);
+    host.write(
+        SID,
+        &[
+            event(
+                "e-link",
+                "session.journal_link",
+                json!({"sessionId": OTHER}),
+            ),
+            user("u1", "x"),
+        ],
+    );
     assert_eq!(refused(host.page(SID, Read::Tail)), MISMATCH);
     host.write(SID, &[start(OTHER), user("u1", "x")]);
     assert_eq!(refused(host.page(SID, Read::Tail)), MISMATCH);
@@ -274,7 +426,10 @@ fn a_head_naming_another_session_is_refused() {
 fn another_session_never_leaks_and_an_empty_log_is_an_empty_page() {
     let host = Host::new(SID, "copilot");
     host.write(OTHER, &[start(OTHER), user("o1", "other session")]);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
     fs::write(host.log(SID), format!("{}\n{{\"partial", start(SID))).unwrap();
     let page = host.page(SID, Read::Tail).unwrap();
     assert!(page.entries.is_empty() && !page.has_older);
@@ -284,7 +439,10 @@ fn another_session_never_leaks_and_an_empty_log_is_an_empty_page() {
 fn an_unreadable_line_is_named_not_failed() {
     let host = Host::new(SID, "copilot");
     fs::write(host.log(SID), format!("{}\nnot json\n", start(SID))).unwrap();
-    assert_eq!(texts(&host.page(SID, Read::Tail).unwrap()), ["Unsupported Copilot event: unreadable"]);
+    assert_eq!(
+        texts(&host.page(SID, Read::Tail).unwrap()),
+        ["Unsupported Copilot event: unreadable"]
+    );
 }
 
 #[test]
@@ -292,14 +450,21 @@ fn copilot_home_is_followed_only_when_absolute_and_inside_home() {
     let host = Host::new(SID, "copilot");
     let inside = host.log_in("alt", SID);
     fs::write(&inside, lines(&[start(SID), user("u1", "alt store")])).unwrap();
-    host.environ(&[("COPILOT_HOME", host.home.path().join("alt").to_str().unwrap())]);
+    host.environ(&[(
+        "COPILOT_HOME",
+        host.home.path().join("alt").to_str().unwrap(),
+    )]);
     assert_eq!(texts(&host.page(SID, Read::Tail).unwrap()), ["alt store"]);
     host.environ(&[("COPILOT_HOME", "alt")]);
     assert_eq!(refused(host.page(SID, Read::Tail)), OUTSIDE_HOME);
     let outside = tempfile::tempdir().unwrap();
     let dir = outside.path().join("session-state").join(SID);
     fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("events.jsonl"), lines(&[start(SID), user("u1", "outside")])).unwrap();
+    fs::write(
+        dir.join("events.jsonl"),
+        lines(&[start(SID), user("u1", "outside")]),
+    )
+    .unwrap();
     host.environ(&[("COPILOT_HOME", outside.path().to_str().unwrap())]);
     assert_eq!(refused(host.page(SID, Read::Tail)), OUTSIDE_HOME);
     // A link from inside home to outside is refused the same way.
@@ -344,7 +509,11 @@ fn pages_split_at_the_byte_budget_and_none_is_lost_between_them() {
     let older = host.page(SID, Read::Before { offset: page.start }).unwrap();
     assert!(!older.reset && !older.has_older);
     let first = |text: &String| text.split(' ').next().unwrap().parse::<usize>().unwrap();
-    let seen: Vec<_> = texts(&older).iter().chain(texts(&page).iter()).map(first).collect();
+    let seen: Vec<_> = texts(&older)
+        .iter()
+        .chain(texts(&page).iter())
+        .map(first)
+        .collect();
     assert_eq!(seen, (0..40).collect::<Vec<_>>());
 }
 
@@ -352,7 +521,10 @@ fn pages_split_at_the_byte_budget_and_none_is_lost_between_them() {
 fn another_agent_or_an_id_that_is_not_a_full_uuid_is_never_read() {
     let host = Host::new(SID, "claude");
     host.write(SID, &[start(SID), user("u1", "x")]);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
     let report = |value: &str, process: &str| {
         let pane = json!({"result": {"pane": {"pane_id": "w1:p1", "terminal_id": "term_1", "agent_status": "idle",
             "agent_session": {"agent": "copilot", "kind": "id", "source": "herdr:copilot", "value": value}}}});
@@ -361,8 +533,16 @@ fn another_agent_or_an_id_that_is_not_a_full_uuid_is_never_read() {
     };
     assert_eq!(report(SID, "copilot").unwrap().pid, Some(42));
     assert_eq!(report(SID, "node").unwrap().pid, None);
-    for value in ["0b8f9c1", "0B8F9C1E-2D3A-4B5C-8D6E-7F8091A2B3C4", "0b8f9c1e-2d3a-4b5c-8d6e-7f8091a2b3c", "0b8f9c1e_2d3a-4b5c-8d6e-7f8091a2b3c4"] {
-        assert!(matches!(report(value, "copilot"), Err(Error::NoTranscript)), "{value}");
+    for value in [
+        "0b8f9c1",
+        "0B8F9C1E-2D3A-4B5C-8D6E-7F8091A2B3C4",
+        "0b8f9c1e-2d3a-4b5c-8d6e-7f8091a2b3c",
+        "0b8f9c1e_2d3a-4b5c-8d6e-7f8091a2b3c4",
+    ] {
+        assert!(
+            matches!(report(value, "copilot"), Err(Error::NoTranscript)),
+            "{value}"
+        );
     }
 }
 

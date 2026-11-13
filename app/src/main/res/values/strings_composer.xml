@@ -40,6 +40,10 @@
     <string name="composer_locked_description">Draft, locked, delivery not confirmed</string>
     <string name="composer_locked_reason">Locked: last delivery not confirmed</string>
     <string name="composer_insert_off_desktop">Off: the desktop isn\'t on this tab</string>
+    <string name="composer_insert_withdrawing">Off: a queued request is coming back into the draft</string>
+    <string name="composer_insert_uploading">Off: files are still uploading</string>
+    <string name="composer_insert_files_not_ready">Off: files aren\'t uploaded for this pane</string>
+    <string name="composer_insert_unchecked">Off: the pane isn\'t checked yet</string>
     <string name="composer_sending">Sending…</string>
     <string name="composer_sending_description">Draft, sending, waiting for Herdr</string>
     <string name="composer_unlock_warning">The first message may already be in the pane. Unlock lets you edit and send again; nothing is resent.</string>
@@ -91,7 +95,6 @@
     <string name="reason_editor_caret_unseen">Can\'t confirm the agent is at its prompt: this Herdr doesn\'t pass on the agent\'s input caret. Nothing sent.</string>
     <string name="reason_editor_hidden">The input box isn\'t all on screen here. Show the whole box (hide the keyboard, scroll to the bottom or use a smaller text size), then send again. Nothing sent.</string>
     <string name="reason_target_not_visible">The pane\'s cursor line isn\'t on screen here. Show it (hide the keyboard, scroll to the bottom or use a smaller text size), then insert again. Nothing sent.</string>
-    <string name="composer_back_to_bottom">Back to the bottom</string>
     <string name="reason_resizing">The screen is still resizing. Try again in a moment. Nothing sent.</string>
     <string name="reason_unknown">Can\'t send now. Nothing sent.</string>
     <string name="reason_empty_text">Nothing to deliver</string>

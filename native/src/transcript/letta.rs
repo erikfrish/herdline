@@ -14,7 +14,6 @@
 //! cloud history are not read or migrated. Inline media is normalized but
 //! this reader supplies no media-fetch route or prompt/control channel.
 
-
 use super::{Identity, Read, Response, pi};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
@@ -28,22 +27,55 @@ const PAGE: u64 = 200;
 pub(super) fn identity(pane: &Value, process: &Value) -> Result<Option<Identity>> {
     let pane = &pane["result"]["pane"];
     let reference = &pane["agent_session"];
-    if reference["agent"] != "letta" { return Ok(None); }
+    if reference["agent"] != "letta" {
+        return Ok(None);
+    }
     if reference["kind"] != "id" || reference["source"] != "herdr:letta" {
         return Err(Error::UnsupportedFormat("letta_local_format"));
     }
-    let text = |value: &Value| value.as_str().filter(|s| !s.is_empty()).map(str::to_owned).ok_or(Error::BadReply);
-    let processes = process["result"]["process_info"]["foreground_processes"].as_array().ok_or(Error::NoTranscript)?;
+    let text = |value: &Value| {
+        value
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .ok_or(Error::BadReply)
+    };
+    let processes = process["result"]["process_info"]["foreground_processes"]
+        .as_array()
+        .ok_or(Error::NoTranscript)?;
     let mut found = processes.iter().filter(|p| p["name"] == "letta");
-    let (Some(foreground), None) = (found.next(), found.next()) else { return Err(Error::NoTranscript); };
-    let pid = foreground["pid"].as_u64().and_then(|v| u32::try_from(v).ok()).filter(|v| *v > 0).ok_or(Error::NoTranscript)?;
-    Ok(Some(Identity { pane_id:text(&pane["pane_id"])?, terminal_id:text(&pane["terminal_id"])?,
-        pid:Some(pid), agent:"letta".into(), source:"herdr:letta".into(), kind:"id".into(), path:text(&reference["value"])? }))
+    let (Some(foreground), None) = (found.next(), found.next()) else {
+        return Err(Error::NoTranscript);
+    };
+    let pid = foreground["pid"]
+        .as_u64()
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|v| *v > 0)
+        .ok_or(Error::NoTranscript)?;
+    Ok(Some(Identity {
+        pane_id: text(&pane["pane_id"])?,
+        terminal_id: text(&pane["terminal_id"])?,
+        pid: Some(pid),
+        agent: "letta".into(),
+        source: "herdr:letta".into(),
+        kind: "id".into(),
+        path: text(&reference["value"])?,
+    }))
 }
 
-
-pub(super) fn page(exec: &Exec, session: &str, pane: &str, expect: &Identity, read: Read, reset: bool) -> Result<Response> {
-    let output = exec.run(format!("/bin/sh -c {}", shell_quote(&script(session, pane, expect))), Duration::from_secs(60), ROOM)?;
+pub(super) fn page(
+    exec: &Exec,
+    session: &str,
+    pane: &str,
+    expect: &Identity,
+    read: Read,
+    reset: bool,
+) -> Result<Response> {
+    let output = exec.run(
+        format!("/bin/sh -c {}", shell_quote(&script(session, pane, expect))),
+        Duration::from_secs(60),
+        ROOM,
+    )?;
     if output.exit_status != Some(0) {
         return Err(Error::NoTranscript);
     }
@@ -51,8 +83,12 @@ pub(super) fn page(exec: &Exec, session: &str, pane: &str, expect: &Identity, re
 }
 
 fn script(session: &str, pane: &str, expect: &Identity) -> String {
-    format!("python3 - {} {} <<'HERDLINE_LETTA_LOCAL'\n{}\nHERDLINE_LETTA_LOCAL",
-        shell_quote(&serde_json::to_string(expect).unwrap_or_default()), shell_quote(&super::instance_script(session, pane)), PYTHON)
+    format!(
+        "python3 - {} {} <<'HERDLINE_LETTA_LOCAL'\n{}\nHERDLINE_LETTA_LOCAL",
+        shell_quote(&serde_json::to_string(expect).unwrap_or_default()),
+        shell_quote(&super::instance_script(session, pane)),
+        PYTHON
+    )
 }
 
 fn response(reply: &Value, expect: &Identity, read: Read, reset: bool) -> Result<Response> {
@@ -65,16 +101,29 @@ fn response(reply: &Value, expect: &Identity, read: Read, reset: bool) -> Result
         Some(_) => return Err(Error::NoTranscript),
         None => {}
     }
-    let stamp = reply["stamp"].as_u64().filter(|s| *s > 0 && *s < (1_u64 << 37)).ok_or(Error::BadReply)?;
-    let rows = reply["rows"].as_array().filter(|r| r.len() < STRIDE as usize).ok_or(Error::BadReply)?;
+    let stamp = reply["stamp"]
+        .as_u64()
+        .filter(|s| *s > 0 && *s < (1_u64 << 37))
+        .ok_or(Error::BadReply)?;
+    let rows = reply["rows"]
+        .as_array()
+        .filter(|r| r.len() < STRIDE as usize)
+        .ok_or(Error::BadReply)?;
     let base = stamp * STRIDE;
-    let cursor = match read { Read::After { offset } | Read::Before { offset } => Some(offset), Read::Tail => None };
+    let cursor = match read {
+        Read::After { offset } | Read::Before { offset } => Some(offset),
+        Read::Tail => None,
+    };
     let same = cursor.is_some_and(|c| c / STRIDE == stamp);
     let end = match read {
         Read::Before { offset } if same => (offset % STRIDE).min(rows.len() as u64),
         _ => rows.len() as u64,
     };
-    let start = if matches!(read, Read::After { .. }) && same { end } else { end.saturating_sub(PAGE) };
+    let start = if matches!(read, Read::After { .. }) && same {
+        end
+    } else {
+        end.saturating_sub(PAGE)
+    };
     let mut entries = Vec::with_capacity((end - start) as usize);
     for index in start..end {
         let record = &rows[index as usize];
@@ -87,9 +136,14 @@ fn response(reply: &Value, expect: &Identity, read: Read, reset: bool) -> Result
         entries.push(entry);
     }
     Ok(Response {
-        identity: expect.clone(), status: reply["status"].as_str().unwrap_or("unknown").to_owned(),
-        reset: reset || !same, size: rows.len() as u64, start: base + start, end: base + end,
-        has_older: start > 0, entries,
+        identity: expect.clone(),
+        status: reply["status"].as_str().unwrap_or("unknown").to_owned(),
+        reset: reset || !same,
+        size: rows.len() as u64,
+        start: base + start,
+        end: base + end,
+        has_older: start > 0,
+        entries,
     })
 }
 

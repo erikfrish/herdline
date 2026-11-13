@@ -171,7 +171,10 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
-    if matches!(request.op, Op::Abort | Op::Promote | Op::DialogCancel | Op::Children) {
+    if matches!(
+        request.op,
+        Op::Abort | Op::Promote | Op::DialogCancel | Op::Children
+    ) {
         // The extension speaks no stop, promote, decline or children list
         // (its children ride on the state): say so, nothing was sent.
         let missing = match request.op {
@@ -199,7 +202,12 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
         return Ok(absent());
     };
     let discovery = match exec.run(
-        sh(&discovery_script(herdr_session, &request.pane, pid, RUN_USER)),
+        sh(&discovery_script(
+            herdr_session,
+            &request.pane,
+            pid,
+            RUN_USER,
+        )),
         DISCOVERY_TIMEOUT,
         DISCOVERY_ROOM,
     ) {

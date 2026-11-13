@@ -17,12 +17,10 @@ data class Viewport(
     /** Frame rows wholly drawn, inclusive; a partly drawn row never counts. */
     val first: Int,
     val last: Int,
-    /** The drawable area in view pixels after the bottom clip; y = 0 at the view's top. */
+    /** The drawable area in view pixels; y = 0 at the view's top. */
     val rect: Rect,
     /** The view's own offsetY, unrounded. */
     val offsetYPx: Float,
-    val hiddenRows: Int,
-    val clipBottomPx: Int,
     /** The view's cell size as it draws, not the rounded grid values. */
     val cellWidthPx: Float,
     val cellHeightPx: Float,
@@ -60,8 +58,9 @@ internal fun viewportJson(
             JSONObject().put("x", v.rect.x).put("y", v.rect.y).put("width", v.rect.width).put("height", v.rect.height),
         )
         .put("offset_y_px", v.offsetYPx.toDouble())
-        .put("hidden_rows", v.hiddenRows)
-        .put("clip_bottom_px", v.clipBottomPx)
+        // Wire contract: the native core still takes a hidden-row count and a bottom clip; the app hides and clips nothing.
+        .put("hidden_rows", 0)
+        .put("clip_bottom_px", 0)
         .put("cell_width_px", v.cellWidthPx.toDouble())
         .put("cell_height_px", v.cellHeightPx.toDouble())
 }

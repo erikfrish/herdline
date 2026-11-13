@@ -255,6 +255,13 @@ Requirements:
 - `socat` for the native ingress socket tests (`sudo apt-get install socat` on Ubuntu)
 - [just](https://github.com/casey/just), optional, for the recipes below
 
+The app currently targets SDK 36. Android's local-network runtime permission
+is enforced for target SDK 37+, not merely because the device runs API 37.
+Do not add or request `ACCESS_LOCAL_NETWORK` while targeting 36. A target SDK
+37 migration must include the permission request before direct LAN SSH,
+denial/revocation handling, and a permission-specific error rather than a
+generic no-route message. See [Android's local-network permission contract](https://developer.android.com/privacy-and-security/local-network-permission).
+
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
@@ -267,6 +274,18 @@ just test       # Rust core tests on the host, then Kotlin unit tests
 
 Gradle runs cargo-ndk before every build. If Zig cannot fetch Ghostty's
 dependencies, prefetch each URL it reports with `zig fetch <url>`.
+
+### Publication verification
+
+The manually dispatched Release workflow first calls the repository's CI
+workflow at the same source commit. Publication depends on that invocation
+succeeding; it never reuses a green check from an older commit. CI checks the
+Rust workspace, builds the APKs and runs the existing rendered Tabs header,
+pin-sheet and Terminal IME tests on a fresh hosted emulator. These bounded
+checks are not a full device regression or proof of Samsung Now Bar placement.
+Release verification and ordinary push CI have separate concurrency groups.
+The feed update no longer carries a skip-CI marker; GitHub's own rule that
+`GITHUB_TOKEN` pushes do not trigger another workflow still applies.
 
 ### Fast changed-feature checks
 
