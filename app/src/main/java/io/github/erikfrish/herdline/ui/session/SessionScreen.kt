@@ -964,7 +964,8 @@ fun SessionScreen(
                                     // Compact, 1 dp gaps: at 308 dp ←, the place, the chip, two glyph segments and ⋮ (48 dp each) fit.
                                     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 1.dp else 4.dp)) {
                                         if (blocked.isNotEmpty()) {
-                                            // Measured last and at least 48 dp: where the row is bounded only its count ellipsizes, never ⋮ or Chat | Terminal.
+                                            // Measured last and at least 48 dp: in a bounded one-row header only its count can ellipsize
+                                            // (headerFit wraps the phone header first), never ⋮ or Chat | Terminal.
                                             AttentionChip(
                                                 needLabel,
                                                 AgentStatus.Blocked.color(),
