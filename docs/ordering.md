@@ -89,7 +89,7 @@ migrated too, never an explicit List choice.
 
 Two-column cards share their row's tallest content height; the full card
 remains tappable. The phone header keeps Tabs and the compact New tab action
-on one row, with host and totals below. At 320 dp or large fonts, New tab
+on one row, with host and totals below. Below 320 dp or at large fonts, New tab
 becomes a 48 dp icon-only action with its full spoken label. Totals wrap to
 two lines before ellipsizing. Scope and category pills share one horizontal
 scrolling row in the overview; Scope is capped at 180 dp only in that row,
