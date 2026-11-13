@@ -23,7 +23,6 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
-import io.github.erikfrish.herdline.data.IconVariant
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.ui.MainActivity
 
@@ -37,6 +36,9 @@ enum class Promotion {
 
     /** The card is stale and is not offered for promotion. */
     Stale,
+
+    /** A finished run's brief card: a past activity, so not offered for promotion. */
+    Finished,
 
     /** Android before 16 has no promoted notifications: an ordinary ongoing card. */
     Unsupported,
@@ -86,8 +88,8 @@ object AgentNotifications {
     )
 
     /** What a child notification carries beyond its constant fields. */
-    private data class ChildPost(val words: Redacted, val lock: LockDetail, val at: Long, val variant: IconVariant)
-    private data class SummaryPost(val words: Redacted, val lock: LockDetail, val variant: IconVariant)
+    private data class ChildPost(val words: Redacted, val lock: LockDetail, val at: Long)
+    private data class SummaryPost(val words: Redacted, val lock: LockDetail)
 
     private val alerts = AgentAlerts()
     private val notes = HashMap<String, Note>()
@@ -430,8 +432,7 @@ object AgentNotifications {
         // The Needs input glyph: the same shape as the in-app Blocked diamond.
         val icon = if (attention) R.drawable.ic_needs_input else R.drawable.ic_notification
         val words = agentContent(texts, attention, note.node, note.agent, note.title, note.body, stale, lock, locked)
-        val variant = (context.applicationContext as HerdlineApp).settings.settings.value.iconVariant
-        if (children.put(note.key.tag, ChildPost(words, lock, note.at, variant)) || force) {
+        if (children.put(note.key.tag, ChildPost(words, lock, note.at)) || force) {
             val child = NotificationCompat.Builder(context, channel)
                 .setSmallIcon(icon)
                 .setWhen(note.at)
@@ -454,7 +455,7 @@ object AgentNotifications {
         }
 
         val sum = summaryContent(texts, note.node, lock, locked)
-        if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock, variant)) || force) {
+        if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock)) || force) {
             val summary = NotificationCompat.Builder(context, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setGroup(group(nodeId))

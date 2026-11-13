@@ -84,6 +84,7 @@ import io.github.erikfrish.herdline.data.ComposerMenu
 import io.github.erikfrish.herdline.data.Density
 import io.github.erikfrish.herdline.data.IconVariant
 import io.github.erikfrish.herdline.data.drawableRes
+import io.github.erikfrish.herdline.data.installedOf
 import io.github.erikfrish.herdline.data.labelRes
 import io.github.erikfrish.herdline.data.LayoutMode
 import io.github.erikfrish.herdline.data.LockDetail
@@ -456,6 +457,9 @@ internal fun LazyListScope.iconSettings(store: SettingsStore, settings: Settings
                 }
                 Help(stringResource(R.string.icon_closes_help))
                 Help(stringResource(R.string.icon_help))
+                // The badge is the installed application icon, whatever is selected.
+                val installed = installedOf(LocalContext.current.applicationInfo.icon)
+                Help(installed?.let { stringResource(R.string.icon_installed, stringResource(it.labelRes)) } ?: stringResource(R.string.icon_installed_unknown))
             }
         }
         pending?.let { variant ->
@@ -896,6 +900,7 @@ private fun promotionText(state: Promotion): Int = when (state) {
     Promotion.Off -> R.string.promotion_off
     Promotion.NoCard -> R.string.promotion_no_card
     Promotion.Stale -> R.string.promotion_stale
+    Promotion.Finished -> R.string.promotion_finished
     Promotion.Unsupported -> R.string.promotion_unsupported
     Promotion.NotAllowed -> R.string.promotion_not_allowed
     Promotion.NotPromotable -> R.string.promotion_not_promotable

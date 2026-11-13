@@ -11,12 +11,11 @@ import java.util.EnumMap
 
 /**
  * The app's icon identity outside the launcher. [apply] switches the launcher
- * entry; [icon] gives the same variant as one bitmap for Recents task icons,
- * notification large icons and in-app logos. The icon Android Settings and the
- * system's package views show stays the manifest's static one: the platform
- * reads it from the installed manifest and no app can change it at runtime.
- * The manifest ships one tile for all of them (Dusk since 0.6.0, matching the
- * notification header icon Samsung draws there).
+ * entry; [icon] gives the same variant as one bitmap for Recents task icons
+ * and in-app logos. The notification app badge and Android App info show the
+ * manifest's static application icon (Wood, [IconVariant.Default]): Android
+ * and the phone maker read it from the installed package and no app can
+ * change it at runtime. Notifications carry no large icon.
  */
 
 object IconVariants {
@@ -43,13 +42,13 @@ object IconVariants {
     /**
      * The full-colour icon of [variant] as one bitmap, drawn from the variant's
      * launcher-ready adaptive icon. Cached per variant for the life of the
-     * process, bounded to the enum's entries: a posted notification or a Recents
-     * [android.app.ActivityManager.TaskDescription] holds the instance, so it is
-     * never recycled and never re-drawn per notification.
+     * process, bounded to the enum's entries: a Recents
+     * [android.app.ActivityManager.TaskDescription] or an in-app logo holds the
+     * instance, so it is never recycled and never re-drawn.
      */
     @Synchronized
     fun icon(context: Context, variant: IconVariant): Bitmap = icons.getOrPut(variant) {
-        val size = 256 // large icons and task icons never show more detail
+        val size = 256 // task icons and in-app logos never show more detail
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val glyph = checkNotNull(context.getDrawable(variant.drawableRes)) { variant }
         glyph.setBounds(0, 0, size, size)
@@ -89,3 +88,6 @@ val IconVariant.labelRes: Int
         IconVariant.Meadow -> R.string.icon_label_meadow
         IconVariant.Dusk -> R.string.icon_label_dusk
     }
+
+/** The variant whose launcher icon is [icon], the installed application icon; null when none matches. */
+internal fun installedOf(icon: Int): IconVariant? = IconVariant.entries.firstOrNull { it.drawableRes == icon }
