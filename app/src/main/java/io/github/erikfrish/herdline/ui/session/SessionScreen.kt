@@ -1927,21 +1927,13 @@ private fun SessionMenu(
         icon: ImageVector,
         enabled: Boolean = true,
         destructive: Boolean = false,
-        subtitle: Int? = null,
         tag: String? = null,
         run: () -> Unit,
     ) {
         val color = (if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             .let { if (enabled) it else it.copy(alpha = 0.38f) }
         DropdownMenuItem(
-            text = {
-                Column {
-                    Text(stringResource(label), color = color)
-                    if (subtitle != null) {
-                        Text(stringResource(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
+            text = { Text(stringResource(label), color = color) },
             leadingIcon = { Icon(icon, null, tint = color.copy(alpha = 0.8f), modifier = Modifier.size(20.dp)) },
             enabled = enabled,
             onClick = { onDismiss(); run() },
