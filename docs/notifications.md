@@ -102,6 +102,10 @@ fields; `ConnectionService.build` posts them).
   saved until Pin. The sheet preselects the live level chosen before, else
   the notification lock detail the user ever saved (Hidden included), else
   State only, marked "Suggested".
+  Agents also exposes the same pin as a separate 48 dp action on each row,
+  with a visible Live mark. Pin opens the same privacy sheet; Cancel saves
+  nothing. Unpin is immediate. Neither action opens a session or moves its
+  desktop focus, and pins survive navigation and app restarts.
 - **States.** Shown only while a pinned agent is Working (promoted) or just
   finished. Done is shown once with the run's length, then hidden after 10 s
   without deleting the pin; the next Working episode is live again. Blocked hands off: one
