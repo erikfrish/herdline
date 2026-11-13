@@ -446,12 +446,20 @@ Switcher:
   spawning call) folds into the rows between file reads, and a closed
   session loses it — nothing fabricates it. The live state needs OMP's
   public `pi.events` API; without it the persisted fallback above still
-  draws children from `subagents[]` snapshots and `subagent_ends`. The
-  extension is a repository asset of two files that must both be copied
-  into the same folder, `host/omp/herdline-ingress.ts` and
-  `host/omp/live-subagents.ts`, followed by the user restarting or
-  reloading their own OMP by hand: installing it is the user's own choice,
-  never an app-side auto-setup.
+  draws children from `subagents[]` snapshots and `subagent_ends`.
+  **Upstream prerequisite.** The extension's control endpoint
+  (`host/omp/herdline-ingress.ts`, with `host/omp/live-subagents.ts`) needs
+  OMP control hooks that no public OMP release offers (checked up to
+  v18.20.0): `ctx.getQueuedMessages` with request-id entries,
+  `ctx.withdrawQueuedMessage`, `ctx.ui.hasOpenDialog`,
+  `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog`,
+  `ctx.sessionManager.flush`, and `ctx.isCollabSession` (asked per request:
+  without it each request is refused as `collab_state_unknown`). On stock
+  OMP the extension reports Unsupported with the missing hook names, and
+  Chat refuses through it, never typing into the pane instead. Image Steer, Chat
+  questionnaire answers and acknowledged Steer stay unavailable until
+  upstream OMP offers these hooks; without an endpoint, text Send and Steer
+  keep the pane route with its own checks, Check and Unlock.
   A task tool never claims Done while one of its children runs, and such a
   run keeps its steps visible instead of folding away.
 - **Reading width.** Prose (paragraphs, headings, lists, quotes, rules and
