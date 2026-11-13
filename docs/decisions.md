@@ -471,6 +471,16 @@ Switcher:
   validated PTY fallback reads the whole host editor, not the hidden phone
   crop, and still refuses a remote draft, popup, blocked agent or short OMP
   editor. Terminal delivery retains its own viewport gate unchanged.
+- **PTY confirmation** requires a new user entry after the pre-send history
+  boundary in the exact bound instance. For OMP, the expected text follows
+  its pinned paste/submit rules: control filtering, line-end folding, NFC,
+  three spaces per tab and ECMAScript edge trimming. The recorded entry is
+  compared whole, unchanged and untruncated; other programs remain exact.
+  A missing match keeps the hold. Nothing is resent or unlocked on a timer.
+  OMP steers use the same comparison. Runtime-dependent rewrites (emoticon
+  expansion, extensions or prompt templates) are not guessed: if they change
+  the stored text, confirmation remains held rather than accepting another
+  possible message. This does not change the input or runtime settings.
 - **Unreadable Chat re-checks once** (F-OBS1, `ui/session/ChatRecheck.kt`).
   A Chat tap on a pane Chat fell back from, for a transient reason, reads
   it once and switches to Chat on success while the tap is still pending:

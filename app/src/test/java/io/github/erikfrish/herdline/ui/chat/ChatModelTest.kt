@@ -219,20 +219,47 @@ class ChatModelTest {
 
     @Test
     fun a_pty_send_is_sent_only_when_its_exact_session_gains_that_turn() {
-        val sent = "  ping ✓\nline two\nline three\nline four "
+        val sent = "ping ✓\nline two\nline three\nline four"
         val landed = text("u9", null, 100, "user", sent)
-        // One new user turn holding all four lines, edges and all, past the history's end before the tap.
+        // One new user turn holding all four lines past the history's end before the tap.
         assertTrue(ptyTurnLanded(page(landed, start = 100, end = 140), agent, before = 100, text = sent))
         // The same words already in the history before the tap are not this send, also next to a changed new turn.
         assertFalse(ptyTurnLanded(page(text("u1", null, 40, "user", sent), text("u9", null, 100, "user", "other")), agent, before = 100, text = sent))
-        // Recorded with other line ends or trimmed: not byte-equal, so not proven.
+        // Recorded with different line ends: not the submitted form, so not proven.
         assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.replace("\n", "\r\n"))), agent, 100, sent))
-        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", sent.trim())), agent, 100, sent))
         // Split across turns or echoed by the assistant: not landed.
-        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", "  ping ✓"), text("u10", null, 110, "user", "line two\nline three\nline four ")), agent, 100, sent))
+        assertFalse(ptyTurnLanded(page(text("u9", null, 100, "user", "ping ✓"), text("u10", null, 110, "user", "line two\nline three\nline four")), agent, 100, sent))
         assertFalse(ptyTurnLanded(page(text("a9", null, 100, "assistant", sent)), agent, 100, sent))
         // Another instance or a history that started over proves nothing.
         assertFalse(ptyTurnLanded(page(landed, identity = agent.copy(pid = 43)), agent, 100, sent))
         assertFalse(ptyTurnLanded(page(landed, reset = true), agent, 100, sent))
+    }
+
+    @Test
+    fun anOmpTurnShownInChatConfirmsTheTextItsEditorActuallySubmits() {
+        // OMP's pinned editor folds paste line ends/NFC/tabs, then trims on submit.
+        // The actual trailing-space/newline case left the composer held after Chat showed the turn.
+        val cases = listOf(
+            "Qa-inpane-a \n" to "Qa-inpane-a",
+            "  Проверка\nвторая строка  " to "Проверка\nвторая строка",
+            "\u00a0\uFEFFе\u0308\tтекст\r\nещё\uFEFF" to "ё   текст\nещё",
+            "до\u0007 после" to "до после",
+        )
+        for ((typed, recorded) in cases) {
+            val landed = text("u9", null, 100, "user", recorded)
+            val read = page(landed, start = 100, end = 140)
+            assertEquals(recorded, (chatItems(read.entries).single() as ChatItem.User).text)
+            assertTrue(recorded, ptyTurnLanded(read, agent, 100, typed))
+            assertFalse("older turn", ptyTurnLanded(read, agent, 101, typed))
+            assertFalse("other instance", ptyTurnLanded(read.copy(identity = agent.copy(pid = 43)), agent, 100, typed))
+            assertFalse("reset", ptyTurnLanded(read.copy(reset = true), agent, 100, typed))
+            assertFalse("truncated text", ptyTurnLanded(read.copy(entries = listOf(landed.copy(blocks = listOf(TranscriptBlock.Text(recorded, true))))), agent, 100, typed))
+        }
+        assertFalse("interior spaces remain significant", ptyTurnLanded(page(text("u9", null, 100, "user", "one two")), agent, 100, "one  two"))
+        assertFalse("no substring match", ptyTurnLanded(page(text("u9", null, 100, "user", "prefix text")), agent, 100, "text"))
+        assertFalse("empty submitted form", ptyTurnLanded(page(text("u9", null, 100, "user", "")), agent, 100, " \n"))
+        assertFalse("zero-width space is not trimmed", ptyTurnLanded(page(text("u9", null, 100, "user", "text")), agent, 100, "\u200btext"))
+        val pi = agent.copy(agent = "pi", source = "herdr:pi")
+        assertFalse("no unpinned trim for other programs", ptyTurnLanded(page(text("u9", null, 100, "user", "text"), identity = pi), pi, 100, " text "))
     }
 }
