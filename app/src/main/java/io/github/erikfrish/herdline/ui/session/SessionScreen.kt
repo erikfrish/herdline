@@ -78,6 +78,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -222,6 +223,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import androidx.compose.runtime.snapshotFlow
@@ -1540,12 +1543,20 @@ fun SessionScreen(
         }
         if (switcherOpen && !wide) {
             val switcherSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            // INVIS-SHEET-2: once shown, the sheet at Hidden is dropped, whoever moved it there. A hide cut short leaves it up;
+            // an anchor change (the rotation) then snaps it to Hidden through trySnapTo, the one M3 path that calls no
+            // onDismissRequest: kept composed, its invisible scrim ate the next tap. The opening Hidden is skipped.
+            LaunchedEffect(switcherSheet) {
+                snapshotFlow { switcherSheet.currentValue }.dropWhile { it == SheetValue.Hidden }.first { it == SheetValue.Hidden }
+                switcherOpen = false
+            }
             // U-1 #7: the header's Close slides the sheet out as a swipe does; Back, the scrim and swipe-down are unchanged.
-            // A hide that ran to its end drops the sheet even if M3 left it short of the Hidden anchor
-            // (isVisible still true): kept composed, its invisible scrim ate the next tap (INVIS-SHEET).
-            // Only a hide cut short by a drag keeps it while it shows; that drag settles or dismisses it.
+            // A hide that ran to its end drops the sheet even if M3 left it short of the Hidden anchor (INVIS-SHEET).
+            // A hide cut short while the sheet shows keeps it; the effect above drops it once it reaches Hidden.
+            // In this opening's scope: a sheet dropped mid-hide (Back) cancels it, so it cannot close the next opening.
+            val sheetScope = rememberCoroutineScope()
             val closeSwitcher: () -> Unit = {
-                scope.launch { switcherSheet.hide() }.invokeOnCompletion { cause ->
+                sheetScope.launch { switcherSheet.hide() }.invokeOnCompletion { cause ->
                     if (cause == null || !switcherSheet.isVisible) switcherOpen = false
                 }
             }

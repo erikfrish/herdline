@@ -25,6 +25,11 @@ import io.github.erikfrish.herdline.R
  * [onClose] must hide the sheet first and drop it after, as a swipe does, also
  * when the hide ends short of the Hidden anchor (INVIS-SHEET):
  * `scope.launch { state.hide() }.invokeOnCompletion { cause -> if (cause == null || !state.isVisible) open = false }`.
+ * A hide cut short with the sheet still up keeps it; then the sheet must also be
+ * dropped once it reaches Hidden after it has shown, since M3's anchor-change
+ * snap calls no onDismissRequest (INVIS-SHEET-2; see the Tabs sheet in SessionScreen).
+ * Both rely on a `confirmValueChange` that never vetoes Hidden: a vetoed `hide()`
+ * returns at once with the sheet still up, and this would drop it.
  * It takes no focus by itself; TalkBack reaches it as the last action of the header.
  */
 @Composable
