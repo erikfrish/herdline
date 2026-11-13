@@ -43,6 +43,10 @@ pub enum Refusal {
     RemoteDraft,
     /// OMP's box could not be read, for a cause not measured below.
     EditorUnrecognized,
+    /// Claude's empty box, with its hidden cursor on the caret cell, but no
+    /// inverse caret drawn there: Herdr did not pass the caret's style, so
+    /// the editor's ownership of input can't be confirmed.
+    EditorCaretUnseen,
     /// Rows are drawn under OMP's whole box: a list or menu.
     EditorListBelow,
     /// OMP's box reaches the bottom, but its top border is not on screen.
@@ -431,7 +435,13 @@ pub fn check(registry: &Registry, surface: &Surface<'_>, pane: &str, phone: &Pho
             Program::Pi => cursor_in_box(surface.frame, span.as_ref()),
             Program::Claude => {
                 cursor_in_box(surface.frame, span.as_ref())
-                    || claude_caret(surface.frame, pane, span.as_ref())
+                    || match claude_caret(surface.frame, pane, span.as_ref()) {
+                        Caret::Seen => true,
+                        // Herdr dropped the caret's style: say so, not that
+                        // the box can't be read.
+                        Caret::Unstyled => return Err(Refusal::EditorCaretUnseen),
+                        Caret::Absent => false,
+                    }
             }
             _ => true,
         };
@@ -1212,20 +1222,34 @@ fn cursor_in_box(
     frame.cursor.visible && span.contains(&frame.cursor.y)
 }
 
+/// What [`claude_caret`] found at Claude's empty editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Caret {
+    /// The editor owns input: its caret is drawn as below.
+    Seen,
+    /// Everything holds but the caret's style: no inverse run in the box at
+    /// all. Herdr 0.9.5 swaps the colours and drops the inverse flag.
+    Unstyled,
+    /// Not known to be Claude's empty editor.
+    Absent,
+}
+
 /// Claude hides the hardware cursor and draws its own caret: one inverse
 /// space straight after its `❯` prompt and a no-break space. Herdr still
 /// places the hidden cursor on that cell. The editor owns input when the
 /// box is its three rows, the hidden cursor stands on that cell of this
-/// pane, and the only inverse run in the box there is that caret with no
-/// other style and in the theme's own colours. Anything else is not known
-/// to be Claude's empty editor.
+/// pane, `❯` and the no-break space are drawn before it, and the only
+/// inverse run in the box is that caret with no other style and in the
+/// theme's own colours. With no inverse run in the box and the rest
+/// holding, the caret is [`Caret::Unstyled`]. Anything else is not known to
+/// be Claude's empty editor.
 fn claude_caret(
     frame: Option<&RenderFrame>,
     pane: &str,
     span: Option<&std::ops::RangeInclusive<u16>>,
-) -> bool {
+) -> Caret {
     let (Some(frame), Some(span)) = (frame, span) else {
-        return false;
+        return Caret::Absent;
     };
     let Some(rect) = frame
         .panes
@@ -1233,37 +1257,45 @@ fn claude_caret(
         .find(|area| area.id == pane)
         .map(|area| area.rect)
     else {
-        return false;
+        return Caret::Absent;
     };
     if span.end().checked_sub(*span.start()) != Some(2) {
-        return false;
+        return Caret::Absent;
     }
     let prompt = span.start() + 1;
     let caret = (rect.x.saturating_add(2), prompt);
     let cursor = frame.cursor;
     if cursor.visible || (cursor.x, cursor.y) != caret {
-        return false;
+        return Caret::Absent;
     }
     let right = rect.x.saturating_add(rect.width);
     let in_box = frame.runs.iter().filter(|run| {
         span.contains(&run.row) && run.col >= rect.x && run.col.saturating_add(run.cells) <= right
     });
-    let mut inverse = in_box.clone().filter(|run| run.flags & flags::INVERSE != 0);
-    let (Some(run), None) = (inverse.next(), inverse.next()) else {
-        return false;
-    };
     let drawn = |col: u16, text: &str| {
         in_box
             .clone()
             .any(|run| run.row == prompt && run.col == col && run.cells == 1 && run.text == text)
     };
-    (run.col, run.row) == caret
+    if !(drawn(rect.x, "❯") && drawn(rect.x + 1, "\u{a0}")) {
+        return Caret::Absent;
+    }
+    let mut inverse = in_box.clone().filter(|run| run.flags & flags::INVERSE != 0);
+    let run = match (inverse.next(), inverse.next()) {
+        (None, _) => return Caret::Unstyled,
+        (Some(run), None) => run,
+        (Some(_), Some(_)) => return Caret::Absent,
+    };
+    if (run.col, run.row) == caret
         && run.cells == 1
         && run.text == " "
         && run.flags == flags::INVERSE | flags::BACKGROUND | flags::ASCII
         && (run.fg, run.bg) == (frame.background, frame.foreground)
-        && drawn(rect.x, "❯")
-        && drawn(rect.x + 1, "\u{a0}")
+    {
+        Caret::Seen
+    } else {
+        Caret::Absent
+    }
 }
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

@@ -262,6 +262,7 @@
     <string name="fit_pane_moves_desktop">在此适配还会把桌面焦点移到它，并只显示其一部分。</string>
     <string name="reason_editor_none">此窗格中未绘制输入框。请打开终端，确认程序处于输入提示符下，然后再次发送。未发送任何内容。</string>
     <string name="reason_editor_unrecognized">无法读取输入框。请在终端中查看，然后再次发送。未发送任何内容。</string>
+    <string name="reason_editor_caret_unseen">无法确认代理处于输入提示处：此版本的 Herdr 未传递代理的输入光标。未发送任何内容。</string>
     <string name="reason_editor_hidden">输入框没有全部显示在屏幕上。请显示整个输入框（收起键盘、滚动到底部或使用更小的字号），然后再次发送。未发送任何内容。</string>
     <string name="reason_target_not_visible">窗格的光标行不在屏幕上。请让它显示出来（收起键盘、滚动到底部或使用更小的字号），然后再次插入。未发送任何内容。</string>
     <string name="composer_back_to_bottom">回到底部</string>

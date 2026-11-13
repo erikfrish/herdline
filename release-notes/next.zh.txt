@@ -1,0 +1,18 @@
+Carried into the next release's notes; this file goes away in that release commit.
+
+1. TC-RCPT-6 (design/TC-RCPT.md Addendum 4). Add, as the first line of the list:
+- 聊天：在 Herdr 0.9.5 下使用 Claude Code 时，被拒绝的发送现在说明无法确认代理的输入光标，而不再提示再次发送。
+
+The carried TC-RCPT-5 line (the notice without Append) stays as in 0.6.60.
+
+2. View names (design/ZH-TABS-VIEW-TERMS.md, ff125f7d). In the lines carried from release-notes/0.6.60.zh.txt (line numbers there), replace exactly; nothing else on these lines changes:
+| 0.6.60 line | Replace | With |
+|---|---|---|
+| 4 | “两列”、“工作区横排”和“列表” | “双列”、“工作区横排”和“列表” |
+| 9 | 在“两列”、“工作区横排”和“列表”中 | 在“双列”、“工作区横排”和“列表”中 |
+| 9 | 这两项在“两列”中 | 这两项在“双列”中 |
+| 11 | 包括列表、双栏和工作区栏视图 | 包括“列表”、“双列”和“工作区横排”视图 |
+| 11 | 它在双栏和工作区栏中的卡片 | 它在“双列”和“工作区横排”中的卡片 |
+| 35 | “列表”、“两列”和“工作区横排” | “列表”、“双列”和“工作区横排” |
+| 39 | “列表”、“两列”和“工作区横排” | “列表”、“双列”和“工作区横排” |
+After the change the file has no 两列, 双栏, 两栏 or 工作区栏.

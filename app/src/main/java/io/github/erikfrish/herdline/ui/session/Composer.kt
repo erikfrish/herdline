@@ -2934,6 +2934,7 @@ internal fun reasonRes(reason: String): Int =
         "pane_sized_elsewhere" -> R.string.reason_pane_sized_elsewhere
         "editor_none" -> R.string.reason_editor_none
         "editor_unrecognized" -> R.string.reason_editor_unrecognized
+        "editor_caret_unseen" -> R.string.reason_editor_caret_unseen
         "editor_hidden" -> R.string.reason_editor_hidden
         "target_not_visible" -> R.string.reason_target_not_visible
         "resizing" -> R.string.reason_resizing

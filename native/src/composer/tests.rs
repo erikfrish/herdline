@@ -1409,10 +1409,12 @@ fn rgb(color: libghostty_vt::style::RgbColor) -> u32 {
 /// Claude hides its hardware cursor and draws an inverse caret. A Chat
 /// send goes when the hidden cursor stands on that one plain inverse cell
 /// right after `❯` and a no-break space in this pane's box, or when a
-/// visible cursor is inside the box, as before. Lookalikes, a misplaced or
-/// extra caret, another pane's caret, a styled caret, and the unknown
-/// footer, menu and dialog cases refuse. Rows and footers are Claude's own
-/// at 30x20 and 80x39, rendered through Ghostty from Herdr's cells.
+/// visible cursor is inside the box, as before. The same box with no
+/// inverse run at all, as Herdr 0.9.5 sends it with the colours swapped,
+/// says the caret is unseen. Lookalikes, a misplaced or extra caret,
+/// another pane's caret, a styled caret, and the unknown footer, menu and
+/// dialog cases refuse. Rows and footers are Claude's own at 30x20 and
+/// 80x39, rendered through Ghostty from Herdr's cells.
 #[test]
 fn claude_chat_send_needs_its_caret_or_a_cursor_in_the_box() {
     type Edit = fn(&mut FrameData, u16, u16);
@@ -1433,7 +1435,7 @@ fn claude_chat_send_needs_its_caret_or_a_cursor_in_the_box() {
             ));
         }
     }
-    let cases: [(&str, Edit, Result<(), Refusal>); 14] = [
+    let cases: [(&str, Edit, Result<(), Refusal>); 15] = [
         (
             "visible cursor on the caret",
             |g, _, _| g.cursor.as_mut().unwrap().visible = true,
@@ -1447,11 +1449,19 @@ fn claude_chat_send_needs_its_caret_or_a_cursor_in_the_box() {
                 caret.fg = rgb(Theme::DARK.background);
                 caret.bg = rgb(Theme::DARK.foreground);
             },
-            Err(Refusal::EditorUnrecognized),
+            Err(Refusal::EditorCaretUnseen),
         ),
         (
             "no caret",
             |g, x, y| cell_at(g, x, y).modifier = 0,
+            Err(Refusal::EditorCaretUnseen),
+        ),
+        (
+            "no caret, hidden cursor one column on",
+            |g, x, y| {
+                cell_at(g, x, y).modifier = 0;
+                g.cursor.as_mut().unwrap().x = x + 1;
+            },
             Err(Refusal::EditorUnrecognized),
         ),
         (
