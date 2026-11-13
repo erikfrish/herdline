@@ -1541,8 +1541,13 @@ fun SessionScreen(
         if (switcherOpen && !wide) {
             val switcherSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             // U-1 #7: the header's Close slides the sheet out as a swipe does; Back, the scrim and swipe-down are unchanged.
+            // A hide that ran to its end drops the sheet even if M3 left it short of the Hidden anchor
+            // (isVisible still true): kept composed, its invisible scrim ate the next tap (INVIS-SHEET).
+            // Only a hide cut short by a drag keeps it while it shows; that drag settles or dismisses it.
             val closeSwitcher: () -> Unit = {
-                scope.launch { switcherSheet.hide() }.invokeOnCompletion { if (!switcherSheet.isVisible) switcherOpen = false }
+                scope.launch { switcherSheet.hide() }.invokeOnCompletion { cause ->
+                    if (cause == null || !switcherSheet.isVisible) switcherOpen = false
+                }
             }
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },

@@ -22,8 +22,9 @@ import io.github.erikfrish.herdline.R
  * edits nothing; it only navigates, so leaving it is closing, the same as the
  * drag handle, a tap on the scrim or Back, which all keep working.
  *
- * [onClose] must hide the sheet first and drop it after, as a swipe does:
- * `scope.launch { state.hide() }.invokeOnCompletion { if (!state.isVisible) open = false }`.
+ * [onClose] must hide the sheet first and drop it after, as a swipe does, also
+ * when the hide ends short of the Hidden anchor (INVIS-SHEET):
+ * `scope.launch { state.hide() }.invokeOnCompletion { cause -> if (cause == null || !state.isVisible) open = false }`.
  * It takes no focus by itself; TalkBack reaches it as the last action of the header.
  */
 @Composable
