@@ -301,7 +301,10 @@ combinations); `pin --ui` passed in 10.7 s (6 unit tests plus 3 Android
 storage/privacy tests). Both times include incremental APK checks, installation
 and instrumentation. First dependency preparation took 28.5 s separately.
 Pin storage recreation is in-process; this does not claim a cold process or
-live SSH end-to-end check. Only these two UI profiles have measured timings.
+live SSH end-to-end check. `terminal --ui` passed on the warm API 36 emulator
+in 25.8 s (13 unit tests plus 8 real IME gesture tests). Its emulator-only
+hardware-keyboard setting is enabled temporarily and restored in `finally`.
+Only these three UI profiles have measured timings.
 
 QA agents inspect only fresh functionality or a changed path after its fix.
 Previously covered behavior runs through the selected automated check;

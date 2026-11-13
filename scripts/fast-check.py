@@ -110,14 +110,27 @@ def main() -> int:
             run("install-target", adb + ["shell", "-T", "cmd", "package", "install", "-r", "-S", str(target.stat().st_size)], stdin=target)
             run("install-tests", adb + ["shell", "-T", "cmd", "package", "install", "-r", "-S", str(test.stat().st_size)], stdin=test)
             classes = ",".join("io.github.erikfrish.herdline." + name for name in ui)
-            text = run("instrumentation", adb + ["shell", "am", "instrument", "-w", "-r", "-e", "class", classes, RUNNER])
+            previous_keyboard = None
+            keyboard_setting = ["shell", "settings"]
+            try:
+                if args.profile == "terminal":
+                    previous_keyboard = run("keyboard-before", adb + keyboard_setting + ["get", "secure", "show_ime_with_hard_keyboard"]).strip()
+                    if previous_keyboard not in {"0", "1", "null"}:
+                        raise RuntimeError("unexpected emulator software-keyboard setting")
+                    run("keyboard-enable", adb + keyboard_setting + ["put", "secure", "show_ime_with_hard_keyboard", "1"])
+                text = run("instrumentation", adb + ["shell", "am", "instrument", "-w", "-r", "-e", "class", classes, RUNNER])
+            finally:
+                if previous_keyboard in {"0", "1", "null"}:
+                    restore = ["delete", "secure", "show_ime_with_hard_keyboard"] if previous_keyboard == "null" else ["put", "secure", "show_ime_with_hard_keyboard", previous_keyboard]
+                    subprocess.run(adb + keyboard_setting + restore, cwd=ROOT, check=True, capture_output=True, timeout=10)
+                    result["keyboard_setting_restored"] = previous_keyboard
             match = re.search(r"^OK \((\d+) tests?\)", text, re.MULTILINE)
             if not match or int(match.group(1)) == 0 or "FAILURES!!!" in text or "INSTRUMENTATION_FAILED" in text:
                 raise RuntimeError("instrumentation did not report a passing non-empty test run")
             result["ui_tests"] = int(match.group(1))
         result["status"] = "passed"
         return 0
-    except (RuntimeError, OSError, ET.ParseError) as error:
+    except (RuntimeError, OSError, ET.ParseError, subprocess.SubprocessError) as error:
         result["error"] = str(error)
         print(error, file=sys.stderr)
         return 1
