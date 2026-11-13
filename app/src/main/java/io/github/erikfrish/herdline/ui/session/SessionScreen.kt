@@ -261,6 +261,24 @@ private val PlaceMin: Dp = 48.dp
 /** The header's fixed share beside the place and Chat | Terminal: its 6 dp side padding twice, ← and ⋮ at 48 dp each. */
 private val HeaderFixed: Dp = 12.dp + 48.dp * 2
 
+/** How the phone header lays out Chat | Terminal: as [glyphs] or words, and [wrapped] onto a second row. */
+internal data class HeaderFit(val glyphs: Boolean, val wrapped: Boolean)
+
+/**
+ * The one-row header's choice (SESSION-HDR-308, SESSION-HDR-WRAP) for a header [width] wide, with
+ * Chat | Terminal [modeWords] wide in words and the need-you [chip] at its own width (null: no chip).
+ * Words with 4 dp gaps while they leave the place [PlaceNarrow]; else glyphs with 1 dp gaps, which
+ * without the chip always stay on one row (the place keeps its 48 dp floor). With the chip, one row
+ * only while the place keeps [PlaceNarrow] and the chip its whole count; else the chip, Chat | Terminal
+ * and ⋮ move to a second row under ← and the place, in words if they fit there, else as glyphs.
+ */
+internal fun headerFit(width: Dp, modeWords: Dp, chip: Dp?): HeaderFit {
+    val chipWidth = chip?.coerceAtLeast(48.dp)
+    if (width - HeaderFixed - 4.dp * 3 - (chipWidth?.plus(4.dp) ?: 0.dp) - modeWords >= PlaceNarrow) return HeaderFit(glyphs = false, wrapped = false)
+    if (chipWidth == null || width - HeaderFixed - 1.dp * 4 - chipWidth - 48.dp * 2 >= PlaceNarrow) return HeaderFit(glyphs = true, wrapped = false)
+    return HeaderFit(glyphs = chipWidth + 4.dp + modeWords + 4.dp + 48.dp > width - 12.dp, wrapped = true)
+}
+
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
     /** [focus] false (a Rails New tab tile) creates the tab without moving Herdr's focus. */
@@ -1006,8 +1024,12 @@ fun SessionScreen(
                                         }
                                     }
                                 }
-                                // The need-you chip at its 48 dp minimum and its gap.
-                                val chipShare = if (blocked.isNotEmpty()) 48.dp + 4.dp else 0.dp
+                                // The need-you chip at its own width (the count, 12 dp padding each side, the 8 dp dot
+                                // and its 6 dp gap), at least 48 dp; null without it.
+                                val chipWidth = remember(needLabel, labelStyle, headerDensity) {
+                                    with(headerDensity) { modeMeasurer.measure(needLabel, labelStyle, maxLines = 1).size.width.toDp() } + 38.dp
+                                }.coerceAtLeast(48.dp).takeIf { blocked.isNotEmpty() }
+                                val chipShare = chipWidth?.plus(4.dp) ?: 0.dp
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
@@ -1115,11 +1137,14 @@ fun SessionScreen(
                                         // One rule for Chat and Terminal: Chat | Terminal shows its words only while they
                                         // leave the place its room (and, merged, the strip its share); else its glyphs.
                                         // Merged, the place is at most MergedPlaceWidth and the strip keeps at least PlaceNarrow.
-                                        val placeRoom = if (short) MergedPlaceWidth + PlaceNarrow else PlaceNarrow
-                                        val gaps = 4.dp * (if (short) 4 else 3)
-                                        val compactMode = maxWidth - HeaderFixed - gaps - chipShare - modeWords < placeRoom
+                                        val fit = headerFit(maxWidth, modeWords, chipWidth)
+                                        val compactMode = if (short) {
+                                            maxWidth - HeaderFixed - 4.dp * 4 - chipShare - modeWords < MergedPlaceWidth + PlaceNarrow
+                                        } else {
+                                            fit.glyphs
+                                        }
                                         // The words keep the 4 dp gaps; the glyphs close them to 1 dp, as inside trailing.
-                                        val gap = if (compactMode) 1.dp else 4.dp
+                                        val gap = if (compactMode && (short || !fit.wrapped)) 1.dp else 4.dp
                                         // What follows the place in the one-row header: all but the padding, ←, its two gaps and the place's 48 dp.
                                         val trailingMax = (maxWidth - 12.dp - 48.dp - gap * 2 - PlaceMin).coerceAtLeast(0.dp)
                                         if (short) {
@@ -1138,15 +1163,28 @@ fun SessionScreen(
                                         } else {
                                             // One 48 dp row, growing only for a large font; no host, no "N tabs" (n/N says it).
                                             // The row measures what follows the place first, so that is bounded to leave the
-                                            // place its 48 dp target whatever the font or language.
-                                            Row(
-                                                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(gap),
-                                            ) {
-                                                up()
-                                                place(true, Modifier.weight(1f))
-                                                trailing(compactMode, Modifier.widthIn(max = trailingMax))
+                                            // place its 48 dp target whatever the font or language. Wrapped, the controls
+                                            // take a second row, so the place keeps its tab name and the chip its count.
+                                            // A Column, as BoxWithConstraints is a Box: the controls row stacks under the header row.
+                                            Column {
+                                                Row(
+                                                    Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(gap),
+                                                ) {
+                                                    up()
+                                                    place(true, Modifier.weight(1f))
+                                                    if (!fit.wrapped) trailing(compactMode, Modifier.widthIn(max = trailingMax))
+                                                }
+                                                if (fit.wrapped) {
+                                                    Row(
+                                                        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header_controls"),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.End,
+                                                    ) {
+                                                        trailing(compactMode, Modifier)
+                                                    }
+                                                }
                                             }
                                         }
                                     }

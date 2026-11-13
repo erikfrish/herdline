@@ -183,18 +183,23 @@ screen follows the same rules.
 
 In both rows the place button never shrinks below one 48 dp target
 (SESSION-HDR-308). One width rule, the same in Chat and Terminal and in any
-language, measures the Chat \| Terminal words in the current font, with the
-need-you chip counted at its 48 dp minimum: when they would leave the place
-button less than 96 dp (in the merged row, less than 220 dp for it plus 96 dp
-for the tab row), Chat \| Terminal shows a chat glyph and a terminal glyph
-instead of its words, and the header's gaps close from 4 dp to 1 dp. At
-308 dp with the chip that is 12 + 48 + 1 + 48 + 1 + 48 + 1 + 96 + 1 + 48 =
-304 dp, every target 48 dp wide.
+language, measures the Chat \| Terminal words and the need-you chip (its
+whole count, at least 48 dp) in the current font: when they would leave the
+place button less than 96 dp (in the merged row, less than 220 dp for it plus
+96 dp for the tab row), Chat \| Terminal shows a chat glyph and a terminal
+glyph instead of its words, and the header's gaps close from 4 dp to 1 dp.
+Without the chip that glyph row is always one row. With the chip, in the
+phone header (SESSION-HDR-WRAP), when even the glyph row would leave the
+place button less than 96 dp, the chip, Chat \| Terminal and ⋮ move to a
+second 48 dp row, at its end, under ← and the place button: the place keeps
+its tab name and the chip its whole count. That row shows the words when
+they fit there, else the glyphs. At font 2.0 with a one-digit chip (about
+53 dp) one row would leave the place 47 dp at 308 dp and 59 dp at 320 dp, so
+both wrap.
 Each glyph segment is at least 48 dp wide, is still a selectable tab and is
 read by TalkBack as Chat or Terminal with its selected or unavailable state.
-The need-you chip is at least 48 dp and shows at most 99+; where the row is
-tight only its count is shortened with an ellipsis, and TalkBack says the
-exact count. ⋮ and Chat \| Terminal never give way.
+The need-you chip is at least 48 dp and shows at most 99+, and TalkBack says
+the exact count. ⋮ and Chat \| Terminal never give way.
 
 While the keyboard is up in such a window, it leaves about 138 dp. The
 status bar, the merged row and the composer would fill that, and no content
