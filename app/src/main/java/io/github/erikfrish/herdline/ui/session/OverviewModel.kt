@@ -98,6 +98,21 @@ internal fun tabsScope(all: List<WorkspaceGroup>, saved: String?, loaded: Boolea
 }
 
 /**
+ * The Tabs list toggles ([hiddenRows]) on the overview, whose cards are tabs.
+ * [listed] is [groups] without the hidden rows, or all of them when
+ * [revealed] (Show, a query or a status filter); [count] the hidden tabs
+ * Show brings back; [marked] their keys while revealed, for the "hidden"
+ * mark. A hidden pane of a shown tab stays on its card and is not counted.
+ */
+internal data class OverviewHiding(val listed: List<WorkspaceGroup>, val count: Int, val marked: Set<String>)
+
+internal fun overviewHiding(groups: List<WorkspaceGroup>, hiding: HiddenRows, revealed: Boolean): OverviewHiding {
+    if (hiding.keys.isEmpty()) return OverviewHiding(groups, 0, emptySet())
+    val tabs = groups.flatMap { it.rows }.filter { it is SwitchTarget.TabRow && it.key in hiding.keys }.mapTo(HashSet()) { it.key }
+    return if (revealed) OverviewHiding(groups, 0, tabs) else OverviewHiding(groups.without(hiding.keys), tabs.size, emptySet())
+}
+
+/**
  * The cards of [all] (the scoped topology) that [shown] (the same, narrowed)
  * kept, by workspace in Herdr's order. A tab's card shows when its tab row
  * or any of its pane rows matched. When [narrowing] (a query or filter is

@@ -1668,6 +1668,8 @@ fun SessionScreen(
                             filter = filter,
                             onFilter = { filter = it },
                             filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
+                            hideShells = settings.hideShells,
+                            hideIdleDone = settings.hideIdleDone,
                             scope = tabsScope,
                             onScope = { tabsScope = it },
                             actions = actions,

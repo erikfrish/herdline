@@ -447,7 +447,7 @@ private fun SwitchTarget.agentPane(): String? = when (this) {
 
 /** The muted line under a list with hidden rows: how many, and Show to list them for now. */
 @Composable
-private fun HiddenFooter(count: Int, onShow: () -> Unit) {
+internal fun HiddenFooter(count: Int, onShow: () -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()

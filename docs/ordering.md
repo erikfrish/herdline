@@ -81,6 +81,13 @@ workspace rails (`TabsView.Rails`): workspaces scroll down, and each
 workspace's tabs sit in one row that scrolls sideways, ending in a New tab
 tile for that workspace (not while a search or filter narrows the list).
 The view is chosen in Settings › Layout › Tabs view.
+Hide shell tabs and Hide idle and done apply in all three views. Hidden tabs
+return for the current sheet visit through Show, search or a status filter,
+and carry a hidden mark. A visible split tab keeps all of its panes in the
+pane picker; overview hidden counts count tabs, not hidden pane rows. A
+workspace rail emptied by the toggles retains its New tab tile. These choices
+never move the selected pane or the desktop focus.
+
 Two columns is at most two; large accessibility fonts fall back to one,
 where two would make a title illegible. A stored
 "Grid" (`tabs_view`) is the removed tile overview and is migrated to List

@@ -142,6 +142,9 @@ fun TabsOverview(
     filter: SwitcherFilter,
     onFilter: (SwitcherFilter) -> Unit,
     filtersShown: Boolean,
+    /** Settings' Tabs list toggles: their tabs leave the cards until Show, a search or a filter brings them back, marked. */
+    hideShells: Boolean,
+    hideIdleDone: Boolean,
     scope: String?,
     onScope: (String?) -> Unit,
     actions: SwitcherActions,
@@ -166,8 +169,13 @@ fun TabsOverview(
     val inScope = scoped.groups
     val narrowing = query.isNotBlank() || filter != SwitcherFilter.All
     val currentTab = view?.let { overviewCurrentTab(it, here, reading) }
-    val sections = remember(inScope, query, filter, view, currentTab) {
-        view?.let { overviewSections(inScope, inScope.narrowed(query, filter), narrowing, it, currentTab) }.orEmpty()
+    // As in the List: Show brings the hidden tabs back for this open sheet only; a search or a filter reveals them too.
+    val hiding = remember(inScope, hideShells, hideIdleDone) { inScope.hiddenRows(hideShells, hideIdleDone) }
+    var showHidden by remember { mutableStateOf(false) }
+    val revealed = showHidden || narrowing
+    val hidden = remember(inScope, hiding, revealed) { overviewHiding(inScope, hiding, revealed) }
+    val sections = remember(inScope, hidden, query, filter, view, currentTab) {
+        view?.let { overviewSections(inScope, hidden.listed.narrowed(query, filter), narrowing, it, currentTab) }.orEmpty()
     }
     val counts = remember(inScope, query) { inScope.agentCounts(query) }
     // The full topology in scope beside the narrowed sections: a workspace narrowing emptied keeps its rail.
@@ -261,10 +269,10 @@ fun TabsOverview(
                 rails != null -> if (narrowing && railList.all { it.cards.isEmpty() }) {
                     NoneMatch(clear)
                 } else {
-                    OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab) { picking = it.tab.id }
+                    OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab, hidden, { showHidden = true }) { picking = it.tab.id }
                 }
-                sections.isEmpty() -> NoneMatch(clear)
-                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }) { picking = it.tab.id }
+                sections.isEmpty() && hidden.count == 0 -> NoneMatch(clear)
+                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }, hidden, { showHidden = true }) { picking = it.tab.id }
             }
         }
     }
@@ -283,6 +291,8 @@ private fun OverviewRows(
     currentTab: String?,
     placed: Boolean,
     onPlaced: () -> Unit,
+    hidden: OverviewHiding,
+    onShowHidden: () -> Unit,
     onPick: (OverviewCard) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
@@ -318,12 +328,16 @@ private fun OverviewRows(
                             OverviewRow(
                                 card, card.key in pins, monitored, actions, onPick,
                                 changed = card.row.changedIn(unseen),
+                                hidden = card.key in hidden.marked,
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
                             )
                         }
                         if (pair.size < columns) Spacer(Modifier.weight(1f))
                     }
                 }
+            }
+            if (hidden.count > 0) {
+                item(key = "hidden", span = { GridItemSpan(maxLineSpan) }) { HiddenFooter(hidden.count) { onShowHidden() } }
             }
         }
     }
@@ -419,6 +433,8 @@ private fun OverviewRow(
     onPick: (OverviewCard) -> Unit,
     /** The tab is marked changed (SN-2): the strip's dot on its status glyph and "changed" as its state. */
     changed: Boolean,
+    /** Hidden by a Tabs list toggle and shown now (Show, a search or a filter): marked "hidden", as in the List. */
+    hidden: Boolean = false,
     /** Rails: the tile's place in its ribbon, spoken last (§4). */
     position: String? = null,
     modifier: Modifier = Modifier,
@@ -436,12 +452,14 @@ private fun OverviewRow(
     val place = stringResource(R.string.overview_tab_n, card.tab.number)
     val where = workspaceName(card.workspace, card.suffix) + " · " + place
     val zoomed = if (card.tab.zoomed) stringResource(R.string.zoomed_badge) else null
+    val hiddenBadge = if (hidden) stringResource(R.string.switcher_hidden_badge) else null
     val spoken = listOfNotNull(
         title,
         statusSpoken(card.tab.status),
         where,
         panes,
         if (card.current) stringResource(R.string.overview_current_spoken) else null,
+        hiddenBadge,
         position,
     ).joinToString(", ")
     val openLabel = stringResource(if (card.split) R.string.overview_choose_pane else R.string.overview_open)
@@ -489,6 +507,9 @@ private fun OverviewRow(
                 if (card.current) CurrentPill()
                 if (zoomed != null) {
                     Text(zoomed, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
+                }
+                if (hiddenBadge != null) {
+                    Text(hiddenBadge, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
                 }
             }
             Text(
@@ -569,6 +590,8 @@ private fun OverviewRails(
     actions: SwitcherActions,
     unseen: Set<String>,
     onNewTab: (Workspace) -> Unit,
+    hidden: OverviewHiding,
+    onShowHidden: () -> Unit,
     onPick: (OverviewCard) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
@@ -589,7 +612,8 @@ private fun OverviewRails(
                         OverviewWorkspaceHeader(workspace, rail.suffix, rail.tabs, actions, rail.needsYou, rail.current, spokenHeading = true)
                     }
                     when {
-                        rail.cards.isNotEmpty() -> LazyRow(
+                        // A rail the toggles emptied keeps its New tab tile; the line below the rails says how many are hidden.
+                        rail.cards.isNotEmpty() || (!narrowing && rail.tabs > 0) -> LazyRow(
                             state = scroll.ribbon(workspace.id),
                             contentPadding = PaddingValues(horizontal = OVERVIEW_PADDING_DP.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
@@ -603,6 +627,7 @@ private fun OverviewRails(
                                     actions,
                                     onPick,
                                     changed = card.row.changedIn(unseen),
+                                    hidden = card.key in hidden.marked,
                                     position = stringResource(R.string.rails_position, index + 1, rail.cards.size),
                                     modifier = Modifier.width(tileWidth).heightIn(min = tileHeight),
                                 )
@@ -637,6 +662,11 @@ private fun OverviewRails(
                             )
                         }
                     }
+                }
+            }
+            if (hidden.count > 0) {
+                item(key = "hidden") {
+                    Box(Modifier.padding(horizontal = OVERVIEW_PADDING_DP.dp)) { HiddenFooter(hidden.count) { onShowHidden() } }
                 }
             }
         }
