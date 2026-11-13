@@ -112,6 +112,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.selection.selectableGroup
@@ -128,6 +131,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -1560,6 +1564,19 @@ fun SessionScreen(
                     if (cause == null || !switcherSheet.isVisible) switcherOpen = false
                 }
             }
+            // INVIS-4: what an upward swipe's list leaves over, the sheet staying Expanded, ends here. Unconsumed, it reached
+            // the sheet's connection (outside this content), whose onPostFling settles with that velocity: the one move
+            // that takes the sheet above its Expanded anchor, and the motion a stuck Close then only stopped.
+            // Downward deltas and flings (swipe-to-close), a sheet moving to Hidden, and drags on the handle pass as before.
+            val sheetFlingStop = remember(switcherSheet) {
+                object : NestedScrollConnection {
+                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                        if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Offset(0f, available.y) else Offset.Zero
+
+                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                        if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Velocity(0f, available.y) else Velocity.Zero
+                }
+            }
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },
                 sheetState = switcherSheet,
@@ -1587,7 +1604,7 @@ fun SessionScreen(
                         actions = actions,
                         onShowList = { showAs(TabsView.List) },
                         onShowRails = { showAs(TabsView.Rails) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop),
                         here = focusedPane,
                         reading = chatMode,
                         unseen = unseenTabs,
@@ -1609,7 +1626,7 @@ fun SessionScreen(
                         filter = filter,
                         onFilter = { filter = it },
                         actions = actions,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop),
                         here = focusedPane,
                         reading = chatMode,
                         unseen = unseenTabs,
