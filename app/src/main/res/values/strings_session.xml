@@ -6,7 +6,6 @@
     <string name="session_unzoom_shared">Unzoom (shared)</string>
     <string name="session_split_right_shared">Split right (shared)</string>
     <string name="session_split_down_shared">Split down (shared)</string>
-    <string name="session_zoom_help">Also zooms on the desktop</string>
     <string name="session_close_pane">Close pane…</string>
     <string name="session_close_tab">Close tab…</string>
     <string name="session_disconnect">Disconnect…</string>

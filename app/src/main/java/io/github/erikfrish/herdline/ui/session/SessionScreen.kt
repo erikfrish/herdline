@@ -992,7 +992,6 @@ fun SessionScreen(
                                                 tabId = tab?.id,
                                                 tabLabel = tab?.label,
                                                 pane = focusedPane,
-                                                zoomed = tab?.zoomed == true,
                                                 split = (tab?.let { t -> view?.panesOf(t.id)?.size } ?: 0) > 1,
                                                 paneActions = !wide,
                                                 settingsFirst = short,
@@ -1904,7 +1903,6 @@ private fun SessionMenu(
     tabId: String?,
     tabLabel: String?,
     pane: String?,
-    zoomed: Boolean,
     /** The tab has more than one pane: closing its only pane would close the tab. */
     split: Boolean,
     paneActions: Boolean,
@@ -1979,10 +1977,6 @@ private fun SessionMenu(
             divider()
             item(R.string.session_split_right_shared, Icons.AutoMirrored.Filled.KeyboardArrowRight, pane != null) { pane?.let { connection.split(it, "right") } }
             item(R.string.session_split_down_shared, Icons.Default.KeyboardArrowDown, pane != null) { pane?.let { connection.split(it, "down") } }
-            // Zoom is Herdr's: the desktop zooms too, so the item says so.
-            item(if (zoomed) R.string.session_unzoom_shared else R.string.zoom_shared, Icons.Default.Search, pane != null, subtitle = R.string.session_zoom_help) {
-                pane?.let(connection::toggleZoom)
-            }
             // As in the pane toolbar: the only pane is closed with its tab, by Close tab.
             if (split) {
                 item(R.string.session_close_pane, Icons.Default.Close, pane != null, destructive = true) { pane?.let { onPrompt(Prompt.ClosePane(it)) } }
