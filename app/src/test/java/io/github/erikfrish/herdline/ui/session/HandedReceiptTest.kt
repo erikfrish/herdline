@@ -145,29 +145,30 @@ class HandedReceiptTest {
         val sent = SentRecord("sent turn", "r1", true, SentState.InPane, answeredAt, historyFrom = 100)
         val next = 100L + 256 * 1024
         val turn = TranscriptEntry("u1", null, next, next + 80, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("sent turn", false)))
+        val older = turn.copy(id = "old", offset = 20, end = 80)
         var now = answeredAt
         val requested = mutableListOf<Long>()
         val landed = awaitPtyTurn(
             sent, instance,
             read = { offset ->
                 requested += offset
-                if (offset == 100L) TranscriptPage(instance, false, next + 80, 100, next, emptyList())
+                if (offset == 100L) TranscriptPage(instance, false, next + 80, 20, next, listOf(older))
                 else TranscriptPage(instance, false, next + 80, next, next + 80, listOf(turn))
             },
             working = { false }, clock = { now }, sleep = { now += it },
         )
         assertTrue("a new user turn on the second page confirms", landed)
         assertEquals(listOf(100L, next), requested)
-        assertEquals(100L, sent.historyFrom)
     }
 
     @Test
-    fun aReceiptWatchNeverSkipsAHistoryGapOrConfirmsAnotherInstance() = runBlocking {
+    fun aReceiptWatchAcceptsRereadRowsButNeverAResetOrAnotherInstance() = runBlocking {
         val instance = TranscriptIdentity("p1", "term1", 42, "/h/.omp/agent/sessions/x/a.jsonl")
         val sent = SentRecord("sent turn", "r1", true, SentState.InPane, answeredAt, historyFrom = 100)
         val turn = TranscriptEntry("u1", null, 200, 280, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("sent turn", false)))
-        val gap = TranscriptPage(instance, false, 280, 200, 280, listOf(turn))
-        for (page in listOf(gap, gap.copy(start = 100, end = 99), gap.copy(start = 100, reset = true), gap.copy(start = 100, identity = instance.copy(pid = 43)))) {
+        val reread = TranscriptPage(instance, false, 280, 99, 280, listOf(turn))
+        assertTrue(awaitPtyTurn(sent, instance, read = { reread }, working = { false }, clock = { answeredAt }, sleep = { error("the matching reread must confirm") }))
+        for (page in listOf(reread.copy(start = 100, end = 99), reread.copy(reset = true), reread.copy(identity = instance.copy(pid = 43)))) {
             var reads = 0
             assertFalse(awaitPtyTurn(sent, instance, read = { reads++; page }, working = { false }, clock = { answeredAt }, sleep = { error("invalid page must end the watch") }))
             assertEquals(1, reads)

@@ -257,9 +257,9 @@ internal suspend fun awaitPtyTurn(
     do {
         val page = read(cursor)
         if (page != null) {
-            if (page.reset || page.identity != instance || page.start != cursor || page.end < page.start) return false
+            if (page.reset || page.identity != instance || page.end < page.start) return false
             if (ptyTurnLanded(page, instance, from, sent.text)) return true
-            cursor = page.end
+            cursor = maxOf(cursor, page.end)
         }
         sleep(PTY_TURN_POLL_MS)
         val now = clock()
