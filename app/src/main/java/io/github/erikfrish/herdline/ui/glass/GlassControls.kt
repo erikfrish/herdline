@@ -85,7 +85,8 @@ val FieldShape = RoundedCornerShape(4.dp)
 
 /**
  * A Material 3 screen: a top app bar (large and collapsing when [large]) over
- * the page, an optional [bottomBar] above the navigation bar, an optional
+ * the page, an optional [bottomBar] above the navigation bar on an opaque
+ * surfaceContainer bar with a top divider (content scrolls under it), an optional
  * [floatingActionButton] at the bottom end, and [snackbar]. [content] gets
  * Scaffold's inner padding.
  */
@@ -141,10 +142,13 @@ fun GlassScreen(
         },
         bottomBar = {
             bottomBar?.let {
-                Box(
-                    Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) { it() }
+                // QF-8b: opaque, so content scrolled under it never shows through; the fill runs under the nav bar.
+                Surface(color = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface) {
+                    Column(Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 12.dp), contentAlignment = Alignment.Center) { it() }
+                    }
+                }
             }
         },
         snackbarHost = { snackbar?.let { GlassSnackbarHost(it) } },
