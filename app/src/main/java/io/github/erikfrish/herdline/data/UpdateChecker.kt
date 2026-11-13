@@ -85,6 +85,7 @@ class UpdateChecker(private val context: Context) {
     private val _justUpdated = MutableStateFlow<String?>(null)
     val justUpdated: StateFlow<String?> = _justUpdated
 
+    /** The download, or a handoff of its file; one at a time, so two taps never open two installers. */
     private var job: Job? = null
 
     /** The page sent the user to Install unknown apps in this process; see [openingInstallSources]. */
@@ -161,7 +162,7 @@ class UpdateChecker(private val context: Context) {
 
     /** Downloads [release] in [scope], verifies it and hands it on; nothing for a release that isn't installable. */
     fun download(release: Release, scope: CoroutineScope) {
-        // Until the last download has settled its state and files, even while it is being cancelled.
+        // Until the last download or handoff has settled its state and files, even while it is being cancelled.
         if (!channel || job?.isCompleted == false || !release.installable(installed, sdk, _refused.value)) return
         val total = release.size ?: return
         job = scope.launch {
@@ -222,19 +223,24 @@ class UpdateChecker(private val context: Context) {
     /** Back from the install-sources settings: hands on if allowed, else stays asking. */
     fun permissionReturned(scope: CoroutineScope) {
         val state = _install.value as? ReleaseInstall.NeedsPermission ?: return
-        if (!sentToSettings || !context.packageManager.canRequestPackageInstalls()) return
+        if (job?.isCompleted == false || !sentToSettings || !context.packageManager.canRequestPackageInstalls()) return
         sentToSettings = false
-        scope.launch { handOff(state.release) }
+        // Set before the launch, so no tap or download gets in while the file is verified again.
+        _install.value = ReleaseInstall.Verifying(state.release)
+        job = scope.launch { handOff(state.release) }
     }
 
     /** Opens Android's installer again for the verified file, verified again first. */
     fun installAgain(scope: CoroutineScope) {
+        if (job?.isCompleted == false) return
         val release = when (val state = _install.value) {
             is ReleaseInstall.Handed -> state.release
             is ReleaseInstall.NotInstalled -> state.release
             else -> return
         }
-        scope.launch { handOffOrAsk(release) }
+        // Set before the launch, so no second tap or download gets in while the file is verified again.
+        _install.value = ReleaseInstall.Verifying(release)
+        job = scope.launch { handOffOrAsk(release) }
     }
 
     private suspend fun handOffOrAsk(release: Release) {
@@ -253,7 +259,6 @@ class UpdateChecker(private val context: Context) {
      * opened in Android's installer.
      */
     private suspend fun handOff(release: Release) {
-        prefs.edit().remove(PENDING).apply()
         val apk = apkFile(release)
         val mismatch = withContext(Dispatchers.IO) {
             if (!apk.isFile) {
@@ -262,6 +267,8 @@ class UpdateChecker(private val context: Context) {
                 ReleaseChannel.verify(release, context.packageName, installed, installedSigners, apk.length(), hashFile(apk), archiveFacts(apk))
             }
         }
+        // Only now: a restart during the verify still finds the file waiting on the permission.
+        prefs.edit().remove(PENDING).apply()
         if (mismatch != null) {
             reject(release, apk, mismatch)
             return

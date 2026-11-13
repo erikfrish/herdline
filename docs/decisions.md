@@ -21,6 +21,11 @@ they start with `native/`.
   its own cache file restores the waiting state. Startup and opening the
   page never install or download automatically. Every handoff rechecks size,
   checksum, package, version and signer before granting Android read access.
+- Installer retries and permission returns reserve the same in-flight job as
+  downloads and enter Verifying before dispatch. A second action cannot
+  reopen the installer concurrently or remove a file being reverified.
+  Finishing a handoff still permits an explicit Install again; no cooldown
+  or automatic retry is introduced.
 
 ## Composer
 
