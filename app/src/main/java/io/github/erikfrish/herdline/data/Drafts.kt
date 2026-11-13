@@ -41,6 +41,9 @@ enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked, Handed }
  * before the text went; null when that could not be read, so the turn can
  * never be proven. [steer]: an OMP steer typed into the pane and entered
  * while the agent worked, not a typed send; [submit] says only that Enter went.
+ * [to]: the destination's name as the composer showed it at the tap, so a
+ * notice about this delivery still names it once the pane is gone; null for
+ * records that never captured it (steers, ingress, older drafts).
  */
 data class SentRecord(
     val text: String,
@@ -51,6 +54,7 @@ data class SentRecord(
     val acknowledged: Boolean = false,
     val historyFrom: Long? = null,
     val steer: Boolean = false,
+    val to: String? = null,
 )
 
 /**
@@ -235,6 +239,7 @@ data class Draft(
                 JSONObject().put("text", it.text).put("receipt", it.receipt).put("submit", it.submit)
                     .put("state", it.state.name).put("at", it.at).put("acknowledged", it.acknowledged)
                     .put("historyFrom", it.historyFrom ?: JSONObject.NULL).put("steer", it.steer)
+                    .put("to", it.to ?: JSONObject.NULL)
             } ?: JSONObject.NULL,
         )
         .put("instance", instance?.toJson() ?: JSONObject.NULL)
@@ -263,6 +268,7 @@ data class Draft(
                     at = it.optLong("at"),
                     acknowledged = it.optBoolean("acknowledged"),
                     historyFrom = if (it.has("historyFrom") && !it.isNull("historyFrom")) it.getLong("historyFrom") else null,
+                    to = if (it.has("to") && !it.isNull("to")) it.getString("to") else null,
                     steer = it.optBoolean("steer"),
                 )
             }

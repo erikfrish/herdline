@@ -157,32 +157,35 @@ import java.util.UUID
  */
 private data class Pending(
     val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet(),
-    val watched: Boolean = false, val historyFrom: Long? = null,
+    val watched: Boolean = false, val historyFrom: Long? = null, val to: String? = null,
 )
 
 /**
  * The draft's sent record once `deliver` returned [outcome]: [before] again
  * only when nothing left, so Send stays held until Unlock whenever the text
- * may be in the pane.
+ * may be in the pane. [to] is the destination's name at the tap (TC-RCPT-3).
  */
-internal fun sentAfter(outcome: Connection.Delivery, before: SentRecord?, text: String, submit: Boolean, now: Long): SentRecord? =
+internal fun sentAfter(outcome: Connection.Delivery, before: SentRecord?, text: String, submit: Boolean, now: Long, to: String? = null): SentRecord? =
     when (outcome) {
-        is Connection.Delivery.Queued -> SentRecord(text, outcome.receipt, submit, SentState.Queued, now)
+        is Connection.Delivery.Queued -> SentRecord(text, outcome.receipt, submit, SentState.Queued, now, to = to)
         is Connection.Delivery.Refused -> before
-        is Connection.Delivery.Uncertain -> SentRecord(text, "", submit, SentState.Uncertain, now)
+        is Connection.Delivery.Uncertain -> SentRecord(text, "", submit, SentState.Uncertain, now, to = to)
     }
 
 /**
  * The record an answered receipt leaves. A watched send (P1) waits
  * [SentState.InPane] for its turn in the history. Any other is only
  * [SentState.Handed]: Herdr answers the receipt with success also when it
- * dropped the write (TC-RCPT), so it is never reported as delivered.
+ * dropped the write (TC-RCPT), so it is never reported as delivered. [to]
+ * is the destination's name captured at the tap.
  */
-internal fun answeredRecord(text: String, receipt: String, submit: Boolean, watched: Boolean, historyFrom: Long?, now: Long): SentRecord =
+internal fun answeredRecord(
+    text: String, receipt: String, submit: Boolean, watched: Boolean, historyFrom: Long?, now: Long, to: String? = null,
+): SentRecord =
     if (watched) {
-        SentRecord(text, receipt, submit, SentState.InPane, now, historyFrom = historyFrom)
+        SentRecord(text, receipt, submit, SentState.InPane, now, historyFrom = historyFrom, to = to)
     } else {
-        SentRecord(text, receipt, submit, SentState.Handed, now)
+        SentRecord(text, receipt, submit, SentState.Handed, now, to = to)
     }
 
 /** The editor once the delivery of [sent] is answered: empty, unless the user changed it meanwhile. */
@@ -197,9 +200,9 @@ internal fun editorAfterAnswer(editor: String, sent: String): String = if (edito
  */
 internal fun answeredDraft(
     draft: Draft, editor: String, text: String, receipt: String, submit: Boolean, watched: Boolean,
-    historyFrom: Long?, carried: Set<String>, now: Long,
+    historyFrom: Long?, carried: Set<String>, now: Long, to: String? = null,
 ): Draft {
-    val sent = answeredRecord(text, receipt, submit, watched, historyFrom, now)
+    val sent = answeredRecord(text, receipt, submit, watched, historyFrom, now, to)
     if (watched) return draft.copy(sent = sent)
     val kept = editorAfterAnswer(editor, text)
     return draft.copy(
@@ -250,6 +253,13 @@ internal fun sentNoticeText(sent: SentRecord): Int =
 
 /** Whether [sent]'s notice offers Check before Reuse: a Handed one asks the user to look at the terminal (TC-RCPT N5). */
 internal fun sentNoticeChecks(sent: SentRecord): Boolean = sent.state == SentState.Handed
+
+/**
+ * The pane [sent]'s notice names: the name captured at the tap, so a closed
+ * or renamed pane is still named as it was (TC-RCPT-3); [live] only for a
+ * record that never captured it.
+ */
+internal fun sentNoticeName(sent: SentRecord, live: String): String = sent.to ?: live
 
 /**
  * Runs [call] only once [writeAhead] stored the unconfirmed record on disk.
@@ -1055,14 +1065,14 @@ private fun Editor(
                 // shows it.
                 val next = answeredDraft(
                     draft, value.text, p.text, p.receipt, p.submit, p.watched, p.historyFrom, p.attachments,
-                    System.currentTimeMillis(),
+                    System.currentTimeMillis(), p.to,
                 )
                 if (!p.watched) value = TextFieldValue(next.text, TextRange(next.text.length))
                 save(next)
                 if (!p.watched) delivered()
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
-                draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
+                draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)),
             )
         }
     }
@@ -1315,7 +1325,7 @@ private fun Editor(
         pending?.let { p ->
             if (p.connection !== connection) {
                 pending = null
-                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())))
+                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)))
             }
         }
         connection.deliveries.collect { update ->
@@ -1397,13 +1407,15 @@ private fun Editor(
         val text = value.text
         val before = draft.sent
         val via = connection
+        // TC-RCPT-3: the name the composer shows now, kept for the notices about this delivery.
+        val to = view?.composerTitle(key.pane)
         refusal = null
         sending = true
         onDeliveryStart()
         val seen = captureViewport()
         // Recorded before the text may leave, and on disk before the call:
         // should the app stop before the answer, it reads back as unconfirmed.
-        save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis())))
+        save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis(), to = to)))
         val ahead = draft
         scope.launch {
             // P1: where Chat sends by typing into an agent's pane, where that
@@ -1422,11 +1434,11 @@ private fun Editor(
             // Stored before anything re-enables: an uncertain record holds the
             // band, + Insert and the editor until Unlock, also after a restart.
             // Only a refusal, where nothing left, gives the earlier record back.
-            save(draft.copy(sent = sentAfter(outcome, before, text, submit, System.currentTimeMillis())))
+            save(draft.copy(sent = sentAfter(outcome, before, text, submit, System.currentTimeMillis(), to)))
             sending = false
             when (outcome) {
                 is Connection.Delivery.Queued -> {
-                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom)
+                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom, to)
                     val answered = early.remove(outcome.receipt)
                     when {
                         answered != null -> settle(p, answered)
@@ -1896,7 +1908,7 @@ private fun Editor(
                 save(draft.copy(text = text, selectionStart = text.length, selectionEnd = text.length))
             }
             Notice(
-                stringResource(sentNoticeText(sent), draftTitle),
+                stringResource(sentNoticeText(sent), sentNoticeName(sent, draftTitle)),
                 if (sentNoticeChecks(sent)) NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal) else reuse,
                 reuse.takeIf { sentNoticeChecks(sent) },
                 warning = false,

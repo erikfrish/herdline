@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AttachmentKind
+import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.data.Binding
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.DraftAttachment
@@ -63,6 +64,21 @@ class HandedReceiptTest {
         val confirmed = insert.copy(submit = true, state = SentState.Confirmed)
         assertEquals(R.string.composer_sent_to, sentNoticeText(confirmed))
         assertFalse(sentNoticeChecks(confirmed))
+    }
+
+    @Test
+    fun theHandedNoticeNamesThePaneAsAtTheTapAfterItClosesAndAReload() {
+        val queued = Draft(text = "tc-rcpt-ok", sent = sentAfter(Connection.Delivery.Queued("r1"), null, "tc-rcpt-ok", submit = false, now = answeredAt - 100, to = "ws › tab"))
+        val after = answeredDraft(queued, "tc-rcpt-ok", "tc-rcpt-ok", "r1", submit = false, watched = false, historyFrom = null, carried = emptySet(), now = answeredAt, to = queued.sent?.to)
+        // The pane closed: the live title has fallen back to "Pane"; restart reads the draft back.
+        val reloaded = Draft.fromJson(JSONObject(after.toJson().toString())).sent!!
+        assertEquals(SentState.Handed, reloaded.state)
+        assertEquals("ws › tab", sentNoticeName(reloaded, "Pane"))
+        // A draft stored before the field existed reads null and names the live pane.
+        val old = JSONObject(after.toJson().toString()).apply { getJSONObject("sent").remove("to") }
+        val legacy = Draft.fromJson(old).sent!!
+        assertNull(legacy.to)
+        assertEquals("Pane", sentNoticeName(legacy, "Pane"))
     }
 
     @Test
