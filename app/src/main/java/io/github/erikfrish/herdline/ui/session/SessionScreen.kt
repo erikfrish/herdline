@@ -116,6 +116,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -1579,77 +1580,93 @@ fun SessionScreen(
                         if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Velocity(0f, available.y) else Velocity.Zero
                 }
             }
-            // INVIS-4b: the header, search and chips above the lists, and the drag handle, are swiped through nested scroll
-            // too: a scrollable that moves nothing, inside sheetFlingStop. Their drags no longer reach the sheet's own
-            // draggable, whose drag stop settles with the same velocity; downward they move and dismiss the sheet as before.
+            // INVIS-4b: the header, search and chips above the lists, and the drag handle row, are swiped through nested
+            // scroll too: a scrollable that moves nothing, inside sheetFlingStop. Their drags no longer reach the sheet's
+            // own draggable, whose drag stop settles with the same velocity; downward they move and dismiss the sheet as before.
             val sheetContent = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop)
                 .scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
-            val handleDrags = rememberScrollableState { 0f }
+            val dismissLabel = stringResource(androidx.compose.material3.R.string.m3c_bottom_sheet_dismiss_description)
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },
                 sheetState = switcherSheet,
                 containerColor = menuColor(),
                 modifier = Modifier.testTag("switcher:sheet"),
-                dragHandle = {
-                    Box(Modifier.nestedScroll(sheetFlingStop).scrollable(handleDrags, Orientation.Vertical)) {
-                        BottomSheetDefaults.DragHandle()
-                    }
-                },
+                // INVIS-5 (T2'): M3's handle slot is only as wide as the pill (about 32 x 48 dp); the rest of the top strip
+                // went to the sheet's draggable, whose drag stop settles upward past Expanded. Our handle row is full width
+                // inside sheetContent, so the whole strip drags through sheetFlingStop like the header.
+                dragHandle = null,
             ) {
-                // TB1: the overview, or today's list; either one's header switches to the other.
-                val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
-                // One qualified host label for the one header in every view (H1).
-                val sheetHost = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
-                when (settings.tabsView) {
-                    TabsView.TwoColumns, TabsView.Rails -> TabsOverview(
-                        host = sheetHost,
-                        view = view,
-                        state = state,
-                        pins = pins[node.id].orEmpty(),
-                        monitored = { MonitorKey(node.id, it) in monitored },
-                        query = query,
-                        onQuery = { query = it },
-                        filter = filter,
-                        onFilter = { filter = it },
-                        filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
-                        scope = tabsScope,
-                        onScope = { tabsScope = it },
-                        actions = actions,
-                        onShowList = { showAs(TabsView.List) },
-                        onShowRails = { showAs(TabsView.Rails) },
-                        modifier = sheetContent,
-                        here = focusedPane,
-                        reading = chatMode,
-                        unseen = unseenTabs,
-                        onClose = closeSwitcher,
-                        rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
-                        onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
-                    )
-                    TabsView.List -> Switcher(
-                        node = node,
-                        view = view,
-                        state = state,
-                        accent = accent,
-                        order = settings.targetOrder,
-                        pins = pins[node.id].orEmpty(),
-                        recent = recent[node.id].orEmpty(),
-                        monitored = { MonitorKey(node.id, it) in monitored },
-                        query = query,
-                        onQuery = { query = it },
-                        filter = filter,
-                        onFilter = { filter = it },
-                        actions = actions,
-                        modifier = sheetContent,
-                        here = focusedPane,
-                        reading = chatMode,
-                        unseen = unseenTabs,
-                        onShowGrid = { showAs(TabsView.TwoColumns) },
-                        appliesStartFilter = false,
-                        scope = tabsScope,
-                        onScope = { tabsScope = it },
-                        onClose = closeSwitcher,
-                        host = sheetHost,
-                    )
+                Column(sheetContent) {
+                    // M3's slot wrapper (ModalBottomSheet L383-393), on the pill only, as before: a tap on Expanded dismisses,
+                    // on Hidden shows; TalkBack gets "Drag handle" and the dismiss action with M3's label. Its expand and
+                    // collapse actions need a PartiallyExpanded state, which skipPartiallyExpanded never has.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                        Box(
+                            Modifier
+                                .clickable {
+                                    if (switcherSheet.currentValue == SheetValue.Expanded) closeSwitcher()
+                                    else sheetScope.launch { switcherSheet.show() }
+                                }
+                                .semantics(mergeDescendants = true) { dismiss(dismissLabel) { closeSwitcher(); true } },
+                        ) {
+                            BottomSheetDefaults.DragHandle()
+                        }
+                    }
+                    // TB1: the overview, or today's list; either one's header switches to the other.
+                    val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
+                    // One qualified host label for the one header in every view (H1).
+                    val sheetHost = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
+                    when (settings.tabsView) {
+                        TabsView.TwoColumns, TabsView.Rails -> TabsOverview(
+                            host = sheetHost,
+                            view = view,
+                            state = state,
+                            pins = pins[node.id].orEmpty(),
+                            monitored = { MonitorKey(node.id, it) in monitored },
+                            query = query,
+                            onQuery = { query = it },
+                            filter = filter,
+                            onFilter = { filter = it },
+                            filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
+                            scope = tabsScope,
+                            onScope = { tabsScope = it },
+                            actions = actions,
+                            onShowList = { showAs(TabsView.List) },
+                            onShowRails = { showAs(TabsView.Rails) },
+                            modifier = Modifier.fillMaxWidth(),
+                            here = focusedPane,
+                            reading = chatMode,
+                            unseen = unseenTabs,
+                            onClose = closeSwitcher,
+                            rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
+                            onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
+                        )
+                        TabsView.List -> Switcher(
+                            node = node,
+                            view = view,
+                            state = state,
+                            accent = accent,
+                            order = settings.targetOrder,
+                            pins = pins[node.id].orEmpty(),
+                            recent = recent[node.id].orEmpty(),
+                            monitored = { MonitorKey(node.id, it) in monitored },
+                            query = query,
+                            onQuery = { query = it },
+                            filter = filter,
+                            onFilter = { filter = it },
+                            actions = actions,
+                            modifier = Modifier.fillMaxWidth(),
+                            here = focusedPane,
+                            reading = chatMode,
+                            unseen = unseenTabs,
+                            onShowGrid = { showAs(TabsView.TwoColumns) },
+                            appliesStartFilter = false,
+                            scope = tabsScope,
+                            onScope = { tabsScope = it },
+                            onClose = closeSwitcher,
+                            host = sheetHost,
+                        )
+                    }
                 }
             }
         }
