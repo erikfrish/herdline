@@ -147,6 +147,8 @@ fun Switcher(
     filter: SwitcherFilter,
     onFilter: (SwitcherFilter) -> Unit,
     actions: SwitcherActions,
+    /** The tabs marked changed since the user looked ([rememberUnseenTabs]); required, as the strip's, so no caller forgets it. */
+    unseen: Set<String>,
     modifier: Modifier = Modifier,
     /** The pane on screen, marked "here": in Chat the one read here (CT-1); Herdr's focus by default. */
     here: String? = view?.focusedPane,
@@ -262,7 +264,7 @@ fun Switcher(
     val hereRow = if (reading && here == null) null else hereKey(view, here)
     val desktopRow = hereKey(view, view?.focusedPane).takeIf { reading && it != hereRow }
     val spoken = mapOf(hereRow to readingHere, desktopRow to onDesktop).filterKeys { reading && it != null }
-    val style = RowStyle(accent, pins.toSet(), monitored, actions, hereRow, held, view, spoken)
+    val style = RowStyle(accent, pins.toSet(), monitored, actions, hereRow, held, view, unseen, spoken)
     // Split tabs start expanded when they hold the focused or a needs-you pane.
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     fun startsOpen(tab: SwitchTarget.TabRow): Boolean {
@@ -470,6 +472,8 @@ private class RowStyle(
     val hereKey: String?,
     private val held: Set<String>,
     private val view: ShellView?,
+    /** The tabs marked changed ([rememberUnseenTabs]): their rows carry the strip's dot and "changed" (SN-2). */
+    val unseen: Set<String>,
     /** A row's spoken state by key (CT-1: "Reading here", "On desktop"); empty outside Chat. */
     val spoken: Map<String?, String> = emptyMap(),
 ) {
@@ -479,6 +483,9 @@ private class RowStyle(
         is SwitchTarget.PaneRow -> target.pane.id.takeIf { it in held }
     }
 }
+
+/** Whether [this] row carries the changed mark (SN-2): a tab row whose tab is in [unseen]; a pane row never does. */
+internal fun SwitchTarget.changedIn(unseen: Set<String>): Boolean = this is SwitchTarget.TabRow && tab.id in unseen
 
 /** The key of the [pane]'s row, or its tab's when the tab has one pane; with no pane, the focused tab's. */
 private fun hereKey(view: ShellView?, pane: String?): String? {
@@ -844,6 +851,10 @@ private fun TargetRow(
     // A selected row's glyph takes the row's content colour; the word carries the state.
     val glyphTint = if (here) LocalContentColor.current else Color.Unspecified
     val held = style.heldPane(target)
+    val changed = if (target.changedIn(style.unseen)) stringResource(R.string.tab_changed) else null
+    // The sheet and the sidebar are both drawn on menuColor; a changed row is never the "here" one, so its row is clear.
+    val halo = menuColor()
+    val markColor = MaterialTheme.colorScheme.onSurface
     when (target) {
         is SwitchTarget.TabRow -> Entry(
             selected = here,
@@ -851,9 +862,10 @@ private fun TargetRow(
             indent = 14.dp,
             minHeight = 56.dp,
             onClick = { style.actions.go(target) },
-            leading = { StatusGlyph(target.tab.status, 10.dp, slot = 24.dp, tint = glyphTint) },
+            leading = { StatusGlyph(target.tab.status, 10.dp, Modifier.unseenMark(changed != null, 10.dp, halo, markColor), slot = 24.dp, tint = glyphTint) },
             status = target.tab.status,
             held = held,
+            changed = changed,
             extraState = style.spoken[target.key],
             title = target.tabTitle(),
             titleStyle = MaterialTheme.typography.bodyLarge,
@@ -950,6 +962,8 @@ private fun Entry(
     pinned: Boolean = false,
     status: AgentStatus = AgentStatus.Unknown,
     held: String? = null,
+    /** "changed" when the tab is marked (SN-2), spoken first. */
+    changed: String? = null,
     /** A state of the caller's, spoken before the held one. */
     extraState: String? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -960,7 +974,7 @@ private fun Entry(
     var open by remember { mutableStateOf(false) }
     val compact = LocalCompact.current
     // Set on the row, which merges its children, so it carries the glyph's status too.
-    val state = listOfNotNull(extraState, if (held != null) heldDescription(status) else null).joinToString(", ").takeIf { it.isNotEmpty() }
+    val state = changedFirst(changed, listOf(extraState, if (held != null) heldDescription(status) else null))
     Box(Modifier.padding(start = indent)) {
         Row(
             Modifier

@@ -588,6 +588,8 @@ fun SessionScreen(
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
+    // One changed set for the strip, the place button and the Tabs sheet's rows, whichever is on screen (SN-2).
+    val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     // Chat has no terminal keyboard: whichever way Chat comes on screen, raw keys and the IME go.
     LaunchedEffect(chatMode) {
@@ -830,6 +832,7 @@ fun SessionScreen(
             modifier = modifier,
             here = focusedPane,
             reading = chatMode,
+            unseen = unseenTabs,
         )
     }
 
@@ -965,8 +968,6 @@ fun SessionScreen(
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
-                                // One changed set for the strip and the place button, whichever is on screen.
-                                val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
                                 // Only where it has room: a short window's merged row, and the wide layout.
                                 val tabRow = @Composable {
                                     if (tabs.isNotEmpty()) {
@@ -1011,9 +1012,27 @@ fun SessionScreen(
                                 val placeSpoken = buildString {
                                     append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
                                     // S2: the desktop's pane, said whole even where the line cuts it; both named by their tab, as the header shows them.
-                                    desktopOther?.let {
+                                    desktopOther?.let { other ->
                                         append(stringResource(R.string.session_spoken_sentence_joiner))
-                                        append(stringResource(R.string.chat_desktop_elsewhere_spoken, tabName, view?.paneTabTitle(it).orEmpty()))
+                                        // SN-1: a desktop tab named as the one read here is told apart by where it is.
+                                        val desktopAt = view?.panes?.firstOrNull { it.id == other }
+                                        val read = tab?.let { view?.spokenTab(it.id, node.title) }
+                                        val there = desktopAt?.let { view?.spokenTab(it.tab, node.title) }
+                                        val spoken = if (read != null && there != null) {
+                                            desktopSpoken(read, there, sameWorkspace = desktopAt?.workspace == tab?.workspace)
+                                        } else {
+                                            DesktopSpoken.Named(view?.paneTabTitle(other).orEmpty())
+                                        }
+                                        append(
+                                            when (spoken) {
+                                                is DesktopSpoken.Named -> stringResource(R.string.chat_desktop_elsewhere_spoken, tabName, spoken.desktop)
+                                                DesktopSpoken.SameTab -> stringResource(R.string.chat_desktop_elsewhere_spoken_same_tab, tabName)
+                                                is DesktopSpoken.Numbered ->
+                                                    stringResource(R.string.chat_desktop_elsewhere_spoken_numbered, tabName, spoken.desktop, spoken.number, spoken.count)
+                                                is DesktopSpoken.InWorkspace ->
+                                                    stringResource(R.string.chat_desktop_elsewhere_spoken_workspace, tabName, spoken.desktop, spoken.workspace)
+                                            },
+                                        )
                                     }
                                 }
                                 val placeMarks = listOfNotNull(
@@ -1550,6 +1569,7 @@ fun SessionScreen(
                         modifier = Modifier.fillMaxWidth(),
                         here = focusedPane,
                         reading = chatMode,
+                        unseen = unseenTabs,
                         onClose = closeSwitcher,
                         rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
                         onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
@@ -1571,6 +1591,7 @@ fun SessionScreen(
                         modifier = Modifier.fillMaxWidth(),
                         here = focusedPane,
                         reading = chatMode,
+                        unseen = unseenTabs,
                         onShowGrid = { showAs(TabsView.TwoColumns) },
                         appliesStartFilter = false,
                         scope = tabsScope,

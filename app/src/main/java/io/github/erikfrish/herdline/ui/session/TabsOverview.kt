@@ -90,6 +90,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,6 +142,8 @@ fun TabsOverview(
     onShowRails: () -> Unit,
     /** The phone sheet's visible way out (U-1 #7). */
     onClose: () -> Unit,
+    /** The tabs marked changed since the user looked ([rememberUnseenTabs]); required, as the strip's (SN-2). */
+    unseen: Set<String>,
     modifier: Modifier = Modifier,
     here: String? = view?.focusedPane,
     reading: Boolean = false,
@@ -251,10 +254,10 @@ fun TabsOverview(
                 rails != null -> if (narrowing && railList.all { it.cards.isEmpty() }) {
                     NoneMatch(clear)
                 } else {
-                    OverviewRails(railList, rails, narrowing, pins, monitored, actions, onRailNewTab) { picking = it.tab.id }
+                    OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab) { picking = it.tab.id }
                 }
                 sections.isEmpty() -> NoneMatch(clear)
-                else -> OverviewRows(sections, headers, rows, pins, monitored, actions) { picking = it.tab.id }
+                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen) { picking = it.tab.id }
             }
         }
     }
@@ -269,6 +272,7 @@ private fun OverviewRows(
     pins: List<String>,
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
+    unseen: Set<String>,
     onPick: (OverviewCard) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
@@ -290,7 +294,7 @@ private fun OverviewRows(
                     }
                 }
                 items(section.cards, key = { it.key }) { card ->
-                    OverviewRow(card, card.key in pins, monitored, actions, onPick)
+                    OverviewRow(card, card.key in pins, monitored, actions, onPick, changed = card.row.changedIn(unseen))
                 }
             }
         }
@@ -385,6 +389,8 @@ private fun OverviewRow(
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
     onPick: (OverviewCard) -> Unit,
+    /** The tab is marked changed (SN-2): the strip's dot on its status glyph and "changed" as its state. */
+    changed: Boolean,
     /** Rails: the tile's place in its ribbon, spoken last (§4). */
     position: String? = null,
     modifier: Modifier = Modifier,
@@ -415,6 +421,7 @@ private fun OverviewRow(
     val pinLabel = stringResource(if (pinned) R.string.unpin else R.string.pin)
     val renameLabel = stringResource(R.string.rename_tab)
     val closeLabel = stringResource(R.string.session_close_tab)
+    val changedLabel = stringResource(R.string.tab_changed)
 
     Box(
         modifier
@@ -430,6 +437,7 @@ private fun OverviewRow(
                 .fillMaxWidth()
                 .clearAndSetSemantics {
                     contentDescription = spoken
+                    if (changed) stateDescription = changedLabel
                     role = Role.Button
                     onClick(openLabel) { open(); true }
                     onLongClick(moreLabel) { menu = true; true }
@@ -463,7 +471,7 @@ private fun OverviewRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (status != null) StatusGlyph(card.tab.status, 8.dp)
+                if (status != null) StatusGlyph(card.tab.status, 8.dp, Modifier.unseenMark(changed, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
                 Text(
                     listOfNotNull(status, panes).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
@@ -526,6 +534,7 @@ private fun OverviewRails(
     pins: List<String>,
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
+    unseen: Set<String>,
     onNewTab: (Workspace) -> Unit,
     onPick: (OverviewCard) -> Unit,
 ) {
@@ -560,6 +569,7 @@ private fun OverviewRails(
                                     monitored,
                                     actions,
                                     onPick,
+                                    changed = card.row.changedIn(unseen),
                                     position = stringResource(R.string.rails_position, index + 1, rail.cards.size),
                                     modifier = Modifier.width(tileWidth).heightIn(min = tileHeight),
                                 )

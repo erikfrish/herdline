@@ -1,9 +1,16 @@
 package io.github.erikfrish.herdline.ui.session
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.Tab
+import io.github.erikfrish.herdline.core.Workspace
 import androidx.compose.runtime.saveable.SaverScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UnseenTabsTest {
@@ -49,5 +56,37 @@ class UnseenTabsTest {
         // Restored: t1 stays marked, and t2's restored Working makes its Done a change.
         assertEquals(setOf("t1", "t2"), nextUnseen(back.statuses, now, selectedId = null, unseen = back.unseen))
         assertEquals(setOf("t2"), nextUnseen(back.statuses, now, selectedId = "t1", unseen = back.unseen))
+    }
+
+    private val ws = Workspace("w1", 1, "lab", null, null, null, null, false, "t5", true, AgentStatus.Idle)
+
+    @Test
+    fun onlyAChangedTabsRowCarriesTheMarkNeverAPaneRowOfIt() {
+        val t6 = tab("t6", AgentStatus.Done)
+        val unseen = setOf("t6")
+        assertTrue(SwitchTarget.TabRow(ws, t6, panes = 1).changedIn(unseen))
+        assertFalse(SwitchTarget.TabRow(ws, tab("t5", AgentStatus.Done), panes = 1).changedIn(unseen))
+        assertFalse(SwitchTarget.PaneRow(ws, t6, Pane("p6", "w1", "t6", null, null, false), agent = null).changedIn(unseen))
+        // Selecting t6 empties the set (nextUnseen), and the row's mark goes with it.
+        assertFalse(SwitchTarget.TabRow(ws, t6, panes = 1).changedIn(emptySet()))
+    }
+
+    @Test
+    fun aChangedRowSaysChangedFirstThenItsOtherStates() {
+        assertEquals("changed, On desktop, Done", changedFirst("changed", listOf("On desktop", "Done")))
+        assertEquals("changed", changedFirst("changed", listOf(null, null)))
+        // An unmarked row keeps its states as before, and one with none has no state.
+        assertEquals("On desktop, Done", changedFirst(null, listOf("On desktop", null, "Done")))
+        assertNull(changedFirst(null, listOf(null)))
+    }
+
+    @Test
+    fun theMarkSitsOnTheGlyphsTopEndCornerNotTheSlots() {
+        // A 10 px glyph centred in a 24 px row slot: its corner, mirrored right to left.
+        assertEquals(Offset(17f, 7f), unseenCorner(Size(24f, 24f), 10f, rtl = false))
+        assertEquals(Offset(7f, 7f), unseenCorner(Size(24f, 24f), 10f, rtl = true))
+        // The strip's slot is the glyph: the box's own corner, as in 10085.
+        assertEquals(Offset(10f, 0f), unseenCorner(Size(10f, 10f), 10f, rtl = false))
+        assertEquals(Offset(0f, 0f), unseenCorner(Size(10f, 10f), 10f, rtl = true))
     }
 }

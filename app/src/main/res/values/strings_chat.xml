@@ -116,6 +116,10 @@
     <string name="chat_reading_here">Reading here</string>
     <string name="chat_on_desktop">On desktop</string>
     <string name="chat_desktop_elsewhere_spoken">Reading %1$s here. The desktop is on %2$s.</string>
+    <!-- SN-1: the desktop's tab has the name of the one read here (design/SN-TAB-CUES.md). -->
+    <string name="chat_desktop_elsewhere_spoken_same_tab">Reading %1$s here. The desktop is on another pane of this tab.</string>
+    <string name="chat_desktop_elsewhere_spoken_numbered">Reading %1$s here. The desktop is on %2$s, tab %3$d of %4$d.</string>
+    <string name="chat_desktop_elsewhere_spoken_workspace">Reading %1$s here. The desktop is on %2$s in %3$s.</string>
     <string name="chat_send_route">Sends into %1$s\'s terminal</string>
     <string name="terminal_opening">Opening Terminal for %1$s…</string>
     <string name="terminal_open_failed">Couldn\'t open Terminal for %1$s. You\'re still reading it here.</string>
