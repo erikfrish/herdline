@@ -394,10 +394,11 @@ private fun InboxItem(row: InboxRow, pinned: Boolean, onPin: () -> Unit, onOpen:
         )
     }
         val action = stringResource(if (pinned) R.string.monitor_stop else R.string.monitor_agent)
+        val spoken = stringResource(R.string.monitor_action_for, action, row.title)
         IconButton(
             onClick = onPin,
             modifier = Modifier.size(48.dp).testTag("inbox:pin:${row.nodeId}:${row.paneId}").semantics {
-                contentDescription = "$action: ${row.title}"
+                contentDescription = spoken
                 selected = pinned
             },
         ) {
