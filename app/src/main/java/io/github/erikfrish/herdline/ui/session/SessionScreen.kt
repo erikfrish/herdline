@@ -8,6 +8,7 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
@@ -441,7 +442,7 @@ fun SessionScreen(
     LaunchedEffect(scheme, state) { connection.setTheme(scheme.toJson().toString()) }
     LaunchedEffect(typefaces, terminal) { typefaces?.let { terminal?.setTypefaces(it) } }
     LaunchedEffect(settings.fontSize, terminal) { terminal?.fontSizeSp = settings.fontSize }
-    LaunchedEffect(settings.keepScreenOn, terminal) { terminal?.keepScreenOn = settings.keepScreenOn }
+    KeepScreenOn(settings.keepScreenOn)
     LaunchedEffect(settings.terminalSuggestions, terminal) { terminal?.keyboardSuggestions = settings.terminalSuggestions }
     // While the composer's field has the keyboard, the daemon's pane keeps its size so Send stays allowed;
     // the Tabs sheet holds it too, for its whole life, so hiding the keyboard under it never grows the pane.
@@ -2436,4 +2437,30 @@ private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = n
             .clearAndSetSemantics { contentDescription = spoken }
             .testTag("chat:readonly"),
     )
+}
+
+/** The host views a session on screen holds awake, and by how many sessions: two overlap while one cross-fades into the next. */
+private val awakeHolds = java.util.WeakHashMap<View, Int>()
+
+/**
+ * Keep screen on, while this session is composed: on the host view, never on the terminal's AndroidView,
+ * which could outlive its composition and keep the window awake.
+ * Released when it turns off or the session leaves for Nodes or Settings.
+ */
+@Composable
+private fun KeepScreenOn(on: Boolean) {
+    val host = LocalView.current
+    DisposableEffect(on, host) {
+        if (on) {
+            awakeHolds[host] = (awakeHolds[host] ?: 0) + 1
+            host.keepScreenOn = true
+        }
+        onDispose {
+            if (on) {
+                val left = (awakeHolds[host] ?: 1) - 1
+                if (left > 0) awakeHolds[host] = left else awakeHolds.remove(host)
+                host.keepScreenOn = left > 0
+            }
+        }
+    }
 }

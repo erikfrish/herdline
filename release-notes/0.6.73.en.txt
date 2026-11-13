@@ -1,0 +1,6 @@
+Herdline 0.6.73 (experimental) — Keep screen on releases correctly
+
+- Keep screen on is owned by the visible session's Compose host view rather than a terminal interop view. Turning it off, restoring Terminal defaults, or leaving for Settings or Hosts releases the request; a retained terminal view cannot keep the window awake. Overlapping session transitions retain the request only while a visible session still owns it.
+- Includes the updater lifecycle, installer single-flight, consistent hide preferences across Tabs views, truthful reset privacy and header accessibility repairs from 0.6.69–0.6.72.
+
+The original stuck-window flag was reproduced on the QA emulator. The exact interop retention mechanism was not established; the fix removes flag ownership from that retained view. Exact-candidate runtime verification and remaining Settings/updater coverage are recorded separately. No publication or phone install is implied.
