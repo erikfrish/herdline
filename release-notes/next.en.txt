@@ -1,9 +1,0 @@
-Carried into the next release's notes (TC-RCPT-5, design/TC-RCPT.md Addendum 3 (B)); this file goes away in that release commit.
-
-Replace, in the carried "Chat: after Insert without Enter or Append, the notice no longer says "Inserted into"" line:
-also after you leave and come back or restart the app.
-with:
-also after you leave and come back or restart the app, while that tab is still open.
-
-Add, last under "Known limits:":
-- If the app is closed and the tab is closed within that minute, the text can't be brought back.
