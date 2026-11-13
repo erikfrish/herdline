@@ -629,6 +629,7 @@ internal fun FilterChip(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -638,7 +639,8 @@ internal fun FilterChip(
 @Composable
 private fun OrderSelector(order: TargetOrder, accent: Color, onPick: (TargetOrder) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp).selectableGroup().testTag("switcher:order"),
+        Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())
+            .selectableGroup().testTag("switcher:order"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -646,6 +648,8 @@ private fun OrderSelector(order: TargetOrder, accent: Color, onPick: (TargetOrde
             stringResource(R.string.order_label),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp),
         )
         FilterChip(stringResource(R.string.order_workspace), order == TargetOrder.Workspace, accent, "order:workspace") { onPick(TargetOrder.Workspace) }
