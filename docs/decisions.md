@@ -452,9 +452,9 @@ Switcher:
   OMP control hooks that no public OMP release offers (checked up to
   v18.20.0): `ctx.getQueuedMessages` with request-id entries,
   `ctx.withdrawQueuedMessage`, `ctx.ui.hasOpenDialog`,
-  `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog`,
-  `ctx.sessionManager.flush`, and `ctx.isCollabSession` (asked per request:
-  without it each request is refused as `collab_state_unknown`). On stock
+  `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog` and `ctx.isCollabSession`
+  (asked per request: without it each request is refused as
+  `collab_state_unknown`). On stock
   OMP the extension reports Unsupported with the missing hook names, and
   Chat refuses through it, never typing into the pane instead. Image Steer, Chat
   questionnaire answers and acknowledged Steer stay unavailable until
