@@ -120,9 +120,9 @@
     <string name="restore_composer_confirm">终端中的键盘建议恢复为关闭。节点、密钥和草稿保持不变。</string>
     <string name="restore_layout_confirm">会话布局、侧边栏的展开或折叠、标签页顺序、标签页视图、启动筛选、两个隐藏开关以及“控件”页上的每个控件将恢复默认。固定项保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_controls_confirm">每个 + 菜单项和标签页列表分区都会按原始顺序恢复。节点、密钥和草稿保持不变。</string>
-    <string name="restore_notifications_confirm">所有通知和实时卡片重新开启，通知内容字段恢复默认的选择和顺序，锁屏恢复为“隐藏”。Android 自身的通知设置保持不变。节点、密钥和草稿保持不变。</string>
+    <string name="restore_notifications_confirm">所有通知和实时卡片重新开启，通知内容字段恢复默认的选择和顺序，代理和连接通知在锁屏上恢复为“隐藏”。实时更新保留你固定时选择的锁屏级别。Android 自身的通知设置保持不变。节点、密钥和草稿保持不变。</string>
     <string name="reset_settings">重置为默认</string>
-    <string name="reset_settings_detail">外观、终端和额外按键、输入框、包括标签页列表和控件在内的布局、通知和锁屏。语言、节点、密钥和草稿保持不变。</string>
+    <string name="reset_settings_detail">外观、终端和额外按键、输入框、包括标签页列表和控件在内的布局、通知和锁屏。语言、实时更新的锁屏级别、节点、密钥和草稿保持不变。</string>
     <string name="reset_settings_confirm">要将此页面上的所有设置重置为默认吗？</string>
     <string name="reset">重置</string>
     <string name="controls_title">控件</string>

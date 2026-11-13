@@ -1,0 +1,6 @@
+Herdline 0.6.71 (experimental) — truthful notification reset privacy
+
+- Restore Notifications defaults now distinguishes ordinary agent/connection lock-screen privacy from the live-update level chosen when pinning. The former returns to Hidden; the live update keeps its explicitly chosen level. The global-reset description also names that retained level. English and Chinese; reset behavior itself is unchanged.
+- Includes the updater cancellation, persistent permission-wait recovery, single-flight installer handoff, hidden status-filter and header accessibility repairs from 0.6.69–0.6.70.
+
+The source does not silently lower or broaden the user's pinned live-update privacy. Runtime evidence, exact APK hashes and the limits of the full Settings/updater checks are recorded separately. No new release is published without approval of its full public text.
