@@ -241,12 +241,15 @@ internal suspend fun awaitSentNoticeEnd(
 internal fun sentNoticeShown(sent: SentRecord?, editor: String, live: Boolean): Boolean =
     live && editor.isEmpty() && sentNoticeWindow(sent) != null
 
-/** The words of [sent]'s notice: only a proven delivery says Sent. */
-internal fun sentNoticeText(sent: SentRecord): Int = when {
-    sent.state != SentState.Handed -> R.string.composer_sent_to
-    sent.submit -> R.string.composer_handed_send
-    else -> R.string.composer_handed_insert
-}
+/**
+ * The words of [sent]'s notice: only a proven delivery says Sent. Handed
+ * comes only from a Chat Insert or Append: a Chat Send is always watched.
+ */
+internal fun sentNoticeText(sent: SentRecord): Int =
+    if (sent.state == SentState.Handed) R.string.composer_handed_insert else R.string.composer_sent_to
+
+/** Whether [sent]'s notice offers Check before Reuse: a Handed one asks the user to look at the terminal (TC-RCPT N5). */
+internal fun sentNoticeChecks(sent: SentRecord): Boolean = sent.state == SentState.Handed
 
 /**
  * Runs [call] only once [writeAhead] stored the unconfirmed record on disk.
@@ -1887,13 +1890,15 @@ private fun Editor(
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
         sentNoticeShown(draft.sent, value.text, noticeLive) -> draft.sent?.let { sent ->
+            val reuse = NoticeAction(stringResource(R.string.composer_reuse)) {
+                val text = sent.text
+                value = TextFieldValue(text, TextRange(text.length))
+                save(draft.copy(text = text, selectionStart = text.length, selectionEnd = text.length))
+            }
             Notice(
                 stringResource(sentNoticeText(sent), draftTitle),
-                NoticeAction(stringResource(R.string.composer_reuse)) {
-                    val text = sent.text
-                    value = TextFieldValue(text, TextRange(text.length))
-                    save(draft.copy(text = text, selectionStart = text.length, selectionEnd = text.length))
-                },
+                if (sentNoticeChecks(sent)) NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal) else reuse,
+                reuse.takeIf { sentNoticeChecks(sent) },
                 warning = false,
             )
         }

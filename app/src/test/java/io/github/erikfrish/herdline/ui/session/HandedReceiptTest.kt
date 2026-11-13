@@ -55,12 +55,14 @@ class HandedReceiptTest {
     }
 
     @Test
-    fun theNoticeNeverSaysSentOrInsertedForAHandedRecord() {
-        val send = SentRecord("a", "r1", submit = true, SentState.Handed, answeredAt)
-        assertEquals(R.string.composer_handed_send, sentNoticeText(send))
-        assertEquals(R.string.composer_handed_insert, sentNoticeText(send.copy(submit = false)))
-        // Only a proven delivery says Sent.
-        assertEquals(R.string.composer_sent_to, sentNoticeText(send.copy(state = SentState.Confirmed)))
+    fun aHandedNoticeNeverSaysSentAndOffersCheckFirst() {
+        val insert = SentRecord("a", "r1", submit = false, SentState.Handed, answeredAt)
+        assertEquals(R.string.composer_handed_insert, sentNoticeText(insert))
+        assertTrue(sentNoticeChecks(insert))
+        // Only a proven delivery says Sent, and it asks for no check.
+        val confirmed = insert.copy(submit = true, state = SentState.Confirmed)
+        assertEquals(R.string.composer_sent_to, sentNoticeText(confirmed))
+        assertFalse(sentNoticeChecks(confirmed))
     }
 
     @Test
