@@ -26,7 +26,7 @@
 //!
 //! Gemini v0.68.0 keeps chats in `<home>/.gemini/tmp/<project slug>/chats`
 //! (Storage.getProjectTempDir and ProjectRegistry.getShortId, bundle
-//! chunk-2OHBIZ5H.js:253382-253386, 252896-253185) and names a main session
+//! chunk-RCB6BI5H.js:253340-253344, 252874-253150) and names a main session
 //! `session-<YYYY-MM-DDTHH-MM>[-<n>]-<id8>.jsonl`
 //! (chatRecordingService.ts:806-823). The slug dir's `.project_root` holds
 //! the project root whose sha256 is the header's projectHash

@@ -297,7 +297,7 @@ impl Conversation {
     /// What Gemini is running now and has not recorded here yet. Its TUI
     /// writes a turn's tool calls to the parent only once the whole batch
     /// has ended (`useToolScheduler`'s completion, bundle
-    /// interactiveCli-HTFX4T7K.js:28069-28122), all stamped then, so
+    /// interactiveCli-ZJ2ZELJM.js:28088-28141), all stamped then, so
     /// parallel `invoke_agent` children are recorded together; until then
     /// each child records itself in `chats/<session>/<child>.jsonl` under a
     /// `subagent` header (chatRecordingService.ts:855-862). `children` are
