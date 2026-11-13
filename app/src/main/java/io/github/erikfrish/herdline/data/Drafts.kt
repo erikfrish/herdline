@@ -25,9 +25,13 @@ data class DraftKey(val nodeId: String, val session: String, val pane: String) {
  * [InPane] (P1): Chat typed it into an agent's pane and the pane's read
  * receipt came, which proves only that the text reached the input box; it
  * holds the pane like [Uncertain] until the session's history shows the
- * turn ([Confirmed]) or the user unlocks it.
+ * turn ([Confirmed]) or the user unlocks it. [Handed] (TC-RCPT): a
+ * delivery nothing watches (Terminal Send and Insert, Chat Insert) got its
+ * receipt, which proves only that Herdr processed the input: Herdr 0.9.5
+ * answers success even when it dropped the write. It holds nothing, like
+ * [Confirmed], and differs only in what the composer says.
  */
-enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked }
+enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked, Handed }
 
 /**
  * [acknowledged]: the user took in that an [SentState.Unlocked] attempt may

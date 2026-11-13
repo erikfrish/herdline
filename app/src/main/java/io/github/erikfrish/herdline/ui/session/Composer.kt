@@ -173,6 +173,44 @@ internal fun sentAfter(outcome: Connection.Delivery, before: SentRecord?, text: 
     }
 
 /**
+ * The record an answered receipt leaves. A watched send (P1) waits
+ * [SentState.InPane] for its turn in the history. Any other is only
+ * [SentState.Handed]: Herdr answers the receipt with success also when it
+ * dropped the write (TC-RCPT), so it is never reported as delivered.
+ */
+internal fun answeredRecord(text: String, receipt: String, submit: Boolean, watched: Boolean, historyFrom: Long?, now: Long): SentRecord =
+    if (watched) {
+        SentRecord(text, receipt, submit, SentState.InPane, now, historyFrom = historyFrom)
+    } else {
+        SentRecord(text, receipt, submit, SentState.Handed, now)
+    }
+
+/** The editor once the delivery of [sent] is answered: empty, unless the user changed it meanwhile. */
+internal fun editorAfterAnswer(editor: String, sent: String): String = if (editor == sent) "" else editor
+
+/**
+ * Until when the notice slot speaks of [sent], from its stored answer time:
+ * [HANDED_NOTICE_MS] for [SentState.Handed], [SENT_NOTICE_MS] for a proven
+ * [SentState.Confirmed], null for any other record.
+ */
+internal fun sentNoticeUntil(sent: SentRecord?): Long? = when (sent?.state) {
+    SentState.Handed -> sent.at + HANDED_NOTICE_MS
+    SentState.Confirmed -> sent.at + SENT_NOTICE_MS
+    else -> null
+}
+
+/** Whether the slot shows [sent]'s notice and its Reuse at [now]: only while [editor] is empty, inside the window. */
+internal fun sentNoticeShown(sent: SentRecord?, editor: String, now: Long): Boolean =
+    editor.isEmpty() && sentNoticeUntil(sent)?.let { now < it } == true
+
+/** The words of [sent]'s notice: only a proven delivery says Sent. */
+internal fun sentNoticeText(sent: SentRecord): Int = when {
+    sent.state != SentState.Handed -> R.string.composer_sent_to
+    sent.submit -> R.string.composer_handed_send
+    else -> R.string.composer_handed_insert
+}
+
+/**
  * Runs [call] only once [writeAhead] stored the unconfirmed record on disk.
  * A failed write calls nothing and answers [refused]: nothing was sent.
  * Send, Steer's paste and Steer's Enter all go through it.
@@ -969,24 +1007,21 @@ private fun Editor(
 
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
-            is Connection.DeliveryUpdate.Confirmed -> if (p.watched) {
-                // P1: the read receipt proves only that the text reached the
-                // pane's input box, not that the agent took it. The editor
-                // keeps it and the pane stays held until the history shows it.
-                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.InPane, System.currentTimeMillis(), historyFrom = p.historyFrom)))
-            } else {
-                // Only now does the text leave the editor.
-                val rest = if (value.text == p.text) "" else value.text
-                write(rest)
-                // The files it carried leave with it; their host copies stay
-                // for OMP to read and go with the seven-day sweep.
-                save(
-                    draft.copy(
-                        sent = SentRecord(p.text, p.receipt, p.submit, SentState.Confirmed, System.currentTimeMillis()),
-                        attachments = draft.attachments.filterNot { it.id in p.attachments },
-                    ),
-                )
-                delivered()
+            is Connection.DeliveryUpdate.Confirmed -> {
+                val sent = answeredRecord(p.text, p.receipt, p.submit, p.watched, p.historyFrom, System.currentTimeMillis())
+                if (p.watched) {
+                    // P1: the read receipt proves only that the text reached the
+                    // pane's input box, not that the agent took it. The editor
+                    // keeps it and the pane stays held until the history shows it.
+                    save(draft.copy(sent = sent))
+                } else {
+                    // Only now does the text leave the editor; Reuse brings it back.
+                    write(editorAfterAnswer(value.text, p.text))
+                    // The files it carried leave with it; their host copies stay
+                    // for OMP to read and go with the seven-day sweep.
+                    save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in p.attachments }))
+                    delivered()
+                }
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
@@ -1545,16 +1580,15 @@ private fun Editor(
     // §9: a non-empty draft keeps its pane while the user views another.
     val mismatched = holdsDraft && viewed != null && viewed != key.pane && pending == null && !steer.active
     val targetGone = holdsDraft && check?.paneExists == false
-    // The sent confirmation is a moment, not a state: it shows for a few
-    // seconds after the receipt, then the slot is free again.
-    val confirmedAt = draft.sent?.takeIf { it.state == SentState.Confirmed }?.at
-    var confirmationShown by remember(confirmedAt) {
-        mutableStateOf(confirmedAt != null && System.currentTimeMillis() - confirmedAt < SENT_NOTICE_MS)
-    }
-    LaunchedEffect(confirmedAt) {
-        if (confirmedAt != null) {
-            delay((SENT_NOTICE_MS - (System.currentTimeMillis() - confirmedAt)).coerceAtLeast(0))
-            confirmationShown = false
+    // The sent notice is a moment, not a state: it shows for a while after
+    // the receipt, timed from the stored record, so also across a return or
+    // a restart; then the slot is free again.
+    val noticeUntil = sentNoticeUntil(draft.sent)
+    var noticeNow by remember(noticeUntil) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(noticeUntil) {
+        if (noticeUntil != null) {
+            delay((noticeUntil - System.currentTimeMillis()).coerceAtLeast(0))
+            noticeNow = System.currentTimeMillis()
         }
     }
 
@@ -1819,9 +1853,9 @@ private fun Editor(
             else -> Notice(stringResource(causeRes(code ?: "", panel), (panel as? QueuePanel.Unusable)?.reason.orEmpty()), cause = code)
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
-        value.text.isEmpty() && confirmationShown -> draft.sent?.let { sent ->
+        sentNoticeShown(draft.sent, value.text, noticeNow) -> draft.sent?.let { sent ->
             Notice(
-                stringResource(if (sent.submit) R.string.composer_sent_to else R.string.composer_inserted_to, draftTitle),
+                stringResource(sentNoticeText(sent), draftTitle),
                 NoticeAction(stringResource(R.string.composer_reuse)) {
                     val text = sent.text
                     value = TextFieldValue(text, TextRange(text.length))
@@ -2893,6 +2927,8 @@ private fun Modifier.fieldState(locked: Boolean, inFlight: Boolean, lockedDescri
 private const val EXPAND_TARGET = 48
 
 private const val SENT_NOTICE_MS = 8_000L
+/** How long a [SentState.Handed] notice offers Reuse, from the stored answer (TC-RCPT). */
+private const val HANDED_NOTICE_MS = 60_000L
 private const val PRECHECK_SETTLE_MS = 700L
 private const val INSTANCE_POLL_MS = 5_000L
 private const val INSTANCE_SETTLE_MS = 1_500L

@@ -55,7 +55,8 @@
     <string name="composer_draft_for_target_held">Draft for %1$s. Can\'t move here: this tab\'s last delivery isn\'t confirmed.</string>
     <string name="composer_pane_gone_target_held">This draft\'s pane is gone. Can\'t move here: this tab\'s last delivery isn\'t confirmed.</string>
     <string name="composer_sent_to">Sent to %1$s</string>
-    <string name="composer_inserted_to">Inserted into %1$s</string>
+    <string name="composer_handed_send">Herdr took it for %1$s; not confirmed in the pane. Check the terminal.</string>
+    <string name="composer_handed_insert">Herdr took it for %1$s; not confirmed in the pane. Check the terminal.</string>
     <string name="composer_pane_rows">Pane is %1$d rows on Herdr: Send needs 12</string>
     <string name="composer_pane_rows_unknown">Pane is too short on Herdr: Send needs 12 rows</string>
     <string name="composer_has_draft">%1$s already has a draft</string>

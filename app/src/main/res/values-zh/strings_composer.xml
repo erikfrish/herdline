@@ -47,7 +47,8 @@
     <string name="composer_draft_for_target_held">给 %1$s 的草稿。无法移到这里：此标签页的上次投递未确认。</string>
     <string name="composer_pane_gone_target_held">此草稿的窗格已不存在。无法移到这里：此标签页的上次投递未确认。</string>
     <string name="composer_sent_to">已发送到 %1$s</string>
-    <string name="composer_inserted_to">已插入到 %1$s</string>
+    <string name="composer_handed_send">Herdr 已接收，发往 %1$s；未确认已进入窗格。请查看终端。</string>
+    <string name="composer_handed_insert">Herdr 已接收，插入到 %1$s；未确认已进入窗格。请查看终端。</string>
     <string name="composer_pane_rows">此窗格在 Herdr 上为 %1$d 行：发送需要 12 行</string>
     <string name="composer_pane_rows_unknown">此窗格在 Herdr 上太矮：发送需要 12 行</string>
     <string name="composer_has_draft">%1$s 已有草稿</string>
