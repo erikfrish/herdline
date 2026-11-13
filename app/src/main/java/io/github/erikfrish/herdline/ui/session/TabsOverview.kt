@@ -7,17 +7,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -34,6 +39,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,7 +54,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChip as MaterialFilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,6 +67,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
@@ -97,6 +104,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import io.github.erikfrish.herdline.ui.theme.color
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
@@ -175,11 +183,6 @@ fun TabsOverview(
     BackHandler(enabled = picking != null) { picking = null }
     // Once per open, without animation: the current tab is on screen even with 20+ tabs.
     var placed by remember { mutableStateOf(false) }
-    LaunchedEffect(sections.isNotEmpty()) {
-        if (placed || sections.isEmpty() || rails != null) return@LaunchedEffect
-        placed = true
-        overviewIndexOf(sections, currentTab, headers)?.let { rows.scrollToItem(it) }
-    }
     if (rails != null) {
         // Once per session, without animation; after that the saved positions win (§5).
         LaunchedEffect(rails, railList.isNotEmpty()) {
@@ -222,21 +225,25 @@ fun TabsOverview(
             Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
                 SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = tabsSearchMinHeight())
             }
-            FlowRow(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope)
-                if (filtersShown) {
-                    OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { onFilter(SwitcherFilter.All) }
-                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
+            if (view != null) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    ScopeSelector(view, groups, chosen, scoped.gone, onScope)
+                }
+            }
+            if (filtersShown) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        .horizontalScroll(rememberScrollState()).selectableGroup().testTag("overview:filters"),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null, "all") { onFilter(SwitcherFilter.All) }
+                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked, "needs_you") {
                         onFilter(SwitcherFilter.NeedsYou)
                     }
-                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working) {
+                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working, "working") {
                         onFilter(SwitcherFilter.Working)
                     }
-                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null) {
+                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null, "ready") {
                         onFilter(SwitcherFilter.Ready)
                     }
                 }
@@ -257,7 +264,7 @@ fun TabsOverview(
                     OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab) { picking = it.tab.id }
                 }
                 sections.isEmpty() -> NoneMatch(clear)
-                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen) { picking = it.tab.id }
+                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }) { picking = it.tab.id }
             }
         }
     }
@@ -273,12 +280,20 @@ private fun OverviewRows(
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
     unseen: Set<String>,
+    currentTab: String?,
+    placed: Boolean,
+    onPlaced: () -> Unit,
     onPick: (OverviewCard) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = compactColumns(maxWidth.value, fontScale)
+        LaunchedEffect(sections.isNotEmpty(), columns) {
+            if (placed || sections.isEmpty()) return@LaunchedEffect
+            onPlaced()
+            overviewIndexOf(sections, currentTab, headers, columns)?.let { rows.scrollToItem(it) }
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = rows,
@@ -293,8 +308,21 @@ private fun OverviewRows(
                         OverviewWorkspaceHeader(section.workspace, section.suffix, section.cards.size, actions)
                     }
                 }
-                items(section.cards, key = { it.key }) { card ->
-                    OverviewRow(card, card.key in pins, monitored, actions, onPick, changed = card.row.changedIn(unseen))
+                val pairs = section.cards.chunked(columns)
+                items(pairs, key = { it.first().key }, span = { GridItemSpan(maxLineSpan) }) { pair ->
+                    Row(
+                        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
+                    ) {
+                        for (card in pair) key(card.key) {
+                            OverviewRow(
+                                card, card.key in pins, monitored, actions, onPick,
+                                changed = card.row.changedIn(unseen),
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
+                        if (pair.size < columns) Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -431,6 +459,7 @@ private fun OverviewRow(
             .background(scheme.surfaceContainerHigh)
             .border(border, shape)
             .testTag("overview:card:${card.tab.id}"),
+        propagateMinConstraints = true,
     ) {
         Column(
             Modifier
@@ -706,7 +735,7 @@ internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen
     val spoken = stringResource(R.string.scope_button, name)
     BoxWithConstraints {
         val menuWidth = maxWidth
-        FilterChip(
+        MaterialFilterChip(
             selected = picked != null || gone,
             onClick = { open = true },
             label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -775,24 +804,15 @@ internal fun ScopeItem(name: String, detail: String, selected: Boolean, leading:
     )
 }
 
-/** A single-select status chip; Needs you and Working lead with their glyph, never colour alone. */
+/** Shared compact category pills; the selected state and full label remain accessible. */
 @Composable
-private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, maxLines = 1) },
-        leadingIcon = when {
-            glyph != null -> {
-                { StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = FilterChipDefaults.IconSize) }
-            }
-            selected -> {
-                { Icon(Icons.Filled.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
-            }
-            else -> null
-        },
-        modifier = Modifier.heightIn(min = 48.dp),
-    )
+private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, tag: String, onClick: () -> Unit) {
+    val color = glyph?.color() ?: MaterialTheme.colorScheme.primary
+    FilterChip(label, selected, color, tag, leading = when {
+        glyph != null -> ({ StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = 18.dp) })
+        selected -> ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) })
+        else -> null
+    }, onClick = onClick)
 }
 
 @Composable

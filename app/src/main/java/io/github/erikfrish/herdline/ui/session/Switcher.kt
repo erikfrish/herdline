@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -591,10 +592,18 @@ internal fun SearchField(query: String, onQuery: (String) -> Unit, placeholder: 
     }
 }
 
-/** A compact chip, one choice of a group: 30 dp drawn, 48 dp tall to touch. */
+/** A shared compact chip: 32 dp drawn at normal font size, at least 48 dp to touch. */
 @Composable
-private fun FilterChip(label: String, selected: Boolean, color: Color, tag: String, onClick: () -> Unit) {
+internal fun FilterChip(
+    label: String,
+    selected: Boolean,
+    color: Color,
+    tag: String,
+    leading: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val fill by animateColorAsState(if (selected) color.copy(alpha = 0.22f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), label = "chip")
+    val pillHeight = (32f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     Box(
         Modifier
             .heightIn(min = 48.dp)
@@ -602,20 +611,24 @@ private fun FilterChip(label: String, selected: Boolean, color: Color, tag: Stri
             .testTag("switcher:filter:$tag"),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            modifier = Modifier
-                .height(30.dp)
+        Row(
+            Modifier.heightIn(min = pillHeight)
                 .clip(CircleShape)
                 .background(fill)
                 .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                .padding(horizontal = 12.dp)
-                .wrapContentHeight(Alignment.CenterVertically),
-        )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            leading?.invoke()
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
     }
 }
 

@@ -142,16 +142,15 @@ internal fun overviewSections(
 internal fun overviewCurrentTab(view: ShellView, here: String?, reading: Boolean): String? =
     if (reading) here?.let { id -> view.panes.firstOrNull { it.id == id }?.tab } else view.focusedTab
 
-/** The index in a grid laid out from [sections] of the card for [tab], with one header per section when [headers]. */
-internal fun overviewIndexOf(sections: List<OverviewSection>, tab: String?, headers: Boolean): Int? {
+/** The lazy row holding [tab], with [columns] cards per row and optional workspace headers. */
+internal fun overviewIndexOf(sections: List<OverviewSection>, tab: String?, headers: Boolean, columns: Int): Int? {
     if (tab == null) return null
     var index = 0
     for (section in sections) {
         if (headers) index++
-        for (card in section.cards) {
-            if (card.tab.id == tab) return index
-            index++
-        }
+        val card = section.cards.indexOfFirst { it.tab.id == tab }
+        if (card >= 0) return index + card / columns
+        index += (section.cards.size + columns - 1) / columns
     }
     return null
 }

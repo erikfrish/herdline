@@ -133,13 +133,14 @@ class OverviewModelTest {
     @Test
     fun theFocusedCardIndexCountsWorkspaceHeadersOnlyWhenShown() {
         val all = sections()
-        // Header w1, t1, t2: with headers t2 is item 2, without them item 1.
-        assertEquals(2, overviewIndexOf(all, "t2", headers = true))
-        assertEquals(1, overviewIndexOf(all, "t2", headers = false))
-        // Header w1, three cards, header w2, t3.
-        assertEquals(5, overviewIndexOf(all, "t3", headers = true))
-        assertNull(overviewIndexOf(all, "missing", headers = true))
-        assertNull(overviewIndexOf(all, null, headers = true))
+        for ((columns, second, nextWorkspace) in listOf(Triple(1, 2, 5), Triple(2, 1, 4))) {
+            // The second card shares the first row only with two columns.
+            assertEquals(second, overviewIndexOf(all, "t2", headers = true, columns = columns))
+            assertEquals(second - 1, overviewIndexOf(all, "t2", headers = false, columns = columns))
+            assertEquals(nextWorkspace, overviewIndexOf(all, "t3", headers = true, columns = columns))
+            assertNull(overviewIndexOf(all, "missing", headers = true, columns = columns))
+            assertNull(overviewIndexOf(all, null, headers = true, columns = columns))
+        }
     }
 
     @Test

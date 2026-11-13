@@ -87,6 +87,12 @@ where two would make a title illegible. A stored
 once; the value is written back so it never reappears. The old default is
 migrated too, never an explicit List choice.
 
+Two-column cards share their row's tallest content height; the full card
+remains tappable. Categories use the List's compact pills in one horizontally
+scrolling row, separate from the workspace selector. Pills are 32 dp high at
+normal font size, grow for accessibility fonts and keep at least 48 dp touch
+targets. Scrolling or filtering changes no desktop focus or terminal size.
+
 ## No jump: the order is held while the switcher is shown
 
 A live update never moves a row the user may be looking at, pressing or
