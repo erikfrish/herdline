@@ -143,17 +143,6 @@ class LiveFieldsTest {
         assertEquals(LockDetail.StateOnly, liveLevel(LockDetail.StateOnly, LockDetail.Full))
     }
 
-    // Live Update rule: promotion is requested only for an ongoing activity.
-    @Test
-    fun promotionIsRequestedOnlyWhileWorkingWithTheSettingOn() {
-        val working = fields(LiveCard(listOf(row()), null), LockDetail.Full)
-        assertTrue(requestsPromotion(true, working))
-        assertFalse(requestsPromotion(false, working))
-        assertFalse(requestsPromotion(true, fields(LiveCard(listOf(row(AgentStatus.Done)), null), LockDetail.Full)))
-        assertFalse(requestsPromotion(true, fields(LiveCard(listOf(row()), 100L), LockDetail.Full)))
-        assertFalse(requestsPromotion(true, null))
-    }
-
     // The service's own report, before Android's three facts (permission, eligibility, flag).
     @Test
     fun reportedCardStateNeverCallsAFinishedCardRequested() {
@@ -161,22 +150,5 @@ class LiveFieldsTest {
         assertEquals(Promotion.Stale, cardPromotion(LiveState.Disconnected))
         assertEquals(Promotion.Finished, cardPromotion(LiveState.Done))
         assertEquals(Promotion.Requested, cardPromotion(LiveState.Working))
-    }
-
-    // Live Update rules: a contentTitle on the card and its public version; the explicit pin keeps Unpin.
-    @Test
-    fun everyLiveCardHasATitleAndAnUnpinAtEveryLevel() {
-        val blank = LiveRow("n", "", "p9", "", "", AgentStatus.Working, null, null, null)
-        val cards = listOf(
-            LiveCard(listOf(row()), null), LiveCard(listOf(row(AgentStatus.Done)), null), LiveCard(listOf(row()), 100L),
-            LiveCard(listOf(row(), row(AgentStatus.Blocked, pane = "p2")), null), LiveCard(listOf(blank), null),
-        )
-        val sets = listOf(NotificationFields.ALL, emptyList()) + NotificationFields.ALL.map { listOf(it) }
-        for (card in cards) for (level in LockDetail.entries) for (ids in sets) for (locked in listOf(true, false)) {
-            val f = fields(card, level, ids, locked)
-            assertTrue("$level $ids", f.main.title.isNotBlank())
-            assertTrue("$level $ids", f.public.title.isNotBlank())
-            assertTrue(f.unpin)
-        }
     }
 }

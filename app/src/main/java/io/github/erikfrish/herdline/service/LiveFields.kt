@@ -81,9 +81,6 @@ internal fun cardPromotion(state: LiveState?): Promotion = when (state) {
     LiveState.Working -> Promotion.Requested
 }
 
-/** Whether the posted card asks Android for promotion: the live setting is on and the card is live now. */
-internal fun requestsPromotion(liveSetting: Boolean, fields: LiveFields?): Boolean = liveSetting && fields?.promote == true
-
 /** Hides finished episodes without deleting the user's durable monitoring pins. */
 internal class DoneCards {
     private val until = HashMap<MonitorKey, Long>()

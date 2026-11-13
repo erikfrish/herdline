@@ -360,7 +360,7 @@ class ConnectionService : Service() {
         val locked = LockGate.isDeviceLocked(this)
         val time = DateFormat.getTimeFormat(this)
         val fields = liveFields(ResourceLiveTexts(this), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
-        val requestPromotion = requestsPromotion(shown.promote, fields)
+        val requestPromotion = shown.promote && fields?.promote == true
         AgentNotifications.promotionRequested = requestPromotion
         preview.value = NotificationCardPreview(shown.card, shown.count, shown.title, shown.agents, shown.needYou, if (fields == null) shown.lock else shown.live, shown.connection)
         val top = fields?.top ?: shown.card?.rows?.firstOrNull()
