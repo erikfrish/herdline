@@ -1,0 +1,11 @@
+Herdline 0.6.69 (experimental) — updater and Settings repairs
+
+- Cancel in App updates closes a stalled download connection instead of waiting for the network timeout. A cancelled or interrupted check restores a usable state, and manifest-check cleanup cannot delete a download that started concurrently.
+- A verified APK waiting for permission to install is retained across app-process restarts. Reopening the app or page never starts an installation or download. Open settings and return to continue; size, checksum, package, version and signing certificate are checked again before every installer handoff.
+- Hiding the Tabs status filters now opens List, Two columns and Workspace rails on All instead of retaining an invisible earlier chip selection. The saved start filter is kept for when the chips are shown again.
+- The session header takes precedence over clipped Chat actions in accessibility bounds, so a partly scrolled button cannot shorten the reported header targets. Button sizes and visual clipping are unchanged.
+- Settings descriptions no longer promise a removed Terminal composer. Layout reset names Tabs view, and notification reset names the content-field selection and order. English and Chinese.
+
+Developer checks: 64 tests across seven selected JVM owners passed, including real stalled-connection cancellation and release verification contracts. The QA app and instrumentation APK built; a temporary real-package, release-signed 10103 probe was built solely for reversible updater tests against the public 10104 release, without changing URLs, trust, or signer guards.
+
+Runtime evidence for the updater lifecycle, the full Settings walk and the header accessibility change is recorded separately against exact candidate hashes. No physical phone or Android 11 automatic permission-toggle process kill is claimed from an API 37 emulator.

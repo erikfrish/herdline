@@ -116,6 +116,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -805,8 +806,8 @@ fun SessionScreen(
     }
 
     fun openSwitcher() {
-        // The phone sheet starts each open on the saved filter, once, so Grid ⇄ List keeps a chip tap (TB1 §4).
-        if (SheetSections.shows(settings.sheetSections, SheetSection.Filters)) filter = settings.startFilter.switcherFilter
+        // Each open starts on the saved filter; hidden chips always mean All, not a stale chip selection.
+        filter = if (SheetSections.shows(settings.sheetSections, SheetSection.Filters)) settings.startFilter.switcherFilter else SwitcherFilter.All
         switcherOpen = true
         // Held before the keyboard starts to go, not on the next effect pass.
         terminal?.holdGrid = true
@@ -912,7 +913,8 @@ fun SessionScreen(
                 SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
                     val headerColor = accent.copy(alpha = if (dark) 0.14f else 0.1f).compositeOver(chromeColor)
-                    Box {
+                    // Header targets take precedence over clipped Chat actions in the accessibility tree too.
+                    Box(Modifier.zIndex(1f)) {
                         Box(
                             Modifier
                                 .matchParentSize()

@@ -129,7 +129,7 @@ internal fun AppUpdatesScreen(app: HerdlineApp, onBack: () -> Unit, modifier: Mo
     BackHandler(onBack = onBack)
     // "Updated to X" shows once: leaving the page settles it.
     DisposableEffect(updates) { onDispose { updates.acknowledgeUpdate() } }
-    // Back from Android's install-sources page: hand on if allowed, else stay (no loop).
+    // Back from Android's install-sources page, opened from here: hand on if allowed, else stay (no loop).
     LifecycleResumeEffect(updates) {
         updates.permissionReturned(app.scope)
         onPauseOrDispose {}
@@ -166,7 +166,7 @@ internal fun AppUpdatesScreen(app: HerdlineApp, onBack: () -> Unit, modifier: Mo
             status?.let { shown ->
                 item(key = "status") {
                     StatusCard(shown, install, updates, app, download, onOpenSettings = {
-                        openInstallSources(context)
+                        openInstallSources(context, updates)
                     })
                 }
             }
@@ -296,18 +296,19 @@ internal fun AppUpdatesScreen(app: HerdlineApp, onBack: () -> Unit, modifier: Mo
             title = { Text(stringResource(R.string.updates_permission_title)) },
             text = { Text(stringResource(R.string.updates_permission_body)) },
             confirmButton = {
-                TextButton(onClick = { permissionDismissed = true; openInstallSources(context) }) { Text(stringResource(R.string.updates_open_settings)) }
+                TextButton(onClick = { permissionDismissed = true; openInstallSources(context, updates) }) { Text(stringResource(R.string.updates_open_settings)) }
             },
             dismissButton = { TextButton(onClick = { permissionDismissed = true }) { Text(stringResource(R.string.updates_not_now)) } },
         )
     }
 }
 
-/** Android's per-app "Install unknown apps" page for this package. */
-private fun openInstallSources(context: android.content.Context) {
+/** Android's per-app "Install unknown apps" page for this package; the return from it hands the file on. */
+private fun openInstallSources(context: android.content.Context, updates: UpdateChecker) {
     val intent = Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     try {
+        updates.openingInstallSources()
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
         // No such page on this device: the state stays "Allow installs to continue".

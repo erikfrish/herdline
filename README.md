@@ -44,6 +44,12 @@ Neither updater installs silently; Android asks you to confirm the update.
 Updates must use the same signing key. A self-built or debug-signed APK
 cannot replace the published app without uninstalling it and losing app data.
 
+In App updates, Cancel closes an in-flight connection rather than waiting for
+its network timeout. A verified file waiting for permission to install is
+kept across an app-process restart; reopening the page never starts an
+installation by itself. Choose Open settings and return to continue. The
+cached APK is checked again in full before every installer handoff.
+
 ### Obtainium (one-click add)
 
 <p align="center">

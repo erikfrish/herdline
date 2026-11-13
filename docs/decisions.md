@@ -13,6 +13,14 @@ they start with `native/`.
 - Updates come only from Herdline's own fixed manifest on GitHub (see the
   README). It has a stable and a candidate release, and a candidate is marked
   *not tested*.
+- Update cancellation closes the current network connection off the main
+  thread. Manifest-check cleanup and new-download preparation share one file
+  lock, so a concurrent check cannot delete an active download.
+- A verified APK awaiting install-source permission can survive process
+  death. Only a still-installable entry from the cached pinned manifest with
+  its own cache file restores the waiting state. Startup and opening the
+  page never install or download automatically. Every handoff rechecks size,
+  checksum, package, version and signer before granting Android read access.
 
 ## Composer
 
@@ -79,6 +87,17 @@ they start with `native/`.
   session is resumed and unlocked. It follows Android's touch-feedback
   setting and requires device haptic hardware. It is not a background alarm
   and does not request independent vibration permission.
+- **Header accessibility bounds stay above scrolled content.** The session
+  header is stacked above the content viewport. Compose's clickable touch
+  bounds can ignore ancestor drawing clips; without that precedence a partly
+  scrolled Chat action claimed part of the header's accessibility rectangle.
+  Header targets retain their full bounds; Chat actions remain reachable in
+  the visible content without hiding them or shrinking their touch targets.
+- **Hidden status filters mean All.** Opening Tabs with its status chips
+  hidden resets any earlier chip selection to All in List, Two columns and
+  Workspace rails. Hiding the controls never leaves an invisible filter
+  narrowing the tabs; the saved start-filter preference is retained for
+  when those controls are shown again.
 - **Landscape keeps the rule.** A phone held sideways with the keyboard up is
   for reading, and for Insert where its own checks pass. A refused Send names
   the reason and the pane's actual rows. Zoom (shared) is offered, never

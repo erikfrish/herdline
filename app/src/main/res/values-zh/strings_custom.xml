@@ -20,7 +20,7 @@
     <string name="section_security">安全与主机</string>
     <string name="summary_appearance">主题、颜色、语言、界面大小、启动器图标样式</string>
     <string name="summary_terminal">字体、额外按键、响铃、保持屏幕常亮</string>
-    <string name="summary_composer">终端中的输入框、键盘建议</string>
+    <string name="summary_composer">终端中的键盘建议</string>
     <string name="summary_layout">侧边栏布局、标签页顺序、控件</string>
     <string name="summary_notifications">需要你、已完成、实时卡片、锁屏</string>
     <string name="summary_security">SSH 密钥、已知主机</string>
@@ -117,10 +117,10 @@
     <string name="restore">恢复</string>
     <string name="restore_appearance_confirm">模式、颜色主题、终端配色、界面大小、密度、强调色和启动器图标样式将恢复默认。语言保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_terminal_confirm">字体、字号、响铃振动、保持屏幕常亮和额外按键将恢复默认。导入和下载的字体保持不变。节点、密钥和草稿保持不变。</string>
-    <string name="restore_composer_confirm">输入框会重新显示在终端中，终端中的键盘建议恢复为关闭。节点、密钥和草稿保持不变。</string>
-    <string name="restore_layout_confirm">会话布局、侧边栏的展开或折叠、标签页顺序、启动筛选、两个隐藏开关以及“控件”页上的每个控件将恢复默认。固定项保持不变。节点、密钥和草稿保持不变。</string>
+    <string name="restore_composer_confirm">终端中的键盘建议恢复为关闭。节点、密钥和草稿保持不变。</string>
+    <string name="restore_layout_confirm">会话布局、侧边栏的展开或折叠、标签页顺序、标签页视图、启动筛选、两个隐藏开关以及“控件”页上的每个控件将恢复默认。固定项保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_controls_confirm">每个 + 菜单项和标签页列表分区都会按原始顺序恢复。节点、密钥和草稿保持不变。</string>
-    <string name="restore_notifications_confirm">所有通知和实时卡片重新开启，锁屏恢复为“隐藏”。Android 自身的通知设置保持不变。节点、密钥和草稿保持不变。</string>
+    <string name="restore_notifications_confirm">所有通知和实时卡片重新开启，通知内容字段恢复默认的选择和顺序，锁屏恢复为“隐藏”。Android 自身的通知设置保持不变。节点、密钥和草稿保持不变。</string>
     <string name="reset_settings">重置为默认</string>
     <string name="reset_settings_detail">外观、终端和额外按键、输入框、包括标签页列表和控件在内的布局、通知和锁屏。语言、节点、密钥和草稿保持不变。</string>
     <string name="reset_settings_confirm">要将此页面上的所有设置重置为默认吗？</string>
