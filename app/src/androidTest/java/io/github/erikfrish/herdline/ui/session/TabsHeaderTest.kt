@@ -17,11 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertTouchHeightIsEqualTo
+import androidx.compose.ui.test.assertTouchWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -84,7 +87,7 @@ class TabsHeaderTest {
         compose.setContent {
             val config = remember(locale) {
                 Configuration(base.resources.configuration).apply {
-                    setLocale(locale)
+                    setLocale(this@TabsHeaderTest.locale)
                     fontScale = FONT_SCALE
                 }
             }
@@ -93,6 +96,7 @@ class TabsHeaderTest {
             CompositionLocalProvider(
                 LocalContext provides localized,
                 LocalConfiguration provides config,
+                LocalResources provides localized.resources,
                 LocalDensity provides Density(density, FONT_SCALE),
             ) {
                 HerdlineTheme(dark = false) {
@@ -161,11 +165,11 @@ class TabsHeaderTest {
                         "a:close" to res.getString(R.string.close),
                     )
                     for ((tag, label) in actions) {
-                        // Its layout footprint (the tag sits outside the 48 dp minimum touch size); the label merges in from the icon.
+                        // Touch bounds include Material's minimum interactive size, not just its 40 dp state layer.
                         val node = compose.onNodeWithTag(tag)
                         val box = bounds(compose.onNodeWithTag(tag, useUnmergedTree = true))
-                        assertTrue("$case: $tag is ${box.right - box.left} wide", box.right.value - box.left.value >= 48f - pixel)
-                        assertTrue("$case: $tag is ${box.bottom - box.top} high", box.bottom.value - box.top.value >= 48f - pixel)
+                        node.assertTouchWidthIsEqualTo(48.dp)
+                        node.assertTouchHeightIsEqualTo(48.dp)
                         assertTrue("$case: $tag past the edge", box.right.value <= widthNow + pixel && box.left.value >= -pixel)
                         node.assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf(label)))
                     }

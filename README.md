@@ -267,6 +267,44 @@ just test       # Rust core tests on the host, then Kotlin unit tests
 Gradle runs cargo-ndk before every build. If Zig cannot fetch Ghostty's
 dependencies, prefetch each URL it reports with `zig fetch <url>`.
 
+### Fast changed-feature checks
+
+Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`)
+for the changed area only. The runner executes selected test owners, fails
+on failures or skipped owners, and writes timing plus logs under
+`app/build/reports/fast-check/`. Its check deadline is 120 seconds; a timeout
+is a failure, not a reduced test set. `just test` remains an explicit full
+check, not the default after every change.
+
+For rendered header or pin tests on an assigned emulator:
+
+```sh
+just check-ui header emulator-5558
+just check-ui pin emulator-5558
+# QA2's isolated server uses its own exact transport and wrapper:
+just check-ui header localfilesystem:/bridge/guest.sock /home/erikfrish/.cache/herdline-qa2/sandbox/bin/adbq
+```
+
+UI checks incrementally build the current test APKs inside the same deadline,
+then install `io.github.erikfrish.herdline.qa` beside the release app. They never
+uninstall or clear release data and require no SSH connection, provider or
+host-agent fixture. Native libraries must already be built; UI-only checks
+skip rebuilding unchanged Rust. For a cold setup, add `--prepare-ui` to the
+Python runner: preparation is then measured separately. The explicit QA
+variant uses `-Pherdline.testBuildType=qa`; default debug tests stay unchanged.
+
+Measured on the warm QA2 API 37 emulator: `header --ui` passed in 19.0 s
+(8 unit tests plus one real Compose test covering eight width/locale/count
+combinations); `pin --ui` passed in 10.7 s (6 unit tests plus 3 Android
+storage/privacy tests). Both times include incremental APK checks, installation
+and instrumentation. First dependency preparation took 28.5 s separately.
+Pin storage recreation is in-process; this does not claim a cold process or
+live SSH end-to-end check. Only these two UI profiles have measured timings.
+
+QA agents inspect only fresh functionality or a changed path after its fix.
+Previously covered behavior runs through the selected automated check;
+another manual regression matrix needs a separate explicit request.
+
 ### Release signing
 
 The release build is minified. To sign it with your own key, set these

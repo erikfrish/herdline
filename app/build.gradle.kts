@@ -51,7 +51,13 @@ android {
             // Without a release keystore the build still installs, signed with the debug key.
             signingConfig = signingConfigs.getByName(if (keystore != null) "release" else "debug")
         }
+        create("qa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".qa"
+            matchingFallbacks += "debug"
+        }
     }
+    testBuildType = providers.gradleProperty("herdline.testBuildType").orElse("debug").get()
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -131,6 +137,8 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.test.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
+    "qaImplementation"(libs.compose.ui.test.manifest)
 }
