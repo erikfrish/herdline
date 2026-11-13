@@ -1,5 +1,10 @@
 use super::*;
 use crate::render::{Cursor, Pane, Rect, Run, flags};
+use crate::theme::Theme;
+use crate::vt::tests::cell;
+use herdr_client::protocol::{
+    CellData, CursorState, FrameData, PaneSurfaceFrame, PaneSurfacePane, SurfaceRect,
+};
 
 pub(crate) fn rows(screen: &str) -> Vec<String> {
     screen
@@ -1028,6 +1033,62 @@ const CLAUDE_NO_PROMPT: &str = "\
 ────────────────────────────────────────
 ";
 
+// Real Claude 2.1.322 idle, read with `herdr pane read --raw`,
+// ANSI stripped, untrimmed: the one row under its lower rule per shift+tab
+// mode (auto, manual, accept edits, plan) at each captured pane width.
+// The 30-column rows are cut by the pane; 80 and 144 show them whole.
+const CLAUDE_CAPTURED_FOOTERS: [(usize, [&str; 4]); 3] = [
+    (
+        30,
+        [
+            "  ⏵⏵ auto mode on (shift+tab",
+            "  ⏸ manual mode on · ? for …",
+            "  ⏵⏵ accept edits on ",
+            "  ⏸ plan mode on (shift+tab ",
+        ],
+    ),
+    (
+        80,
+        [
+            "  ⏵⏵ auto mode on (shift+tab to cycle)",
+            "  ⏸ manual mode on · ? for shortcuts",
+            "  ⏵⏵ accept edits on (shift+tab to cycle)",
+            "  ⏸ plan mode on (shift+tab to cycle)",
+        ],
+    ),
+    (
+        144,
+        [
+            "  ⏵⏵ auto mode on (shift+tab to cycle)",
+            "  ⏸ manual mode on · ? for shortcuts",
+            "  ⏵⏵ accept edits on (shift+tab to cycle)",
+            "  ⏸ plan mode on (shift+tab to cycle)",
+        ],
+    ),
+];
+
+fn claude_captured(cols: usize, prompt: &str, below: &[&str]) -> Vec<String> {
+    let rule = "─".repeat(cols);
+    [rule.as_str(), prompt, rule.as_str()]
+        .into_iter()
+        .chain(below.iter().copied())
+        .map(str::to_owned)
+        .collect()
+}
+
+// Not Claude's own footer: a slash-command list over it, more after the
+// footer (cut or whole), a cut inside the mode words, an ellipsis after
+// the whole row, a mode never captured.
+const CLAUDE_UNKNOWN_BELOW: [&[&str]; 7] = [
+    &["  /clear    Clear conversation history", "  ⏵⏵ auto mode on (shift+tab"],
+    &["  ⏵⏵ auto mode on (shift+tab · 3 files"],
+    &["  ⏵⏵ auto mode on (shift+tab to cycle) · 3 files"],
+    &["  ⏸ plan mode on (shift+tab to cycle)x"],
+    &["  ⏵⏵ auto mode o…"],
+    &["  ⏸ manual mode on · ? for shortcuts…"],
+    &["  ⏵⏵ bypass permissions on (shift+tab to cycle)"],
+];
+
 #[test]
 fn pi_editor_reads_only_the_captured_shape_as_empty() {
     assert_eq!(pi_editor(&rows(PI_EMPTY)), Ok(Editor::Empty));
@@ -1054,6 +1115,23 @@ fn claude_editor_takes_the_bare_prompt_and_fails_closed_on_the_rest() {
         Err(Unseen::ListBelow)
     );
     assert_eq!(claude_editor(&rows(CLAUDE_NO_PROMPT)), Err(Unseen::None));
+}
+
+#[test]
+fn claude_editor_reads_through_its_captured_mode_footers_only() {
+    for (cols, footers) in CLAUDE_CAPTURED_FOOTERS {
+        for footer in footers {
+            // The captured empty prompt row: `❯`, a no-break space, a space.
+            let empty = claude_captured(cols, "❯\u{a0} ", &[footer]);
+            assert_eq!(claude_editor(&empty), Ok(Editor::Empty), "{cols}: {footer}");
+            let draft = claude_captured(cols, "❯ Qaclaudeturnone", &[footer, ""]);
+            assert_eq!(claude_editor(&draft), Ok(Editor::Draft), "{cols}: {footer}");
+        }
+    }
+    for below in CLAUDE_UNKNOWN_BELOW {
+        let screen = claude_captured(80, "❯\u{a0} ", below);
+        assert_eq!(claude_editor(&screen), Err(Unseen::ListBelow), "{below:?}");
+    }
 }
 
 fn instance() -> Identity {
@@ -1227,4 +1305,289 @@ fn a_chat_send_refuses_the_boundaries_a_consumer_can_trip() {
         ),
         Err(Refusal::RemoteDraft)
     );
+}
+
+/// Herdr's REVERSED modifier bit, which it sends as SGR 7.
+const REVERSED: u16 = 64;
+
+fn write(grid: &mut FrameData, x: u16, y: u16, text: &str) {
+    let start = usize::from(y) * usize::from(grid.width) + usize::from(x);
+    for (i, symbol) in text.chars().enumerate() {
+        grid.cells[start + i] = cell(&symbol.to_string());
+    }
+}
+
+fn cell_at(grid: &mut FrameData, x: u16, y: u16) -> &mut CellData {
+    let width = usize::from(grid.width);
+    &mut grid.cells[usize::from(y) * width + usize::from(x)]
+}
+
+/// Claude idle in w1:p1 as Herdr sends it, `cols` by `height`: blank rows,
+/// the upper rule, the prompt row (`❯`, a no-break space, then its caret,
+/// one SGR 7 space), the lower rule and `below`, with the hardware cursor
+/// hidden on the caret. `left` columns of a blank pane, w1:p2, stand
+/// before it.
+fn claude_grid(cols: u16, height: u16, below: &[&str], left: u16) -> FrameData {
+    let width = left + cols;
+    let mut grid = FrameData {
+        cells: vec![cell(" "); usize::from(width) * usize::from(height)],
+        width,
+        height,
+        cursor: None,
+        hyperlinks: vec![],
+        graphics: vec![],
+    };
+    let top = height - 3 - u16::try_from(below.len()).unwrap();
+    let rule = "─".repeat(cols.into());
+    write(&mut grid, left, top, &rule);
+    write(&mut grid, left, top + 1, "❯\u{a0}");
+    cell_at(&mut grid, left + 2, top + 1).modifier = REVERSED;
+    write(&mut grid, left, top + 2, &rule);
+    for (row, text) in (top + 3..).zip(below) {
+        write(&mut grid, left, row, text);
+    }
+    grid.cursor = Some(CursorState {
+        x: left + 2,
+        y: top + 1,
+        visible: false,
+        shape: 0,
+    });
+    grid
+}
+
+fn surface_pane(id: &str, x: u16, width: u16, height: u16) -> PaneSurfacePane {
+    let rect = || SurfaceRect {
+        x,
+        y: 0,
+        width,
+        height,
+    };
+    PaneSurfacePane {
+        pane_id: id.into(),
+        content_revision: 1,
+        rect: rect(),
+        inner_rect: rect(),
+        scrollbar_rect: None,
+        scroll: None,
+        focused: id == "w1:p1",
+        mouse_reporting: false,
+        sgr_pixel_mouse: false,
+        alternate_screen_active: false,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+/// `grid` rendered by Ghostty, with w1:p1 from column `left` on.
+fn rendered(grid: FrameData, left: u16) -> RenderFrame {
+    let (width, height) = (grid.width, grid.height);
+    let mut panes = vec![surface_pane("w1:p1", left, width - left, height)];
+    if left > 0 {
+        panes.push(surface_pane("w1:p2", 0, left, height));
+    }
+    let surface = PaneSurfaceFrame {
+        boot_id: "boot".into(),
+        projection_revision: 1,
+        surface_revision: 1,
+        panes,
+        frame: grid,
+        splits: vec![],
+        popup: None,
+        graphics: Default::default(),
+    };
+    crate::Screen::new(Theme::DARK)
+        .unwrap()
+        .show(&surface)
+        .unwrap()
+}
+
+/// Herdr's colour value for an RGB colour.
+fn rgb(color: libghostty_vt::style::RgbColor) -> u32 {
+    0x0200_0000 | (crate::screen::argb(color) & 0x00ff_ffff)
+}
+
+/// Claude hides its hardware cursor and draws an inverse caret. A Chat
+/// send goes when the hidden cursor stands on that one plain inverse cell
+/// right after `❯` and a no-break space in this pane's box, or when a
+/// visible cursor is inside the box, as before. The same box with no
+/// inverse run at all, as Herdr 0.9.5 sends it with the colours swapped,
+/// says the caret is unseen. Lookalikes, a misplaced or extra caret,
+/// another pane's caret, a styled caret, and the unknown footer, menu and
+/// dialog cases refuse. Rows and footers are Claude's own at 30x20 and
+/// 80x39, rendered through Ghostty from Herdr's cells.
+#[test]
+fn claude_chat_send_needs_its_caret_or_a_cursor_in_the_box() {
+    type Edit = fn(&mut FrameData, u16, u16);
+    let same: Edit = |_, _, _| {};
+    let [w30, w80] = [0, 1].map(|i| CLAUDE_CAPTURED_FOOTERS[i].1);
+    let auto = [w30[0]];
+    let mut rows: Vec<(String, u16, u16, Vec<&str>, u16, Edit, Result<(), Refusal>)> = Vec::new();
+    for (cols, height, footers) in [(30, 20, w30), (80, 39, w80)] {
+        for footer in footers {
+            rows.push((
+                format!("{cols}: {footer}"),
+                cols,
+                height,
+                vec![footer],
+                0,
+                same,
+                Ok(()),
+            ));
+        }
+    }
+    let cases: [(&str, Edit, Result<(), Refusal>); 15] = [
+        (
+            "visible cursor on the caret",
+            |g, _, _| g.cursor.as_mut().unwrap().visible = true,
+            Ok(()),
+        ),
+        (
+            "swapped colours, not inverse",
+            |g, x, y| {
+                let caret = cell_at(g, x, y);
+                caret.modifier = 0;
+                caret.fg = rgb(Theme::DARK.background);
+                caret.bg = rgb(Theme::DARK.foreground);
+            },
+            Err(Refusal::EditorCaretUnseen),
+        ),
+        (
+            "no caret",
+            |g, x, y| cell_at(g, x, y).modifier = 0,
+            Err(Refusal::EditorCaretUnseen),
+        ),
+        (
+            "no caret, hidden cursor one column on",
+            |g, x, y| {
+                cell_at(g, x, y).modifier = 0;
+                g.cursor.as_mut().unwrap().x = x + 1;
+            },
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "second caret",
+            |g, x, y| cell_at(g, x + 3, y).modifier = REVERSED,
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "caret two cells wide",
+            |g, x, y| cell_at(g, x + 1, y).modifier = REVERSED,
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "caret and cursor one column on",
+            |g, x, y| {
+                cell_at(g, x, y).modifier = 0;
+                cell_at(g, x + 1, y).modifier = REVERSED;
+                g.cursor.as_mut().unwrap().x = x + 1;
+            },
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "caret and cursor on the footer row",
+            |g, x, y| {
+                cell_at(g, x, y).modifier = 0;
+                cell_at(g, x - 1, y + 2).modifier = REVERSED;
+                *g.cursor.as_mut().unwrap() = CursorState {
+                    x: x - 1,
+                    y: y + 2,
+                    visible: false,
+                    shape: 0,
+                };
+            },
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "caret and cursor above the box",
+            |g, x, y| {
+                cell_at(g, x, y).modifier = 0;
+                cell_at(g, x, y - 2).modifier = REVERSED;
+                g.cursor.as_mut().unwrap().y = y - 2;
+            },
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "bold caret",
+            |g, x, y| cell_at(g, x, y).modifier = REVERSED | 1,
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "underlined caret",
+            |g, x, y| cell_at(g, x, y).modifier = REVERSED | 8,
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "caret on a red background",
+            |g, x, y| cell_at(g, x, y).bg = rgb(Theme::DARK.ansi[1]),
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "text under the caret",
+            |g, x, y| cell_at(g, x, y).symbol = "x".into(),
+            Err(Refusal::RemoteDraft),
+        ),
+        (
+            "hidden cursor off the caret",
+            |g, x, _| g.cursor.as_mut().unwrap().x = x + 3,
+            Err(Refusal::EditorUnrecognized),
+        ),
+        (
+            "dialog above the box",
+            |g, _, y| write(g, 0, y - 3, "Do you want to proceed?"),
+            Err(Refusal::EditorDialogOpen),
+        ),
+    ];
+    for (name, edit, expected) in cases {
+        rows.push((name.into(), 30, 20, auto.to_vec(), 0, edit, expected));
+    }
+    // Another pane's caret beside an empty box with none: the hidden
+    // cursor is not in this pane.
+    rows.push((
+        "caret in the pane beside".into(),
+        30,
+        20,
+        auto.to_vec(),
+        30,
+        |g, x, y| {
+            cell_at(g, x, y).modifier = 0;
+            write(g, 0, y, "❯\u{a0}");
+            cell_at(g, 2, y).modifier = REVERSED;
+            g.cursor.as_mut().unwrap().x = 2;
+        },
+        Err(Refusal::EditorUnrecognized),
+    ));
+    for below in [CLAUDE_UNKNOWN_BELOW[0], CLAUDE_UNKNOWN_BELOW[6]] {
+        rows.push((
+            format!("{below:?}"),
+            80,
+            39,
+            below.to_vec(),
+            0,
+            same,
+            Err(Refusal::EditorListBelow),
+        ));
+    }
+    let idle = registry(Some("claude"), Some(AgentStatus::Idle));
+    let mut send = request(true);
+    send.chat = true;
+    send.agent = Some("claude".into());
+    send.instance = Some(instance());
+    send.text = "hello".into();
+    for (name, cols, height, below, left, edit, expected) in rows {
+        let mut grid = claude_grid(cols, height, &below, left);
+        let caret = grid
+            .cursor
+            .as_ref()
+            .map(|cursor| (cursor.x, cursor.y))
+            .unwrap();
+        edit(&mut grid, caret.0, caret.1);
+        let shown = rendered(grid, left);
+        let metrics = scroll(false, height.into());
+        let surface = Surface {
+            frame: Some(&shown),
+            scroll: Some(&metrics),
+            ..Surface::default()
+        };
+        assert_eq!(admit(&idle, &surface, &send), expected, "{name}");
+    }
 }

@@ -4,7 +4,7 @@
     <string name="chat_terminal">Terminal</string>
     <string name="chat_load_older">Load older messages</string>
     <string name="chat_loading">Reading the transcript…</string>
-    <string name="chat_unavailable">Chat cannot read this agent: %1$s</string>
+    <string name="chat_read_failed">Chat can\'t read this session\'s transcript right now. It keeps trying.</string>
     <!-- Under the saved-at title of the shared outage strip, while the link is up but a read failed. -->
     <string name="chat_not_refreshed">Chat could not read the transcript again; it keeps trying</string>
     <!-- R-F1b: the stale-history strip over Chat. More opens the whole cause in a dialog. -->
@@ -115,10 +115,15 @@
     <!-- CT-1: the pane read here vs Herdr's shared focus (design/CHAT-TARGET.md). -->
     <string name="chat_reading_here">Reading here</string>
     <string name="chat_on_desktop">On desktop</string>
-    <string name="chat_desktop_elsewhere">Desktop: %1$s</string>
     <string name="chat_desktop_elsewhere_spoken">Reading %1$s here. The desktop is on %2$s.</string>
+    <!-- SN-1: the desktop's tab has the name of the one read here (design/SN-TAB-CUES.md). -->
+    <string name="chat_desktop_elsewhere_spoken_same_tab">Reading %1$s here. The desktop is on another pane of this tab.</string>
+    <string name="chat_desktop_elsewhere_spoken_numbered">Reading %1$s here. The desktop is on %2$s, tab %3$d of %4$d.</string>
+    <string name="chat_desktop_elsewhere_spoken_workspace">Reading %1$s here. The desktop is on %2$s in %3$s.</string>
+    <string name="chat_desktop_elsewhere_spoken_workspace_numbered">Reading %1$s here. The desktop is on %2$s in workspace %3$d of %4$d.</string>
     <string name="chat_send_route">Sends into %1$s\'s terminal</string>
-    <string name="terminal_shows_desktop">Terminal shows the desktop\'s pane, %1$s. You were reading %2$s.</string>
+    <string name="terminal_opening">Opening Terminal for %1$s…</string>
+    <string name="terminal_open_failed">Couldn\'t open Terminal for %1$s. You\'re still reading it here.</string>
     <string name="focus_reading_shared">Show %1$s (moves the desktop)</string>
     <string name="chat_pane_closed">%1$s has closed. Your draft is kept.</string>
     <string name="reason_target_unchecked">Not sent: Send types into %1$s\'s terminal, and that terminal can\'t be checked from here right now. Your text is kept.</string>

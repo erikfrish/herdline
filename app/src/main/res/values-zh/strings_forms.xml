@@ -35,10 +35,10 @@
     <string name="form_result_not_open">此问题已被回答或已关闭。没有再次发送。</string>
     <string name="form_result_invalid">代理未接受这些回答。请检查字段后再次提交。</string>
     <string name="form_result_kind_mismatch">此问题已在电脑上变更。未发送任何内容。</string>
-    <string name="form_result_failed">回答未确认（%1$s），可能已送达 OMP。不会再次发送。</string>
+    <string name="form_result_failed">回答未确认（%1$s），可能已送达代理。不会再次发送。</string>
     <string name="form_answered">已回答</string>
     <string name="form_timed_out_label">已超时</string>
-    <string name="form_timed_out">OMP 在超时后提交了默认值；这不是用户的选择。</string>
+    <string name="form_timed_out">代理在超时后提交了默认值；这不是用户的选择。</string>
     <string name="form_answer_spoken">%1$s：%2$s</string>
     <string name="form_answer_none_spoken">%1$s：未作答</string>
     <string name="form_image_external">未显示图片：Herdline 不会从网络或文件加载图片。</string>

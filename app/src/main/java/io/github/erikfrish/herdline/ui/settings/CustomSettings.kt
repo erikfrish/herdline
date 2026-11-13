@@ -115,6 +115,7 @@ import io.github.erikfrish.herdline.ui.glass.GlassScreen
 import io.github.erikfrish.herdline.ui.glass.IconBadge
 import io.github.erikfrish.herdline.ui.terminal.AllExtraKeys
 import io.github.erikfrish.herdline.ui.terminal.DEFAULT_EXTRA_KEY_IDS
+import io.github.erikfrish.herdline.ui.terminal.SpokenNames
 import io.github.erikfrish.herdline.ui.terminal.isDefaultBased
 import io.github.erikfrish.herdline.ui.chat.chatPalette
 import io.github.erikfrish.herdline.ui.theme.HerdlineTheme
@@ -199,7 +200,7 @@ internal fun LazyListScope.layoutSettings(store: SettingsStore, settings: Settin
             GlassDivider()
             Choice(
                 stringResource(R.string.tabs_view),
-                listOf(stringResource(R.string.tabs_view_list), stringResource(R.string.tabs_view_columns)),
+                listOf(stringResource(R.string.tabs_view_list), stringResource(R.string.tabs_view_columns), stringResource(R.string.tabs_view_rails)),
                 TabsView.entries.indexOf(settings.tabsView),
                 help = stringResource(R.string.tabs_view_help),
             ) { index -> store.update { it.copy(tabsView = TabsView.entries[index]) } }
@@ -340,13 +341,16 @@ internal fun LazyListScope.extraKeySettings(store: SettingsStore, settings: Sett
                 ids.forEach { id ->
                     val key = AllExtraKeys[id] ?: return@forEach
                     val position = settings.extraKeys.indexOf(id)
+                    // The row shows the cap's glyph; TalkBack reads the name the cap itself speaks.
+                    val spoken = SpokenNames[key.label]?.let { stringResource(it) } ?: key.label
                     ItemRow(
                         title = key.label,
+                        modifier = Modifier.semantics { contentDescription = spoken },
                         onClick = { store.update { it.copy(extraKeys = toggled(it.extraKeys, id)) } },
                         trailing = {
                             if (position > 0) {
                                 IconButton(onClick = { store.update { it.copy(extraKeys = movedUp(it.extraKeys, id)) } }) {
-                                    Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.extra_key_up, key.label))
+                                    Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.extra_key_up, spoken))
                                 }
                             }
                             Switch(position >= 0, { store.update { it.copy(extraKeys = toggled(it.extraKeys, id)) } }, Modifier.testTag("settings:key:$id"))

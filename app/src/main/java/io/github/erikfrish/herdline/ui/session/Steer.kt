@@ -1,6 +1,10 @@
 package io.github.erikfrish.herdline.ui.session
 
+import androidx.annotation.StringRes
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.data.SentRecord
+import io.github.erikfrish.herdline.data.SentState
 
 /**
  * What a steer can rely on: the link it was started on and the daemon run
@@ -94,6 +98,39 @@ internal data class SteerStep(val phase: SteerPhase, val effect: SteerEffect = S
 
 /** How long a confirmed paste may wait for the pane to show it before the steer ends. */
 internal const val STEER_ENTER_WINDOW_MS = 2_000L
+
+/**
+ * The record a steer's confirmed Enter leaves. That receipt shows only that
+ * the pane took the Enter, never that the agent admitted the steer, so it is
+ * never Sent: with [historyFrom], the end of the session's history read
+ * before the paste, it waits as [SentState.InPane] for a user entry with
+ * that very text after it (the P1 watch); without one it stays Uncertain.
+ * Either way it is marked [SentRecord.steer]: Enter took it out of the box.
+ */
+internal fun steerEntered(text: String, receipt: String, historyFrom: Long?, now: Long): SentRecord =
+    if (historyFrom != null) {
+        SentRecord(text, receipt, true, SentState.InPane, now, historyFrom = historyFrom, steer = true)
+    } else {
+        SentRecord(text, receipt, true, SentState.Uncertain, now, steer = true)
+    }
+
+/**
+ * The words for an [SentState.InPane] record: a steer is no longer in the
+ * input box but waits in OMP's own queue for its next step; a typed send
+ * still sits in the box.
+ */
+@StringRes
+internal fun inPaneNotice(sent: SentRecord?): Int =
+    if (sent?.steer == true) R.string.composer_steer_entered else R.string.composer_in_pane
+
+/**
+ * Until when the P1 watch looks for [sent] in the history, given the
+ * deadline so far. A typed send keeps [deadline]; an entered steer waits
+ * for OMP's next step, which may be minutes away, so while the agent is
+ * [working] its deadline stays [window] ahead of [now].
+ */
+internal fun ptyWatchDeadline(sent: SentRecord, deadline: Long, working: Boolean, now: Long, window: Long): Long =
+    if (sent.steer && working) maxOf(deadline, now + window) else deadline
 
 /** The receipt this phase waits on, if any. */
 internal val SteerPhase.awaiting: String?

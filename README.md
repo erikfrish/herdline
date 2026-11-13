@@ -7,13 +7,10 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.22](https://github.com/erikfrish/herdline/releases/tag/v0.6.22), experimental prerelease.**
-> Exact-APK emulator checks are partial. Complete all-harness operation,
-> Terminal composer Send through the changed gate, TalkBack and Send timing
-> remain unverified. Small unzoomed split panes may be invisible; Zoom is a
-> workaround, not a layout fix. Stock Samsung Now Bar is not claimed fixed.
-> The published readers use host-process metadata for discovery; removing
-> those reads is a publication gate for the next update, not a completed fix.
+> **Latest public release: [0.6.63](https://github.com/erikfrish/herdline/releases/tag/v0.6.63), experimental prerelease.**
+> Partial emulator QA only; no phone verification or complete all-harness claim.
+> Claude Code Send remains blocked with Herdr 0.9.5. Old unconfirmed deliveries
+> may need one explicit Unlock after upgrading. See the release notes for limits.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the

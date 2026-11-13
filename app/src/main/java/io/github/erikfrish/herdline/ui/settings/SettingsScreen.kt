@@ -403,7 +403,7 @@ fun SettingsScreen(app: HerdlineApp, onBack: (() -> Unit)?, backLabel: String? =
             title = stringResource(R.string.settings),
             subtitle = backLabel?.let { stringResource(R.string.settings_back_returns, it) },
             onBack = onBack,
-            // A root destination's header, as Hosts and Agents; list-detail keeps both bars small.
+            // Large below ListDetailWidth, collapsing as the list scrolls; list-detail keeps both bars small.
             large = !wide,
             modifier = modifier,
         ) { padding ->

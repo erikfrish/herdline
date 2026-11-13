@@ -42,6 +42,27 @@ class Daemon(unittest.TestCase):
 
 class Send(Daemon):
     # session.ts:361 prompt_async; schema/src/v1/session.ts:442-466 parts.
+    def test_a_daemon_that_dies_mid_send_is_not_sent_to(self):
+        # It passes discovery, then is killed and reaped while the send
+        # reads: the prompt never goes out.
+        daemon = sleeper()
+
+        def status():
+            daemon.kill()
+            daemon.wait()
+            return 200, {}
+        home, server = self.serve({
+            ('GET', '/session/status' + QUERY): (200, status),
+            ('POST', '/session/ses_test/prompt_async'): (204, None),
+        })
+        try:
+            register(Path(home) / '.local/state/kilo/daemon.json', {'pid': daemon.pid, 'url': server.url, 'username': 'kilo', 'password': 'test-only'})
+            self.assertEqual(run(home, 'send', json.dumps({'id': 'msg_one', 'text': 'x'}), root=os.getpid()), 'no_server')
+            self.assertEqual(self.posts(server), [])
+        finally:
+            daemon.kill()
+            daemon.wait()
+
     def test_an_idle_session_takes_text_and_never_a_path_from_the_payload(self):
         home, server = self.serve({
             ('GET', '/session/status' + QUERY): (200, {'ses_other': {'type': 'busy'}}),

@@ -26,16 +26,22 @@
 //!
 //! Gemini v0.68.0 keeps chats in `<home>/.gemini/tmp/<project slug>/chats`
 //! (Storage.getProjectTempDir and ProjectRegistry.getShortId, bundle
-//! chunk-2OHBIZ5H.js:253382-253386, 252896-253185) and names a main session
+//! chunk-RCB6BI5H.js:253340-253344, 252874-253150) and names a main session
 //! `session-<YYYY-MM-DDTHH-MM>[-<n>]-<id8>.jsonl`
 //! (chatRecordingService.ts:806-823). The slug dir's `.project_root` holds
 //! the project root whose sha256 is the header's projectHash
 //! (paths.ts:318-320). No latest-file guess: the id picks the file or none.
 //!
+//! A running `invoke_agent` child records itself beside the session, in
+//! `chats/<uuid>/<child uuid>.jsonl`. With the session go the newest
+//! [`MAX_RUNNING`] of those the session does not name as an `agentId`:
+//! regular files only, no link followed, each its first 16 KiB and last
+//! 64 KiB in whole lines; their sizes and mtimes are in the stamp.
+//!
 //! An already-running Gemini started without the launcher has no tokens or
 //! no sidecar and is always refused.
 
-use super::fold;
+use super::{MAX_RUNNING, fold};
 use crate::transcript::{HEADER_ROOM, Identity, MAX_WINDOW, Read, Response, read_timeout};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
@@ -160,13 +166,17 @@ pub(in crate::transcript) fn page(
             shell_quote(&script(session, pane, expect, stamp))
         ),
         read_timeout(MAX_WINDOW),
-        usize::try_from(MAX_WINDOW).unwrap_or(usize::MAX) + HEADER_ROOM,
+        usize::try_from(MAX_WINDOW).unwrap_or(usize::MAX) + HEADER_ROOM + CHILDREN_ROOM,
     )?;
     if output.exit_status != Some(0) {
         return Err(Error::NoTranscript);
     }
     answer(&output.tail, expect, reset)
 }
+
+/// What the running children's slices add to a reply: [`MAX_RUNNING`] of
+/// the host script's `CHILD_HEAD + CHILD_TAIL`.
+const CHILDREN_ROOM: usize = MAX_RUNNING * (16 + 64) * 1024;
 
 fn script(session: &str, pane: &str, expect: &Identity, stamp: u64) -> String {
     format!(
@@ -204,13 +214,40 @@ fn answer(bytes: &[u8], expect: &Identity, reset: bool) -> Result<Response> {
     let entries = if not_modified {
         Vec::new()
     } else {
+        // The session's bytes, then each running child's, as the reply measures them.
+        let ids = head["children"].as_array().ok_or(Error::BadReply)?;
+        let parts = head["parts"].as_array().ok_or(Error::BadReply)?;
+        if parts.len() != ids.len() + 1 || ids.len() > MAX_RUNNING {
+            return Err(Error::BadReply);
+        }
+        let mut rest = data;
+        let mut slices = Vec::with_capacity(parts.len());
+        for part in parts {
+            let length = part.as_u64().and_then(|length| usize::try_from(length).ok()).filter(|length| *length <= rest.len()).ok_or(Error::BadReply)?;
+            let (slice, after) = rest.split_at(length);
+            slices.push(slice);
+            rest = after;
+        }
+        if !rest.is_empty() {
+            return Err(Error::BadReply);
+        }
+        let mut children = Vec::with_capacity(ids.len());
+        for (id, slice) in ids.iter().zip(&slices[1..]) {
+            children.push((id.as_str().filter(|id| uuid(id)).ok_or(Error::BadReply)?, *slice));
+        }
         // (e) again, on what Gemini itself would load: a `$set` may rewrite
         // the id after the header.
-        let conversation = fold(data).ok_or(Error::UnsupportedFormat(FOREIGN))?;
+        let conversation = fold(slices[0]).ok_or(Error::UnsupportedFormat(FOREIGN))?;
         if conversation.session_id != expect.path {
             return Err(Error::UnsupportedFormat(FOREIGN));
         }
-        conversation.entries()
+        let mut entries = conversation.entries();
+        if let Some(mut running) = conversation.running(&children) {
+            running.offset = entries.len() as u64;
+            running.end = running.offset + 1;
+            entries.push(running);
+        }
+        entries
     };
     Ok(Response {
         identity: expect.clone(),
@@ -237,6 +274,9 @@ MAX_SIDECAR=256
 MAX_MARKER=4096
 MAX_DIRS=4096
 UUID=re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+MAX_CHILDREN=8
+CHILD_HEAD=16384
+CHILD_TAIL=65536
 PID=re.compile(r'[1-9][0-9]{0,9}')
 GEN=re.compile(r'[0-9a-f]{32}')
 PANE=re.compile(r'[A-Za-z0-9:_-]{1,64}')
@@ -377,25 +417,67 @@ def owner(tmp, slug, head):
     with handle: marker=handle.read(MAX_MARKER).decode('utf-8','replace').strip()
     return hashlib.sha256(marker.encode()).hexdigest()==project
 
+def children(chats, sid):
+    # A running invoke_agent child's own record: chats/<sid>/<uuid>.jsonl,
+    # each opened in that dir's fd. A link, at the dir or a file, is never
+    # followed; nothing unusual there refuses the session itself.
+    try: fd=os.open(os.path.join(chats,sid),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    except OSError: return None,[]
+    names=os.listdir(fd)
+    if len(names)>MAX_DIRS: return fd,[]
+    found=[]
+    for entry in sorted(names):
+        if not (entry.endswith('.jsonl') and UUID.fullmatch(entry[:-6])): continue
+        try: st=os.lstat(entry,dir_fd=fd)
+        except FileNotFoundError: continue
+        if stat.S_ISREG(st.st_mode): found.append((entry[:-6],st))
+    return fd,found
+
+def child_bytes(folder, kid):
+    # Its first and last lines whole: the header and query, and what it does now.
+    try: fd=os.open(kid+'.jsonl',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=folder)
+    except OSError: return b''
+    try:
+        st=os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode): return b''
+        if st.st_size<=CHILD_HEAD+CHILD_TAIL: return os.pread(fd,CHILD_HEAD+CHILD_TAIL,0)
+        head=os.pread(fd,CHILD_HEAD,0)
+        tail=os.pread(fd,CHILD_TAIL,st.st_size-CHILD_TAIL)
+        return head[:head.rfind(b'\n')+1]+tail[tail.find(b'\n')+1:]
+    finally: os.close(fd)
+
 def main():
     gen,status=bind()
     sid=expect['path']
     tmp=root()
     found=find(tmp,sid)
+    folder=None
     try:
         if not found: return reply({'error':'missing'})
         if len(found)>1: raise Refuse('gemini_session_ambiguous')
         slug,path,handle,st,head=found[0]
         if not owner(tmp,slug,head): raise Refuse('gemini_session_foreign')
-        stamp=int(hashlib.sha256(('%d:%d:%d:%d:%s'%(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,path)).encode()).hexdigest()[:13],16) or 1
+        folder,kids=children(os.path.dirname(path),sid)
+        seen=''.join('%s:%d:%d:%d;'%(kid,s.st_ino,s.st_size,s.st_mtime_ns) for kid,s in kids)
+        stamp=int(hashlib.sha256(('%d:%d:%d:%d:%s:%s'%(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns,path,seen)).encode()).hexdigest()[:13],16) or 1
         out={'stamp':stamp,'size':st.st_size,'status':status}
-        data=b'' if opts.get('stamp')==stamp else handle.read(st.st_size)
+        fresh=opts.get('stamp')!=stamp
+        data=handle.read(st.st_size) if fresh else b''
+        parts=[]
+        if fresh:
+            # A child the session names as an agentId has ended there.
+            left=[kid for kid in kids if not re.search(rb'"agentId"\s*:\s*"'+kid[0].encode()+rb'"',data)]
+            left.sort(key=lambda kid:kid[1].st_mtime_ns,reverse=True)
+            parts=[(kid,child_bytes(folder,kid)) for kid,_ in left[:MAX_CHILDREN]]
+            out['children']=[kid for kid,_ in parts]
+            out['parts']=[len(data)]+[len(b) for _,b in parts]
     finally:
         for entry in found: entry[2].close()
+        if folder is not None: os.close(folder)
     after,_=bind()
     if after!=gen: raise Changed()
-    if not data: out['not_modified']=opts.get('stamp')==stamp
-    reply(out,data)
+    if not fresh: out['not_modified']=True
+    reply(out,data+b''.join(b for _,b in parts))
 
 try: main()
 except Changed: reply({'changed':True})

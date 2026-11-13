@@ -1,8 +1,10 @@
-//! FIXTURE-ONLY: every session line here is synthetic, written in the record
-//! shapes of gemini-cli v0.68.0 (5a5c7180,
-//! `packages/core/src/services/chatRecordingTypes.ts`), not captured from a
-//! real Gemini. They pin what the parser does with such lines, as
-//! `createJsonlRecordAccumulator` and `convertSessionToHistoryFormats` do.
+//! Session lines here are synthetic, written in the record shapes of
+//! gemini-cli v0.68.0 (5a5c7180,
+//! `packages/core/src/services/chatRecordingTypes.ts`), except
+//! `subagent.jsonl` and the `live-*.jsonl` sessions and children, captured
+//! from a real Gemini 0.68.0 against a mock provider. They pin what the
+//! parser does with such lines, as `createJsonlRecordAccumulator` and
+//! `convertSessionToHistoryFormats` do.
 
 use super::*;
 use serde_json::json;
@@ -198,4 +200,162 @@ fn shown_text_follows_geminis_resumed_view() {
             ("assistant".to_owned(), "a[Function Call: ls][Thought: true]".to_owned(), 1),
         ]
     );
+}
+
+/// Captured, not synthetic: a real Gemini 0.68.0 session against a mock
+/// provider, whose `invoke_agent` ran `codebase_investigator`; the child's
+/// own record was `chats/b9ea73fe-…/ae28e145-21fb-4335-bf70-eed21c8ab79c.jsonl`.
+const SUBAGENT_RUN: &[u8] = include_bytes!("subagent.jsonl");
+
+fn children(data: &[u8]) -> Vec<Subagent> {
+    fold(data)
+        .unwrap()
+        .entries()
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .filter_map(|block| match block {
+            Block::ToolResult { subagents, .. } => Some(subagents.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+#[test]
+fn a_finished_invoke_agent_names_its_child_session_with_its_report() {
+    assert_eq!(
+        children(SUBAGENT_RUN),
+        vec![Subagent {
+            id: "ae28e145-21fb-4335-bf70-eed21c8ab79c".into(),
+            agent: "codebase_investigator".into(),
+            agent_type: None,
+            status: "completed",
+            task: Some("Investigate the work dir".into()),
+            stage: None,
+            output: Some(
+                "{\n  \"SummaryOfFindings\": \"mock findings\",\n  \"ExplorationTrace\": [\n    \"listed the work dir\"\n  ],\n  \"RelevantLocations\": []\n}".into()
+            ),
+            error: None,
+            duration_ms: None,
+            requests: None,
+            exit_code: None,
+        }]
+    );
+}
+
+#[test]
+fn a_child_left_running_ends_as_its_call_did_and_a_failure_keeps_its_error() {
+    let call = |id: &str, status: &str, state: &str, activity: Value| {
+        json!({"id": id, "name": "invoke_agent", "args": {"agent_name": "x", "prompt": "p"}, "status": status,
+               "timestamp": "t", "resultDisplay": {"isSubagentProgress": true, "agentName": "x", "state": state,
+               "recentActivity": activity}})
+    };
+    let turn = json!({"id": "m2", "timestamp": "2026-11-12T10:00:02.000Z", "type": "gemini", "content": "", "toolCalls": [
+        call("c1", "cancelled", "running", json!([])),
+        call("c2", "success", "error", json!([{"id": "a", "type": "thought", "content": "Error: quota", "status": "error"}])),
+        call("c3", "success", "paused", json!([])),
+        {"id": "c4", "name": "read_file", "status": "success", "timestamp": "t", "resultDisplay": {"agentName": "x", "state": "completed"}}
+    ]});
+    let found = children(&jsonl(&[header(), user("m1", "go"), turn]));
+    let shown: Vec<_> = found.iter().map(|child| (child.id.as_str(), child.status, child.error.as_deref())).collect();
+    assert_eq!(shown, vec![("c1", "cancelled", None), ("c2", "failed", Some("Error: quota"))]);
+}
+
+/// Captured, not synthetic: one `invoke_agent` run read while its child
+/// had listed the work dir (`mid`, the session not yet naming it) and
+/// after it ended (`end`, the call recorded with its `agentId`).
+const LIVE_MID: &[u8] = include_bytes!("live-mid.jsonl");
+const LIVE_MID_CHILD: &[u8] = include_bytes!("live-mid-child.jsonl");
+const LIVE_END: &[u8] = include_bytes!("live-end.jsonl");
+const LIVE_END_CHILD: &[u8] = include_bytes!("live-end-child.jsonl");
+const CHILD: &str = "4aa4baf8-9311-46fd-a863-4041ff3538f8";
+
+/// Captured, not synthetic: one session whose turn ran children A (3 s)
+/// and B (30 s) in parallel, read while B ran (`two-mid`, A's own record
+/// already ended), then a turn whose child C was cancelled with Esc, read
+/// while C ran (`cancel-mid`) and after the cancel (`cancel`).
+const TWO_MID: &[u8] = include_bytes!("live-two-mid.jsonl");
+const TWO_A: &[u8] = include_bytes!("live-two-a.jsonl");
+const TWO_B_MID: &[u8] = include_bytes!("live-two-b-mid.jsonl");
+const TWO_B: &[u8] = include_bytes!("live-two-b.jsonl");
+const CANCEL_MID: &[u8] = include_bytes!("live-cancel-mid.jsonl");
+const CANCEL_C_MID: &[u8] = include_bytes!("live-cancel-c-mid.jsonl");
+const CANCEL: &[u8] = include_bytes!("live-cancel.jsonl");
+const CANCEL_C: &[u8] = include_bytes!("live-cancel-c.jsonl");
+const A: &str = "9d96659a-c4ad-4f11-967a-43e1f0e669c2";
+const B: &str = "3d4adb24-5893-4caf-a9a5-e60663c1509a";
+const C: &str = "ba69ae95-57bb-4606-8499-d0edc47d0655";
+
+fn running(parent: &[u8], children: &[(&str, &[u8])]) -> Vec<Subagent> {
+    let conversation = fold(parent).unwrap();
+    let entry = conversation.running(children);
+    entry
+        .iter()
+        .flat_map(|entry| &entry.blocks)
+        .flat_map(|block| match block {
+            Block::ToolResult { subagents, .. } => subagents.clone(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+fn rows(found: &[Subagent]) -> Vec<(&str, &str, Option<&str>)> {
+    found.iter().map(|child| (child.id.as_str(), child.status, child.stage.as_deref())).collect()
+}
+
+#[test]
+fn a_child_the_session_has_not_recorded_yet_shows_running_from_its_own_record() {
+    let live = running(LIVE_MID, &[(CHILD, LIVE_MID_CHILD)]);
+    assert_eq!(rows(&live), vec![(CHILD, "running", Some("ReadFolder"))]);
+    assert!(live[0].task.as_deref().unwrap().contains("Investigate the work dir"));
+    assert!(children(LIVE_MID).is_empty());
+}
+
+#[test]
+fn once_the_session_records_the_child_only_its_finished_row_shows() {
+    assert!(running(LIVE_END, &[(CHILD, LIVE_END_CHILD)]).is_empty());
+    let done: Vec<_> = children(LIVE_END).iter().map(|child| (child.id.clone(), child.status)).collect();
+    assert_eq!(done, vec![(CHILD.to_owned(), "completed")]);
+}
+
+#[test]
+fn a_sibling_that_finished_reads_done_from_its_own_record_while_the_other_runs() {
+    let live = running(TWO_MID, &[(A, TWO_A), (B, TWO_B_MID)]);
+    assert_eq!(rows(&live), vec![(A, "completed", None), (B, "running", Some("ReadFolder"))]);
+    assert!(children(TWO_MID).is_empty());
+}
+
+#[test]
+fn esc_cancels_the_running_child_into_the_sessions_cancelled_call() {
+    // Mid-cancel: the earlier batch is recorded by agentId, only C runs.
+    let live = running(CANCEL_MID, &[(A, TWO_A), (B, TWO_B), (C, CANCEL_C_MID)]);
+    assert_eq!(rows(&live), vec![(C, "running", Some("ReadFolder"))]);
+
+    // After Esc the session records the call cancelled with no agentId,
+    // stamped after C started: the live row is gone, the call's own row stays.
+    assert!(running(CANCEL, &[(A, TWO_A), (B, TWO_B), (C, CANCEL_C)]).is_empty());
+    let ended: Vec<_> = children(CANCEL).iter().map(|child| (child.id.clone(), child.status)).collect();
+    assert_eq!(
+        ended,
+        vec![
+            (A.to_owned(), "completed"),
+            (B.to_owned(), "completed"),
+            ("invoke_agent__invoke_agent_1794526978849_0".to_owned(), "cancelled")
+        ]
+    );
+}
+
+#[test]
+fn a_child_ends_when_the_session_moves_on_and_never_from_another_project() {
+    let at = |ts: &str| json!({"id": "late", "timestamp": ts, "type": "user", "content": [{"text": "x"}]});
+    let with = |record: Value| {
+        let mut data = LIVE_MID.to_vec();
+        data.extend(jsonl(&[record]));
+        data
+    };
+    // Recorded before the child started: still running.
+    assert_eq!(running(&with(at("2026-11-12T23:15:48.000Z")), &[(CHILD, LIVE_MID_CHILD)]).len(), 1);
+    assert!(running(&with(at("2026-11-12T23:16:00.000Z")), &[(CHILD, LIVE_MID_CHILD)]).is_empty());
+    let foreign = String::from_utf8(LIVE_MID_CHILD.to_vec()).unwrap().replacen("\"projectHash\":\"", "\"projectHash\":\"0", 1);
+    assert!(running(LIVE_MID, &[(CHILD, foreign.as_bytes())]).is_empty());
 }

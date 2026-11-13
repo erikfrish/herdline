@@ -1,0 +1,16 @@
+Herdline 0.6.63 (Experimental)
+
+- Tabs: cards in each two-column row now have equal heights. The card body opens the tab; the menu remains a separate button.
+- Filters: compact category pills stay on one horizontally scrolling row, keep their counts and selection, and grow with the font size. The workspace selector has its own row.
+- Large fonts: the List's Order choices scroll sideways, so “Last activity” is no longer cut off.
+- OMP Chat: PTY sends now confirm when OMP records the submitted text, including when OMP trims edge spaces or newlines. The composer clears and the next Send works without Unlock. Input admission and duplicate-send guards remain enabled.
+- Includes the fixes accumulated since 0.6.34 for selected-pane Chat/Terminal navigation, session headers, extra keys and Tabs sheet dismissal.
+
+Verification: Android emulator with stock Herdr 0.9.5 and local mock model providers, not a phone. Equal card rows, body/menu taps, scrolling filters and large-font Order labels passed. Chinese/dark filters and Rails interactions passed on the preceding build; unchanged paths carry forward. OMP edge-whitespace sends and a subsequent Send passed on 0.6.61; unchanged in this build. The multiline Cyrillic check used pasted fixture text. Unit tests: 650 passed.
+
+Known limits:
+- Experimental; support is not complete for every agent harness.
+- Claude Code Send remains blocked with Herdr 0.9.5 because it drops the inverse caret style needed by the input guard.
+- An old unconfirmed delivery can remain locked after upgrading. Use Unlock once; nothing is resent automatically.
+- OMP PTY sends with attachments, or runtime-dependent rewrites such as emoticon expansion, can still remain unconfirmed. Unlock keeps the draft; check whether it already arrived before sending again.
+- No phone/Samsung verification or automatic-reconnect guarantee. An already-sent focus request can arrive after a tab change without changing the selected view.

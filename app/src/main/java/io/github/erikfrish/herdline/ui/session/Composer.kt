@@ -127,6 +127,7 @@ import io.github.erikfrish.herdline.ui.components.ConfirmDialog
 import io.github.erikfrish.herdline.ui.chat.ChatColors
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
+import io.github.erikfrish.herdline.ui.chat.historyEnd
 import io.github.erikfrish.herdline.ui.chat.ptyTurnLanded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -156,20 +157,109 @@ import java.util.UUID
  */
 private data class Pending(
     val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet(),
-    val watched: Boolean = false, val historyFrom: Long? = null,
+    val watched: Boolean = false, val historyFrom: Long? = null, val to: String? = null,
 )
 
 /**
  * The draft's sent record once `deliver` returned [outcome]: [before] again
  * only when nothing left, so Send stays held until Unlock whenever the text
- * may be in the pane.
+ * may be in the pane. [to] is the destination's name at the tap.
  */
-internal fun sentAfter(outcome: Connection.Delivery, before: SentRecord?, text: String, submit: Boolean, now: Long): SentRecord? =
+internal fun sentAfter(outcome: Connection.Delivery, before: SentRecord?, text: String, submit: Boolean, now: Long, to: String? = null): SentRecord? =
     when (outcome) {
-        is Connection.Delivery.Queued -> SentRecord(text, outcome.receipt, submit, SentState.Queued, now)
+        is Connection.Delivery.Queued -> SentRecord(text, outcome.receipt, submit, SentState.Queued, now, to = to)
         is Connection.Delivery.Refused -> before
-        is Connection.Delivery.Uncertain -> SentRecord(text, "", submit, SentState.Uncertain, now)
+        is Connection.Delivery.Uncertain -> SentRecord(text, "", submit, SentState.Uncertain, now, to = to)
     }
+
+/**
+ * The record an answered receipt leaves. A watched send (P1) waits
+ * [SentState.InPane] for its turn in the history. Any other is only
+ * [SentState.Handed]: Herdr answers the receipt with success also when it
+ * dropped the write, so it is never reported as delivered. [to]
+ * is the destination's name captured at the tap.
+ */
+internal fun answeredRecord(
+    text: String, receipt: String, submit: Boolean, watched: Boolean, historyFrom: Long?, now: Long, to: String? = null,
+): SentRecord =
+    if (watched) {
+        SentRecord(text, receipt, submit, SentState.InPane, now, historyFrom = historyFrom, to = to)
+    } else {
+        SentRecord(text, receipt, submit, SentState.Handed, now, to = to)
+    }
+
+/** The editor once the delivery of [sent] is answered: empty, unless the user changed it meanwhile. */
+internal fun editorAfterAnswer(editor: String, sent: String): String = if (editor == sent) "" else editor
+
+/**
+ * The draft a confirmed receipt for [text] leaves. A watched send (P1) keeps
+ * the editor and its files. An unwatched one is [SentState.Handed]: only now
+ * does the text leave the editor (Reuse brings it back), and the files in
+ * [carried] leave with it; their host copies stay for OMP to read and go
+ * with the seven-day sweep.
+ */
+internal fun answeredDraft(
+    draft: Draft, editor: String, text: String, receipt: String, submit: Boolean, watched: Boolean,
+    historyFrom: Long?, carried: Set<String>, now: Long, to: String? = null,
+): Draft {
+    val sent = answeredRecord(text, receipt, submit, watched, historyFrom, now, to)
+    if (watched) return draft.copy(sent = sent)
+    val kept = editorAfterAnswer(editor, text)
+    return draft.copy(
+        text = kept, selectionStart = kept.length, selectionEnd = kept.length, sent = sent,
+        attachments = draft.attachments.filterNot { it.id in carried },
+    )
+}
+
+/** How long the notice slot speaks of [sent]: [HANDED_NOTICE_MS] for Handed, [SENT_NOTICE_MS] for a proven Confirmed, else null. */
+private fun sentNoticeWindow(sent: SentRecord?): Long? = when (sent?.state) {
+    SentState.Handed -> HANDED_NOTICE_MS
+    SentState.Confirmed -> SENT_NOTICE_MS
+    else -> null
+}
+
+/**
+ * What is left at [now] of [sent]'s notice window, counted from its stored
+ * answer time, so also across a return or a restart; null when [sent] has
+ * none. An answer time ahead of [now] (the wall clock stepped back) counts
+ * from [now], so the window never outlasts its length.
+ */
+internal fun sentNoticeLeft(sent: SentRecord?, now: Long): Long? =
+    sentNoticeWindow(sent)?.let { window -> (minOf(sent!!.at, now) + window - now).coerceAtLeast(0) }
+
+/**
+ * Returns once [sent]'s notice window is over. It reads [clock] once and
+ * waits the rest with [sleep], `delay` on the monotonic clock: a wall clock
+ * stepping back meanwhile cannot keep the notice up.
+ */
+internal suspend fun awaitSentNoticeEnd(
+    sent: SentRecord?,
+    clock: () -> Long = System::currentTimeMillis,
+    sleep: suspend (Long) -> Unit = { delay(it) },
+) {
+    sentNoticeLeft(sent, clock())?.let { sleep(it) }
+}
+
+/** Whether the slot shows [sent]'s notice and its Reuse: while its window is [live] and [editor] is empty. */
+internal fun sentNoticeShown(sent: SentRecord?, editor: String, live: Boolean): Boolean =
+    live && editor.isEmpty() && sentNoticeWindow(sent) != null
+
+/**
+ * The words of [sent]'s notice: only a proven delivery says Sent. Handed
+ * comes only from a Chat Insert or Append: a Chat Send is always watched.
+ */
+internal fun sentNoticeText(sent: SentRecord): Int =
+    if (sent.state == SentState.Handed) R.string.composer_handed_insert else R.string.composer_sent_to
+
+/** Whether [sent]'s notice offers Check before Reuse: a Handed one asks the user to look at the terminal. */
+internal fun sentNoticeChecks(sent: SentRecord): Boolean = sent.state == SentState.Handed
+
+/**
+ * The pane [sent]'s notice names: the name captured at the tap, so a closed
+ * or renamed pane is still named as it was; [live] only for a
+ * record that never captured it.
+ */
+internal fun sentNoticeName(sent: SentRecord, live: String): String = sent.to ?: live
 
 /**
  * Runs [call] only once [writeAhead] stored the unconfirmed record on disk.
@@ -820,6 +910,8 @@ private fun Editor(
     var steerText by remember(key) { mutableStateOf("") }
     var steerBefore by remember(key) { mutableStateOf<SentRecord?>(null) }
     var steerTarget by remember(key) { mutableStateOf<Connection.ComposerTarget?>(null) }
+    // Where the bound session's history ended before the steer's paste.
+    var steerFrom by remember(key) { mutableStateOf<Long?>(null) }
     // QA HB2: the receipt and the steer steps are awaited here only, so the
     // composer stays on this pane until they settle (DraftStore.releasesComposer).
     val waiting = sending || pending != null || steer.active
@@ -966,27 +1058,21 @@ private fun Editor(
 
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
-            is Connection.DeliveryUpdate.Confirmed -> if (p.watched) {
-                // P1: the read receipt proves only that the text reached the
-                // pane's input box, not that the agent took it. The editor
-                // keeps it and the pane stays held until the history shows it.
-                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.InPane, System.currentTimeMillis(), historyFrom = p.historyFrom)))
-            } else {
-                // Only now does the text leave the editor.
-                val rest = if (value.text == p.text) "" else value.text
-                write(rest)
-                // The files it carried leave with it; their host copies stay
-                // for OMP to read and go with the seven-day sweep.
-                save(
-                    draft.copy(
-                        sent = SentRecord(p.text, p.receipt, p.submit, SentState.Confirmed, System.currentTimeMillis()),
-                        attachments = draft.attachments.filterNot { it.id in p.attachments },
-                    ),
+            is Connection.DeliveryUpdate.Confirmed -> {
+                // P1: for a watched send the read receipt proves only that the
+                // text reached the pane's input box, not that the agent took it.
+                // The editor keeps it and the pane stays held until the history
+                // shows it.
+                val next = answeredDraft(
+                    draft, value.text, p.text, p.receipt, p.submit, p.watched, p.historyFrom, p.attachments,
+                    System.currentTimeMillis(), p.to,
                 )
-                delivered()
+                if (!p.watched) value = TextFieldValue(next.text, TextRange(next.text.length))
+                save(next)
+                if (!p.watched) delivered()
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
-                draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
+                draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)),
             )
         }
     }
@@ -997,6 +1083,8 @@ private fun Editor(
     // again (once, past the deadline). Nothing is ever typed again.
     val inPane = draft.sent?.takeIf { it.state == SentState.InPane }
     var inPaneWatched by remember(key, inPane) { mutableStateOf(false) }
+    // An entered steer waits for OMP's next step: watched while the agent works.
+    val paneWorking by rememberUpdatedState(view?.agentIn(key.pane)?.status == AgentStatus.Working)
     LaunchedEffect(key, inPane, connection) {
         val sent = inPane ?: return@LaunchedEffect
         val from = sent.historyFrom
@@ -1006,6 +1094,7 @@ private fun Editor(
             return@LaunchedEffect
         }
         val via = connection
+        var until = sent.at + PTY_TURN_WATCH_MS
         do {
             val page = withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(from))) }.getOrNull()
             if (page != null && ptyTurnLanded(page, instance, from, sent.text)) {
@@ -1020,7 +1109,9 @@ private fun Editor(
             // Another session, or a history that started over: this turn can no longer be shown.
             if (page != null && (page.reset || page.identity != instance)) break
             delay(PTY_TURN_POLL_MS)
-        } while (System.currentTimeMillis() - sent.at < PTY_TURN_WATCH_MS)
+            val now = System.currentTimeMillis()
+            until = ptyWatchDeadline(sent, until, paneWorking, now, PTY_TURN_WATCH_MS)
+        } while (now < until)
         inPaneWatched = true
     }
 
@@ -1172,10 +1263,9 @@ private fun Editor(
                 save(draft.copy(sent = SentRecord(steerText, phase.awaiting ?: "", true, SentState.Queued, now)))
             }
             SteerPhase.Sent -> {
-                // Only now does the text leave the editor, as after Send.
-                write(if (value.text == steerText) "" else value.text)
-                save(draft.copy(sent = SentRecord(steerText, was.awaiting ?: "", true, SentState.Confirmed, now)))
-                delivered()
+                // The Enter's receipt is the pane's, not the agent's: the editor
+                // keeps the text until the history shows the steer (P1 watch).
+                save(draft.copy(sent = steerEntered(steerText, was.awaiting ?: "", steerFrom, now)))
             }
             SteerPhase.Uncertain -> save(draft.copy(sent = SentRecord(steerText, was.awaiting ?: "", true, SentState.Uncertain, now)))
             is SteerPhase.Refused -> {
@@ -1235,7 +1325,7 @@ private fun Editor(
         pending?.let { p ->
             if (p.connection !== connection) {
                 pending = null
-                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())))
+                save(draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)))
             }
         }
         connection.deliveries.collect { update ->
@@ -1317,13 +1407,15 @@ private fun Editor(
         val text = value.text
         val before = draft.sent
         val via = connection
+        // The name the composer shows now, kept for the notices about this delivery.
+        val to = view?.composerTitle(key.pane)
         refusal = null
         sending = true
         onDeliveryStart()
         val seen = captureViewport()
         // Recorded before the text may leave, and on disk before the call:
         // should the app stop before the answer, it reads back as unconfirmed.
-        save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis())))
+        save(draft.copy(sent = SentRecord(text, "", submit, SentState.Queued, System.currentTimeMillis(), to = to)))
         val ahead = draft
         scope.launch {
             // P1: where Chat sends by typing into an agent's pane, where that
@@ -1332,7 +1424,7 @@ private fun Editor(
             val watched = reading && submit && target.instance != null
             val historyFrom = target.instance?.takeIf { watched }?.let { instance ->
                 withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
-                    .getOrNull()?.takeIf { it.identity == instance && !it.reset }?.end
+                    .getOrNull().let { historyEnd(it, instance) }
             }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.Delivery.Refused(WRITE_AHEAD_FAILED)) {
@@ -1342,11 +1434,11 @@ private fun Editor(
             // Stored before anything re-enables: an uncertain record holds the
             // band, + Insert and the editor until Unlock, also after a restart.
             // Only a refusal, where nothing left, gives the earlier record back.
-            save(draft.copy(sent = sentAfter(outcome, before, text, submit, System.currentTimeMillis())))
+            save(draft.copy(sent = sentAfter(outcome, before, text, submit, System.currentTimeMillis(), to)))
             sending = false
             when (outcome) {
                 is Connection.Delivery.Queued -> {
-                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom)
+                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom, to)
                     val answered = early.remove(outcome.receipt)
                     when {
                         answered != null -> settle(p, answered)
@@ -1390,6 +1482,7 @@ private fun Editor(
         steerText = text
         steerBefore = draft.sent
         steerTarget = target
+        steerFrom = null
         onDeliveryStart()
         val seen = captureViewport()
         steerOn(SteerEvent.Tap(steerEpoch))
@@ -1399,6 +1492,12 @@ private fun Editor(
         save(draft.copy(sent = SentRecord(text, "", true, SentState.Queued, System.currentTimeMillis())))
         val ahead = draft
         scope.launch {
+            // As for a Chat PTY send (P1): only a user entry after this end of
+            // the bound session's history can be this steer.
+            steerFrom = target.instance?.let { instance ->
+                withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.Tail)) }
+                    .getOrNull().let { historyEnd(it, instance) }
+            }
             val outcome = withContext(Dispatchers.IO) {
                 afterWriteAhead({ store.writeAhead(key, ahead) }, Connection.SteerStart.Refused(WRITE_AHEAD_FAILED)) {
                     via.steer(target, text, seen)
@@ -1521,11 +1620,9 @@ private fun Editor(
         }
     }
 
-    // The draft's target title, for the placeholder, the field's hint and the notices.
-    val title = view?.paneTitle(key.pane) ?: ""
+    // The draft's target title, for the placeholder, the field's hint and the notices: its tab, as the header says it.
     val titleWhere = view?.paneWhere(key.pane) ?: ""
-    val qualified = view?.takeIf { it.titleCollides(key.pane) }?.let { titleWhere }?.takeIf { it.isNotEmpty() }
-    val draftTitle = qualified ?: title
+    val draftTitle = view?.composerTitle(key.pane) ?: ""
     // The "Draft for …" strip names the destination in Herdr's own terms
     // ("workspace › tab"), never the agent's task title, which changes as
     // the agent works (lab.3 D2).
@@ -1533,17 +1630,14 @@ private fun Editor(
     // §9: a non-empty draft keeps its pane while the user views another.
     val mismatched = holdsDraft && viewed != null && viewed != key.pane && pending == null && !steer.active
     val targetGone = holdsDraft && check?.paneExists == false
-    // The sent confirmation is a moment, not a state: it shows for a few
-    // seconds after the receipt, then the slot is free again.
-    val confirmedAt = draft.sent?.takeIf { it.state == SentState.Confirmed }?.at
-    var confirmationShown by remember(confirmedAt) {
-        mutableStateOf(confirmedAt != null && System.currentTimeMillis() - confirmedAt < SENT_NOTICE_MS)
-    }
-    LaunchedEffect(confirmedAt) {
-        if (confirmedAt != null) {
-            delay((SENT_NOTICE_MS - (System.currentTimeMillis() - confirmedAt)).coerceAtLeast(0))
-            confirmationShown = false
-        }
+    // The sent notice is a moment, not a state: it shows for a while after
+    // the receipt, timed from the stored record, so also across a return or
+    // a restart; then the slot is free again, whatever the wall clock does.
+    val noticeSent = draft.sent
+    var noticeLive by remember(noticeSent) { mutableStateOf((sentNoticeLeft(noticeSent, System.currentTimeMillis()) ?: 0L) > 0L) }
+    LaunchedEffect(noticeSent) {
+        awaitSentNoticeEnd(noticeSent)
+        noticeLive = false
     }
 
     // Why Send is off before it is tapped: a disabled button cannot be
@@ -1578,6 +1672,10 @@ private fun Editor(
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
+    // Insert is off only because the desktop isn't on this tab,
+    // so Herdr's frame has no rows to read the box from (live_box's
+    // not_visible). The + menu says so; the desktop is never moved for it.
+    val insertOffDesktop = !insertEnabled && reading && desktop != key.pane && check?.insert?.reason == "not_visible"
     val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
     // Endpoint steering accepts ready attachments; PTY steering stays text-only.
     val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
@@ -1604,9 +1702,11 @@ private fun Editor(
     // check or by a steer whose paste never showed. Append inserts this draft
     // after it, without Enter; replacing it means clearing it in Terminal
     // first, since no remote clear exists that could not also reach an empty
-    // OMP prompt (where Ctrl+C arms exit).
+    // OMP prompt (where Ctrl+C arms exit). Append is an Insert, so it shows
+    // only while Insert is enabled; without it the notice names only the
+    // clear.
     val remoteDraft = Notice(
-        stringResource(R.string.composer_remote_draft),
+        stringResource(if (insertEnabled) R.string.composer_remote_draft else R.string.composer_remote_draft_no_append),
         // The one action here that delivers the draft: filled.
         NoticeAction(stringResource(R.string.composer_append), tag = "composer:append", primary = true) { deliver(submit = false) }.takeIf { insertEnabled },
         NoticeAction(
@@ -1616,6 +1716,7 @@ private fun Editor(
         ),
     )
 
+    val panel = if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
     // Which single notice the slot shows, highest priority first.
     val notice = when {
         // Held while offline: the unconfirmed delivery stays said (R8).
@@ -1649,9 +1750,9 @@ private fun Editor(
             }.takeIf { !checking },
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
         )
-        // P1: in the pane's input box, not yet in the session's history.
+        // P1: in the pane's input box (a steer: in OMP's queue), not yet in the session's history.
         draft.sent?.state == SentState.InPane -> Notice(
-            stringResource(R.string.composer_in_pane),
+            stringResource(inPaneNotice(draft.sent)),
             NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal),
             NoticeAction(stringResource(R.string.composer_unlock)) { unlockAsk = true },
             warning = inPaneWatched,
@@ -1803,17 +1904,19 @@ private fun Editor(
                 reasonText(code ?: ""),
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
-            else -> Notice(reasonText(code ?: ""))
+            else -> Notice(stringResource(causeRes(code ?: "", panel), (panel as? QueuePanel.Unusable)?.reason.orEmpty()), cause = code)
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
-        value.text.isEmpty() && confirmationShown -> draft.sent?.let { sent ->
+        sentNoticeShown(draft.sent, value.text, noticeLive) -> draft.sent?.let { sent ->
+            val reuse = NoticeAction(stringResource(R.string.composer_reuse)) {
+                val text = sent.text
+                value = TextFieldValue(text, TextRange(text.length))
+                save(draft.copy(text = text, selectionStart = text.length, selectionEnd = text.length))
+            }
             Notice(
-                stringResource(if (sent.submit) R.string.composer_sent_to else R.string.composer_inserted_to, draftTitle),
-                NoticeAction(stringResource(R.string.composer_reuse)) {
-                    val text = sent.text
-                    value = TextFieldValue(text, TextRange(text.length))
-                    save(draft.copy(text = text, selectionStart = text.length, selectionEnd = text.length))
-                },
+                stringResource(sentNoticeText(sent), sentNoticeName(sent, draftTitle)),
+                if (sentNoticeChecks(sent)) NoticeAction(stringResource(R.string.composer_check), description = checkDescription, onClick = onOpenTerminal) else reuse,
+                reuse.takeIf { sentNoticeChecks(sent) },
                 warning = false,
             )
         }
@@ -1828,9 +1931,14 @@ private fun Editor(
         null -> null
     }
 
-    if (reading) {
+    // U6-WRONG-TAB: the panel speaks of the draft's pane (its probe, queue and
+    // withdraw); while the draft is for a pane other than the one read, it
+    // would read as this tab's state, so only the slot's Draft for notice
+    // speaks. The probe keeps running for queueSettled.
+    if (reading && !mismatched) {
+        // An unusable endpoint the notice names is said there, once: the panel's line of the same cause goes.
         IngressQueuePanel(
-            if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
+            besideNotice(panel, noticeCause(refusal, steadyPrecheck, notice?.cause)),
             withdrawing,
             withdrawNote,
             ::withdraw,
@@ -1893,6 +2001,7 @@ private fun Editor(
         inlineNotice = notice?.text?.takeIf { !fit.noticeBlock },
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
+        insertOffDesktop = insertOffDesktop,
         sendEnabled = sendEnabled,
         sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
@@ -2001,7 +2110,7 @@ private fun Editor(
     // A held source or target refuses the move: the dialog's Replace and
     // Append are never offered onto text that may already be in its pane.
     moveConflict?.takeIf { !moveRefused(busy, store.get(key.copy(pane = it))) }?.let { to ->
-        val toTitle = view?.paneTitle(to) ?: to
+        val toTitle = view?.composerTitle(to) ?: to
         AlertDialog(
             onDismissRequest = { moveConflict = null },
             title = { Text(stringResource(R.string.composer_has_draft, toTitle)) },
@@ -2063,6 +2172,8 @@ internal fun ComposerBand(
     inlineNotice: String?,
     onMenu: (Boolean) -> Unit,
     insertEnabled: Boolean,
+    /** Insert is off because the desktop isn't on this tab: its menu item says so. */
+    insertOffDesktop: Boolean = false,
     sendEnabled: Boolean,
     /** Send queues behind the running turn: the button says Queue (§1 S). */
     sendQueues: Boolean = false,
@@ -2168,12 +2279,20 @@ internal fun ComposerBand(
                             text = {
                                 Column {
                                     Text(stringResource(R.string.composer_insert_no_enter))
-                                    // Held: the reason instead of the help; otherwise a
-                                    // disabled item's help is dimmed with its title (R4).
+                                    // Held: the reason instead of the help; off while the
+                                    // desktop is on another tab: that reason;
+                                    // otherwise a disabled item's help is dimmed with its title (R4).
+                                    val offDesktop = !insertEnabled && !locked && insertOffDesktop
                                     Text(
-                                        stringResource(if (locked) R.string.composer_locked_reason else R.string.composer_insert_no_enter_help),
+                                        stringResource(
+                                            when {
+                                                locked -> R.string.composer_locked_reason
+                                                offDesktop -> R.string.composer_insert_off_desktop
+                                                else -> R.string.composer_insert_no_enter_help
+                                            },
+                                        ),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (insertEnabled || locked) {
+                                        color = if (insertEnabled || locked || offDesktop) {
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
@@ -2429,13 +2548,14 @@ private const val DISABLED_ALPHA = 0.38f
 /**
  * One notice in the single slot above the field: one sentence, ≤2 actions.
  * [warning] is false for a confirmation or a step in progress, which says
- * nothing is wrong.
+ * nothing is wrong. [cause] is the refusal code a plain reason notice says.
  */
 private data class Notice(
     val text: String,
     val first: NoticeAction? = null,
     val second: NoticeAction? = null,
     val warning: Boolean = true,
+    val cause: String? = null,
 )
 
 /**
@@ -2814,6 +2934,7 @@ internal fun reasonRes(reason: String): Int =
         "pane_sized_elsewhere" -> R.string.reason_pane_sized_elsewhere
         "editor_none" -> R.string.reason_editor_none
         "editor_unrecognized" -> R.string.reason_editor_unrecognized
+        "editor_caret_unseen" -> R.string.reason_editor_caret_unseen
         "editor_hidden" -> R.string.reason_editor_hidden
         "target_not_visible" -> R.string.reason_target_not_visible
         "resizing" -> R.string.reason_resizing
@@ -2878,6 +2999,8 @@ private fun Modifier.fieldState(locked: Boolean, inFlight: Boolean, lockedDescri
 private const val EXPAND_TARGET = 48
 
 private const val SENT_NOTICE_MS = 8_000L
+/** How long a [SentState.Handed] notice offers Reuse, from the stored answer. */
+private const val HANDED_NOTICE_MS = 60_000L
 private const val PRECHECK_SETTLE_MS = 700L
 private const val INSTANCE_POLL_MS = 5_000L
 private const val INSTANCE_SETTLE_MS = 1_500L

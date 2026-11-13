@@ -40,7 +40,8 @@
     <string name="tabs_view">Tabs view</string>
     <string name="tabs_view_list">List</string>
     <string name="tabs_view_columns">Two columns</string>
-    <string name="tabs_view_help">The Tabs sheet opens as the list, or as a compact two-column list. Two columns falls back to one when large fonts would make them unreadable.</string>
+    <string name="tabs_view_rails">Workspace rails</string>
+    <string name="tabs_view_help">The Tabs sheet opens as the list, as a compact two-column list, or as one row of tabs per workspace that scrolls sideways. Two columns falls back to one when large fonts would make them unreadable.</string>
     <string name="hide_shells">Hide shell tabs</string>
     <string name="hide_idle_done">Hide idle and done agents</string>
     <string name="hide_help">Only the Tabs sheet and sidebar hide rows, and a line under the list shows how many, with Show. Search still finds them. A tab that needs you is never hidden. The phone tab row, Tabs n/N, Agents and notifications always count every tab.</string>
@@ -49,7 +50,7 @@
 
     <string name="section_extra_keys">Extra keys</string>
     <string name="show_extra_keys">Show the extra keys row</string>
-    <string name="extra_key_up">Move %1$s left</string>
+    <string name="extra_key_up">Move %1$s one place earlier</string>
     <string name="extra_keys_help">Enabled keys appear in this order. The arrow moves a key one place earlier. Keep the first 14 keys in their default order to keep the default layout; added keys appear beside or above it.</string>
     <!-- Under the key list: which layout rule the saved list gets. -->
     <plurals name="extra_keys_layout_default">
@@ -156,7 +157,7 @@
     <string name="composer_checking_resizing">Checking the pane before Send: it is still resizing…</string>
     <string name="composer_steer">Steer</string>
     <string name="steer_help">The agent is working, so Send is off until it is idle. Steer pastes your text, then presses Enter once; if the turn ends just before, the text starts a new turn.</string>
-    <string name="steer_help_endpoint">Steer queues your text and images for the running agent, as Send does while it works. If the turn has already ended, OMP keeps them waiting until its next turn and you can withdraw them; Codex refuses them, and nothing is sent.</string>
+    <string name="steer_help_endpoint">Steer queues your text and images for the running agent, as Send does while it works. If the turn has already ended, an agent that holds steers keeps them waiting until its next turn and you can withdraw them; any other refuses them, and nothing is sent.</string>
     <string name="steer_pending">Steering: pasting your text, then one Enter…</string>
     <string name="steer_left">The steer stopped before Enter: your text is in the pane\'s input box</string>
     <string name="agent_idle">The agent is idle: use Send</string>

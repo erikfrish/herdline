@@ -57,6 +57,8 @@ class RenderFrame(
         const val INVISIBLE = 64
         const val BACKGROUND = 128
         const val ASCII = 256
+        /** Inverse video, already applied to `fg` and `bg`: where the colours came from, never swapped again. */
+        const val INVERSE = 512
 
         const val CURSOR_BLOCK = 0
         const val CURSOR_BAR = 1

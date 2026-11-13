@@ -84,6 +84,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -137,6 +138,7 @@ import io.github.erikfrish.herdline.core.mediaRequest
 import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
+import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
@@ -154,6 +156,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 
 /** How often chat rereads the transcript while the agent is busy or waiting, and otherwise. */
 private const val BUSY_POLL_MS = 1_500L
@@ -186,11 +190,10 @@ private val DensePillEnd = 4.dp
  * only reads. Interactive dialogs are answered in the terminal: a blocked
  * agent shows a card that opens it, never buttons that pretend to answer.
  *
- * [onUnavailable] hears `true` when chat has no transcript to show and its
- * last read failed, and `false` once a read succeeds (also at first). A
- * refresh that fails after a transcript loaded is not unavailable: chat keeps
- * the transcript under its offline strip. Reads go on while this stays
- * composed, so keep it composed (hidden) to learn when chat can read again.
+ * What it reads changes only this pane's own [ChatKept], never the mode
+ * shown (C9): a pane it cannot read stays in Chat on its own page, loading,
+ * empty, a read error with Retry or a typed refusal, and a refresh that
+ * fails after a transcript loaded keeps it under the stale strip.
  *
  * [dense] drops the list's own top and bottom padding, for a window that
  * leaves the conversation only a few lines (a landscape phone with the
@@ -203,24 +206,50 @@ fun ChatView(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Hears whether Chat has nothing to show, and the core's typed refusal when that is why. */
-    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)? = null,
     tabTitle: String? = null,
     dense: Boolean = false,
-    /** The caller's per-connection memory, so each pane read here comes back as it was (CT-1). */
-    memory: ChatMemory = remember(connection) { ChatMemory() },
+    /** The caller's memory for one connection and daemon boot, so each pane read here comes back as it was (CT-1). */
+    memory: ChatMemory,
 ) {
-    // A reconnect is a new Connection and starts over (the caller's memory is
-    // keyed on it). A new OMP instance in the pane resets what it loaded (ChatHistory.merge).
-    key(connection, pane) {
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, onUnavailable, tabTitle, dense)
+    // A reconnect is a new Connection and starts over, as a restarted daemon is a new
+    // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
+    // loaded (ChatHistory.merge).
+    key(connection, pane, memory) {
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense)
     }
 }
 
-/** What each pane's Chat loaded and the reader opened, kept while another pane is read; one per connection. */
+/**
+ * What each pane's Chat loaded and the reader opened, kept while another
+ * pane is read. The caller makes one per connection and daemon boot, since
+ * a restarted daemon may reuse pane ids, and a read's outcome stays in the
+ * memory it was made through.
+ */
 class ChatMemory {
     private val panes = HashMap<String, ChatKept>()
     internal fun of(pane: String): ChatKept = panes.getOrPut(pane) { ChatKept() }
+
+    /** Whether [pane] holds history read through this memory. */
+    internal fun holds(pane: String): Boolean = panes[pane]?.history != null
+}
+
+/**
+ * The [ChatMemory] of one connection's current daemon boot: a new boot
+ * starts a new one, since a restarted daemon may reuse pane ids, and a
+ * read's outcome is the memory's it was made through. A null boot (no view
+ * yet, or none for a moment) keeps the current memory.
+ */
+class ChatMemories {
+    private var boot: String? = null
+    private var memory = ChatMemory()
+
+    fun at(boot: String?): ChatMemory {
+        if (boot != null && boot != this.boot) {
+            if (this.boot != null) memory = ChatMemory()
+            this.boot = boot
+        }
+        return memory
+    }
 }
 
 /** Programs Chat reaches through their own server, whose absence the card names (card §3.4). */
@@ -246,7 +275,7 @@ fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: Str
         if (pane == null || boot == null || !server || !linkLive) return@produceState
         // Its history landing changes [identity] and asks again with it.
         if (identity == null) {
-            memory.of(pane).recheck(connection, pane)
+            memory.of(pane).recheck(connection::transcript, pane)
             return@produceState
         }
         if (identity.agent !in SERVER_AGENTS) return@produceState
@@ -263,30 +292,37 @@ internal class ChatKept {
     val read = ChatReadState()
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
-    val media = ChatMedia()
+    // Made on the first image row: a pane that shows none never builds its caches.
+    val media by lazy { ChatMedia() }
     private val rechecking = Mutex()
+    // The poll's reads and the re-checks', one at a time: a slow read never lands over a newer answer.
+    private val reading = Mutex()
 
-    /** One read of [pane]'s next page, the poll's and a re-check's alike; it records how it went. */
-    suspend fun readNext(connection: Connection, pane: String): Boolean {
+    /**
+     * One read of [pane]'s next page through [transcript]
+     * ([Connection.transcript]), the poll's and a re-check's alike; it
+     * records how it went.
+     */
+    suspend fun readNext(transcript: (JSONObject) -> Result<TranscriptPage>, pane: String): Boolean = reading.withLock {
         val known = history
         val at = known?.let { TranscriptRead.After(it.end) } ?: TranscriptRead.Tail
-        val page = withContext(Dispatchers.IO) { connection.transcript(transcriptRequest(pane, known?.identity, at)) }
+        val page = withContext(Dispatchers.IO) { transcript(transcriptRequest(pane, known?.identity, at)) }
         page.onSuccess { read ->
             // Merged into whatever is current now: a load of older entries may have finished meanwhile.
             history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
             this.read.succeeded()
         }.onFailure { read.failed(it) }
-        return page.isSuccess
+        page.isSuccess
     }
 
     /**
      * One read while Chat is not composed to poll (F-OBS1); null when one is
      * already in flight, so repeated asks never stack reads.
      */
-    suspend fun recheck(connection: Connection, pane: String): Boolean? {
+    suspend fun recheck(transcript: (JSONObject) -> Result<TranscriptPage>, pane: String): Boolean? {
         if (!rechecking.tryLock()) return null
         try {
-            return readNext(connection, pane)
+            return readNext(transcript, pane)
         } finally {
             rechecking.unlock()
         }
@@ -323,6 +359,14 @@ internal class ChatReadState {
  */
 internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? TranscriptRefused)?.refusal
 
+/**
+ * Whether Chat has nothing to show and says so: nothing [loaded], its last
+ * read [failed], and that read was this Chat's own ([readHere]). A failure
+ * kept in the pane's memory from before is no report on the pane now: Chat
+ * opened again reads first, and only then says so.
+ */
+internal fun chatUnavailable(loaded: Boolean, failed: Boolean, readHere: Boolean): Boolean = !loaded && failed && readHere
+
 @Composable
 private fun ChatContent(
     connection: Connection,
@@ -331,7 +375,6 @@ private fun ChatContent(
     accent: Color,
     onTerminal: () -> Unit,
     modifier: Modifier,
-    onUnavailable: ((Boolean, TranscriptRefusal?) -> Unit)?,
     tabTitle: String?,
     dense: Boolean,
 ) {
@@ -358,10 +401,15 @@ private fun ChatContent(
     val status = chatStatus(linkLive, pane, view?.agentIn(pane), serverRunning?.takeIf { it.first == history?.identity }?.second)
     val busy by rememberUpdatedState(status == AgentStatus.Working || status == AgentStatus.Blocked)
 
+    // Whether this Chat has read the pane itself yet: until then a failure kept from an earlier one
+    // (another pane read, or Chat closed meanwhile) says nothing about the pane now.
+    var readHere by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                val ok = kept.readNext(connection, pane)
+                val ok = kept.readNext(connection::transcript, pane)
+                readHere = true
                 withTimeoutOrNull(
                     when {
                         !ok -> ERROR_POLL_MS
@@ -550,10 +598,8 @@ private fun ChatContent(
     // Runs a reply ended, drawn as the "Worked" fold, each with that reply.
     val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
-    val unavailable = shown == null && problem != null
+    val unavailable = chatUnavailable(shown != null, problem != null, readHere)
     val refused = refusal.takeIf { unavailable }
-    val report by rememberUpdatedState(onUnavailable)
-    LaunchedEffect(unavailable, refused) { report?.invoke(unavailable, refused) }
     // Rows above the first line: Load older, then the new-session divider (R1).
     val header = (if (shown?.hasOlder == true) 1 else 0) + (if (shown?.newSession == true) 1 else 0)
 
@@ -604,7 +650,8 @@ private fun ChatContent(
         }
     }
 
-    LaunchedEffect(list, band) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(list, band, keyboard) {
         var dragged = false
         var draggedScroll = false
         launch {
@@ -619,7 +666,11 @@ private fun ChatContent(
         // One collector, so a settled drag is decided before any re-pin could undo it. A drag that has
         // not started scrolling yet counts as scrolling: nothing pins under the reader's finger.
         snapshotFlow { list.isScrollInProgress to list.layoutInfo }.collect { (scrolling, layout) ->
-            if (scrolling && dragged) draggedScroll = true
+            if (scrolling && dragged) {
+                // Only the reader's first scroll hides IME; follow/restore never clear focus or the draft.
+                if (!draggedScroll) keyboard?.hide()
+                draggedScroll = true
+            }
             val settled = !scrolling && draggedScroll
             val step = followStep(follow, scrolling || dragged && !draggedScroll, settled, atBand = layout.atEnd(band), atEnd = layout.atEnd(0))
             if (settled) {
@@ -681,15 +732,21 @@ private fun ChatContent(
         moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
-                shown == null && problem != null -> Column(
+                unavailable -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val context = LocalContext.current
+                    // Never the core's raw message: for a session with no file yet it reads as a missing integration.
                     val said = refused?.let { context.refusalText(it, view?.agentIn(pane)?.displayName ?: identity?.agent.orEmpty()) }
-                    Text(said ?: stringResource(R.string.chat_unavailable, problem.orEmpty()), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center)
-                    GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
+                    Text(said ?: stringResource(R.string.chat_read_failed), style = ChatType.body.copy(color = colors.muted), textAlign = TextAlign.Center, modifier = Modifier.testTag("chat:unavailable"))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (refused == null) {
+                            GlassButton(stringResource(R.string.outage_retry), onClick = { wake.trySend(Unit) }, primary = true, accent = accent, modifier = Modifier.testTag("chat:retry"))
+                        }
+                        GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = accent)
+                    }
                 }
                 shown == null -> Row(
                     Modifier.align(Alignment.Center),

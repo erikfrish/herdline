@@ -5,29 +5,41 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,7 +54,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChip as MaterialFilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -51,10 +63,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -81,18 +97,19 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import io.github.erikfrish.herdline.ui.components.SheetCloseButton
+import io.github.erikfrish.herdline.ui.theme.color
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Workspace
-import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
@@ -115,7 +132,6 @@ import io.github.erikfrish.herdline.ui.glass.GlassButton
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TabsOverview(
-    node: Node,
     host: String,
     view: ShellView?,
     state: Connection.State,
@@ -130,11 +146,19 @@ fun TabsOverview(
     onScope: (String?) -> Unit,
     actions: SwitcherActions,
     onShowList: () -> Unit,
+    /** Two columns' toggle: the next view in the cycle, List → Two columns → Rails → List. */
+    onShowRails: () -> Unit,
+    /** The phone sheet's visible way out (U-1 #7). */
+    onClose: () -> Unit,
+    /** The tabs marked changed since the user looked ([rememberUnseenTabs]); required, as the strip's (SN-2). */
+    unseen: Set<String>,
     modifier: Modifier = Modifier,
     here: String? = view?.focusedPane,
     reading: Boolean = false,
-    /** The phone sheet's visible way out (U-1 #7); null where there is no sheet to close. */
-    onClose: (() -> Unit)? = null,
+    /** Rails (F2): the workspace rails in place of the rows, scrolled by this hoisted state; null for the rows. */
+    rails: RailsScroll? = null,
+    /** A rail's New tab tile: that rail's workspace only, never moving Herdr's focus. */
+    onRailNewTab: (Workspace) -> Unit = actions.newTab,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     val scoped = remember(groups, scope, view != null) { tabsScope(groups, scope, loaded = view != null) }
@@ -146,6 +170,10 @@ fun TabsOverview(
         view?.let { overviewSections(inScope, inScope.narrowed(query, filter), narrowing, it, currentTab) }.orEmpty()
     }
     val counts = remember(inScope, query) { inScope.agentCounts(query) }
+    // The full topology in scope beside the narrowed sections: a workspace narrowing emptied keeps its rail.
+    val railList = remember(inScope, sections, view, currentTab, rails != null) {
+        if (rails == null || view == null) emptyList() else overviewRails(inScope, sections, view, currentTab)
+    }
     val headers = chosen == null
     // Hoisted over the picker, so Back finds the rows where they were.
     val rows = rememberLazyGridState()
@@ -155,10 +183,24 @@ fun TabsOverview(
     BackHandler(enabled = picking != null) { picking = null }
     // Once per open, without animation: the current tab is on screen even with 20+ tabs.
     var placed by remember { mutableStateOf(false) }
-    LaunchedEffect(sections.isNotEmpty()) {
-        if (placed || sections.isEmpty()) return@LaunchedEffect
-        placed = true
-        overviewIndexOf(sections, currentTab, headers)?.let { rows.scrollToItem(it) }
+    if (rails != null) {
+        // Once per session, without animation; after that the saved positions win (§5).
+        LaunchedEffect(rails, railList.isNotEmpty()) {
+            if (rails.placed || railList.isEmpty()) return@LaunchedEffect
+            rails.placed = true
+            railIndexOf(railList, currentTab)?.let { (row, column) ->
+                rails.outer.scrollToItem(row)
+                rails.ribbon(railList[row].workspace.id).scrollToItem(column)
+            }
+        }
+        // A closed workspace drops its saved ribbon; a scope change hides one but keeps it.
+        val ids = remember(view?.workspaces) { view?.workspaces?.mapTo(HashSet()) { it.id } }
+        LaunchedEffect(rails, ids) { ids?.let(rails::keep) }
+    }
+    val clear = {
+        onQuery("")
+        onFilter(SwitcherFilter.All)
+        onScope(null)
     }
 
     // Keyed by the picked tab's id, not its row: a live status update redraws the picker in place,
@@ -170,32 +212,45 @@ fun TabsOverview(
             return@AnimatedContent
         }
         Column(Modifier.fillMaxWidth().testTag("overview")) {
-            OverviewHeader(host, view, chosen, scoped.gone, live = state is Connection.State.Connected, actions, onShowList, onClose)
-            Box(Modifier.padding(horizontal = 16.dp)) {
-                val fontScale = LocalDensity.current.fontScale
-                SearchField(query, onQuery, stringResource(R.string.overview_search), minHeight = maxOf(48f, 16f * fontScale + 24f).dp)
+            // The Tabs sheet's one header (H1), at the List's inset; the search pill keeps the overview's own.
+            Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
+                // The toggle shows the next view in the Settings order: Rails after Two columns, List after Rails.
+                val toggle = if (rails != null) {
+                    TabsViewToggle(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list), "overview:as-list", onShowList)
+                } else {
+                    TabsViewToggle(RailsIcon, stringResource(R.string.overview_as_rails), "overview:as-rails", onShowRails)
+                }
+                TabsHeader(host, view, state, chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "overview")
             }
-            FlowRow(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope)
-                if (filtersShown) {
-                    OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { onFilter(SwitcherFilter.All) }
-                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
+            Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
+                SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = tabsSearchMinHeight())
+            }
+            if (view != null) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    ScopeSelector(view, groups, chosen, scoped.gone, onScope)
+                }
+            }
+            if (filtersShown) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        .horizontalScroll(rememberScrollState()).selectableGroup().testTag("overview:filters"),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null, "all") { onFilter(SwitcherFilter.All) }
+                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked, "needs_you") {
                         onFilter(SwitcherFilter.NeedsYou)
                     }
-                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working) {
+                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working, "working") {
                         onFilter(SwitcherFilter.Working)
                     }
-                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null) {
+                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null, "ready") {
                         onFilter(SwitcherFilter.Ready)
                     }
                 }
             }
             when {
-                view == null || state !is Connection.State.Connected -> Box(Modifier.padding(horizontal = 16.dp)) { HostLine(node, view, state) }
+                // The header's subtitle says connecting or disconnected, as the List's does.
+                view == null || state !is Connection.State.Connected -> Unit
                 view.workspaces.isEmpty() -> GlassButton(
                     stringResource(R.string.new_workspace),
                     onClick = actions.newWorkspace,
@@ -203,68 +258,17 @@ fun TabsOverview(
                     modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(min = 48.dp).testTag("overview:new-workspace"),
                 )
                 scoped.gone -> ScopeGone { onScope(null) }
-                sections.isEmpty() -> NoneMatch {
-                    onQuery("")
-                    onFilter(SwitcherFilter.All)
-                    onScope(null)
+                rails != null -> if (narrowing && railList.all { it.cards.isEmpty() }) {
+                    NoneMatch(clear)
+                } else {
+                    OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab) { picking = it.tab.id }
                 }
-                else -> OverviewRows(sections, headers, rows, pins, monitored, actions) { picking = it.tab.id }
+                sections.isEmpty() -> NoneMatch(clear)
+                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }) { picking = it.tab.id }
             }
         }
     }
 }
-
-/** Title, then New tab, Show as list and Close; New tab takes its own row, right-aligned, before its label would be cut. */
-@Composable
-private fun OverviewHeader(
-    host: String,
-    view: ShellView?,
-    chosen: String?,
-    gone: Boolean,
-    live: Boolean,
-    actions: SwitcherActions,
-    onShowList: () -> Unit,
-    onClose: (() -> Unit)?,
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val sheetWidth = maxWidth
-        // Start and end padding, the title's least room, the button, then Show as list and Close.
-        val inline = sheetWidth >= 16.dp + 4.dp + HEADER_TITLE_MIN + newTabButtonWidth() + 48.dp + (if (onClose != null) 48.dp else 0.dp)
-        val newTab: @Composable () -> Unit = {
-            NewTabButton(view, live, chosen, gone, actions.newTab, menuWidth = sheetWidth, tag = "overview:new-tab")
-        }
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 8.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    if (view != null) {
-                        Text(
-                            stringResource(
-                                R.string.overview_sub,
-                                host,
-                                pluralStringResource(R.plurals.overview_tabs, view.tabs.size, view.tabs.size),
-                                pluralStringResource(R.plurals.overview_workspaces, view.workspaces.size, view.workspaces.size),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (inline) newTab()
-                IconButton(onClick = onShowList, modifier = Modifier.testTag("overview:as-list")) {
-                    Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.overview_as_list))
-                }
-                if (onClose != null) SheetCloseButton(onClose, tag = "overview:close")
-            }
-            if (!inline) Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) { newTab() }
-        }
-    }
-}
-
-/** The least width a header's title keeps beside New tab; below it New tab wraps to its own row. */
-internal val HEADER_TITLE_MIN = 96.dp
 
 /** The rows: a full-span header per workspace with All chosen, then its tabs in Herdr's tab order, up to two columns. */
 @Composable
@@ -275,12 +279,21 @@ private fun OverviewRows(
     pins: List<String>,
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
+    unseen: Set<String>,
+    currentTab: String?,
+    placed: Boolean,
+    onPlaced: () -> Unit,
     onPick: (OverviewCard) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = compactColumns(maxWidth.value, fontScale)
+        LaunchedEffect(sections.isNotEmpty(), columns) {
+            if (placed || sections.isEmpty()) return@LaunchedEffect
+            onPlaced()
+            overviewIndexOf(sections, currentTab, headers, columns)?.let { rows.scrollToItem(it) }
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = rows,
@@ -292,11 +305,24 @@ private fun OverviewRows(
             for (section in sections) {
                 if (headers) {
                     item(key = "ws:" + section.workspace.id, span = { GridItemSpan(maxLineSpan) }) {
-                        OverviewWorkspaceHeader(section, actions)
+                        OverviewWorkspaceHeader(section.workspace, section.suffix, section.cards.size, actions)
                     }
                 }
-                items(section.cards, key = { it.key }) { card ->
-                    OverviewRow(card, card.key in pins, monitored, actions, onPick)
+                val pairs = section.cards.chunked(columns)
+                items(pairs, key = { it.first().key }, span = { GridItemSpan(maxLineSpan) }) { pair ->
+                    Row(
+                        Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
+                    ) {
+                        for (card in pair) key(card.key) {
+                            OverviewRow(
+                                card, card.key in pins, monitored, actions, onPick,
+                                changed = card.row.changedIn(unseen),
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
+                        if (pair.size < columns) Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -308,24 +334,50 @@ private fun OverviewRows(
 internal fun workspaceName(workspace: Workspace, suffix: Int?): String =
     suffix?.let { stringResource(R.string.overview_ws_suffix, workspace.label, it) } ?: workspace.label
 
+/**
+ * A workspace's header: its name, `branch · N tabs` and the ⋮ workspace
+ * menu. In Rails (§2) [tabs] and [needsYou] are the full topology's, the
+ * Current pill leads when [current], and [spokenHeading] reads it all as one
+ * heading.
+ */
 @Composable
-private fun OverviewWorkspaceHeader(section: OverviewSection, actions: SwitcherActions) {
+private fun OverviewWorkspaceHeader(
+    workspace: Workspace,
+    suffix: Int?,
+    tabs: Int,
+    actions: SwitcherActions,
+    needsYou: Int = 0,
+    current: Boolean = false,
+    spokenHeading: Boolean = false,
+) {
     var menu by remember { mutableStateOf(false) }
-    val workspace = section.workspace
+    val name = workspaceName(workspace, suffix)
+    val count = pluralStringResource(R.plurals.overview_tabs, tabs, tabs)
+    val needs = if (needsYou > 0) stringResource(R.string.filter_needs_you, needsYou) else null
+    val currentSpoken = if (current) stringResource(R.string.overview_current_ws_spoken) else null
+    val heading = if (spokenHeading) {
+        val spoken = listOfNotNull(name, count, needs, currentSpoken).joinToString(", ")
+        Modifier.clearAndSetSemantics {
+            heading()
+            contentDescription = spoken
+        }
+    } else {
+        Modifier.semantics(mergeDescendants = true) { heading() }
+    }
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { heading() }) {
+        Column(Modifier.weight(1f).then(heading)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (current) CurrentPill()
+                Text(
+                    name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
-                workspaceName(workspace, section.suffix),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                listOfNotNull(
-                    workspace.branch?.takeIf { it.isNotBlank() },
-                    pluralStringResource(R.plurals.overview_tabs, section.cards.size, section.cards.size),
-                ).joinToString(" · "),
+                listOfNotNull(workspace.branch?.takeIf { it.isNotBlank() }, count, needs).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -365,6 +417,11 @@ private fun OverviewRow(
     monitored: (String) -> Boolean,
     actions: SwitcherActions,
     onPick: (OverviewCard) -> Unit,
+    /** The tab is marked changed (SN-2): the strip's dot on its status glyph and "changed" as its state. */
+    changed: Boolean,
+    /** Rails: the tile's place in its ribbon, spoken last (§4). */
+    position: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
@@ -385,15 +442,17 @@ private fun OverviewRow(
         where,
         panes,
         if (card.current) stringResource(R.string.overview_current_spoken) else null,
+        position,
     ).joinToString(", ")
     val openLabel = stringResource(if (card.split) R.string.overview_choose_pane else R.string.overview_open)
     val moreLabel = stringResource(R.string.more)
     val pinLabel = stringResource(if (pinned) R.string.unpin else R.string.pin)
     val renameLabel = stringResource(R.string.rename_tab)
     val closeLabel = stringResource(R.string.session_close_tab)
+    val changedLabel = stringResource(R.string.tab_changed)
 
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clip(shape)
@@ -403,9 +462,10 @@ private fun OverviewRow(
     ) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().fillMaxHeight()
                 .clearAndSetSemantics {
                     contentDescription = spoken
+                    if (changed) stateDescription = changedLabel
                     role = Role.Button
                     onClick(openLabel) { open(); true }
                     onLongClick(moreLabel) { menu = true; true }
@@ -426,16 +486,7 @@ private fun OverviewRow(
                 .padding(start = 12.dp, end = 48.dp, top = 10.dp, bottom = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (card.current) {
-                    Row(
-                        Modifier.clip(CircleShape).background(scheme.primary).padding(horizontal = 8.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(Icons.Default.Check, null, tint = scheme.onPrimary, modifier = Modifier.size(14.dp))
-                        Text(stringResource(R.string.overview_current), style = MaterialTheme.typography.labelMedium, color = scheme.onPrimary, maxLines = 1)
-                    }
-                }
+                if (card.current) CurrentPill()
                 if (zoomed != null) {
                     Text(zoomed, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1)
                 }
@@ -448,7 +499,12 @@ private fun OverviewRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (status != null) StatusGlyph(card.tab.status, 8.dp)
+                if (status != null) {
+                    StatusGlyph(card.tab.status, 8.dp, Modifier.unseenMark(changed, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
+                } else if (changed) {
+                    // NIT-2: no glyph for Unknown, so the mark sits on a bare box the glyph's size.
+                    Box(Modifier.size(8.dp).unseenMark(true, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
+                }
                 Text(
                     listOfNotNull(status, panes).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
@@ -482,6 +538,189 @@ private fun OverviewRow(
     }
 }
 
+/** The Current pill: a check and the word, never colour alone. */
+@Composable
+private fun CurrentPill() {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.clip(CircleShape).background(scheme.primary).padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Default.Check, null, tint = scheme.onPrimary, modifier = Modifier.size(14.dp))
+        Text(stringResource(R.string.overview_current), style = MaterialTheme.typography.labelMedium, color = scheme.onPrimary, maxLines = 1)
+    }
+}
+
+/**
+ * The Rails body: workspaces down, each a header over a
+ * ribbon of its tiles across, in Herdr's order. Scrolling either axis sends
+ * nothing to the host. Tiles take the §3 width and least height and grow
+ * past it, never clip, so heights may differ within a ribbon; the ribbon is
+ * as tall as its tallest tile laid out. The fit at font 2.0 is QA's to prove.
+ */
+@Composable
+private fun OverviewRails(
+    rails: List<Rail>,
+    scroll: RailsScroll,
+    narrowing: Boolean,
+    pins: List<String>,
+    monitored: (String) -> Boolean,
+    actions: SwitcherActions,
+    unseen: Set<String>,
+    onNewTab: (Workspace) -> Unit,
+    onPick: (OverviewCard) -> Unit,
+) {
+    val fontScale = LocalDensity.current.fontScale
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tileWidth = railTileWidth(maxWidth.value - 2 * OVERVIEW_PADDING_DP, fontScale).dp
+        val tileHeight = railTileHeight(fontScale).dp
+        val newTabWidth = maxOf(96.dp, tileWidth / 2)
+        LazyColumn(
+            state = scroll.outer,
+            contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp + bottom),
+            modifier = Modifier.fillMaxWidth().testTag("overview:rails"),
+        ) {
+            items(rails, key = { "ws:" + it.workspace.id }) { rail ->
+                val workspace = rail.workspace
+                Column(Modifier.fillMaxWidth()) {
+                    Box(Modifier.padding(horizontal = OVERVIEW_PADDING_DP.dp)) {
+                        OverviewWorkspaceHeader(workspace, rail.suffix, rail.tabs, actions, rail.needsYou, rail.current, spokenHeading = true)
+                    }
+                    when {
+                        rail.cards.isNotEmpty() -> LazyRow(
+                            state = scroll.ribbon(workspace.id),
+                            contentPadding = PaddingValues(horizontal = OVERVIEW_PADDING_DP.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("overview:rail:${workspace.id}"),
+                        ) {
+                            itemsIndexed(rail.cards, key = { _, card -> card.key }) { index, card ->
+                                OverviewRow(
+                                    card,
+                                    card.key in pins,
+                                    monitored,
+                                    actions,
+                                    onPick,
+                                    changed = card.row.changedIn(unseen),
+                                    position = stringResource(R.string.rails_position, index + 1, rail.cards.size),
+                                    modifier = Modifier.width(tileWidth).heightIn(min = tileHeight),
+                                )
+                            }
+                            if (!narrowing) {
+                                item(key = "new-tab") { NewTabTile(workspace, rail.suffix, newTabWidth, tileHeight, onNewTab) }
+                            }
+                        }
+                        // §8: a workspace Herdr reports with no tabs says so, never a blank ribbon.
+                        rail.tabs == 0 -> Row(
+                            Modifier.fillMaxWidth().padding(horizontal = OVERVIEW_PADDING_DP.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(OVERVIEW_GAP_DP.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.rails_no_tabs),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (!narrowing) NewTabTile(workspace, rail.suffix, newTabWidth, tileHeight, onNewTab)
+                        }
+                        // §7: emptied by narrowing, the rail stays and says so.
+                        else -> Box(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = OVERVIEW_PADDING_DP.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(
+                                stringResource(R.string.overview_none_match),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A ribbon's last tile (§6): New tab in this rail's workspace only. */
+@Composable
+private fun NewTabTile(workspace: Workspace, suffix: Int?, width: Dp, height: Dp, onNewTab: (Workspace) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(16.dp)
+    val spoken = stringResource(R.string.new_tab_in, workspaceName(workspace, suffix))
+    Column(
+        Modifier
+            .width(width)
+            .heightIn(min = height)
+            .clip(shape)
+            .background(scheme.surfaceContainerHigh)
+            .border(BorderStroke(1.dp, scheme.outlineVariant), shape)
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                role = Role.Button
+                onClick { onNewTab(workspace); true }
+            }
+            .clickable { onNewTab(workspace) }
+            .padding(8.dp)
+            .testTag("overview:rail:${workspace.id}:new-tab"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(Icons.Default.Add, null, tint = scheme.primary)
+        Text(stringResource(R.string.new_tab), style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
+    }
+}
+
+/**
+ * The Rails scroll: the outer list's state and one
+ * ribbon state per workspace id. SessionScreen holds it beside tabsScope,
+ * keyed by node and session only, so rotation, a sheet reopen, a view-mode
+ * round trip and live updates keep both axes; the axes never move each
+ * other. [placed] once the current tab was first put in view.
+ */
+@Stable
+class RailsScroll private constructor(
+    val outer: LazyListState,
+    placed: Boolean,
+    private val ribbons: HashMap<String, LazyListState>,
+) {
+    constructor() : this(LazyListState(), false, HashMap())
+
+    var placed by mutableStateOf(placed)
+
+    fun ribbon(workspace: String): LazyListState = ribbons.getOrPut(workspace) { LazyListState() }
+
+    /** Drops the ribbons of workspaces no longer in [workspaces]. */
+    fun keep(workspaces: Set<String>) {
+        ribbons.keys.retainAll(workspaces)
+    }
+
+    companion object {
+        val Saver: Saver<RailsScroll, Any> = listSaver(
+            save = { scroll ->
+                buildList {
+                    add(scroll.placed)
+                    add(scroll.outer.firstVisibleItemIndex)
+                    add(scroll.outer.firstVisibleItemScrollOffset)
+                    for ((id, ribbon) in scroll.ribbons) {
+                        add(id)
+                        add(ribbon.firstVisibleItemIndex)
+                        add(ribbon.firstVisibleItemScrollOffset)
+                    }
+                }
+            },
+            restore = { saved ->
+                val ribbons = HashMap<String, LazyListState>()
+                for (i in 3 until saved.size step 3) {
+                    ribbons[saved[i] as String] = LazyListState(saved[i + 1] as Int, saved[i + 2] as Int)
+                }
+                RailsScroll(LazyListState(saved[1] as Int, saved[2] as Int), saved[0] as Boolean, ribbons)
+            },
+        )
+    }
+}
+
 /**
  * The workspace selector chip: this host's workspaces, All first; choosing
  * one only filters. A [gone] choice reads as a closed workspace, not All.
@@ -495,7 +734,7 @@ internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen
     val spoken = stringResource(R.string.scope_button, name)
     BoxWithConstraints {
         val menuWidth = maxWidth
-        FilterChip(
+        MaterialFilterChip(
             selected = picked != null || gone,
             onClick = { open = true },
             label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -564,24 +803,15 @@ internal fun ScopeItem(name: String, detail: String, selected: Boolean, leading:
     )
 }
 
-/** A single-select status chip; Needs you and Working lead with their glyph, never colour alone. */
+/** Shared compact category pills; the selected state and full label remain accessible. */
 @Composable
-private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, maxLines = 1) },
-        leadingIcon = when {
-            glyph != null -> {
-                { StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = FilterChipDefaults.IconSize) }
-            }
-            selected -> {
-                { Icon(Icons.Filled.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
-            }
-            else -> null
-        },
-        modifier = Modifier.heightIn(min = 48.dp),
-    )
+private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, tag: String, onClick: () -> Unit) {
+    val color = glyph?.color() ?: MaterialTheme.colorScheme.primary
+    FilterChip(label, selected, color, tag, leading = when {
+        glyph != null -> ({ StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = 18.dp) })
+        selected -> ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) })
+        else -> null
+    }, tagPrefix = "overview", onClick = onClick)
 }
 
 @Composable
@@ -621,6 +851,24 @@ internal val GridIcon: ImageVector by lazy {
     ImageVector.Builder(name = "GridView", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .addPath(
             pathData = addPathNodes("M3,3v8h8V3H3zM13,3v8h8V3H13zM3,13v8h8v-8H3zM13,13v8h8v-8H3z"),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+        .build()
+}
+
+/**
+ * Show as workspace rails: three full-width rows of short tiles, one row per
+ * workspace, drawn as [GridIcon] is (a 24 dp path, no extended icons).
+ */
+internal val RailsIcon: ImageVector by lazy {
+    ImageVector.Builder(name = "Rails", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = addPathNodes(
+                "M3,4h8v4H3zM13,4h8v4H13z" +
+                    "M3,10h5v4H3zM10,10h4v4H10zM16,10h5v4H16z" +
+                    "M3,16h11v4H3zM16,16h5v4H16z",
+            ),
             pathFillType = PathFillType.NonZero,
             fill = SolidColor(Color.Black),
         )

@@ -655,7 +655,11 @@ impl Session {
     /// Deliver composer text to exactly the pane it names, as one paste and,
     /// when submitting, one Enter; never to the popup or the focused pane.
     /// A read-only request queued behind it is its receipt: the daemon
-    /// answers requests in order, so its response means the input was read.
+    /// handles input and requests in order, so its response means the input
+    /// was taken off the link, not that it reached the pane. The daemon drops
+    /// input without an error when the pane is gone, not on this client's
+    /// view or behind a popup, or when the pane's write fails, and still
+    /// answers the receipt.
     /// The target stays held from the paste until that answer (see
     /// [`hold`]). A request naming an agent instance first reads the pane's
     /// instance on the host, so this blocks: call it from a background thread.

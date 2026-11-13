@@ -46,6 +46,14 @@ fun ShellView.tabTitle(tabId: String): String {
     return lead?.let { paneTitle(it.id) } ?: "Tab ${tab.number}"
 }
 
+/**
+ * What the session header and the Tabs call the tab [paneId] is in
+ * ([tabTitle]), so a cue about the pane names the tab the user sees there;
+ * a pane not in view keeps its own [paneTitle].
+ */
+fun ShellView.paneTabTitle(paneId: String): String =
+    panes.firstOrNull { it.id == paneId }?.let { tabTitle(it.tab) } ?: paneTitle(paneId)
+
 /** Where a pane sits, "workspace › tab", to tell apart panes with equal titles. */
 fun ShellView.paneWhere(paneId: String): String {
     val pane = panes.firstOrNull { it.id == paneId } ?: return ""
@@ -54,10 +62,16 @@ fun ShellView.paneWhere(paneId: String): String {
     return listOfNotNull(workspace, tab).joinToString(" › ")
 }
 
-/** Whether another pane in the session carries the same title as [paneId]. */
-fun ShellView.titleCollides(paneId: String): Boolean {
-    val title = paneTitle(paneId)
-    return panes.any { it.id != paneId && paneTitle(it.id) == title }
+/**
+ * What the composer calls [paneId] in its placeholder, hint and notices: its tab as the header names
+ * it ([paneTabTitle]), whatever the harness titles its terminal; "workspace › tab" when a pane of
+ * another tab reads the same.
+ */
+fun ShellView.composerTitle(paneId: String): String {
+    val title = paneTabTitle(paneId)
+    val tab = panes.firstOrNull { it.id == paneId }?.tab
+    val collides = panes.any { it.id != paneId && it.tab != tab && paneTabTitle(it.id) == title }
+    return paneWhere(paneId).takeIf { collides && it.isNotEmpty() } ?: title
 }
 
 /**

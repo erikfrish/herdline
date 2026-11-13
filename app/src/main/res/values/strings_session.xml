@@ -21,13 +21,11 @@
     <!-- Wide layout: the same button shows or hides the sidebar, which is the switcher there; _open while it is shown. -->
     <string name="session_place_spoken_wide">%1$s, tab %2$d of %3$d in %4$s. Shows tabs</string>
     <string name="session_place_spoken_wide_open">%1$s, tab %2$d of %3$d in %4$s. Hides tabs</string>
+    <!-- Joins two spoken sentences of the place button; quoted to keep the space. -->
+    <string name="session_spoken_sentence_joiner">". "</string>
     <string name="other_tabs_changed">other tabs changed</string>
     <string name="other_tab_held">delivery not confirmed on another tab</string>
     <string name="session_panes">Panes</string>
-    <!-- FOBS1-R: Chat never comes back by itself, only on a tap. -->
-    <string name="session_chat_unreadable">Chat can\'t read this agent right now, so this tab shows Terminal. Tap Chat to try again.</string>
-    <!-- D3-5: no transcript of this agent kind has been read on this connection, so it is not a blip. %1$s is the agent's display name; the snackbar's action is Help. -->
-    <string name="session_chat_unreadable_host">Chat can\'t read %1$s on this host. It needs Herdr\'s session integration for it.</string>
     <!-- The strip under the header while the screen is what was saved (Collie row 4). %1$s is a clock time. -->
     <string name="outage_saved_at">Showing what was saved at %1$s</string>
     <string name="outage_reconnecting">Reconnecting…</string>

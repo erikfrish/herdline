@@ -1,0 +1,7 @@
+Herdline 0.6.35 (experimental) — Chat keyboard on scroll, Workspace rails in Tabs, OMP Steer receipt
+
+- Chat: dragging the Chat list by hand hides the keyboard once; the draft is kept. Code and unit tested, not device-verified.
+- Tabs: Settings › Layout › Tabs view offers Workspace rails: workspaces scroll down, and each workspace's tabs sit in one row that scrolls sideways. List stays the default. Code and unit tested, not device-verified.
+- Chat with OMP: a Steer typed into the pane is marked delivered only once OMP's session history holds it; until then it says it waits in OMP. Code and unit tested, not device-verified.
+
+Nothing above is verified by QA or on a device yet.

@@ -12,6 +12,7 @@ import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.core.TranscriptSteer
 import io.github.erikfrish.herdline.core.isChatAgent
+import java.text.Normalizer
 
 /** Appends beyond this many loaded entries drop the oldest; "Load older" brings them back. */
 const val MAX_LOADED_ENTRIES = 2000
@@ -67,22 +68,43 @@ internal fun sameSession(a: TranscriptIdentity, b: TranscriptIdentity): Boolean 
     a.paneId == b.paneId && a.agent == b.agent && a.kind == b.kind && a.path == b.path
 
 /**
- * P1: a send typed into the pane is Sent only once its session holds it.
- * [page] must be exactly [instance]'s session read on from [before] (the
- * history's end read before the text went) without starting over, and hold
- * a new user turn whose one text block is [text] byte for byte: no trimming
- * or line-end folding, as no runtime pins a canonical form. An older turn
- * with the same words is never it; a second identical turn someone else
- * typed after the tap cannot be told apart without a request id. The
- * pane's read receipt alone is never this.
+ * A pane send is confirmed only by a new user turn in the exact bound
+ * instance, past the pre-send history boundary. OMP's pinned editor folds
+ * pasted line ends/NFC/tabs and trims on submit; compare that expected form
+ * with the complete recorded text, never trim or loosely match the record.
+ * Other programs keep their exact-text contract. A receipt alone, a reset,
+ * a truncated block or an earlier identical message proves nothing.
  */
 internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, before: Long, text: String): Boolean {
     if (page.reset || page.identity != instance || text.isEmpty()) return false
+    val expected = if (instance.agent == "omp") ompSubmittedText(text) else text
+    if (expected.isEmpty()) return false
     return page.entries.any { entry ->
         entry.offset >= before && entry.kind == TranscriptKind.Message && entry.role == "user" &&
-            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.text == text
+            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.let { !it.truncated && it.text == expected } == true
     }
 }
+
+/** Native composer::clean, then OMP 6e48274 editor.ts:3899-3907 / :3996. */
+private fun ompSubmittedText(text: String): String = Normalizer.normalize(
+    text.replace("\r\n", "\n").replace('\r', '\n').filter { it == '\n' || it == '\t' || !it.isISOControl() },
+    Normalizer.Form.NFC,
+).replace("\t", "   ").trim { ch ->
+    // ECMAScript String.trim, not Kotlin's wider Unicode whitespace set.
+    ch in '\u0009'..'\u000d' || ch == ' ' || ch == '\u00a0' || ch == '\u1680' ||
+        ch in '\u2000'..'\u200a' || ch == '\u2028' || ch == '\u2029' || ch == '\u202f' ||
+        ch == '\u205f' || ch == '\u3000' || ch == '\uFEFF'
+}
+
+/**
+ * The baseline [ptyTurnLanded] reads on from: where [instance]'s history
+ * ends, from a Tail read [page] taken before the text went, or null when
+ * none was read or it is another session. A Tail page always says reset
+ * (its entries replace whatever chat showed, native `transcript.rs`), so
+ * only the identity decides here.
+ */
+internal fun historyEnd(page: TranscriptPage?, instance: TranscriptIdentity): Long? =
+    page?.takeIf { it.identity == instance }?.end
 
 /**
  * What chat says the supported agent in [pane] is doing, only while the

@@ -195,17 +195,23 @@ class TerminalView(context: Context) : View(context) {
 
     /**
      * Whether this view's grid is Herdr's: set while Terminal is on screen.
-     * Under Chat the view still measures and draws, but only its first grid
-     * goes to Herdr, so a pane bar, a local read or the keyboard there never
-     * resizes the shared panes, and the grid kept is the one Herdr was told.
-     * Set again, it fits the layout Terminal brings and reports that grid
-     * once, even an unchanged one.
+     * Under Chat the view still measures and draws, but only one grid goes
+     * to Herdr per visit, once [chatSettled] says Chat's layout is done
+     * ([GridTurn]): so a pane bar, a local read, the keyboard or the
+     * composer there never resizes the shared panes, and neither Terminal's
+     * grid nor a first layout still resolving sticks under Chat. Set again,
+     * it fits the layout Terminal brings and reports that grid once, even
+     * an unchanged one.
      */
     var sharesGrid = true
         set(value) {
             if (field == value) return
             field = value
-            if (!value) return
+            turn.show(value)
+            if (!value) {
+                reportChat()
+                return
+            }
             windowMoved = true
             owed = true
             post {
@@ -213,6 +219,39 @@ class TerminalView(context: Context) : View(context) {
                 windowMoved = false
             }
         }
+
+    /**
+     * Under Chat: its mode and pane resolved and the keyboard down, so the
+     * layout laid out now is Chat's own. Set it after [sharesGrid].
+     */
+    var chatSettled = false
+        set(value) {
+            if (field == value) return
+            field = value
+            turn.settled = value
+            reportChat()
+        }
+
+    /**
+     * The height of the session's column under its header, set as it is
+     * measured, before this view is laid out in it. Chat's one grid takes
+     * its rows: under Chat this view is only the space the composer leaves,
+     * which is not the pane's.
+     */
+    var chatRoomPx = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            turn.roomPx = value
+            reportChat()
+        }
+
+    private val turn = GridTurn()
+
+    /** Chat's one grid, once the layout under way is done; a report before then takes it instead. */
+    private fun reportChat() {
+        if (turn.chatDue()) post { if (turn.chatDue()) reportGrid(fit = true) }
+    }
 
     /** A Terminal return whose grid is still to be reported, changed or not. */
     private var owed = false
@@ -322,6 +361,7 @@ class TerminalView(context: Context) : View(context) {
     fun setTypefaces(faces: TerminalTypefaces) {
         if (faces == typefaces) return
         typefaces = faces
+        turn.fonts = true
         regular = faces.regular
         bold = faces.bold
         italic = faces.italic
@@ -377,15 +417,18 @@ class TerminalView(context: Context) : View(context) {
     /** Reports the grid; [fit] fits the view even if only chrome moved it, for a change to the grid's inputs. */
     private fun reportGrid(fit: Boolean = false) {
         if (width == 0 || height == 0 || cellWidth <= 0f) return
-        if (!sharesGrid && lastGrid[0] != 0) return
+        if (!turn.reports()) return
+        val chat = !turn.terminal
         val cols = max(1, floor(width / cellWidth).toInt())
-        val keep = keepsRows(keepRows, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
+        // Chat's one grid is its layout's own: no rows kept from the grid Terminal left.
+        val keep = !chat && keepsRows(keepRows, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
         // A new width or cell size is never chrome: keepsRows checks both.
-        val chrome = !fit && !windowMoved && keepsRows(true, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
-        val rows = gridRows(height, cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
+        val chrome = !chat && !fit && !windowMoved && keepsRows(true, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
+        val rows = gridRows(turn.heightPx(height), cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
         val grid = intArrayOf(cols, rows, cellWidth.toInt(), cellHeight.toInt())
-        if (!owed && grid.contentEquals(lastGrid)) return
+        if (!owed && !chat && grid.contentEquals(lastGrid)) return
         owed = false
+        turn.reported()
         lastGrid = grid
         listener?.onGrid(grid[0], grid[1], grid[2], grid[3])
     }

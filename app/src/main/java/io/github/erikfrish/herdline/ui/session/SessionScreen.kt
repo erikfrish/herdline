@@ -21,6 +21,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +81,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -111,6 +116,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.selection.selectableGroup
@@ -127,6 +135,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -154,7 +163,6 @@ import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessKey
-import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.data.SheetSection
 import io.github.erikfrish.herdline.data.SheetSections
 import io.github.erikfrish.herdline.data.TabsView
@@ -172,7 +180,7 @@ import io.github.erikfrish.herdline.service.MonitorKey
 import io.github.erikfrish.herdline.service.LockGate
 import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
-import io.github.erikfrish.herdline.ui.chat.ChatMemory
+import io.github.erikfrish.herdline.ui.chat.ChatMemories
 import io.github.erikfrish.herdline.ui.chat.ChatView
 import io.github.erikfrish.herdline.ui.chat.rememberHarnessRuntime
 import io.github.erikfrish.herdline.ui.chat.ChatType
@@ -181,7 +189,6 @@ import io.github.erikfrish.herdline.ui.LocalWindowClass
 import io.github.erikfrish.herdline.ui.sessionSidebar
 import io.github.erikfrish.herdline.ui.sideComposerWidthDp
 import io.github.erikfrish.herdline.ui.components.PasswordsDialog
-import io.github.erikfrish.herdline.ui.components.HelpDialog
 import io.github.erikfrish.herdline.ui.components.ConnectionGlyph
 import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.glass.GlassButton
@@ -224,9 +231,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.max
-import java.util.Locale
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
@@ -247,7 +255,8 @@ private val PlaceNarrow: Dp = 96.dp
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
-    data class NewTab(val workspaceId: String) : Prompt
+    /** [focus] false (a Rails New tab tile) creates the tab without moving Herdr's focus. */
+    data class NewTab(val workspaceId: String, val focus: Boolean = true) : Prompt
     data class RenameTab(val id: String, val label: String) : Prompt
     data class RenameWorkspace(val id: String, val label: String) : Prompt
     data class CloseTab(val id: String, val label: String) : Prompt
@@ -320,9 +329,20 @@ fun SessionScreen(
     val lastRead = remember { mutableStateMapOf<String, String>() }
     // A Terminal tab or workspace choice: the tab whose pane Herdr focuses next becomes the one read here.
     var pendingTab by remember { mutableStateOf<String?>(null) }
+    // An explicit Terminal from Chat on a pane the desktop isn't on (TerminalOpen.kt): Chat stays on that pane until
+    // Herdr's focus lands there. [terminalLate]: the one whose wait ran out; [terminalTitle]: its tab's name as the header says it,
+    // while it opens and if it couldn't; [terminalFailed]: the pane it couldn't open, said once with Try again.
+    var terminalOpening by remember(connection) { mutableStateOf<TerminalOpening?>(null) }
+    var terminalLate by remember { mutableStateOf<TerminalOpening?>(null) }
+    var terminalTitle by remember { mutableStateOf("") }
+    var terminalFailed by remember { mutableStateOf<String?>(null) }
+    // The user's choices on this screen (Chat, a pane, tab or workspace): a newer one cancels a pending Terminal.
+    var choices by remember { mutableIntStateOf(0) }
     /** Reads [pane] here. Nothing is asked of Herdr. */
     fun readHere(pane: String) {
         val shown = connection.view.value ?: return
+        choices++
+        terminalFailed = null
         readingPane = pane
         readingBoot = shown.boot
         pendingTab = null
@@ -361,6 +381,8 @@ fun SessionScreen(
     val node = connection.node
     // The Tabs overview's chosen workspace (TB1 §4): kept across closing the sheet, Grid ⇄ List and rotation.
     var tabsScope by rememberSaveable(node.id, node.session) { mutableStateOf<String?>(null) }
+    // Rails' two scroll axes (F2 §5), the same way: never keyed by the view, a status or the view mode.
+    val railsScroll = rememberSaveable(node.id, node.session, saver = RailsScroll.Saver) { RailsScroll() }
     // The node's colour label marks this session: the bar under the tabs, the
     // selected tab, and the terminal cursor. A chosen app accent overrides it.
     val accent = sessionAccent(settings.accent, node.color)
@@ -489,14 +511,17 @@ fun SessionScreen(
     }
     // Each pane read here keeps its own Chat scroll anchor and follow state (CT-1 §3).
     val chatState = rememberSaveableStateHolder()
-    // ...and its own loaded transcript, for this connection.
-    val chatMemory = remember(connection) { ChatMemory() }
+    // ...and its own loaded transcript, for this connection and daemon boot (C9: a new boot may reuse pane ids).
+    val chatMemory = remember(connection) { ChatMemories() }.at(view?.boot)
     val closed = readingClosed(reading, view)
-    /** Whether the selected supported agent's saved mode is Chat. */
-    fun chatFor(pane: String?): Boolean {
+    /**
+     * Whether the selected supported agent's saved mode is Chat, in [stored]. The screen draws from the
+     * collected choices; a choice made on it passes [modes]' current ones, so a mode set just before counts.
+     */
+    fun chatFor(pane: String?, stored: Map<ModeKey, ModeChoice> = modeChoices): Boolean {
         val shown = view ?: return false
         val agent = pane?.let { shown.agentIn(it)?.agent }
-        return pane != null && showsChat(modeChoices, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
+        return pane != null && showsChat(stored, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
     }
     val chatPane = reading?.pane?.takeIf { isChatAgent(view?.agentIn(it)?.agent) }
     // A choice holds for one daemon run and program: a restarted daemon or a new
@@ -506,28 +531,14 @@ fun SessionScreen(
         modes.forget(node.id, node.session, shown.boot) { pane -> shown.agentIn(pane)?.agent }
     }
     val chatWanted = chatFor(chatPane)
-    // While Chat can't read the agent's transcript, the tab shows Terminal; the stored choice stays
-    // (r3 §17.4). ChatView stays composed, hidden, so it keeps trying, but since FOBS1-R only a
-    // re-check that came good with a Chat tap pending on it ends the fallback: never by itself.
-    var chatUnreadable by remember(connection, chatPane) { mutableStateOf(false) }
-    // Why, when the core refused the session by type: these never clear by themselves.
-    var chatRefusal by remember(connection, chatPane) { mutableStateOf<TranscriptRefusal?>(null) }
-    // F-OBS1: a Chat tap on an unreadable pane waits here for its one re-check. Not keyed: the
-    // terminal's listener, made once, clears it on input, and the switch checks the pane itself.
-    var pendingChatTap by remember { mutableStateOf<PendingChatTap?>(null) }
+    // C9: the pane chosen here shows its saved or default mode, Chat included, whatever its reads say:
+    // a pane Chat cannot read stays in Chat on its own loading, empty or unavailable page, with Retry.
     // S5: the pane read in Chat closed. Chat says so and keeps the draft; it never falls back to the desktop.
     var chatShown by remember { mutableStateOf(false) }
-    LaunchedEffect(chatWanted, chatUnreadable, closed) { if (!closed) chatShown = chatWanted && !chatUnreadable }
-    val chatMode = if (closed) chatShown else chatWanted && !chatUnreadable
+    LaunchedEffect(chatWanted, closed) { if (!closed) chatShown = chatWanted }
+    val chatMode = if (closed) chatShown else chatWanted
     // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
-    // D3-5: the Herdr agent kinds whose transcript has loaded on this connection, kept as long as
-    // chatMemory. A kind never read here is most likely one the host has no session integration for.
-    val readKinds = remember(connection) { mutableSetOf<String>() }
-    val chatKind = chatPane?.let { view?.agentIn(it)?.agent }?.lowercase(Locale.ROOT)
-    val chatLoaded = chatPane?.let { chatMemory.of(it).history } != null
-    LaunchedEffect(chatKind, chatLoaded) { if (chatLoaded && chatKind != null) readKinds += chatKind }
-    var help by remember { mutableStateOf(false) }
     val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
     // What is on screen: the pane read here in Chat, the desktop's in Terminal.
     val focusedPane = if (chatMode) reading?.pane?.takeIf { !closed } else desktopPane
@@ -585,11 +596,11 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
-    // FOBS1-R2: a Chat tap never outlives the pane and tab it was made on.
-    LaunchedEffect(chatPane, tab?.id) { pendingChatTap = pendingAfterSwitch(pendingChatTap, chatPane, tab?.id) }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
+    // One changed set for the strip, the place button and the Tabs sheet's rows, whichever is on screen (SN-2).
+    val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     // Chat has no terminal keyboard: whichever way Chat comes on screen, raw keys and the IME go.
     LaunchedEffect(chatMode) {
@@ -602,40 +613,28 @@ fun SessionScreen(
     LaunchedEffect(composerText, composerHidden, rawKeys, chatMode, terminal) {
         terminal?.keepRows = composerText && !composerHidden && !(rawKeys && !chatMode)
     }
-    // S3: once per switch from Chat to Terminal while the desktop is on another pane; only its action moves the desktop.
-    // It uses the screen's existing notice slot (the snackbar) and goes when Chat returns or the two panes match.
-    var terminalNotice by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(chatMode, desktopPane, reading) {
-        if (chatMode || reading?.pane == desktopPane) terminalNotice = null
-    }
-    LaunchedEffect(terminalNotice) {
-        val pane = terminalNotice ?: return@LaunchedEffect
-        val shown = connection.view.value ?: return@LaunchedEffect
-        val desktop = desktopPane ?: return@LaunchedEffect
-        val result = snackbar.showSnackbar(
-            context.getString(R.string.terminal_shows_desktop, shown.paneTitle(desktop), shown.paneTitle(pane)),
-            actionLabel = context.getString(R.string.focus_reading_shared, shown.paneTitle(pane)),
-            withDismissAction = true,
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed && connection.view.value?.panes?.any { it.id == pane } == true) connection.focusPane(pane)
-        terminalNotice = null
-    }
+
+    /** Whether Chat is on screen as a choice made now finds it: [modes]' current choices, not the last collected ones. */
+    fun chatNow(): Boolean = if (closed) chatShown else chatFor(chatPane, modes.choices.value)
+
+    /** Whether a choice of [pane] made now moves the desktop: [choiceMovesDesktop] on the modes as they stand. */
+    fun movesDesktop(pane: String, fromChat: Boolean = chatNow()): Boolean = choiceMovesDesktop(fromChat, chatFor(pane, modes.choices.value))
 
     /**
      * A choice of [pane] on this phone: it is read here. From Terminal it also moves the desktop to it;
      * from Chat ([fromChat]) only a pane that shows Terminal does ([choiceMovesDesktop]).
      */
-    fun choosePane(pane: String, fromChat: Boolean = chatMode) {
+    fun choosePane(pane: String, fromChat: Boolean = chatNow()) {
         readHere(pane)
-        if (choiceMovesDesktop(fromChat, chatFor(pane))) connection.focusPane(pane)
+        if (movesDesktop(pane, fromChat)) connection.focusPane(pane)
     }
 
     /** A choice of [tab]: from Chat, a pane read in Chat is read here only; otherwise Herdr focuses the tab and picks its pane. */
     fun chooseTab(tab: String) {
+        choices++
         val shown = view ?: return
         val pane = paneForTab(shown, tab, lastRead)
-        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
+        if (pane != null && !movesDesktop(pane)) {
             readHere(pane)
         } else {
             pendingTab = tab
@@ -645,9 +644,10 @@ fun SessionScreen(
 
     /** A choice of [workspace]: as [chooseTab] for its active tab. */
     fun chooseWorkspace(workspace: String) {
+        choices++
         val shown = view ?: return
         val pane = paneForWorkspace(shown, workspace, lastRead)
-        if (pane != null && !choiceMovesDesktop(chatMode, chatFor(pane))) {
+        if (pane != null && !movesDesktop(pane)) {
             readHere(pane)
         } else {
             pendingTab = shown.workspaces.firstOrNull { it.id == workspace }?.activeTab
@@ -668,86 +668,114 @@ fun SessionScreen(
         if (linked != null && focusPane != null) choosePane(focusPane, fromChat = true)
     }
     fun showChat(on: Boolean, pane: String? = chatPane) {
-        // A Terminal choice answers a Chat tap still waiting for its re-check.
-        if (!on) pendingChatTap = null
         pane ?: return
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
         modes.set(ModeKey(node.id, node.session, pane), ModeChoice(boot, agent, on))
-        // S3: Terminal shows the desktop's pane; say so when it isn't the one read here.
-        terminalNotice = if (!on && desktopPane != pane) pane else null
     }
 
-    /**
-     * Says why Chat fell back to Terminal: a typed refusal its own words, a kind
-     * read here before the passing text, a kind never read here what the host
-     * lacks, with Help. That one has an action, so it is held Long, not Indefinite.
-     */
-    suspend fun sayChatUnreadable(refusal: TranscriptRefusal?, duration: SnackbarDuration) {
-        val notice = unreadableNotice(refusal, chatAgentName, chatKind != null && chatKind in readKinds)
-        val text = context.getString(notice.words.res, *notice.words.args.toTypedArray())
-        if (!notice.help) {
-            snackbar.showSnackbar(text, duration = duration)
-        } else if (snackbar.showSnackbar(text, actionLabel = context.getString(R.string.help), duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-            help = true
+    /** Terminal on screen for [pane], the desktop's already; with [keyboard], its keyboard too. */
+    fun showTerminal(pane: String?, keyboard: Boolean) {
+        showChat(false, pane)
+        if (keyboard) {
+            rawKeys = true
+            terminal?.showKeyboard()
         }
     }
 
-    val chatPaneNow by rememberUpdatedState(chatPane)
-    val tabNow by rememberUpdatedState(tab?.id)
+    // What an explicit Terminal from Chat reads: the live view, the terminal's frame (which can lag the view), this screen's choices.
+    val frameFocus = frame?.panes?.firstOrNull { it.focused }?.id
+    fun terminalSeen(timedOut: Boolean) = TerminalSeen(
+        node.id,
+        node.session,
+        live = state is Connection.State.Connected,
+        view = view,
+        frameFocus = frameFocus,
+        reading = reading?.pane,
+        chatShown = chatMode,
+        choice = choices,
+        timedOut = timedOut,
+    )
+
     /**
-     * Reads unreadable [pane] once while Chat does not poll it. Only a good
-     * read clears the fallback, and only a tap still pending switches.
+     * Every explicit Terminal: the mode switch, Chat's Open Terminal and answer and error rows, the
+     * composer's Open Terminal and terminal keyboard, the harness card. Terminal shows the desktop's pane,
+     * so from Chat it shows at once only when the live view and the frame are both on the pane read here;
+     * otherwise Chat stays on it until they are ([TerminalOpening], [terminalStart]), asking Herdr to focus
+     * it only when the view is elsewhere. From Terminal, as before.
      */
-    suspend fun recheckChat(pane: String, tap: Boolean) {
-        val kept = chatMemory.of(pane)
-        when (kept.recheck(connection, pane)) {
-            true -> {
-                chatRefusal = null
-                if (fallbackEnds(readable = true, pendingChatTap, chatPaneNow, tabNow)) {
-                    chatUnreadable = false
-                    showChat(true, pane)
-                }
-                pendingChatTap = null
+    fun openTerminal(keyboard: Boolean = false) {
+        terminalFailed = null
+        val pane = chatPane
+        if (!chatMode || pane == null) {
+            terminalOpening = null
+            showTerminal(pane, keyboard)
+            return
+        }
+        // A repeat tap while it opens asks nothing more.
+        if (terminalOpening?.let { it.pane == pane && it.choice == choices } == true) return
+        terminalTitle = view?.paneTabTitle(pane).orEmpty()
+        val opening = view?.boot?.let { TerminalOpening(node.id, node.session, it, pane, choices, keyboard) }
+        when (opening?.let { terminalStart(it, terminalSeen(timedOut = false)) } ?: TerminalStart.Failed) {
+            TerminalStart.Immediate -> {
+                terminalOpening = null
+                showTerminal(pane, keyboard)
             }
-            false -> {
-                chatRefusal = kept.read.refusal
-                // FOBS1-R2: a tap that found this re-check in flight waited on it, so its
-                // failure answers that tap too, once; a later good read never switches for it.
-                if (tapAnswered(tap, pendingChatTap, pane, tabNow)) {
-                    pendingChatTap = null
-                    sayChatUnreadable(chatRefusal, SnackbarDuration.Short)
-                }
+            TerminalStart.AwaitOnly -> terminalOpening = opening
+            TerminalStart.FocusAndAwait -> {
+                terminalOpening = opening
+                connection.focusPane(pane)
             }
-            // A re-check is in flight already: its answer serves this ask too.
-            null -> Unit
+            TerminalStart.Failed -> {
+                terminalOpening = null
+                terminalFailed = pane
+            }
         }
     }
-    // A new agent in the pane (its kind or Herdr name), never a status tick, asks for one re-check.
-    val chatAgentKey = chatPane?.let { view?.agentIn(it) }?.let { it.agent to it.name }
-    var seenAgentKey by remember(connection, chatPane) { mutableStateOf(chatAgentKey) }
-    LaunchedEffect(chatAgentKey) {
-        val changed = chatAgentKey != seenAgentKey
-        seenAgentKey = chatAgentKey
-        val pane = chatPane ?: return@LaunchedEffect
-        if (chatRecheck(tap = false, agentChanged = changed, unreadable = chatUnreadable, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
-            recheckChat(pane, tap = false)
+
+    // While it opens Chat says so, for at most TERMINAL_LANDING_MS; the cue goes with the request.
+    LaunchedEffect(terminalOpening) {
+        val opening = terminalOpening ?: return@LaunchedEffect
+        launch {
+            delay(TERMINAL_LANDING_MS)
+            terminalLate = opening
         }
+        snackbar.showSnackbar(context.getString(R.string.terminal_opening, terminalTitle), duration = SnackbarDuration.Indefinite)
+    }
+    // It lands only when the view and the terminal's frame both put the desktop on its pane, on its run.
+    LaunchedEffect(terminalOpening, terminalLate, state, view, frameFocus, reading, chatMode, choices) {
+        val opening = terminalOpening ?: return@LaunchedEffect
+        when (terminalLanding(opening, terminalSeen(timedOut = terminalLate === opening))) {
+            TerminalLanding.Waiting -> Unit
+            TerminalLanding.Cancelled -> terminalOpening = null
+            TerminalLanding.Failed -> {
+                terminalOpening = null
+                terminalFailed = opening.pane
+            }
+            TerminalLanding.Landed -> {
+                terminalOpening = null
+                showTerminal(opening.pane, opening.keyboard)
+            }
+        }
+    }
+    // Couldn't: Chat stays on the pane with its draft; Try again asks once more, for that pane only.
+    LaunchedEffect(terminalFailed) {
+        val pane = terminalFailed ?: return@LaunchedEffect
+        val result = snackbar.showSnackbar(
+            context.getString(R.string.terminal_open_failed, terminalTitle),
+            actionLabel = context.getString(R.string.try_again),
+            withDismissAction = true,
+            duration = SnackbarDuration.Long,
+        )
+        terminalFailed = null
+        if (result == SnackbarResult.ActionPerformed && chatPane == pane) openTerminal()
     }
 
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
+        if (chat) choices++
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
         when {
-            chat && chatUnreadable -> {
-                // FOBS1-R3: a tap always reads once, even under a typed refusal; a read that
-                // fails again says why once, in recheckChat (tapAnswered).
-                val pane = chatPane
-                if (pane != null && chatRecheck(tap = true, agentChanged = false, unreadable = true, lasting = chatRefusal != null, polling = chatWanted) == ChatRecheck.Read) {
-                    pendingChatTap = PendingChatTap(pane, tab?.id)
-                    scope.launch { recheckChat(pane, tap = true) }
-                }
-            }
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
@@ -757,7 +785,8 @@ fun SessionScreen(
                 // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
                 harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
             }
-            else -> showChat(chat)
+            chat -> showChat(true)
+            else -> openTerminal()
         }
     }
 
@@ -814,6 +843,7 @@ fun SessionScreen(
             modifier = modifier,
             here = focusedPane,
             reading = chatMode,
+            unseen = unseenTabs,
         )
     }
 
@@ -879,7 +909,8 @@ fun SessionScreen(
                         ?: armedWindow(pane?.id, suggestion, shown.rows)
                 }
                 val hiddenRows = if (focusApplies) outputWindow?.hidden ?: 0 else 0
-                SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding()) {
+                // The terminal hears the column's height under the header as it is measured, before its own layout.
+                SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
                     val headerColor = accent.copy(alpha = if (dark) 0.14f else 0.1f).compositeOver(chromeColor)
                     Box {
@@ -948,8 +979,6 @@ fun SessionScreen(
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
-                                // One changed set for the strip and the place button, whichever is on screen.
-                                val unseenTabs = rememberUnseenTabs(tabs, tab?.id, node.id, node.session)
                                 // Only where it has room: a short window's merged row, and the wide layout.
                                 val tabRow = @Composable {
                                     if (tabs.isNotEmpty()) {
@@ -993,17 +1022,41 @@ fun SessionScreen(
                                 }
                                 val placeSpoken = buildString {
                                     append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
-                                    // S2: the desktop's pane, said whole even where the line cuts it.
-                                    desktopOther?.let {
-                                        append(". ")
-                                        append(stringResource(R.string.chat_desktop_elsewhere_spoken, focusedPane?.let { p -> view?.paneTitle(p) }.orEmpty(), view?.paneTitle(it).orEmpty()))
+                                    // S2: the desktop's pane, said whole even where the line cuts it; both named by their tab, as the header shows them.
+                                    desktopOther?.let { other ->
+                                        append(stringResource(R.string.session_spoken_sentence_joiner))
+                                        // SN-1: a desktop tab named as the one read here is told apart by where it is.
+                                        val desktopAt = view?.panes?.firstOrNull { it.id == other }
+                                        val read = tab?.let { view?.spokenTab(it.id, node.title) }
+                                        val there = desktopAt?.let { view?.spokenTab(it.tab, node.title) }
+                                        val spoken = if (read != null && there != null) {
+                                            desktopSpoken(read, there, sameWorkspace = desktopAt?.workspace == tab?.workspace)
+                                        } else {
+                                            DesktopSpoken.Named(view?.paneTabTitle(other).orEmpty())
+                                        }
+                                        append(
+                                            when (spoken) {
+                                                is DesktopSpoken.Named -> stringResource(R.string.chat_desktop_elsewhere_spoken, tabName, spoken.desktop)
+                                                DesktopSpoken.SameTab -> stringResource(R.string.chat_desktop_elsewhere_spoken_same_tab, tabName)
+                                                is DesktopSpoken.Numbered ->
+                                                    stringResource(R.string.chat_desktop_elsewhere_spoken_numbered, tabName, spoken.desktop, spoken.number, spoken.count)
+                                                is DesktopSpoken.InWorkspace ->
+                                                    stringResource(R.string.chat_desktop_elsewhere_spoken_workspace, tabName, spoken.desktop, spoken.workspace)
+                                                is DesktopSpoken.InWorkspaceNumbered ->
+                                                    stringResource(
+                                                        R.string.chat_desktop_elsewhere_spoken_workspace_numbered,
+                                                        tabName, spoken.desktop, spoken.number, spoken.count,
+                                                    )
+                                            },
+                                        )
                                     }
                                 }
                                 val placeMarks = listOfNotNull(
                                     stringResource(R.string.other_tabs_changed).takeIf { changedElsewhere },
                                     stringResource(R.string.other_tab_held).takeIf { heldElsewhere },
                                 ).joinToString(", ").ifEmpty { null }
-                                val desktopText = desktopOther?.let { stringResource(R.string.chat_desktop_elsewhere, view?.paneTitle(it).orEmpty()) }
+                                // The desktop's tab name alone: the monitor glyph beside it says "desktop".
+                                val desktopText = desktopOther?.let { view?.paneTabTitle(it) }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
@@ -1105,7 +1158,14 @@ fun SessionScreen(
                         // listener never feeds a closed one.
                         key(connection) {
                             // The window's size, the keyboard as it animates and the pane bar: what may resize the grid.
-                            val windowKey = sessionWindowKey(windowPx, WindowInsets.ime.getBottom(LocalDensity.current), orientation, paneBar)
+                            val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                            val windowKey = sessionWindowKey(windowPx, imeBottom, orientation, paneBar)
+                            // Chat's own layout: the pane read and its composer's pane resolved, the keyboard
+                            // all the way down and no sheet holding the grid. Its grid goes once from that one.
+                            val chatSettled = chatMode && view != null && !imeVisible && imeBottom == 0 && !switcherOpen &&
+                                (composerHidden || composerPane != null)
+                            // Until the session's view is in, the mode is not known: neither mode's grid goes yet.
+                            val terminalShown = view != null && !chatMode
                             // A screen-reader user who skips the strip still hears that rows are hidden.
                             val windowDescription = if (hiddenRows > 0) pluralStringResource(R.plurals.output_focus_strip_description, hiddenRows, hiddenRows) else null
                             AndroidView(
@@ -1130,7 +1190,7 @@ fun SessionScreen(
                                             onLatchCleared = { latched = it },
                                             // A tap on a pane in the mirror is a choice on this phone: read there, as Terminal focuses it.
                                             onPaneTapped = { readHere(it) },
-                                            onUsed = { typedOnce = true; pendingChatTap = null },
+                                            onUsed = { typedOnce = true },
                                         )
                                         terminal = view
                                     }
@@ -1138,8 +1198,9 @@ fun SessionScreen(
                                 update = { view ->
                                     view.latchedMeta = latched
                                     view.windowKey = windowKey
-                                    // Terminal on screen owns Herdr's grid; hidden under Chat the view sends only its first one.
-                                    view.sharesGrid = !chatMode
+                                    // Terminal on screen owns Herdr's grid; under Chat one grid goes per visit, Chat's settled one.
+                                    view.sharesGrid = terminalShown
+                                    view.chatSettled = chatSettled
                                     view.scheme = scheme
                                     view.frame = frame
                                     view.showWindow(hiddenRows, if (focusApplies) stripPx else 0)
@@ -1246,31 +1307,18 @@ fun SessionScreen(
                                     connection,
                                     shown,
                                     accent,
-                                    onTerminal = { showChat(false) },
+                                    onTerminal = { openTerminal() },
                                     // While it fades out it is a picture of the old view: TalkBack reaches
                                     // Terminal beneath at once, but a tap in the 100 ms fade-out is dropped
                                     // here and never reaches Terminal (a logged limit, review M2a SHOULD 1).
-                                    modifier = (if (chatUnreadable) Modifier.size(0.dp) else Modifier).then(
-                                        if (leaving) {
-                                            Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                }
+                                    modifier = if (leaving) {
+                                        Modifier.clearAndSetSemantics {}.pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
                                             }
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                                    onUnavailable = { unreadable, refusal ->
-                                        if (unreadable && (!chatUnreadable || (refusal != null && refusal != chatRefusal))) {
-                                            // The fallback happens on its own, so it
-                                            // stays long enough to be read (lab.4 G5).
-                                            scope.launch { sayChatUnreadable(refusal, SnackbarDuration.Long) }
                                         }
-                                        chatRefusal = refusal
-                                        // Readable again only drops the refusal, so the next Chat tap reads;
-                                        // the fallback ends on that tap's own re-check (FOBS1-R2).
-                                        if (unreadable) chatUnreadable = true
+                                    } else {
+                                        Modifier
                                     },
                                     // The tab's readable title (Titles.kt), never a pane ID.
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
@@ -1373,7 +1421,7 @@ fun SessionScreen(
                                     keyboardUp = imeVisible,
                                     live = state is Connection.State.Connected,
                                     agentHere = card.pane?.let { view?.agentIn(it) } != null,
-                                    onTerminal = { harnessCard = null; showChat(false) },
+                                    onTerminal = { harnessCard = null; openTerminal() },
                                     onClose = { harnessCard = null },
                                     runtime = rememberHarnessRuntime(connection, chatMemory, card.pane),
                                 )
@@ -1404,8 +1452,8 @@ fun SessionScreen(
                                     accent = accent,
                                     background = chromeColor,
                                     onLatch = { latched = it; terminal?.latchedMeta = it },
-                                    onKey = { code, repeat -> pendingChatTap = null; terminal?.sendKey(code, 0, 0, repeat) },
-                                    onText = { typedOnce = true; pendingChatTap = null; connection.text(focusedPane, it) },
+                                    onKey = { code, repeat -> terminal?.sendKey(code, 0, 0, repeat) },
+                                    onText = { typedOnce = true; connection.text(focusedPane, it) },
                                     compact = LocalCompact.current,
                                     rowsOf = extraKeyRowCount(
                                         landscape = orientation == Configuration.ORIENTATION_LANDSCAPE,
@@ -1465,15 +1513,11 @@ fun SessionScreen(
                             onHasText = { composerText = it },
                             onAttachments = { composerFiles = it },
                             onFieldFocus = { composerField = it },
-                            onTerminalKeyboard = {
-                                showChat(false)
-                                rawKeys = true
-                                terminal?.showKeyboard()
-                            },
+                            onTerminalKeyboard = { openTerminal(keyboard = true) },
                             onOpenTerminal = {
-                                // From Chat, Terminal shows the desktop as it is (S3 offers the move); from Terminal, as before.
+                                // From Terminal, as before; from Chat, openTerminal brings the desktop to the pane read here first.
                                 if (!chatMode) composerPane?.takeIf { it != focusedPane }?.let(connection::focusPane)
-                                showChat(false)
+                                openTerminal()
                             },
                             // In Chat the pane read here, also once it has closed (S5): the draft never drifts to the desktop's.
                             reading = reading?.pane?.takeIf { chatMode },
@@ -1507,63 +1551,122 @@ fun SessionScreen(
         }
         if (switcherOpen && !wide) {
             val switcherSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            // U-1 #7: the header's Close slides the sheet out as a swipe does; Back, the scrim and swipe-down are unchanged.
-            val closeSwitcher: () -> Unit = {
-                scope.launch { switcherSheet.hide() }.invokeOnCompletion { if (!switcherSheet.isVisible) switcherOpen = false }
+            // INVIS-SHEET-2: once shown, the sheet at Hidden is dropped, whoever moved it there. A hide cut short leaves it up;
+            // an anchor change (the rotation) then snaps it to Hidden through trySnapTo, the one M3 path that calls no
+            // onDismissRequest: kept composed, its invisible scrim ate the next tap. The opening Hidden is skipped.
+            LaunchedEffect(switcherSheet) {
+                snapshotFlow { switcherSheet.currentValue }.dropWhile { it == SheetValue.Hidden }.first { it == SheetValue.Hidden }
+                switcherOpen = false
             }
+            // U-1 #7: the header's Close slides the sheet out as a swipe does; Back, the scrim and swipe-down are unchanged.
+            // A hide that ran to its end drops the sheet even if M3 left it short of the Hidden anchor (INVIS-SHEET).
+            // A hide cut short while the sheet shows keeps it; the effect above drops it once it reaches Hidden.
+            // In this opening's scope: a sheet dropped mid-hide (Back) cancels it, so it cannot close the next opening.
+            val sheetScope = rememberCoroutineScope()
+            val closeSwitcher: () -> Unit = {
+                sheetScope.launch { switcherSheet.hide() }.invokeOnCompletion { cause ->
+                    if (cause == null || !switcherSheet.isVisible) switcherOpen = false
+                }
+            }
+            // INVIS-4: the upward velocity a swipe leaves over, the sheet staying Expanded, ends here. Unconsumed, it reached
+            // the sheet's connection (outside this content), whose onPostFling settles with it on a velocity-aware spring
+            // from the anchor: the spring overshoots above Expanded, the one move that took the sheet above its anchor
+            // and left it animating, so its drag took the next Close down. Upward deltas still reach the sheet (clamped
+            // there) and the list's overscroll; downward deltas and flings (swipe-to-close) and a sheet moving to Hidden
+            // pass as before.
+            val sheetFlingStop = remember(switcherSheet) {
+                object : NestedScrollConnection {
+                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+                        if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Velocity(0f, available.y) else Velocity.Zero
+                }
+            }
+            // INVIS-4b: the header, search and chips above the lists, and the drag handle row, are swiped through nested
+            // scroll too: a scrollable that moves nothing, inside sheetFlingStop. Their drags no longer reach the sheet's
+            // own draggable, whose drag stop settles with the same velocity; downward they move and dismiss the sheet as before.
+            val sheetContent = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop)
+                .scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
+            val dismissLabel = stringResource(androidx.compose.material3.R.string.m3c_bottom_sheet_dismiss_description)
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },
                 sheetState = switcherSheet,
                 containerColor = menuColor(),
                 modifier = Modifier.testTag("switcher:sheet"),
+                // INVIS-5 (T2'): M3's handle slot is only as wide as the pill (about 32 x 48 dp); the rest of the top strip
+                // went to the sheet's draggable, whose drag stop settles upward past Expanded. Our handle row is full width
+                // inside sheetContent, so the whole strip drags through sheetFlingStop like the header.
+                dragHandle = null,
             ) {
-                // TB1: the overview, or today's list; either one's header switches to the other.
-                val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
-                when (settings.tabsView) {
-                    TabsView.TwoColumns -> TabsOverview(
-                        node = node,
-                        host = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title,
-                        view = view,
-                        state = state,
-                        pins = pins[node.id].orEmpty(),
-                        monitored = { MonitorKey(node.id, it) in monitored },
-                        query = query,
-                        onQuery = { query = it },
-                        filter = filter,
-                        onFilter = { filter = it },
-                        filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
-                        scope = tabsScope,
-                        onScope = { tabsScope = it },
-                        actions = actions,
-                        onShowList = { showAs(TabsView.List) },
-                        modifier = Modifier.fillMaxWidth(),
-                        here = focusedPane,
-                        reading = chatMode,
-                        onClose = closeSwitcher,
-                    )
-                    TabsView.List -> Switcher(
-                        node = node,
-                        view = view,
-                        state = state,
-                        accent = accent,
-                        order = settings.targetOrder,
-                        pins = pins[node.id].orEmpty(),
-                        recent = recent[node.id].orEmpty(),
-                        monitored = { MonitorKey(node.id, it) in monitored },
-                        query = query,
-                        onQuery = { query = it },
-                        filter = filter,
-                        onFilter = { filter = it },
-                        actions = actions,
-                        modifier = Modifier.fillMaxWidth(),
-                        here = focusedPane,
-                        reading = chatMode,
-                        onShowGrid = { showAs(TabsView.TwoColumns) },
-                        appliesStartFilter = false,
-                        scope = tabsScope,
-                        onScope = { tabsScope = it },
-                        onClose = closeSwitcher,
-                    )
+                Column(sheetContent) {
+                    // M3's slot wrapper (ModalBottomSheet L383-393), on the pill only, as before: a tap on Expanded dismisses,
+                    // on Hidden shows; TalkBack gets "Drag handle" and the dismiss action with M3's label. Its expand and
+                    // collapse actions need a PartiallyExpanded state, which skipPartiallyExpanded never has.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                        Box(
+                            Modifier
+                                .clickable {
+                                    if (switcherSheet.currentValue == SheetValue.Expanded) closeSwitcher()
+                                    else sheetScope.launch { switcherSheet.show() }
+                                }
+                                .semantics(mergeDescendants = true) { dismiss(dismissLabel) { closeSwitcher(); true } },
+                        ) {
+                            BottomSheetDefaults.DragHandle()
+                        }
+                    }
+                    // TB1: the overview, or today's list; either one's header switches to the other.
+                    val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
+                    // One qualified host label for the one header in every view (H1).
+                    val sheetHost = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
+                    when (settings.tabsView) {
+                        TabsView.TwoColumns, TabsView.Rails -> TabsOverview(
+                            host = sheetHost,
+                            view = view,
+                            state = state,
+                            pins = pins[node.id].orEmpty(),
+                            monitored = { MonitorKey(node.id, it) in monitored },
+                            query = query,
+                            onQuery = { query = it },
+                            filter = filter,
+                            onFilter = { filter = it },
+                            filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
+                            scope = tabsScope,
+                            onScope = { tabsScope = it },
+                            actions = actions,
+                            onShowList = { showAs(TabsView.List) },
+                            onShowRails = { showAs(TabsView.Rails) },
+                            modifier = Modifier.fillMaxWidth(),
+                            here = focusedPane,
+                            reading = chatMode,
+                            unseen = unseenTabs,
+                            onClose = closeSwitcher,
+                            rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
+                            onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
+                        )
+                        TabsView.List -> Switcher(
+                            node = node,
+                            view = view,
+                            state = state,
+                            accent = accent,
+                            order = settings.targetOrder,
+                            pins = pins[node.id].orEmpty(),
+                            recent = recent[node.id].orEmpty(),
+                            monitored = { MonitorKey(node.id, it) in monitored },
+                            query = query,
+                            onQuery = { query = it },
+                            filter = filter,
+                            onFilter = { filter = it },
+                            actions = actions,
+                            modifier = Modifier.fillMaxWidth(),
+                            here = focusedPane,
+                            reading = chatMode,
+                            unseen = unseenTabs,
+                            onShowGrid = { showAs(TabsView.TwoColumns) },
+                            appliesStartFilter = false,
+                            scope = tabsScope,
+                            onScope = { tabsScope = it },
+                            onClose = closeSwitcher,
+                            host = sheetHost,
+                        )
+                    }
                 }
             }
         }
@@ -1588,7 +1691,6 @@ fun SessionScreen(
             onDismiss = { pinFor = null },
         )
     }
-    if (help) HelpDialog(onDismiss = { help = false })
     askPasswords?.let { hops ->
         PasswordsDialog(
             hops = hops,
@@ -2234,9 +2336,10 @@ private data class OutageWords(val title: String, val detail: String, val retryi
  * the content, or, with a [side] width, into a column of that width at the
  * bottom right, beside the content, which then keeps the full height (J2).
  * One tree for both, so the terminal view and the draft survive the switch.
+ * [onRoom] hears the height under the header, before the content is measured.
  */
 @Composable
-private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable () -> Unit) {
+private fun SessionColumn(side: Dp?, modifier: Modifier, onRoom: (Int) -> Unit, content: @Composable () -> Unit) {
     Layout(content, modifier) { measurables, constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight
@@ -2252,6 +2355,7 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, content: @Composable ()
             }
         }
         val left = max(0, height - top)
+        onRoom(left)
         val sidePx = side?.roundToPx()?.coerceAtMost(width)
         val composerWidth = sidePx ?: width
         var composerHeight = 0

@@ -66,6 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.erikfrish.herdline.R
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.ui.platform.LocalDensity
@@ -167,6 +168,15 @@ private fun stacksUpOverDown(rows: List<List<ExtraKey>>): Boolean {
 
 private val KeyShape = RoundedCornerShape(12.dp) // = shapes.medium
 
+/**
+ * A cap label's style, drawn and measured alike. It sets the whole style, so
+ * the theme's body line height (24 sp, 126 px at font scale 2.0) is not
+ * inherited: under it the text box outgrew a 36 dp cap, the glyph sat low in
+ * that taller line and lost its bottom, while the fit rule ([fitsFull])
+ * measured the font's own line and passed it.
+ */
+private val KeyLabelStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+
 /** Every row a hand can thumb without peeking, whatever the cap shrinks to. */
 private val KeyRowHeight = 48.dp
 
@@ -207,6 +217,26 @@ internal fun capLayout(panel: Float, count: Int): CapLayout {
 }
 
 private const val TightKeyGap = 2f
+
+/**
+ * [layout] in the whole pixels it is drawn in at [density] px per dp. Each cap
+ * and gap is laid out as a whole pixel, rounded on its own, so seven caps of
+ * 138.5 px each became 139 px and the row ran 3 px past its viewport, cutting
+ * the last cap's edge. A row that does not scroll keeps its [count] caps and
+ * [gaps] gaps within [room] px: the caps give up their fraction, and where a
+ * 48 dp cap leaves no more, the gaps give up a pixel. A cap is never narrower
+ * than 48 dp.
+ */
+internal fun snapped(layout: CapLayout, density: Float, room: Int, count: Int, gaps: Int = count - 1): CapLayout {
+    // A hair of slack, so a width that is whole in pixels is not lost to float rounding.
+    fun whole(dp: Float) = floor(dp * density + 0.001f).toInt()
+    var gap = (layout.gap * density).roundToInt()
+    val min = whole(48f)
+    if (layout.scrolls) return CapLayout(whole(layout.width).coerceAtLeast(min) / density, gap / density, scrolls = true)
+    val cap = minOf(whole(layout.width), (room - gap * gaps) / count).coerceAtLeast(min)
+    if (gaps > 0 && cap * count + gap * gaps > room) gap = ((room - cap * count) / gaps).coerceAtLeast(0)
+    return CapLayout(cap / density, gap / density, scrolls = false)
+}
 
 /** The default grid's columns: its fourteen keys in two rows of seven. */
 private const val GridColumns = 7
@@ -265,10 +295,14 @@ internal fun besideLayout(panel: Float, extras: Int): CapLayout? {
  */
 internal fun extraRowsAbove(extras: List<ExtraKey>): List<List<ExtraKey>> = extras.chunked(GridColumns)
 
-/** How TalkBack reads the caps whose glyphs name nothing. */
-private val Spoken: Map<String, String> = mapOf(
-    "←" to "Arrow left", "↓" to "Arrow down", "↑" to "Arrow up", "→" to "Arrow right",
-    "⏎" to "Enter", "⌫" to "Backspace",
+/**
+ * How TalkBack reads the caps whose glyphs name nothing, by label, so every
+ * cap with the glyph reads the same; any other cap reads its label as printed.
+ */
+internal val SpokenNames: Map<String, Int> = mapOf(
+    "←" to R.string.extra_key_spoken_left, "↓" to R.string.extra_key_spoken_down,
+    "↑" to R.string.extra_key_spoken_up, "→" to R.string.extra_key_spoken_right,
+    "⏎" to R.string.extra_key_spoken_enter, "⌫" to R.string.extra_key_spoken_backspace,
 )
 
 /** Keys that change form together, so a pair never reads "⇱ … End". */
@@ -365,12 +399,13 @@ fun ExtraKeysRow(
             label = "keyFill",
         )
         val labelColor = if (active) onAccent else onSurface
+        val spoken = SpokenNames[key.label]?.let { stringResource(it) } ?: key.label
         val hit = Modifier
             .width(width)
             .height(KeyRowHeight)
             .testTag("key:${key.label}")
             .semantics {
-                contentDescription = Spoken[key.label] ?: key.label
+                contentDescription = spoken
                 if (key is ExtraKey.Modifier) {
                     role = Role.Switch
                     toggleableState = ToggleableState(active)
@@ -464,12 +499,11 @@ fun ExtraKeysRow(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                // The measured form ([labelFor]); the clip is only a guard, a short form always fits.
+                // The measured form ([labelFor]) in the measured style; the clip is only a guard.
                 Text(
                     shown,
-                    fontFamily = FontFamily.Monospace,
+                    style = KeyLabelStyle,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 14.sp,
                     color = labelColor,
                     maxLines = 1,
                     softWrap = false,
@@ -506,18 +540,24 @@ fun ExtraKeysRow(
         // TalkBack reads the grid row by row first, then the added keys.
         val gridOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 0f }
         val extrasOrder = Modifier.semantics { isTraversalGroup = true; traversalIndex = 1f; contentDescription = extrasLabel }
-        val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)
-        val grid = capLayout(panelWidth, GridColumns)
+        // The rows' width in whole pixels, inside the padding as it is drawn.
+        val room = constraints.maxWidth - 2 * with(density) { KeyRowPad.roundToPx() }
+        val row: (Int) -> CapLayout = { count -> snapped(capLayout(panelWidth, count), density.density, room, count) }
+        val beside = if (panel.extras.isEmpty()) null else besideLayout(panelWidth, panel.extras.size)?.let { layout ->
+            val columns = GridColumns + (panel.extras.size + 1) / 2
+            snapped(layout, density.density, room - with(density) { ClusterGap.roundToPx() }, columns, gaps = columns - 2)
+        }
+        val grid = row(GridColumns)
         // Every cap this panel draws, and the narrowest of them: one form per group panel-wide.
         val widths = when {
-            panel.extras.isEmpty() -> panel.grid.map { capLayout(panelWidth, it.size).width }
+            panel.extras.isEmpty() -> panel.grid.map { row(it.size).width }
             beside != null -> listOf(beside.width)
             else -> listOf(grid.width)
         }
         val capHeight = if (compact) 36.dp else 40.dp
         val short = remember(panel, widths, capHeight, density) {
             // Bold, the latched weight, so a latch never flips the form.
-            val style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            val style = KeyLabelStyle.copy(fontWeight = FontWeight.Bold)
             val capWidthPx = with(density) { (widths.minOrNull() ?: 0f).dp.toPx() }
             val capHeightPx = with(density) { capHeight.toPx() }
             val inset = with(density) { 1.dp.toPx() }
@@ -532,7 +572,7 @@ fun ExtraKeysRow(
                 // Caps fill the row when it holds few keys; a row too wide for
                 // the screen (a long custom set) scrolls sideways, never taller,
                 // and no cap is ever narrower than a 48 dp target ([capLayout]).
-                for (row in panel.grid) capRow(row, capLayout(panelWidth, row.size), Modifier.fillMaxWidth(), shown)
+                for (line in panel.grid) capRow(line, row(line.size), Modifier.fillMaxWidth(), shown)
             }
             beside != null -> Row(padded, verticalAlignment = Alignment.CenterVertically) {
                 // The grid, an 8 dp separator, then the added keys two rows high, column by column.

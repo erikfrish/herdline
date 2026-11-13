@@ -11,7 +11,8 @@
     <string name="tabs_view">标签页视图</string>
     <string name="tabs_view_list">列表</string>
     <string name="tabs_view_columns">双列</string>
-    <string name="tabs_view_help">标签页面板以列表打开，或以紧凑的双列列表打开。字号过大、双列难以阅读时，会退回单列。</string>
+    <string name="tabs_view_rails">工作区横排</string>
+    <string name="tabs_view_help">标签页面板以列表、紧凑的双列列表，或每个工作区一行可横向滚动的标签页打开。字号过大、双列难以阅读时，会退回单列。</string>
     <string name="terminal_suggestions_help">关闭时，终端只向键盘请求普通按键。开启时，键盘会提供词语和更正；选中的更正会替换窗格中对应的词。</string>
     <string name="settings_back_returns">返回键回到 %1$s</string>
     <string name="section_composer">输入框</string>
@@ -45,7 +46,7 @@
     <string name="terminal_suggestions">终端中的键盘建议</string>
     <string name="section_extra_keys">额外按键</string>
     <string name="show_extra_keys">显示额外按键行</string>
-    <string name="extra_key_up">将 %1$s 左移</string>
+    <string name="extra_key_up">将 %1$s 前移一位</string>
     <string name="extra_keys_help">已启用的按键按此顺序显示。箭头把按键前移一位。保持前 14 个按键的默认顺序即可保留默认布局；新增的按键显示在其旁边或上方。</string>
     <plurals name="extra_keys_layout_default">
         <item quantity="other">布局：默认网格 + %d 个额外按键</item>
@@ -139,7 +140,7 @@
     <string name="terminal_pane_no_room_portrait">%1$s。竖屏时可以显示</string>
     <string name="composer_steer">引导</string>
     <string name="steer_help">代理正在工作，所以空闲前无法发送。“引导”会粘贴你的文字，然后按一次 Enter；如果回合恰好在此之前结束，这段文字会开始一个新回合。</string>
-    <string name="steer_help_endpoint">“引导”会把你的文字和图片排队交给正在运行的代理，与它工作时的“发送”相同。如果回合已经结束，OMP 会让它们等到下一个回合，你可以撤回；Codex 会拒绝，不会发送任何内容。</string>
+    <string name="steer_help_endpoint">“引导”会把你的文字和图片排队交给正在运行的代理，与它工作时的“发送”相同。如果回合已经结束，能保留引导的代理会让它们等到下一个回合，你可以撤回；其他代理会拒绝，不会发送任何内容。</string>
     <string name="steer_pending">正在引导：粘贴你的文字，然后按一次 Enter…</string>
     <string name="steer_left">引导在按 Enter 前停止：你的文字在窗格的输入框中</string>
     <string name="agent_idle">代理空闲：请使用发送</string>

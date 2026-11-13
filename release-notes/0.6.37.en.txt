@@ -1,0 +1,9 @@
+Herdline 0.6.37 (experimental) — compact Agents header, OMP steer receipt, one Tabs header, Workspace rails
+
+- Agents: the Agents screen uses a compact header, without the large empty space above the title. Code and unit tested, not device-verified.
+- Chat: a steer typed into a working OMP pane says it waits in OMP and is marked delivered once OMP's history holds it. Code and unit tested, not device-verified.
+- Tabs: the Tabs sheet has one header in List, Two columns and Workspace rails, with New tab always on its own row at the right, above Search. Code and unit tested, not device-verified.
+- Chat: dragging the Chat list by hand hides the keyboard once; the draft is kept. Code and unit tested, not device-verified.
+- Tabs: Settings › Layout › Tabs view offers Workspace rails: workspaces scroll down, and each workspace's tabs sit in one row that scrolls sideways. List stays the default. Code and unit tested, not device-verified.
+
+Nothing above is verified by QA or on a device yet.

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +68,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -147,6 +149,8 @@ fun Switcher(
     filter: SwitcherFilter,
     onFilter: (SwitcherFilter) -> Unit,
     actions: SwitcherActions,
+    /** The tabs marked changed since the user looked ([rememberUnseenTabs]); required, as the strip's, so no caller forgets it. */
+    unseen: Set<String>,
     modifier: Modifier = Modifier,
     /** The pane on screen, marked "here": in Chat the one read here (CT-1); Herdr's focus by default. */
     here: String? = view?.focusedPane,
@@ -170,6 +174,8 @@ fun Switcher(
     onScope: ((String?) -> Unit)? = null,
     /** The phone sheet's visible way out (U-1 #7); null in the sidebar, which has no sheet to close. */
     onClose: (() -> Unit)? = null,
+    /** The phone sheet's host label, qualified like Two columns' (hostLabels); the sidebar's host line names [node]. */
+    host: String = node.title,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }
     val scoped = remember(groups, scope, onScope != null, view != null) {
@@ -260,7 +266,7 @@ fun Switcher(
     val hereRow = if (reading && here == null) null else hereKey(view, here)
     val desktopRow = hereKey(view, view?.focusedPane).takeIf { reading && it != hereRow }
     val spoken = mapOf(hereRow to readingHere, desktopRow to onDesktop).filterKeys { reading && it != null }
-    val style = RowStyle(accent, pins.toSet(), monitored, actions, hereRow, held, view, spoken)
+    val style = RowStyle(accent, pins.toSet(), monitored, actions, hereRow, held, view, unseen, spoken)
     // Split tabs start expanded when they hold the focused or a needs-you pane.
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
     fun startsOpen(tab: SwitchTarget.TabRow): Boolean {
@@ -273,12 +279,15 @@ fun Switcher(
     Box(modifier) {
         LazyColumn(
             Modifier.fillMaxWidth().testTag("switcher"),
-            contentPadding = PaddingValues(horizontal = 12.dp),
+            contentPadding = PaddingValues(horizontal = TABS_SHEET_INSET),
         ) {
-            // New tab · Two columns · Close in the host line, in both orders; in the sheet that header is sticky,
-            // so New tab stays in view. Before its label would be cut it takes its own row, right-aligned.
+            // The phone sheet has the toggle and Close: it takes the Tabs sheet's one header (H1). The sidebar keeps
+            // its host line with New tab, which takes its own row, right-aligned, before its label would be cut.
             val header: @Composable () -> Unit = {
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (onClose != null && onShowGrid != null) {
+                    val toggle = TabsViewToggle(GridIcon, stringResource(R.string.overview_as_columns), "switcher:as-columns", onShowGrid)
+                    TabsHeader(host, view, state, scoped.chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "switcher")
+                } else BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val listWidth = maxWidth
                     val live = state is Connection.State.Connected
                     val icons = (if (onShowGrid != null) 58.dp else 0.dp) + (if (onClose != null) 58.dp else 0.dp)
@@ -308,7 +317,9 @@ fun Switcher(
             } else {
                 item(key = "header") { header() }
             }
-            item(key = "search") { SearchField(query, onQuery, stringResource(R.string.switcher_search)) }
+            item(key = "search") {
+                SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = if (onClose != null && onShowGrid != null) tabsSearchMinHeight() else 44.dp)
+            }
             if (onScope != null && view != null) {
                 item(key = "scope") { Box(Modifier.padding(vertical = 4.dp)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) } }
             }
@@ -425,6 +436,9 @@ fun Switcher(
 /** How often observed "changed …" times are refreshed. */
 private const val TIME_TICK_MS = 30_000L
 
+/** The least width the sidebar host line's title keeps beside New tab; below it New tab wraps to its own row. */
+private val HEADER_TITLE_MIN = 96.dp
+
 /** The pane whose agent's observed status time a row shows: its own, or a one-pane tab's single agent's. */
 private fun SwitchTarget.agentPane(): String? = when (this) {
     is SwitchTarget.PaneRow -> agent?.pane
@@ -460,6 +474,8 @@ private class RowStyle(
     val hereKey: String?,
     private val held: Set<String>,
     private val view: ShellView?,
+    /** The tabs marked changed ([rememberUnseenTabs]): their rows carry the strip's dot and "changed" (SN-2). */
+    val unseen: Set<String>,
     /** A row's spoken state by key (CT-1: "Reading here", "On desktop"); empty outside Chat. */
     val spoken: Map<String?, String> = emptyMap(),
 ) {
@@ -469,6 +485,9 @@ private class RowStyle(
         is SwitchTarget.PaneRow -> target.pane.id.takeIf { it in held }
     }
 }
+
+/** Whether [this] row carries the changed mark (SN-2): a tab row whose tab is in [unseen]; a pane row never does. */
+internal fun SwitchTarget.changedIn(unseen: Set<String>): Boolean = this is SwitchTarget.TabRow && tab.id in unseen
 
 /** The key of the [pane]'s row, or its tab's when the tab has one pane; with no pane, the focused tab's. */
 private fun hereKey(view: ShellView?, pane: String?): String? {
@@ -574,31 +593,45 @@ internal fun SearchField(query: String, onQuery: (String) -> Unit, placeholder: 
     }
 }
 
-/** A compact chip, one choice of a group: 30 dp drawn, 48 dp tall to touch. */
+/** A shared compact chip: 32 dp drawn at normal font size, at least 48 dp to touch. */
 @Composable
-private fun FilterChip(label: String, selected: Boolean, color: Color, tag: String, onClick: () -> Unit) {
+internal fun FilterChip(
+    label: String,
+    selected: Boolean,
+    color: Color,
+    tag: String,
+    leading: (@Composable () -> Unit)? = null,
+    tagPrefix: String = "switcher",
+    onClick: () -> Unit,
+) {
     val fill by animateColorAsState(if (selected) color.copy(alpha = 0.22f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), label = "chip")
+    val pillHeight = (32f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     Box(
         Modifier
-            .heightIn(min = 48.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .testTag("switcher:filter:$tag"),
+            .testTag("$tagPrefix:filter:$tag"),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            modifier = Modifier
-                .height(30.dp)
+        Row(
+            Modifier.heightIn(min = pillHeight)
                 .clip(CircleShape)
                 .background(fill)
                 .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                .padding(horizontal = 12.dp)
-                .wrapContentHeight(Alignment.CenterVertically),
-        )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            leading?.invoke()
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
 
@@ -606,7 +639,8 @@ private fun FilterChip(label: String, selected: Boolean, color: Color, tag: Stri
 @Composable
 private fun OrderSelector(order: TargetOrder, accent: Color, onPick: (TargetOrder) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp).selectableGroup().testTag("switcher:order"),
+        Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())
+            .selectableGroup().testTag("switcher:order"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -614,6 +648,8 @@ private fun OrderSelector(order: TargetOrder, accent: Color, onPick: (TargetOrde
             stringResource(R.string.order_label),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp),
         )
         FilterChip(stringResource(R.string.order_workspace), order == TargetOrder.Workspace, accent, "order:workspace") { onPick(TargetOrder.Workspace) }
@@ -834,6 +870,10 @@ private fun TargetRow(
     // A selected row's glyph takes the row's content colour; the word carries the state.
     val glyphTint = if (here) LocalContentColor.current else Color.Unspecified
     val held = style.heldPane(target)
+    val changed = if (target.changedIn(style.unseen)) stringResource(R.string.tab_changed) else null
+    // The sheet and the sidebar are both drawn on menuColor; a changed row is never the "here" one, so its row is clear.
+    val halo = menuColor()
+    val markColor = MaterialTheme.colorScheme.onSurface
     when (target) {
         is SwitchTarget.TabRow -> Entry(
             selected = here,
@@ -841,9 +881,10 @@ private fun TargetRow(
             indent = 14.dp,
             minHeight = 56.dp,
             onClick = { style.actions.go(target) },
-            leading = { StatusGlyph(target.tab.status, 10.dp, slot = 24.dp, tint = glyphTint) },
+            leading = { StatusGlyph(target.tab.status, 10.dp, Modifier.unseenMark(changed != null, 10.dp, halo, markColor), slot = 24.dp, tint = glyphTint) },
             status = target.tab.status,
             held = held,
+            changed = changed,
             extraState = style.spoken[target.key],
             title = target.tabTitle(),
             titleStyle = MaterialTheme.typography.bodyLarge,
@@ -940,6 +981,8 @@ private fun Entry(
     pinned: Boolean = false,
     status: AgentStatus = AgentStatus.Unknown,
     held: String? = null,
+    /** "changed" when the tab is marked (SN-2), spoken first. */
+    changed: String? = null,
     /** A state of the caller's, spoken before the held one. */
     extraState: String? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -950,7 +993,7 @@ private fun Entry(
     var open by remember { mutableStateOf(false) }
     val compact = LocalCompact.current
     // Set on the row, which merges its children, so it carries the glyph's status too.
-    val state = listOfNotNull(extraState, if (held != null) heldDescription(status) else null).joinToString(", ").takeIf { it.isNotEmpty() }
+    val state = changedFirst(changed, listOf(extraState, if (held != null) heldDescription(status) else null))
     Box(Modifier.padding(start = indent)) {
         Row(
             Modifier

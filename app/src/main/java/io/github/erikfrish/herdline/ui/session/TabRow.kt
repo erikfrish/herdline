@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
@@ -96,12 +97,14 @@ internal fun ShellView.heldPaneOf(tab: String, held: Set<String>): String? =
  * statuses [before] to [now]: a tab that was marked stays so, and a tab whose
  * glyph [bumps] (a real change into Blocked or Done) is marked, until it is
  * the [selectedId] tab, which never is. A tab with no earlier status is not
- * marked: nothing was seen before, so nothing changed since.
+ * marked: nothing was seen before, so nothing changed since. When that is the
+ * set [unseen] already holds, it is [unseen] itself, so a frame that changes
+ * no mark hands the same instance down and the rows that take it can skip.
  */
 internal fun nextUnseen(before: Map<String, AgentStatus>, now: List<Tab>, selectedId: String?, unseen: Set<String>): Set<String> =
     now.mapNotNullTo(HashSet()) { t ->
         t.id.takeIf { it != selectedId && (it in unseen || bumps(before[it], t.status)) }
-    }
+    }.let { if (it == unseen) unseen else it }
 
 /** What [rememberUnseenTabs] last applied: each tab's status and the marked tabs. */
 internal class SeenTabs(
@@ -127,8 +130,8 @@ internal val SeenTabsSaver: Saver<SeenTabs, Any> = Saver(
 /**
  * The tabs marked changed since the user looked ([nextUnseen]), tracked over
  * recompositions and saved state, per [node] and [session]. Kept by the
- * session header, so the strip and the place button show one and the same
- * set, whichever of them is on screen.
+ * session screen, so the strip, the place button and the Tabs sheet's rows
+ * (SN-2) show one and the same set, whichever of them is on screen.
  */
 @Composable
 internal fun rememberUnseenTabs(tabs: List<Tab>, selectedId: String?, node: String, session: String): Set<String> {
@@ -147,6 +150,32 @@ internal fun DrawScope.drawUnseenMark(center: Offset, halo: Color, color: Color)
     drawCircle(halo, radius = 4.dp.toPx(), center = center)
     drawCircle(color, radius = 2.5.dp.toPx(), center = center)
 }
+
+/**
+ * Where the changed mark sits on a status glyph [glyph] px wide, centred in
+ * a [box] (StatusGlyph's slot): the glyph's top end corner, so a 24 dp row
+ * slot puts it on the glyph, not on the slot's corner.
+ */
+internal fun unseenCorner(box: Size, glyph: Float, rtl: Boolean): Offset {
+    val half = glyph / 2
+    return Offset(box.width / 2 + if (rtl) -half else half, box.height / 2 - half)
+}
+
+/**
+ * The changed mark ([drawUnseenMark]) over a status glyph [glyph] wide, on
+ * its corner ([unseenCorner]), when [marked]. Drawn over the glyph and
+ * outside its bump's layer, so it holds still and overflows into the gap:
+ * the row keeps its bounds. [halo] is the colour the row is drawn on.
+ */
+internal fun Modifier.unseenMark(marked: Boolean, glyph: Dp, halo: Color, color: Color): Modifier =
+    if (!marked) this else drawWithContent {
+        drawContent()
+        drawUnseenMark(unseenCorner(size, glyph.toPx(), layoutDirection == LayoutDirection.Rtl), halo, color)
+    }
+
+/** A row's spoken state (SN-2): [changed], when there is one, first, then the [others] in order; null when it has none. */
+internal fun changedFirst(changed: String?, others: List<String?>): String? =
+    (listOf(changed) + others).filterNotNull().joinToString(", ").takeIf { it.isNotEmpty() }
 
 /** A tab's Rename and Close tab, from a long press on it in the strip or on the session's place button. */
 @Composable
@@ -281,19 +310,10 @@ internal fun TabRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             if (t.status != AgentStatus.Unknown) {
-                                StatusGlyph(
-                                    t.status,
-                                    10.dp,
-                                    // Drawn over the glyph and outside the bump's layer, so it holds still and
-                                    // overflows into the gap and padding: the tab keeps its bounds.
-                                    Modifier.drawWithContent {
-                                        drawContent()
-                                        if (mark) {
-                                            val corner = Offset(if (layoutDirection == LayoutDirection.Ltr) size.width else 0f, 0f)
-                                            drawUnseenMark(corner, haloColor, markColor)
-                                        }
-                                    },
-                                )
+                                StatusGlyph(t.status, 10.dp, Modifier.unseenMark(mark, 10.dp, haloColor, markColor))
+                            } else if (mark) {
+                                // NIT-2: a marked tab whose agent fell to Unknown keeps the mark, on a bare glyph-sized box.
+                                Box(Modifier.size(10.dp).unseenMark(true, 10.dp, haloColor, markColor))
                             }
                             Text(
                                 tabRowTitle(title(t)),

@@ -89,4 +89,78 @@ class ChatTargetTest {
         assertFalse(choiceMovesDesktop(chatShown = true, chosenShowsChat = true))
         assertTrue(choiceMovesDesktop(chatShown = true, chosenShowsChat = false))
     }
+
+    // SN-1, the m126 fixture: t5 and t6 both "l6-read" in "lab", t4 differing only in case, u1 "l6-read" in "other".
+    private fun sameNames(): ShellView {
+        val labels = listOf("a", "b", "c", "L6-read", "l6-read", "l6-read")
+        val tabs = labels.mapIndexed { i, l -> Tab("t${i + 1}", "w1", i + 1, l, false, false, AgentStatus.Idle) } +
+            Tab("u1", "w2", 1, "l6-read", false, false, AgentStatus.Idle)
+        return ShellView(
+            revision = 1,
+            boot = "b1",
+            focusedWorkspace = "w1",
+            focusedTab = "t5",
+            focusedPane = "p5",
+            updateAvailable = null,
+            workspaces = listOf(
+                Workspace("w1", 1, "lab", null, null, null, null, false, "t5", true, AgentStatus.Idle),
+                Workspace("w2", 2, "other", null, null, null, null, false, "u1", false, AgentStatus.Idle),
+            ),
+            tabs = tabs,
+            panes = tabs.map { Pane("p-" + it.id, it.workspace, it.id, null, null, it.id == "t5") },
+            agents = emptyList(),
+        )
+    }
+
+    private fun ShellView.spoken(read: String, desktop: String): DesktopSpoken {
+        val readTab = spokenTab(read, "node")!!
+        val desktopTab = spokenTab(desktop, "node")!!
+        val sameWorkspace = tabs.first { it.id == read }.workspace == tabs.first { it.id == desktop }.workspace
+        return desktopSpoken(readTab, desktopTab, sameWorkspace)
+    }
+
+    @Test
+    fun aDesktopTabNamedAsTheOneReadHereIsSaidByItsPlaceInTheWorkspace() {
+        // Acceptance 1: reading t6, the desktop on t5 is "l6-read, tab 5 of 6", not "l6-read" again.
+        assertEquals(DesktopSpoken.Numbered("l6-read", 5, 6), sameNames().spoken("t6", "t5"))
+    }
+
+    @Test
+    fun aDesktopOnAnotherPaneOfTheTabReadHereIsSaidAsThisTab() {
+        assertEquals(DesktopSpoken.SameTab, sameNames().spoken("t6", "t6"))
+    }
+
+    @Test
+    fun aDesktopTabNamedAsTheOneReadHereInAnotherWorkspaceIsSaidByThatWorkspace() {
+        assertEquals(DesktopSpoken.InWorkspace("l6-read", "other"), sameNames().spoken("t6", "u1"))
+        // And back: reading u1, the desktop on t6 is in "lab".
+        assertEquals(DesktopSpoken.InWorkspace("l6-read", "lab"), sameNames().spoken("u1", "t6"))
+    }
+
+    @Test
+    fun aDesktopTabWithAnotherNameIsSaidByNameEvenWhenOnlyItsCaseDiffers() {
+        assertEquals(DesktopSpoken.Named("c"), sameNames().spoken("t6", "t3"))
+        // The displayed text differs, so it is no collision.
+        assertEquals(DesktopSpoken.Named("L6-read"), sameNames().spoken("t6", "t4"))
+    }
+
+    @Test
+    fun aWorkspaceWithNoReadableLabelIsSaidAsTheHeaderSaysIt() {
+        val view = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { if (it.id == "w2") it.copy(label = " ") else it }) }
+        assertEquals(DesktopSpoken.InWorkspace("l6-read", "node"), view.spoken("t6", "u1"))
+    }
+
+    @Test
+    fun aDesktopWorkspaceSaidAsTheOneReadHereIsSaidByItsPlace() {
+        // SHOULD-1, acceptance 5: both workspaces "ws", reading t6, the desktop on u1 is "in workspace 2 of 2".
+        val sameLabel = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { it.copy(label = "ws") }) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), sameLabel.spoken("t6", "u1"))
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 1, 2), sameLabel.spoken("u1", "t6"))
+        // Both unreadable: both said as the node's title, so numbered too.
+        val unreadable = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { it.copy(label = " ") }) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), unreadable.spoken("t6", "u1"))
+        // The place is by Workspace.number, not list order.
+        val reordered = sameLabel.let { v -> v.copy(workspaces = v.workspaces.reversed()) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), reordered.spoken("t6", "u1"))
+    }
 }

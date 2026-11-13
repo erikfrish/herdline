@@ -173,26 +173,20 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                     .then(if (blockedText != null) Modifier.semantics { stateDescription = blockedText } else Modifier),
             )
         },
-        // Save again within thumb reach (M8); the keyboard covers it, the header's stays.
-        bottomBar = {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (blockedText != null) {
-                    Text(
-                        blockedText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .testTag("save:blocked")
-                            .semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-                GlassButton(
-                    stringResource(R.string.save),
-                    onClick = ::save,
-                    primary = true,
-                    enabled = valid,
-                    icon = Icons.Default.Check,
-                    modifier = Modifier.fillMaxWidth().testTag("save:bottom"),
+        // One Save, in the top bar, so the keyboard never covers it. While Save is off, the reason
+        // is said here above the navigation bar, so a disabled Save never stands alone; a valid form
+        // draws no bar.
+        bottomBar = blockedText?.let { reason ->
+            @Composable {
+                Text(
+                    reason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag("save:blocked")
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
         },
@@ -202,9 +196,9 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                 .fillMaxSize()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                // Scaffold's bottom padding is the Save bar's measured height,
-                // nav bar inset included; 16 dp more so the last field ends
-                // fully above it at scroll end, not flush under its edge.
+                // Scaffold's bottom padding is the blocked reason's measured height
+                // when Save is off, else the nav bar inset; 16 dp more so the last
+                // field ends fully above it at scroll end, not flush under its edge.
                 .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 16.dp),
         ) {
             Group {

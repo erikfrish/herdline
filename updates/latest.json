@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10069,
-    "versionName": "0.6.34",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.34/herdline-0.6.34.apk",
-    "sha256": "8b5dc2a25c8a47ce142e6feac4daae78f8c5ac5a6cb0fbcdb2df78ed955dfa7a",
-    "size": 24932499,
+    "versionCode": 10098,
+    "versionName": "0.6.63",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.63/herdline-0.6.63.apk",
+    "sha256": "fe8a8b9afb25cbc43c7f935fe711e8746cdd6ae1f2253aa2bb20af5be44904e7",
+    "size": 25018835,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "QA-tested on an Android emulator with a mock model in place of a real one. Not every feature was tested."
+      "reason": "Partly checked on an Android emulator with mock providers. Phone and full harness support are not verified."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.34 (Experimental): an experimental build. Most changes since 0.6.22 are in the code but not yet verified on a device.\n\nMain changes:\n- OpenCode: Send, Queue, Withdraw and Steer go to OpenCode's own running server. Questions, forms and permission requests are shown whole and answered in Chat. Files go with the prompt, up to 10 files, 20 MiB each.\n- Kilo: text sends, Steer, Withdraw of this app's own steers, files, questions and permissions through the Kilo daemon's server.\n- OpenCode and Kilo: Chat uses only a server started inside the pane's own process tree and refuses a server started in another pane. Without one, More › What works here says so with the reason, and Send is refused: nothing is sent and the draft stays.\n- OMP and Codex: Steer can take a staged photo through OMP's endpoint; Withdraw puts back exactly the text and photos sent; Codex sends go through its app-server daemon when it runs the session.\n- Stop: for OMP, Pi, Claude Code, Codex, OpenCode and Kilo, every tap ends in words: Stopping, Stop was not confirmed after 20 seconds, or the answer.\n- Sessions: a new session in the pane shows under a divider. Chat reads Gemini (through Herdline's launcher) and Letta, read only.\n- Privacy: Herdline no longer reads an agent's environment, command line or working directory on the host.\n- Also: failed uploads say they can be retried, a one-row portrait header, a New tab button, two-row extra keys, and a choice of notification fields.\n\nFull notes and known limits: https://github.com/erikfrish/herdline/releases/tag/v0.6.34"
+      "en": "Herdline 0.6.63 (Experimental)\n\n- Equal-height tab cards; separate card and menu actions.\n- Compact, horizontally scrolling category filters with counts.\n- Large-font Order choices scroll instead of clipping “Last activity”.\n- OMP PTY sends confirm after the exact submitted text appears in history, including trimmed edge spaces/newlines; the editor clears and the next Send works without Unlock.\n- Includes Chat/Terminal navigation, header, extra-key and Tabs-dismissal fixes since 0.6.34.\n\nChecked on an Android emulator with stock Herdr 0.9.5 and mock providers, not a phone. Harness support is incomplete. Claude Code Send remains blocked on Herdr 0.9.5. Old held deliveries need one explicit Unlock. Attachments and runtime text rewrites may remain unconfirmed; check before resending. No automatic resend or auto-reconnect guarantee.\n\nFull notes: https://github.com/erikfrish/herdline/releases/tag/v0.6.63"
     }
   }
 }

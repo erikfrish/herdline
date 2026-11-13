@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ctrl / Alt extra-key latch state for TalkBack (Simplified Chinese). -->
 <resources>
+    <!-- Ctrl / Alt extra-key latch state for TalkBack (Simplified Chinese). -->
     <string name="extra_key_latch_on">开启</string>
     <string name="extra_key_latch_off">关闭</string>
+    <!-- TalkBack names of the glyph-only extra keys (← ↓ ↑ → ⏎ ⌫); keys with a printed Latin name keep it. -->
+    <string name="extra_key_spoken_left">左箭头</string>
+    <string name="extra_key_spoken_down">下箭头</string>
+    <string name="extra_key_spoken_up">上箭头</string>
+    <string name="extra_key_spoken_right">右箭头</string>
+    <string name="extra_key_spoken_enter">回车</string>
+    <string name="extra_key_spoken_backspace">退格</string>
 </resources>

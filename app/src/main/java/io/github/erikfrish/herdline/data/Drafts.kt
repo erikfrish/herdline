@@ -25,9 +25,13 @@ data class DraftKey(val nodeId: String, val session: String, val pane: String) {
  * [InPane] (P1): Chat typed it into an agent's pane and the pane's read
  * receipt came, which proves only that the text reached the input box; it
  * holds the pane like [Uncertain] until the session's history shows the
- * turn ([Confirmed]) or the user unlocks it.
+ * turn ([Confirmed]) or the user unlocks it. [Handed]: a
+ * delivery nothing watches (Terminal Send and Insert, Chat Insert) got its
+ * receipt, which proves only that Herdr processed the input: Herdr 0.9.5
+ * answers success even when it dropped the write. It holds nothing, like
+ * [Confirmed], and differs only in what the composer says.
  */
-enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked }
+enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked, Handed }
 
 /**
  * [acknowledged]: the user took in that an [SentState.Unlocked] attempt may
@@ -35,7 +39,11 @@ enum class SentState { Queued, InPane, Confirmed, Uncertain, Unlocked }
  * The record and its state stay as they were. [historyFrom]: for an
  * [SentState.InPane] record, where the bound session's history ended
  * before the text went; null when that could not be read, so the turn can
- * never be proven.
+ * never be proven. [steer]: an OMP steer typed into the pane and entered
+ * while the agent worked, not a typed send; [submit] says only that Enter went.
+ * [to]: the destination's name as the composer showed it at the tap, so a
+ * notice about this delivery still names it once the pane is gone; null for
+ * records that never captured it (steers, ingress, older drafts).
  */
 data class SentRecord(
     val text: String,
@@ -45,6 +53,8 @@ data class SentRecord(
     val at: Long,
     val acknowledged: Boolean = false,
     val historyFrom: Long? = null,
+    val steer: Boolean = false,
+    val to: String? = null,
 )
 
 /**
@@ -228,7 +238,8 @@ data class Draft(
             sent?.let {
                 JSONObject().put("text", it.text).put("receipt", it.receipt).put("submit", it.submit)
                     .put("state", it.state.name).put("at", it.at).put("acknowledged", it.acknowledged)
-                    .put("historyFrom", it.historyFrom ?: JSONObject.NULL)
+                    .put("historyFrom", it.historyFrom ?: JSONObject.NULL).put("steer", it.steer)
+                    .put("to", it.to ?: JSONObject.NULL)
             } ?: JSONObject.NULL,
         )
         .put("instance", instance?.toJson() ?: JSONObject.NULL)
@@ -257,6 +268,8 @@ data class Draft(
                     at = it.optLong("at"),
                     acknowledged = it.optBoolean("acknowledged"),
                     historyFrom = if (it.has("historyFrom") && !it.isNull("historyFrom")) it.getLong("historyFrom") else null,
+                    to = if (it.has("to") && !it.isNull("to")) it.getString("to") else null,
+                    steer = it.optBoolean("steer"),
                 )
             }
             return Draft(

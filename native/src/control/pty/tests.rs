@@ -54,6 +54,21 @@ const CODEX_REMAPPED: &str = "\
 › Ask Codex to do anything
 ";
 
+// Gemini 0.68.0 in a Herdr pane, read while it responds (rows cut short).
+const GEMINI_WORKING: &str = "\
+✦ tick 0 tick 1 tick 2 tick 3
+
+
+ ⠙ Thinking... (esc to cancel, 4s)                     ? for shortcuts
+────────────────────────────────────────
+ Shift+Tab to accept edits
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ >   Type your message or @path/to/file
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ workspace (/directory)        sandbox        /model
+ /tmp/dg1/work                 no sandbox     Auto
+";
+
 fn entry(role: &str, stop: Option<&str>) -> Entry {
     Entry {
         id: None,
@@ -100,9 +115,33 @@ fn a_hint_presses_esc_only_as_the_runtime_draws_it_while_working() {
 
 #[test]
 fn runtimes_without_a_read_screen_or_ref_get_no_key() {
-    for agent in ["kimi", "hermes", "gemini", "amp", "opencode", ""] {
+    for agent in ["kimi", "hermes", "amp", "opencode", ""] {
         assert_eq!(decide(agent, W, &rows(CLAUDE_WORKING)), Err(Refusal::NoStopKey), "{agent}");
     }
+}
+
+#[test]
+fn gemini_is_stopped_only_with_its_timer_over_its_own_empty_box() {
+    assert_eq!(decide("gemini", W, &rows(GEMINI_WORKING)), Ok(Key::Esc));
+    let long = GEMINI_WORKING.replace("cancel, 4s)", "cancel, 1h 2m 3s)");
+    assert_eq!(decide("gemini", W, &rows(&long)), Ok(Key::Esc));
+    // Only the default empty box is read as its own: shell mode and vim own
+    // Esc, and a draft is not read as the box Esc passes through.
+    for box_row in [" > ping one", " ! Type your shell command", " >   Press 'i' for INSERT mode."] {
+        let screen = GEMINI_WORKING.replace(" >   Type your message or @path/to/file", box_row);
+        assert_eq!(decide("gemini", W, &rows(&screen)), Err(Refusal::NoStopKey), "{box_row}");
+    }
+    // No timer: idle, or a confirmation dialog.
+    let idle = GEMINI_WORKING.replace("⠙ Thinking... (esc to cancel, 4s)", "");
+    assert_eq!(decide("gemini", W, &rows(&idle)), Err(Refusal::NoStopKey));
+    let words = GEMINI_WORKING.replace("cancel, 4s)", "cancel, soon)");
+    assert_eq!(decide("gemini", W, &rows(&words)), Err(Refusal::NoStopKey));
+    // A focusable embedded shell may hold Esc; a waiting queue would be sent.
+    let shell = GEMINI_WORKING.replace("✦ tick 0 tick 1 tick 2 tick 3", "│ ⊷  Shell sleep 9 (Tab to focus)");
+    assert_eq!(decide("gemini", W, &rows(&shell)), Err(Refusal::NoStopKey));
+    let queued = GEMINI_WORKING.replace("✦ tick 0 tick 1 tick 2 tick 3", "  Queued (press ↑ to edit):\n    queued two");
+    assert_eq!(decide("gemini", W, &rows(&queued)), Err(Refusal::NoStopKey));
+    assert!(!confirms("gemini"));
 }
 
 #[test]

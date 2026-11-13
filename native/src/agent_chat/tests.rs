@@ -375,7 +375,7 @@ fn question_ids_are_the_ones_the_servers_make() {
 
 /// The pane root a control step gets ([`PANE_ROOT`]) is the shell_pid of
 /// the very report the gate verified, 0 when Herdr names none; a changed
-/// instance never runs the step.
+/// instance, or a process report of another pane, never runs the step.
 #[test]
 fn a_step_gets_the_pane_root_from_the_report_the_gate_verified() {
     let home = tempfile::tempdir().expect("home");
@@ -393,12 +393,17 @@ fn a_step_gets_the_pane_root_from_the_report_the_gate_verified() {
         ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
     ]);
     let step = format!("{PANE_ROOT} sh -c 'printf \"root=%s\\n\" \"$HERDLINE_PANE_ROOT\"'");
-    let gate = |shell: Value, pid: u32| {
-        let process = json!({"result": {"process_info": {"foreground_processes": [{"name": "codex", "pid": pid}], "pane_id": "w1:p1", "shell_pid": shell}}});
+    let gate = |shell: Value, pid: u32, pane: &str| {
+        let process = json!({"result": {"process_info": {"foreground_processes": [{"name": "codex", "pid": pid}], "pane_id": pane, "shell_pid": shell}}});
         std::fs::write(home.path().join("proc.json"), process.to_string()).expect("proc");
         host_gate(&exec, "lab", &instance, &step, None).expect("word")
     };
-    assert_eq!(gate(json!(7), 42), "root=7");
-    assert_eq!(gate(Value::Null, 42), "root=0");
-    assert_eq!(gate(json!(7), 43), "refused_changed");
+    assert_eq!(gate(json!(7), 42, "w1:p1"), "root=7");
+    assert_eq!(gate(Value::Null, 42, "w1:p1"), "root=0");
+    assert_eq!(gate(json!(7), 43, "w1:p1"), "refused_changed");
+    // Another pane's shell_pid would make another pane's tree this one's.
+    assert_eq!(gate(json!(7), 42, "w1:p2"), "refused_changed");
+    let process = json!({"result": {"process_info": {"foreground_processes": [{"name": "codex", "pid": 42}], "shell_pid": 7}}});
+    std::fs::write(home.path().join("proc.json"), process.to_string()).expect("proc");
+    assert_eq!(host_gate(&exec, "lab", &instance, &step, None).expect("word"), "refused_changed");
 }

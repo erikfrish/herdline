@@ -25,11 +25,13 @@
     <string name="composer_offline">草稿已保留 · 离线时不会发送任何内容</string>
     <string name="composer_uncertain">未确认：它可能已在窗格中。没有重新发送。</string>
     <string name="composer_in_pane">已在窗格的输入框中，但会话历史中还没有。未确认已发送；没有重新发送。</string>
+    <string name="composer_steer_entered">已作为引导输入：OMP 会在下一步接收。尚未确认；没有重新发送。</string>
     <string name="composer_offline_held">离线 · 上次投递未确认 · 不会发送任何内容</string>
     <string name="composer_check_description">检查窗格中是否有这条消息</string>
     <string name="composer_locked_line">已锁定：未确认。解锁后可编辑。</string>
     <string name="composer_locked_description">草稿，已锁定，投递未确认</string>
     <string name="composer_locked_reason">已锁定：上次投递未确认</string>
+    <string name="composer_insert_off_desktop">不可用：桌面焦点不在此标签页</string>
     <string name="composer_sending">正在发送…</string>
     <string name="composer_sending_description">草稿，发送中，正在等待 Herdr</string>
     <string name="composer_unlock_warning">第一条消息可能已在窗格中。解锁后可以编辑并再次发送；不会自动重发。</string>
@@ -46,7 +48,7 @@
     <string name="composer_draft_for_target_held">给 %1$s 的草稿。无法移到这里：此标签页的上次投递未确认。</string>
     <string name="composer_pane_gone_target_held">此草稿的窗格已不存在。无法移到这里：此标签页的上次投递未确认。</string>
     <string name="composer_sent_to">已发送到 %1$s</string>
-    <string name="composer_inserted_to">已插入到 %1$s</string>
+    <string name="composer_handed_insert">Herdr 已接收，插入到 %1$s；未确认已进入窗格。请查看终端。</string>
     <string name="composer_pane_rows">此窗格在 Herdr 上为 %1$d 行：发送需要 12 行</string>
     <string name="composer_pane_rows_unknown">此窗格在 Herdr 上太矮：发送需要 12 行</string>
     <string name="composer_has_draft">%1$s 已有草稿</string>
@@ -61,11 +63,12 @@
     <string name="reason_popup_open">Herdr 弹窗已打开：请先关闭</string>
     <string name="reason_agent_blocked">代理在提问：请在终端中回答</string>
     <string name="reason_agent_working">代理正在工作：空闲前无法发送</string>
-    <string name="reason_unsupported_program">发送仅适用于空闲的 OMP；请用“插入（不按 Enter）”，再自己按 Enter</string>
+    <string name="reason_unsupported_program">发送仅适用于空闲且 Herdline 能读取其输入框的代理；请用“插入（不按 Enter）”，再自己按 Enter</string>
     <string name="reason_not_visible">窗格的输入框不在屏幕上或暂时无法读取。请打开它的标签页，再发送一次。未发送任何内容。</string>
     <string name="reason_scrolled">窗格已向上滚动。请滚动到底部，再发送一次。未发送任何内容。</string>
     <string name="reason_remote_draft">输入框中已有文字</string>
-    <string name="composer_remote_draft">OMP 的输入框中已有文字。“追加”会把你的文字加在后面，不按 Enter。</string>
+    <string name="composer_remote_draft">代理的输入框中已有文字。“追加”会把你的文字加在后面，不按 Enter。</string>
+    <string name="composer_remote_draft_no_append">代理的输入框中已有文字。请在终端中清除后再发送。未发送任何内容。</string>
     <string name="composer_clear_in_terminal">在终端中清除</string>
     <string name="composer_clear_in_terminal_description">打开终端以清除输入框</string>
     <string name="reason_empty_text">没有可投递的内容</string>

@@ -133,13 +133,14 @@ class OverviewModelTest {
     @Test
     fun theFocusedCardIndexCountsWorkspaceHeadersOnlyWhenShown() {
         val all = sections()
-        // Header w1, t1, t2: with headers t2 is item 2, without them item 1.
-        assertEquals(2, overviewIndexOf(all, "t2", headers = true))
-        assertEquals(1, overviewIndexOf(all, "t2", headers = false))
-        // Header w1, three cards, header w2, t3.
-        assertEquals(5, overviewIndexOf(all, "t3", headers = true))
-        assertNull(overviewIndexOf(all, "missing", headers = true))
-        assertNull(overviewIndexOf(all, null, headers = true))
+        for ((columns, second, nextWorkspace) in listOf(Triple(1, 2, 5), Triple(2, 1, 4))) {
+            // The second card shares the first row only with two columns.
+            assertEquals(second, overviewIndexOf(all, "t2", headers = true, columns = columns))
+            assertEquals(second - 1, overviewIndexOf(all, "t2", headers = false, columns = columns))
+            assertEquals(nextWorkspace, overviewIndexOf(all, "t3", headers = true, columns = columns))
+            assertNull(overviewIndexOf(all, "missing", headers = true, columns = columns))
+            assertNull(overviewIndexOf(all, null, headers = true, columns = columns))
+        }
     }
 
     @Test
@@ -166,5 +167,25 @@ class OverviewModelTest {
         assertNull(overviewCurrentTab(view, here = "gone", reading = true))
         // Outside Chat, Herdr's focus.
         assertEquals("t2", overviewCurrentTab(view, here = "p5", reading = false))
+    }
+
+    @Test
+    fun aRailNarrowingEmptiedStaysAndCountsItsFullTabsAndTabsThatNeedYou() {
+        // t1 has two blocked agents: one tab needs you, not two.
+        val both = view.copy(agents = view.agents.map { if (it.pane == "p2") it.copy(status = AgentStatus.Blocked) else it })
+        val all = topology(both)
+        val shown = all.narrowed("", SwitcherFilter.Working)
+        val rails = overviewRails(all, overviewSections(all, shown, narrowing = true, both, currentTab = "t2"), both, currentTab = "t2")
+        assertEquals(listOf("w1", "w2", "w3"), rails.map { it.workspace.id })
+        val w1 = rails[0]
+        assertTrue(w1.cards.isEmpty())
+        assertEquals(3, w1.tabs)
+        assertEquals(1, w1.needsYou)
+        // The current tab is filtered out, but its workspace is still the current one.
+        assertTrue(w1.current)
+        assertEquals(listOf("t3"), rails[1].cards.map { it.tab.id })
+        assertEquals(0, rails[1].needsYou)
+        assertEquals(1, rails[2].tabs)
+        assertTrue(rails[2].cards.isEmpty())
     }
 }

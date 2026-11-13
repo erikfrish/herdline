@@ -75,13 +75,23 @@ empty; a plain search finds them the same way.
 
 ## The Tabs view
 
-The phone Tabs sheet opens as the list (`TabsView.List`, the default), or as
-the same rows in a compact two-column layout (`TabsView.TwoColumns`) chosen
-in Settings › Layout › Tabs view. At most two columns; large accessibility
-fonts fall back to one, where two would make a title illegible. A stored
+The phone Tabs sheet opens as the list (`TabsView.List`, the default), as
+the same rows in a compact two-column layout (`TabsView.TwoColumns`), or as
+workspace rails (`TabsView.Rails`): workspaces scroll down, and each
+workspace's tabs sit in one row that scrolls sideways, ending in a New tab
+tile for that workspace (not while a search or filter narrows the list).
+The view is chosen in Settings › Layout › Tabs view.
+Two columns is at most two; large accessibility fonts fall back to one,
+where two would make a title illegible. A stored
 "Grid" (`tabs_view`) is the removed tile overview and is migrated to List
 once; the value is written back so it never reappears. The old default is
 migrated too, never an explicit List choice.
+
+Two-column cards share their row's tallest content height; the full card
+remains tappable. Categories use the List's compact pills in one horizontally
+scrolling row, separate from the workspace selector. Pills are 32 dp high at
+normal font size, grow for accessibility fonts and keep at least 48 dp touch
+targets. Scrolling or filtering changes no desktop focus or terminal size.
 
 ## No jump: the order is held while the switcher is shown
 

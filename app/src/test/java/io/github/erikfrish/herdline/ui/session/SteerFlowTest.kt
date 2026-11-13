@@ -1,5 +1,6 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.Connection.DeliveryUpdate
 import io.github.erikfrish.herdline.core.Connection.SteerEnter
 import io.github.erikfrish.herdline.core.Connection.SteerStart
@@ -9,6 +10,14 @@ import io.github.erikfrish.herdline.data.Binding
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.SentRecord
 import io.github.erikfrish.herdline.data.SentState
+import io.github.erikfrish.herdline.core.TranscriptBlock
+import io.github.erikfrish.herdline.core.TranscriptEntry
+import io.github.erikfrish.herdline.core.TranscriptIdentity
+import io.github.erikfrish.herdline.core.TranscriptKind
+import io.github.erikfrish.herdline.core.TranscriptPage
+import io.github.erikfrish.herdline.core.TranscriptSteer
+import io.github.erikfrish.herdline.ui.chat.historyEnd
+import io.github.erikfrish.herdline.ui.chat.ptyTurnLanded
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -206,6 +215,68 @@ class SteerFlowTest {
             .on(SteerEvent.Answer(DeliveryUpdate.Confirmed("E"), 40))
         assertEquals(SteerPhase.Sent, run.phase)
         assertEquals(2, run.enters)
+    }
+
+    @Test
+    fun aSteerWhoseEnterThePaneTookIsNeverSentOnThatReceiptAlone() {
+        // With the history's end read before the paste: it waits for that
+        // session's own user entry, also after a restart, and holds the text.
+        val watched = Draft.fromJson(Draft(text = "fix it", sent = steerEntered("fix it", "E", historyFrom = 4096, now = 1)).toJson())
+        assertEquals(SentState.InPane, watched.sent?.state)
+        assertEquals(4096L, watched.sent?.historyFrom)
+        assertEquals("fix it", watched.text)
+        assertTrue(watched.unsettled)
+        assertFalse(watched.mayDeliver(Binding.Bound))
+
+        // No baseline: nothing can ever show it was admitted.
+        val blind = Draft.fromJson(Draft(text = "fix it", sent = steerEntered("fix it", "E", historyFrom = null, now = 1)).toJson())
+        assertEquals(SentState.Uncertain, blind.sent?.state)
+        assertTrue(blind.unsettled)
+        assertFalse(blind.mayDeliver(Binding.Bound))
+    }
+
+    @Test
+    fun anEnteredPtySteerWaitsOnTheTailItReadAndIsDeliveredWhenItsHistoryHoldsItLater() {
+        // QA S 10070: the baseline is a Tail read, which the core always marks reset.
+        val omp = TranscriptIdentity("w4:pG", "term_1", 1967663, "/h/.omp/agent/sessions/x/a.jsonl")
+        val tail = TranscriptPage(omp, reset = true, size = 4096, start = 0, end = 4096, entries = emptyList())
+        val from = historyEnd(tail, omp)
+        assertEquals(4096L, from)
+        assertEquals(null, historyEnd(tail.copy(identity = omp.copy(pid = 7)), omp))
+        val sent = steerEntered("Steer two", "E", from, now = 1_000)
+        assertEquals(SentState.InPane, sent.state)
+        assertEquals(R.string.composer_steer_entered, inPaneNotice(sent))
+
+        // OMP takes it at its next step, past the typed-send window: still watched while it works.
+        val window = 20_000L
+        var until = sent.at + window
+        until = ptyWatchDeadline(sent, until, working = true, now = 90_000, window = window)
+        assertTrue(90_000 < until)
+        val landed = TranscriptEntry("u", null, 4096, 4130, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("Steer two", false)), steer = TranscriptSteer.Steering)
+        assertTrue(ptyTurnLanded(TranscriptPage(omp, false, 4130, 4096, 4130, listOf(landed)), omp, from!!, sent.text))
+        // Idle again, the window runs out; a typed send never gets more than its window.
+        assertEquals(until, ptyWatchDeadline(sent, until, working = false, now = 95_000, window = window))
+        val typed = SentRecord("Steer two", "R", true, SentState.InPane, 1_000, historyFrom = 4096)
+        assertEquals(21_000L, ptyWatchDeadline(typed, 21_000, working = true, now = 90_000, window = window))
+    }
+
+    @Test
+    fun anEnteredSteerReadBackSaysItWaitsInOmpNotInTheInputBox() {
+        val stored = Draft(sent = steerEntered("fix it", "E", historyFrom = 4096, now = 1))
+        val back = Draft.fromJson(JSONObject(stored.toJson().toString())).sent!!
+        assertEquals(SentState.InPane, back.state)
+        assertEquals(R.string.composer_steer_entered, inPaneNotice(back))
+    }
+
+    @Test
+    fun aTypedSendInThePaneStillSaysItIsInTheInputBox() {
+        // A Chat PTY send with Enter (P1): submit alone never makes it a steer.
+        val typed = SentRecord("fix it", "R", true, SentState.InPane, 1, historyFrom = 4096)
+        val back = Draft.fromJson(JSONObject(Draft(sent = typed).toJson().toString())).sent!!
+        assertEquals(R.string.composer_in_pane, inPaneNotice(back))
+        // Stored before the steer mark existed: read as typed.
+        val old = JSONObject(Draft(sent = typed).toJson().toString()).apply { getJSONObject("sent").remove("steer") }
+        assertEquals(R.string.composer_in_pane, inPaneNotice(Draft.fromJson(old).sent!!))
     }
 
     @Test

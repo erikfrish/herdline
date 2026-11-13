@@ -106,7 +106,7 @@ enum class StopRoute {
 val Harness.stop: StopRoute
     get() = when (name.lowercase(Locale.ROOT)) {
         "opencode", "kilo" -> StopRoute.Server
-        "omp", "pi", "claude", "codex" -> StopRoute.Pty
+        "omp", "pi", "claude", "codex", "gemini" -> StopRoute.Pty
         else -> StopRoute.None
     }
 
@@ -294,8 +294,20 @@ private val KNOWN: Map<String, Harness> = (
         routed("qwen", SendRoute.None, card(V, V, NB, NB, NB, V, SM, no(Reason.Lock), SS, NB, V), readOnlyHistory = true),
         routed("hermes", SendRoute.None, card(V, V, NC, NC, NC, V, SM, NC, SS, NB, V), readOnlyHistory = true),
         // gemini: read only through the owned launcher binding (native transcript/gemini, v0.68.0); an
-        // unwrapped Gemini is refused. Fixtures only: no real SessionStart observed yet.
-        routed("gemini", SendRoute.None, card(V, V, NB, NB, NB, V, NB, NB, SS, NB, V), readOnlyHistory = true),
+        // unwrapped Gemini is refused. Stop is Esc under its own working timer (native control/pty), never
+        // confirmed by its history. Under Herdr with the kitty keyboard on, a paste and Enter in one write
+        // loses the Enter (nothing submits), and with text already in its box the old text is sent without
+        // the paste (measured on Gemini 0.68.0 under Herdr 0.9.5: NOTES.md, "Why a same-read Enter is dropped
+        // with kitty on" and "A non-empty box and a streaming turn"); so Send and media stay unproved. Its
+        // queue lives in the TUI and dialogs answer only there.
+        // Subagents are its invoke_agent calls' recorded progress, keyed by the child's session id, and while
+        // one runs, the child's own record beside the session.
+        routed(
+            "gemini",
+            SendRoute.None,
+            card(V, V, no(Reason.InputUnproved, "Gemini"), V, no(Reason.NoSocket, "Gemini"), V, no(Reason.InputUnproved, "Gemini"), NC, SS, V, V),
+            readOnlyHistory = true,
+        ),
         unread("agy", sessionless(no(Reason.FormatUnpinned, "Antigravity"), stop = NB, steer = NS)),
         no(Reason.CloudAuth, "Droid").let { cloud ->
             val attach = no(Reason.NoLiveAttach, "Droid")

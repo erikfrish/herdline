@@ -95,6 +95,62 @@ class IngressRouteTest {
         assertNull(sendPrecheckCode(null, IngressProbe.Unusable("needs_server")))
     }
 
+    /**
+     * The endpoint's words Chat shows above the field: the queue panel's status line, then the
+     * composer's notice of a refused Send's code [refusal] or Send's [precheck]. [slot] is the cause
+     * the notice says, null under a notice of something else (offline, a pending send, …).
+     */
+    private fun shown(probe: IngressProbe, refusal: String? = null, precheck: String? = null, slot: String? = refusal ?: precheck): List<Int> {
+        val panel = queuePanel(probe)
+        return listOfNotNull(
+            (besideNotice(panel, noticeCause(refusal, precheck, slot)) as? QueuePanel.Unusable)?.let { unusableRes(it.reason) },
+            slot?.let { causeRes(it, panel) },
+        )
+    }
+
+    @Test
+    fun aSendRefusedForAMissingServerSaysItOnceInTheSendTimeWords() {
+        // QA m123 (Kilo, server killed): the panel's status and the refused Send's notice stacked.
+        for (cause in listOf("needs_server", "server_discovery")) {
+            val probe = IngressProbe.Unusable(cause)
+            val refused = ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = cause))
+            assertEquals(cause, listOf(reasonRes(cause)), shown(probe, refusal = refused))
+            // No notice of it: the panel's status stays as it was.
+            assertEquals(cause, listOf(unusableRes(cause)), shown(probe))
+            // A notice of something else covers the refusal: the panel's status still says it.
+            assertEquals(cause, listOf(unusableRes(cause)), shown(probe, refusal = refused, slot = null))
+        }
+        // Another cause behind the panel keeps it: the refusal names something else.
+        assertEquals(
+            listOf(R.string.ingress_unusable, R.string.reason_needs_server),
+            shown(IngressProbe.Unusable("stale"), refusal = "needs_server"),
+        )
+    }
+
+    @Test
+    fun sendsPrecheckForAMissingServerSaysItOnceWithNoSend() {
+        // OpenCode --standalone: the box check refuses the PTY route before any Send, and the precheck names the server.
+        for (cause in listOf("needs_server", "server_discovery")) {
+            val probe = IngressProbe.Unusable(cause)
+            val precheck = sendPrecheckCode("unsupported_program", probe)
+            assertEquals(cause, listOf(reasonRes(cause)), shown(probe, precheck = precheck))
+        }
+    }
+
+    @Test
+    fun aSendRefusedForAnyOtherUnusableEndpointSaysItOnceNamingTheFailedCheck() {
+        val refused = ingressRefusalCode(IngressSend.Refused(REASON_UNUSABLE, detail = "stale"))
+        // The panel's words name the check ("stale"); Send's general ones do not.
+        assertEquals(listOf(R.string.ingress_unusable), shown(IngressProbe.Unusable("stale"), refusal = refused))
+        // A server cause behind the panel is not this one: both stay, each its own.
+        assertEquals(
+            listOf(R.string.ingress_needs_server, R.string.reason_endpoint_unusable),
+            shown(IngressProbe.Unusable("needs_server"), refusal = refused),
+        )
+        // Without the panel's line, Send's own general words.
+        assertEquals(listOf(R.string.reason_endpoint_unusable), shown(IngressProbe.Absent, refusal = refused))
+    }
+
     @Test
     fun acceptedSettlesUncertainHoldsAndNothingSentGivesTheEarlierRecordBack() {
         val accepted = sentAfterIngress(IngressSend.Accepted("id-1", "accepted", null), before, "hi", 9)

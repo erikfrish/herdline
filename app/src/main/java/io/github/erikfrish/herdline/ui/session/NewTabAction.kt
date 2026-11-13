@@ -72,8 +72,8 @@ internal fun newTabButtonWidth(): Dp {
 }
 
 /**
- * The Tabs sheet's labelled New tab, the one control the list header (both
- * orders) and the two-column header share. A tap only opens the existing
+ * The Tabs sheet's labelled New tab, on its own row under the one phone
+ * header ([TabsHeader]) and in the sidebar's host line. A tap only opens the existing
  * New tab dialog through [newTab] (Prompt.NewTab): nothing reaches Herdr
  * before its Create, and the scope, search, order and drafts stay as they
  * are. When the workspace is ambiguous it first lists the workspaces, none
@@ -113,7 +113,7 @@ internal fun NewTabButton(view: ShellView?, live: Boolean, chosen: String?, gone
         ) {
             Icon(Icons.Default.Add, null, Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-            // Never ellipsized: the header wraps the button to its own row first.
+            // Never ellipsized: the phone header gives it its own row, and the sidebar wraps it to one first.
             Text(stringResource(R.string.new_tab), maxLines = 1, softWrap = false)
         }
         if (target is NewTabTarget.Pick && view != null) {

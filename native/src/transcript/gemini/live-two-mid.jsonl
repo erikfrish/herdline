@@ -1,0 +1,7 @@
+{"sessionId":"f163d773-ba92-486f-8b1a-79e50e9aecc8","projectHash":"95744bf242e1d8ab9d774667cd76efedcef9a08eaeabeb4fae675811aff21442","startTime":"2026-11-12T23:40:48.942Z","lastUpdated":"2026-11-12T23:40:48.942Z","kind":"main"}
+{"id":"d04923d38bb0f6017037e74183378ef4","timestamp":"2026-11-12T23:40:48.942Z","type":"user","content":[{"text":"<session_context>\nThis is the Gemini CLI. We are setting up the context for our chat.\nToday's date is Friday, November 13, 2026 (formatted according to the user's locale).\nMy operating system is: linux\nThe project's temporary directory is: /tmp/dg1/home/.gemini/tmp/work\n- **Workspace Directories:**\n  - /tmp/dg1/work\n- **Directory Structure:**\n\nShowing up to 200 items (files + folders).\n\n/tmp/dg1/work/\n└───readme.txt\n\n\n</session_context>"}]}
+{"$set":{"lastUpdated":"2026-11-12T23:40:48.943Z"}}
+{"id":"29be0c23-a67e-4f2b-8268-7b57e2bf8d51","timestamp":"2026-11-12T23:41:04.152Z","type":"user","content":[{"text":"TWOPLZ"}]}
+{"$set":{"lastUpdated":"2026-11-12T23:41:04.152Z"}}
+{"id":"4f955c70-86f0-4ea7-9116-2c3ebbe84e3e","timestamp":"2026-11-12T23:41:04.178Z","type":"gemini","content":"","thoughts":[],"tokens":{"input":10,"output":5,"cached":0,"thoughts":0,"tool":0,"total":15},"model":"gemini-3.1-pro-preview-customtools"}
+{"$set":{"lastUpdated":"2026-11-12T23:41:04.178Z"}}

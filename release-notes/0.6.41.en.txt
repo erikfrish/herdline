@@ -1,0 +1,13 @@
+Herdline 0.6.41 (experimental) — Terminal from Chat waits for the terminal picture
+
+- Chat: Terminal from Chat now also waits for the terminal picture to show the pane before it switches. It switches at once only when the desktop and its picture are both on that pane already. If the desktop is on the pane but the picture lags, it waits without asking the desktop to move. If the connection is not live, it says it couldn't open Terminal and offers Try again, without asking the desktop to move. Code and unit tested only, not device-verified.
+- Chat: Terminal from Chat now opens the pane you are reading. If the desktop is on another pane, the app moves it to that pane once; it shows "Opening Terminal for …" and stays in Chat until Terminal is showing that pane. If it can't, it says it couldn't open Terminal for that pane, keeps you reading it in Chat, and offers Try again. Code and unit tested only, not device-verified.
+- Tabs: the view button in the Tabs header now cycles List, Two columns and Workspace rails. Under the host, a second line shows the tab and workspace counts; a long host name is shortened first, before the counts. Code and unit tested only, not device-verified.
+- Chat: the pane you select stays in Chat and shows its own loading, history or read-error state. A page read successfully with no entries shows as empty. A history that is not written yet stays a read error with Retry, and recovers through the usual polling. An agent that refuses shows its refusal text with Open Terminal. Chat no longer falls back to Terminal on its own; Terminal opens only when you choose it. The old notice saying Chat can't read this agent, so this tab shows Terminal, is removed. Code and unit tested only, not device-verified; nothing here has passed a run on a device yet. That this fixes the reported incident is inferred, not proven on a device.
+- Agents: the Agents screen uses a compact header, without the large empty space above the title. Code and unit tested, not device-verified.
+- Chat: a steer typed into a working OMP pane says it waits in OMP and is marked delivered once OMP's history holds it. Code and unit tested, not device-verified.
+- Tabs: the Tabs sheet has one header in List, Two columns and Workspace rails, with New tab always on its own row at the right, above Search. Code and unit tested, not device-verified.
+- Chat: dragging the Chat list by hand hides the keyboard once; the draft is kept. Code and unit tested, not device-verified.
+- Tabs: Settings › Layout › Tabs view offers Workspace rails: workspaces scroll down, and each workspace's tabs sit in one row that scrolls sideways. List stays the default. Code and unit tested, not device-verified.
+
+Nothing above is verified by QA or on a device yet.

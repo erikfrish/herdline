@@ -1,5 +1,6 @@
-//! Display-only OMP task snapshots and exact-id async completions.
-//! No child transcript is opened and no status is inferred from output text.
+//! Display-only subagent snapshots: OMP task details and exact-id async
+//! completions, and Gemini's `invoke_agent` progress and its running
+//! children's own records. No status is inferred from output text.
 
 use super::cap;
 use crate::herdr_setup::plain_text;
@@ -7,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 const MAX_CHILDREN: usize = 64;
-const OUTPUT_LIMIT: usize = 4096;
+pub(super) const OUTPUT_LIMIT: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,16 +43,19 @@ pub struct Completion {
     pub duration_ms: Option<u64>,
 }
 
-fn text(value: &Value, key: &str, limit: usize) -> Option<String> {
-    value[key]
-        .as_str()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| {
-            // Bound before stripping terminal escapes, so untrusted output cannot
-            // make the display sanitizer allocate an entire task report.
-            let (bounded, _) = cap(s, limit);
-            plain_text(bounded.as_bytes())
-        })
+pub(super) fn text(value: &Value, key: &str, limit: usize) -> Option<String> {
+    value[key].as_str().and_then(|s| clean(s, limit))
+}
+
+/// [`text`] for a string already in hand: none when blank.
+pub(super) fn clean(s: &str, limit: usize) -> Option<String> {
+    if s.trim().is_empty() {
+        return None;
+    }
+    // Bound before stripping terminal escapes, so untrusted output cannot
+    // make the display sanitizer allocate an entire task report.
+    let (bounded, _) = cap(s, limit);
+    Some(plain_text(bounded.as_bytes()))
 }
 
 fn status(value: &str) -> Option<&'static str> {

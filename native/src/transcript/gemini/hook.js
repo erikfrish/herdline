@@ -29,7 +29,7 @@
 // Each report is `--agent gemini`, so Herdr drops it once it has seen this
 // Gemini exit (terminal/metadata.rs:79-94), and its seq is the event's own
 // timestamp, set when Gemini builds the event (createBaseInput, bundle
-// chunk-2OHBIZ5H.js:372733-372742), not the hook's run time,
+// chunk-RCB6BI5H.js:367374-367383), not the hook's run time,
 // with a SessionStart ordered after a SessionEnd of the same millisecond:
 // Herdr takes only a seq above the last (metadata_tokens.rs:17-23). Herdr
 // also drops, silently, a SessionStart that comes before it has detected
