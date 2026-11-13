@@ -109,6 +109,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -252,6 +256,14 @@ private val MergedHeaderHeight: Dp = 480.dp
 private val MergedPlaceWidth: Dp = 220.dp
 /** Narrower than this, the place button's second line leaves out the workspace (TalkBack keeps it). */
 private val PlaceNarrow: Dp = 96.dp
+/** The least the place button keeps in the one-row header: one 48 dp target, never collapsed by what follows it. */
+private val PlaceMin: Dp = 48.dp
+/** The header's fixed share beside the place and Chat | Terminal: its 6 dp side padding twice, ← and ⋮ at 48 dp each. */
+private val HeaderFixed: Dp = 12.dp + 48.dp * 2
+/** The need-you chip's width around its count: 12 dp padding each side, the 8 dp dot and its 6 dp gap. */
+private val NeedChipChrome: Dp = 12.dp * 2 + 8.dp + 6.dp
+/** A Chat | Terminal segment's width for a label [text] wide: its 10 dp padding each side, at least 52 dp. */
+private fun modeSegmentWidth(text: Dp): Dp = (text + 20.dp).coerceAtLeast(52.dp)
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
@@ -932,50 +944,70 @@ fun SessionScreen(
                                 val title = workspace?.let { readableTitle(it.label) } ?: node.title
                                 // Up, the workspace label, the tabs, what needs the user, the one
                                 // Chat | Terminal control, and ⋮ (Herdr actions, Settings, Disconnect).
-                                val trailing = @Composable {
-                                    if (blocked.isNotEmpty()) {
-                                        AttentionChip(
-                                            blocked.size.toString(),
-                                            AgentStatus.Blocked.color(),
-                                            "session:need_you",
-                                            spokenLabel = pluralStringResource(R.plurals.need_you_chip, blocked.size, blocked.size),
-                                        ) {
-                                            groups.nextNeedingInput(focusedPane)?.let(::go)
+                                // The need-you count stays finite: past 99 it shows 99+, and TalkBack says the exact count.
+                                val needLabel = if (blocked.size > 99) "99+" else blocked.size.toString()
+                                val trailing = @Composable { compactMode: Boolean, modifier: Modifier ->
+                                    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (blocked.isNotEmpty()) {
+                                            // Measured last, so where the row is bounded it is the one that gives way, never ⋮ or Chat | Terminal.
+                                            AttentionChip(
+                                                needLabel,
+                                                AgentStatus.Blocked.color(),
+                                                "session:need_you",
+                                                spokenLabel = pluralStringResource(R.plurals.need_you_chip, blocked.size, blocked.size),
+                                                modifier = Modifier.weight(1f, fill = false),
+                                            ) {
+                                                groups.nextNeedingInput(focusedPane)?.let(::go)
+                                            }
+                                        }
+                                        ModeSwitch(chat = chatMode, chatAvailable = chatPane != null, accent = accent, compact = compactMode, onMode = ::chooseMode)
+                                        Box {
+                                            GlassIconButton(
+                                                Icons.Default.MoreVert,
+                                                stringResource(R.string.more),
+                                                onClick = { menu = true },
+                                                modifier = Modifier.testTag("session:more"),
+                                            )
+                                            SessionMenu(
+                                                expanded = menu,
+                                                onDismiss = { menu = false },
+                                                connection = connection,
+                                                workspaceId = workspace?.id,
+                                                tabId = tab?.id,
+                                                tabLabel = tab?.label,
+                                                pane = focusedPane,
+                                                zoomed = tab?.zoomed == true,
+                                                split = (tab?.let { t -> view?.panesOf(t.id)?.size } ?: 0) > 1,
+                                                paneActions = !wide,
+                                                settingsFirst = short,
+                                                onPrompt = { prompt = it },
+                                                onDisconnect = { prompt = Prompt.Disconnect(node.title) },
+                                                // The strip can be hidden; the menu keeps a way to retry.
+                                                onReconnect = if (lostLive) ::retry else null,
+                                                onSettings = onSettings,
+                                                pinned = focusedPane?.takeIf { view?.agentIn(it) != null }?.let { MonitorKey(node.id, it) in monitored },
+                                                outputFocus = outputFocus.takeIf { !chatMode && !wide },
+                                                onOutputFocus = ::setOutputFocus,
+                                                onPin = { focusedPane?.let(pinOrUnpin) },
+                                                onWorksHere = focusedPane?.let { p -> view?.agentIn(p) }?.let { agent -> { harnessCard = HarnessCardKey(agent.pane, agent.agent) } },
+                                            )
                                         }
                                     }
-                                    ModeSwitch(chat = chatMode, chatAvailable = chatPane != null, accent = accent, onMode = ::chooseMode)
-                                    Box {
-                                        GlassIconButton(
-                                            Icons.Default.MoreVert,
-                                            stringResource(R.string.more),
-                                            onClick = { menu = true },
-                                            modifier = Modifier.testTag("session:more"),
-                                        )
-                                        SessionMenu(
-                                            expanded = menu,
-                                            onDismiss = { menu = false },
-                                            connection = connection,
-                                            workspaceId = workspace?.id,
-                                            tabId = tab?.id,
-                                            tabLabel = tab?.label,
-                                            pane = focusedPane,
-                                            zoomed = tab?.zoomed == true,
-                                            split = (tab?.let { t -> view?.panesOf(t.id)?.size } ?: 0) > 1,
-                                            paneActions = !wide,
-                                            settingsFirst = short,
-                                            onPrompt = { prompt = it },
-                                            onDisconnect = { prompt = Prompt.Disconnect(node.title) },
-                                            // The strip can be hidden; the menu keeps a way to retry.
-                                            onReconnect = if (lostLive) ::retry else null,
-                                            onSettings = onSettings,
-                                            pinned = focusedPane?.takeIf { view?.agentIn(it) != null }?.let { MonitorKey(node.id, it) in monitored },
-                                            outputFocus = outputFocus.takeIf { !chatMode && !wide },
-                                            onOutputFocus = ::setOutputFocus,
-                                            onPin = { focusedPane?.let(pinOrUnpin) },
-                                            onWorksHere = focusedPane?.let { p -> view?.agentIn(p) }?.let { agent -> { harnessCard = HarnessCardKey(agent.pane, agent.agent) } },
-                                        )
-                                    }
                                 }
+                                // SESSION-HDR-308: the width Chat | Terminal takes with its words, and the need-you chip's,
+                                // in this font and language, so the header knows before measuring the row whether the
+                                // words leave the place button its room.
+                                val headerDensity = LocalDensity.current
+                                val modeMeasurer = rememberTextMeasurer()
+                                val labelStyle = MaterialTheme.typography.labelLarge
+                                val chatWord = stringResource(R.string.chat)
+                                val terminalWord = stringResource(R.string.chat_terminal)
+                                val textWidth: (String) -> Dp = { with(headerDensity) { modeMeasurer.measure(it, labelStyle, maxLines = 1).size.width.toDp() } }
+                                val modeWords = remember(chatWord, terminalWord, labelStyle, headerDensity) {
+                                    modeSegmentWidth(textWidth(chatWord)) + modeSegmentWidth(textWidth(terminalWord))
+                                }
+                                val needWidth = remember(needLabel, labelStyle, headerDensity) { textWidth(needLabel) + NeedChipChrome }
+                                val chipShare = if (blocked.isNotEmpty()) needWidth + 4.dp else 0.dp
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
@@ -1078,32 +1110,46 @@ fun SessionScreen(
                                 }
                                 if (typingShort) {
                                     // Nothing: the keyboard is up in a short window (see typingShort).
-                                } else if (short) {
-                                    // Sideways phone: one row, so the content keeps the height. The place
-                                    // button on one line (tab, n/N, marks), then the strip.
-                                    Row(
-                                        Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp).testTag("session:header_merged"),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        up()
-                                        place(false, Modifier.widthIn(max = MergedPlaceWidth))
-                                        Box(Modifier.weight(1f)) { tabRow() }
-                                        trailing()
-                                    }
                                 } else {
-                                    // One 48 dp row, growing only for a large font; no host, no "N tabs" (n/N says it).
-                                    Row(
-                                        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        up()
-                                        place(true, Modifier.weight(1f))
-                                        trailing()
+                                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                        // One rule for Chat and Terminal: Chat | Terminal shows its words only while they
+                                        // leave the place its room (and, merged, the strip its share); else its glyphs.
+                                        // Merged, the place is at most MergedPlaceWidth and the strip keeps at least PlaceNarrow.
+                                        val placeRoom = if (short) MergedPlaceWidth + PlaceNarrow else PlaceNarrow
+                                        val gaps = 4.dp * (if (short) 4 else 3)
+                                        val compactMode = maxWidth - HeaderFixed - gaps - chipShare - modeWords < placeRoom
+                                        // What follows the place in the one-row header: all but ←, its gaps and the place's 48 dp.
+                                        val trailingMax = (maxWidth - 12.dp - 48.dp - 4.dp * 2 - PlaceMin).coerceAtLeast(0.dp)
+                                        if (short) {
+                                            // Sideways phone: one row, so the content keeps the height. The place
+                                            // button on one line (tab, n/N, marks), then the strip.
+                                            Row(
+                                                Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp).testTag("session:header_merged"),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                up()
+                                                place(false, Modifier.widthIn(max = MergedPlaceWidth))
+                                                Box(Modifier.weight(1f)) { tabRow() }
+                                                trailing(compactMode, Modifier)
+                                            }
+                                        } else {
+                                            // One 48 dp row, growing only for a large font; no host, no "N tabs" (n/N says it).
+                                            // The row measures what follows the place first, so that is bounded to leave the
+                                            // place its 48 dp target whatever the font or language.
+                                            Row(
+                                                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 6.dp).testTag("session:header"),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                up()
+                                                place(true, Modifier.weight(1f))
+                                                trailing(compactMode, Modifier.widthIn(max = trailingMax))
+                                            }
+                                            // A phone has no strip: the place button and the Tabs sheet are the ways to move.
+                                            if (wide) tabRow()
+                                        }
                                     }
-                                    // A phone has no strip: the place button and the Tabs sheet are the ways to move.
-                                    if (wide) tabRow()
                                 }
                                 val shown = view
                                 if (paneBar && shown != null && tab != null) {
@@ -1930,9 +1976,9 @@ private fun SessionMenu(
 
 /** The header's one-tap way to what needs the user: the next agent asking, or the working ones. */
 @Composable
-private fun AttentionChip(label: String, color: Color, tag: String, spokenLabel: String = label, onClick: () -> Unit) {
+private fun AttentionChip(label: String, color: Color, tag: String, spokenLabel: String = label, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        Modifier
+        modifier
             .height(36.dp)
             .clip(CircleShape)
             .background(color.copy(alpha = 0.2f))
@@ -1944,7 +1990,7 @@ private fun AttentionChip(label: String, color: Color, tag: String, spokenLabel:
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
-        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -2034,10 +2080,12 @@ private fun PlaceButton(
 /**
  * One segmented control for the viewed pane: Chat or Terminal, both always
  * labelled, the selected one tinted. Chat reads OMP's transcript, so on any
- * other pane it is dimmed and a tap explains why.
+ * other pane it is dimmed and a tap explains why. [compact] (a header too
+ * tight for the words, SESSION-HDR-308) draws each segment as its glyph,
+ * still a selectable Tab spoken by its label.
  */
 @Composable
-private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onMode: (Boolean) -> Unit) {
+private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, compact: Boolean, onMode: (Boolean) -> Unit) {
     val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     Row(
         Modifier
@@ -2047,13 +2095,13 @@ private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, onM
             .selectableGroup()
             .testTag("session:mode"),
     ) {
-        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, accent, "session:chat", state = stringResource(R.string.harness_chat_state)) { onMode(true) }
-        ModeSegment(stringResource(R.string.chat_terminal), !chat, true, accent, "session:terminal") { onMode(false) }
+        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, accent, "session:chat", ChatGlyph.takeIf { compact }, state = stringResource(R.string.harness_chat_state)) { onMode(true) }
+        ModeSegment(stringResource(R.string.chat_terminal), !chat, true, accent, "session:terminal", TerminalGlyph.takeIf { compact }) { onMode(false) }
     }
 }
 
 @Composable
-private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, state: String? = null, onClick: () -> Unit) {
+private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, glyph: ImageVector?, state: String? = null, onClick: () -> Unit) {
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
     // A stateDescription replaces the Tab's own Selected, so a selected unavailable
@@ -2066,7 +2114,7 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
     Box(
         Modifier
             .fillMaxHeight()
-            .widthIn(min = 52.dp)
+            .widthIn(min = if (glyph != null) 48.dp else 52.dp)
             .clip(CircleShape)
             .background(fill)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
@@ -2093,8 +2141,43 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
     ) {
         // The thick onSurface ring says which mode is on without the fill colour, at no
         // width: both segments keep labelLarge's one weight, so switching never resizes them.
-        Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        // As a glyph, the label is still what TalkBack reads, with the Tab's selected state.
+        if (glyph != null) {
+            Icon(glyph, label, Modifier.size(20.dp), tint = text)
+        } else {
+            Text(label, color = text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
     }
+}
+
+/*
+ * Chat | Terminal as glyphs, for a header too tight for the words: Material
+ * Symbols chat_bubble and terminal, path data copied from
+ * material-icons-extended (Icons.Filled.ChatBubble, Icons.Filled.Terminal,
+ * Copyright The Android Open Source Project, Apache-2.0), as AgentsIcon.kt
+ * does, so the app keeps only the core icons dependency.
+ */
+private val ChatGlyph: ImageVector by lazy {
+    ImageVector.Builder(name = "ChatBubble", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = addPathNodes("M20,2H4c-1.1,0 -2,0.9 -2,2v18l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2z"),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+        .build()
+}
+
+private val TerminalGlyph: ImageVector by lazy {
+    ImageVector.Builder(name = "Terminal", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = addPathNodes(
+                "M20,4H4C2.89,4 2,4.9 2,6v12c0,1.1 0.89,2 2,2h16c1.1,0 2,-0.9 2,-2V6C22,4.9 21.11,4 20,4z" +
+                    "M20,18H4V8h16V18zM18,17h-6v-2h6V17zM7.5,17l-1.41,-1.41L8.67,13l-2.59,-2.59L7.5,9l4,4L7.5,17z",
+            ),
+            pathFillType = PathFillType.NonZero,
+            fill = SolidColor(Color.Black),
+        )
+        .build()
 }
 
 /**

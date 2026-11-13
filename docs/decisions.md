@@ -181,6 +181,18 @@ button opens the Tabs sheet there too.
 Height and width come from the session window, not the device, so split
 screen follows the same rules.
 
+In both rows the place button never shrinks below one 48 dp target
+(SESSION-HDR-308). One width rule, the same in Chat and Terminal and in any
+language, measures the Chat \| Terminal words and the need-you chip in the
+current font: when they would leave the place button less than 96 dp (in
+the merged row, less than 220 dp for it plus 96 dp for the tab row),
+Chat \| Terminal shows a chat glyph and a terminal glyph instead of its
+words. Each glyph segment is at least 48 dp wide, is still a selectable tab
+and is read by TalkBack as Chat or Terminal with its selected or unavailable
+state. The need-you chip shows at most 99+ (TalkBack says the exact count);
+in the one-row header it is the part that gives way when nothing else fits,
+never ⋮ or Chat \| Terminal.
+
 While the keyboard is up in such a window, it leaves about 138 dp. The
 status bar, the merged row and the composer would fill that, and no content
 row would show. So while the keyboard is up there:
