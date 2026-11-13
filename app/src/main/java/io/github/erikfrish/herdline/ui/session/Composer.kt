@@ -189,19 +189,57 @@ internal fun answeredRecord(text: String, receipt: String, submit: Boolean, watc
 internal fun editorAfterAnswer(editor: String, sent: String): String = if (editor == sent) "" else editor
 
 /**
- * Until when the notice slot speaks of [sent], from its stored answer time:
- * [HANDED_NOTICE_MS] for [SentState.Handed], [SENT_NOTICE_MS] for a proven
- * [SentState.Confirmed], null for any other record.
+ * The draft a confirmed receipt for [text] leaves. A watched send (P1) keeps
+ * the editor and its files. An unwatched one is [SentState.Handed]: only now
+ * does the text leave the editor (Reuse brings it back), and the files in
+ * [carried] leave with it; their host copies stay for OMP to read and go
+ * with the seven-day sweep.
  */
-internal fun sentNoticeUntil(sent: SentRecord?): Long? = when (sent?.state) {
-    SentState.Handed -> sent.at + HANDED_NOTICE_MS
-    SentState.Confirmed -> sent.at + SENT_NOTICE_MS
+internal fun answeredDraft(
+    draft: Draft, editor: String, text: String, receipt: String, submit: Boolean, watched: Boolean,
+    historyFrom: Long?, carried: Set<String>, now: Long,
+): Draft {
+    val sent = answeredRecord(text, receipt, submit, watched, historyFrom, now)
+    if (watched) return draft.copy(sent = sent)
+    val kept = editorAfterAnswer(editor, text)
+    return draft.copy(
+        text = kept, selectionStart = kept.length, selectionEnd = kept.length, sent = sent,
+        attachments = draft.attachments.filterNot { it.id in carried },
+    )
+}
+
+/** How long the notice slot speaks of [sent]: [HANDED_NOTICE_MS] for Handed, [SENT_NOTICE_MS] for a proven Confirmed, else null. */
+private fun sentNoticeWindow(sent: SentRecord?): Long? = when (sent?.state) {
+    SentState.Handed -> HANDED_NOTICE_MS
+    SentState.Confirmed -> SENT_NOTICE_MS
     else -> null
 }
 
-/** Whether the slot shows [sent]'s notice and its Reuse at [now]: only while [editor] is empty, inside the window. */
-internal fun sentNoticeShown(sent: SentRecord?, editor: String, now: Long): Boolean =
-    editor.isEmpty() && sentNoticeUntil(sent)?.let { now < it } == true
+/**
+ * What is left at [now] of [sent]'s notice window, counted from its stored
+ * answer time, so also across a return or a restart; null when [sent] has
+ * none. An answer time ahead of [now] (the wall clock stepped back) counts
+ * from [now], so the window never outlasts its length (TC-RCPT S1).
+ */
+internal fun sentNoticeLeft(sent: SentRecord?, now: Long): Long? =
+    sentNoticeWindow(sent)?.let { window -> (minOf(sent!!.at, now) + window - now).coerceAtLeast(0) }
+
+/**
+ * Returns once [sent]'s notice window is over. It reads [clock] once and
+ * waits the rest with [sleep], `delay` on the monotonic clock: a wall clock
+ * stepping back meanwhile cannot keep the notice up (TC-RCPT S1).
+ */
+internal suspend fun awaitSentNoticeEnd(
+    sent: SentRecord?,
+    clock: () -> Long = System::currentTimeMillis,
+    sleep: suspend (Long) -> Unit = { delay(it) },
+) {
+    sentNoticeLeft(sent, clock())?.let { sleep(it) }
+}
+
+/** Whether the slot shows [sent]'s notice and its Reuse: while its window is [live] and [editor] is empty. */
+internal fun sentNoticeShown(sent: SentRecord?, editor: String, live: Boolean): Boolean =
+    live && editor.isEmpty() && sentNoticeWindow(sent) != null
 
 /** The words of [sent]'s notice: only a proven delivery says Sent. */
 internal fun sentNoticeText(sent: SentRecord): Int = when {
@@ -1008,20 +1046,17 @@ private fun Editor(
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
             is Connection.DeliveryUpdate.Confirmed -> {
-                val sent = answeredRecord(p.text, p.receipt, p.submit, p.watched, p.historyFrom, System.currentTimeMillis())
-                if (p.watched) {
-                    // P1: the read receipt proves only that the text reached the
-                    // pane's input box, not that the agent took it. The editor
-                    // keeps it and the pane stays held until the history shows it.
-                    save(draft.copy(sent = sent))
-                } else {
-                    // Only now does the text leave the editor; Reuse brings it back.
-                    write(editorAfterAnswer(value.text, p.text))
-                    // The files it carried leave with it; their host copies stay
-                    // for OMP to read and go with the seven-day sweep.
-                    save(draft.copy(sent = sent, attachments = draft.attachments.filterNot { it.id in p.attachments }))
-                    delivered()
-                }
+                // P1: for a watched send the read receipt proves only that the
+                // text reached the pane's input box, not that the agent took it.
+                // The editor keeps it and the pane stays held until the history
+                // shows it.
+                val next = answeredDraft(
+                    draft, value.text, p.text, p.receipt, p.submit, p.watched, p.historyFrom, p.attachments,
+                    System.currentTimeMillis(),
+                )
+                if (!p.watched) value = TextFieldValue(next.text, TextRange(next.text.length))
+                save(next)
+                if (!p.watched) delivered()
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis())),
@@ -1582,14 +1617,12 @@ private fun Editor(
     val targetGone = holdsDraft && check?.paneExists == false
     // The sent notice is a moment, not a state: it shows for a while after
     // the receipt, timed from the stored record, so also across a return or
-    // a restart; then the slot is free again.
-    val noticeUntil = sentNoticeUntil(draft.sent)
-    var noticeNow by remember(noticeUntil) { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(noticeUntil) {
-        if (noticeUntil != null) {
-            delay((noticeUntil - System.currentTimeMillis()).coerceAtLeast(0))
-            noticeNow = System.currentTimeMillis()
-        }
+    // a restart; then the slot is free again, whatever the wall clock does.
+    val noticeSent = draft.sent
+    var noticeLive by remember(noticeSent) { mutableStateOf((sentNoticeLeft(noticeSent, System.currentTimeMillis()) ?: 0L) > 0L) }
+    LaunchedEffect(noticeSent) {
+        awaitSentNoticeEnd(noticeSent)
+        noticeLive = false
     }
 
     // Why Send is off before it is tapped: a disabled button cannot be
@@ -1853,7 +1886,7 @@ private fun Editor(
             else -> Notice(stringResource(causeRes(code ?: "", panel), (panel as? QueuePanel.Unusable)?.reason.orEmpty()), cause = code)
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
-        sentNoticeShown(draft.sent, value.text, noticeNow) -> draft.sent?.let { sent ->
+        sentNoticeShown(draft.sent, value.text, noticeLive) -> draft.sent?.let { sent ->
             Notice(
                 stringResource(sentNoticeText(sent), draftTitle),
                 NoticeAction(stringResource(R.string.composer_reuse)) {
