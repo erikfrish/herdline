@@ -250,6 +250,8 @@ Requirements:
 - **Zig 0.15.2**, exactly; `libghostty-vt-sys` uses it to build the pinned
   Ghostty
 - `socat` for the native ingress socket tests (`sudo apt-get install socat` on Ubuntu)
+- Node.js on `/usr/bin/node` for the isolated native Gemini hook fixtures
+  (`sudo apt-get install nodejs` on Ubuntu)
 - [just](https://github.com/casey/just), optional, for the recipes below
 
 The app currently targets SDK 36. Android's local-network runtime permission
