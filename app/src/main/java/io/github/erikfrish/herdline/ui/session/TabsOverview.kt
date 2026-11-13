@@ -459,11 +459,10 @@ private fun OverviewRow(
             .background(scheme.surfaceContainerHigh)
             .border(border, shape)
             .testTag("overview:card:${card.tab.id}"),
-        propagateMinConstraints = true,
     ) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().fillMaxHeight()
                 .clearAndSetSemantics {
                     contentDescription = spoken
                     if (changed) stateDescription = changedLabel

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
@@ -607,7 +608,7 @@ internal fun FilterChip(
     val pillHeight = (32f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     Box(
         Modifier
-            .heightIn(min = 48.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .testTag("$tagPrefix:filter:$tag"),
         contentAlignment = Alignment.Center,
