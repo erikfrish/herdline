@@ -55,8 +55,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip as MaterialFilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -98,6 +96,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -737,8 +736,8 @@ internal fun ScopeSelector(view: ShellView, groups: List<WorkspaceGroup>, chosen
         val menuWidth = if (dropdownWidth != Dp.Unspecified) dropdownWidth else maxWidth
         TextButton(
             onClick = { open = true },
-            modifier = Modifier.heightIn(min = 48.dp).widthIn(max = menuWidth.coerceAtMost(180.dp))
-                .semantics { contentDescription = spoken }.testTag("overview:scope"),
+            modifier = Modifier.heightIn(min = 48.dp).widthIn(max = if (dropdownWidth != Dp.Unspecified) menuWidth.coerceAtMost(180.dp) else menuWidth)
+                .semantics { contentDescription = spoken; selected = picked != null || gone }.testTag("overview:scope"),
         ) {
             if (picked != null || gone) Icon(Icons.Filled.Check, null, Modifier.size(16.dp))
             Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

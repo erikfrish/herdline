@@ -89,10 +89,12 @@ migrated too, never an explicit List choice.
 
 Two-column cards share their row's tallest content height; the full card
 remains tappable. The phone header keeps Tabs and the compact New tab action
-on one row, with host and totals below; New tab uses a labelled plus, or a
-plus with the full spoken label at large fonts. Scope and category pills
-share one horizontal scrolling row in the overview. Pills grow with font
-size and keep 48 dp touch targets. Browsing changes no desktop focus or size.
+on one row, with host and totals below. At 320 dp or large fonts, New tab
+becomes a 48 dp icon-only action with its full spoken label. Totals wrap to
+two lines before ellipsizing. Scope and category pills share one horizontal
+scrolling row in the overview; Scope is capped at 180 dp only in that row,
+not in List's own-row selector. Pills grow with font size and keep 48 dp
+touch targets. Browsing changes no desktop focus or size.
 
 ## No jump: the order is held while the switcher is shown
 
