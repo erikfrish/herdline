@@ -21,6 +21,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +81,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -113,7 +117,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1564,24 +1567,34 @@ fun SessionScreen(
                     if (cause == null || !switcherSheet.isVisible) switcherOpen = false
                 }
             }
-            // INVIS-4: what an upward swipe's list leaves over, the sheet staying Expanded, ends here. Unconsumed, it reached
-            // the sheet's connection (outside this content), whose onPostFling settles with that velocity: the one move
-            // that takes the sheet above its Expanded anchor, and the motion a stuck Close then only stopped.
-            // Downward deltas and flings (swipe-to-close), a sheet moving to Hidden, and drags on the handle pass as before.
+            // INVIS-4: the upward velocity a swipe leaves over, the sheet staying Expanded, ends here. Unconsumed, it reached
+            // the sheet's connection (outside this content), whose onPostFling settles with it on a velocity-aware spring
+            // from the anchor: the spring overshoots above Expanded, the one move that took the sheet above its anchor
+            // and left it animating, so its drag took the next Close down. Upward deltas still reach the sheet (clamped
+            // there) and the list's overscroll; downward deltas and flings (swipe-to-close) and a sheet moving to Hidden
+            // pass as before.
             val sheetFlingStop = remember(switcherSheet) {
                 object : NestedScrollConnection {
-                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-                        if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Offset(0f, available.y) else Offset.Zero
-
                     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
                         if (available.y < 0f && switcherSheet.targetValue == SheetValue.Expanded) Velocity(0f, available.y) else Velocity.Zero
                 }
             }
+            // INVIS-4b: the header, search and chips above the lists, and the drag handle, are swiped through nested scroll
+            // too: a scrollable that moves nothing, inside sheetFlingStop. Their drags no longer reach the sheet's own
+            // draggable, whose drag stop settles with the same velocity; downward they move and dismiss the sheet as before.
+            val sheetContent = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop)
+                .scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
+            val handleDrags = rememberScrollableState { 0f }
             ModalBottomSheet(
                 onDismissRequest = { switcherOpen = false },
                 sheetState = switcherSheet,
                 containerColor = menuColor(),
                 modifier = Modifier.testTag("switcher:sheet"),
+                dragHandle = {
+                    Box(Modifier.nestedScroll(sheetFlingStop).scrollable(handleDrags, Orientation.Vertical)) {
+                        BottomSheetDefaults.DragHandle()
+                    }
+                },
             ) {
                 // TB1: the overview, or today's list; either one's header switches to the other.
                 val showAs: (TabsView) -> Unit = { picked -> app.settings.update { it.copy(tabsView = picked) } }
@@ -1604,7 +1617,7 @@ fun SessionScreen(
                         actions = actions,
                         onShowList = { showAs(TabsView.List) },
                         onShowRails = { showAs(TabsView.Rails) },
-                        modifier = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop),
+                        modifier = sheetContent,
                         here = focusedPane,
                         reading = chatMode,
                         unseen = unseenTabs,
@@ -1626,7 +1639,7 @@ fun SessionScreen(
                         filter = filter,
                         onFilter = { filter = it },
                         actions = actions,
-                        modifier = Modifier.fillMaxWidth().nestedScroll(sheetFlingStop),
+                        modifier = sheetContent,
                         here = focusedPane,
                         reading = chatMode,
                         unseen = unseenTabs,
