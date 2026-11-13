@@ -1672,6 +1672,10 @@ private fun Editor(
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
+    // TC-RCPT-4: Insert is off only because the desktop isn't on this tab,
+    // so Herdr's frame has no rows to read the box from (live_box's
+    // not_visible). The + menu says so; the desktop is never moved for it.
+    val insertOffDesktop = !insertEnabled && reading && desktop != key.pane && check?.insert?.reason == "not_visible"
     val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
     // Endpoint steering accepts ready attachments; PTY steering stays text-only.
     val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
@@ -1991,6 +1995,7 @@ private fun Editor(
         inlineNotice = notice?.text?.takeIf { !fit.noticeBlock },
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
+        insertOffDesktop = insertOffDesktop,
         sendEnabled = sendEnabled,
         sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
@@ -2161,6 +2166,8 @@ internal fun ComposerBand(
     inlineNotice: String?,
     onMenu: (Boolean) -> Unit,
     insertEnabled: Boolean,
+    /** Insert is off because the desktop isn't on this tab: its menu item says so (TC-RCPT-4). */
+    insertOffDesktop: Boolean = false,
     sendEnabled: Boolean,
     /** Send queues behind the running turn: the button says Queue (§1 S). */
     sendQueues: Boolean = false,
@@ -2266,12 +2273,20 @@ internal fun ComposerBand(
                             text = {
                                 Column {
                                     Text(stringResource(R.string.composer_insert_no_enter))
-                                    // Held: the reason instead of the help; otherwise a
-                                    // disabled item's help is dimmed with its title (R4).
+                                    // Held: the reason instead of the help; off while the
+                                    // desktop is on another tab: that reason (TC-RCPT-4);
+                                    // otherwise a disabled item's help is dimmed with its title (R4).
+                                    val offDesktop = !insertEnabled && !locked && insertOffDesktop
                                     Text(
-                                        stringResource(if (locked) R.string.composer_locked_reason else R.string.composer_insert_no_enter_help),
+                                        stringResource(
+                                            when {
+                                                locked -> R.string.composer_locked_reason
+                                                offDesktop -> R.string.composer_insert_off_desktop
+                                                else -> R.string.composer_insert_no_enter_help
+                                            },
+                                        ),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (insertEnabled || locked) {
+                                        color = if (insertEnabled || locked || offDesktop) {
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)

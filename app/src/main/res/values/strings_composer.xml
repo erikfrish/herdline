@@ -39,6 +39,7 @@
     <string name="composer_locked_line">Locked: not confirmed. Unlock to edit.</string>
     <string name="composer_locked_description">Draft, locked, delivery not confirmed</string>
     <string name="composer_locked_reason">Locked: last delivery not confirmed</string>
+    <string name="composer_insert_off_desktop">Off: the desktop isn\'t on this tab</string>
     <string name="composer_sending">Sending…</string>
     <string name="composer_sending_description">Draft, sending, waiting for Herdr</string>
     <string name="composer_unlock_warning">The first message may already be in the pane. Unlock lets you edit and send again; nothing is resent.</string>
