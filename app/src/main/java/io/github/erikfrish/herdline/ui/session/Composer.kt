@@ -1929,7 +1929,11 @@ private fun Editor(
         null -> null
     }
 
-    if (reading) {
+    // U6-WRONG-TAB: the panel speaks of the draft's pane (its probe, queue and
+    // withdraw); while the draft is for a pane other than the one read, it
+    // would read as this tab's state, so only the slot's Draft for notice
+    // speaks. The probe keeps running for queueSettled.
+    if (reading && !mismatched) {
         // An unusable endpoint the notice names is said there, once: the panel's line of the same cause goes.
         IngressQueuePanel(
             besideNotice(panel, noticeCause(refusal, steadyPrecheck, notice?.cause)),
