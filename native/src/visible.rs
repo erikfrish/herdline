@@ -3,9 +3,9 @@
 //! The host checks in [`crate::composer`] read Herdr's whole frame: the
 //! dialog guard, the 12-row rule and the box reading never depend on what
 //! the phone shows, and run first. This module adds one more refusal on
-//! top of them: the phone may draw only part of the frame (a held grid
-//! taller than the view cuts its top rows; output focus scrolls the bottom
-//! ones away), and text may go only where the user can see it land.
+//! top of them: the phone may draw only part of a held grid taller than
+//! its view, and text may go only where the user can see it land. Legacy
+//! hidden-row and bottom-clip wire fields remain validated; Android sends zero.
 //!
 //! The app captures a [`Viewport`] on the main thread at the tap: what it
 //! drew, for which target, at which geometry. Here it is bound to the same
@@ -166,9 +166,9 @@ pub fn drawn_rows(
 }
 
 /// Where TerminalView draws row 0 (its `offsetY`) for no cursor: the
-/// frame's bottom on the view's bottom when it is taller than the view;
-/// under output focus, `hidden_rows` scrolled past the bottom of the area
-/// above the clip.
+/// frame's bottom on the view's bottom when it is taller than the view.
+/// Retained wire inputs can hide bottom rows above a clip; current Android
+/// reports zero for both.
 pub fn view_offset(
     view_height_px: f32,
     clip_bottom_px: f32,
@@ -188,9 +188,9 @@ pub fn view_offset(
 
 /// [`view_offset`] for a frame whose cursor is shown on `cursor_row`
 /// (visible, inside the frame), Kotlin's `viewOffset` with its cursor row.
-/// Without output focus, a cursor the bottom anchor would leave above the
-/// view is put on its top row instead (A-27P), by whole rows, never past
-/// row 0 nor below the anchor.
+/// With the current zero hidden-row/clip inputs, a cursor the bottom anchor
+/// would leave above the view is put on its top row instead (A-27P), by
+/// whole rows, never past row 0 nor below the anchor.
 pub fn view_offset_at(
     view_height_px: f32,
     clip_bottom_px: f32,

@@ -537,11 +537,16 @@ conn.commit()
             std::fs::create_dir_all(&bin).expect("bin");
             let db = home.path().join(".local/share/opencode/opencode.db");
             std::fs::create_dir_all(db.parent().expect("dir")).expect("data");
-            let made = std::process::Command::new("python3").args(["-c", STORE]).arg(&db).arg(sessions.to_string()).status();
+            let made = std::process::Command::new("python3")
+                .args(["-c", STORE])
+                .arg(&db)
+                .arg(sessions.to_string())
+                .status();
             assert!(made.expect("python3").success());
             let herdr = bin.join("herdr");
             std::fs::write(&herdr, "#!/bin/sh\ncase \"$*\" in *process-info*) cat \"$HOME/proc.json\";; *) cat \"$HOME/pane.json\";; esac\necho\n").expect("herdr");
-            std::fs::set_permissions(&herdr, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("mode");
+            std::fs::set_permissions(&herdr, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .expect("mode");
             Self(home)
         }
 
@@ -563,9 +568,21 @@ conn.commit()
             let home = self.0.path();
             let exec = Exec::local(vec![
                 ("HOME".into(), home.display().to_string()),
-                ("PATH".into(), format!("{}:/usr/bin:/bin", home.join(".local/bin").display())),
+                (
+                    "PATH".into(),
+                    format!("{}:/usr/bin:/bin", home.join(".local/bin").display()),
+                ),
             ]);
-            super::super::page(&exec, "lab", &super::super::Request { pane: "w1:p1".into(), expect: Some(expect.clone()), read, media: None })
+            super::super::page(
+                &exec,
+                "lab",
+                &super::super::Request {
+                    pane: "w1:p1".into(),
+                    expect: Some(expect.clone()),
+                    read,
+                    media: None,
+                },
+            )
         }
     }
 
@@ -586,10 +603,14 @@ conn.commit()
     }
 
     fn texts(page: &Response) -> Vec<&str> {
-        page.entries.iter().flat_map(|entry| &entry.blocks).filter_map(|block| match block {
-            Block::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        }).collect()
+        page.entries
+            .iter()
+            .flat_map(|entry| &entry.blocks)
+            .filter_map(|block| match block {
+                Block::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -613,7 +634,12 @@ conn.commit()
     #[test]
     fn an_uncertain_new_session_is_refused_never_read_as_the_old_or_another() {
         let host = Host::new(json!({OLD: "old turn", NEW: "new turn"}));
-        let refused = |host: &Host| matches!(host.read(&shown(OLD), Read::After { offset: 2 }), Err(Error::NoTranscript));
+        let refused = |host: &Host| {
+            matches!(
+                host.read(&shown(OLD), Read::After { offset: 2 }),
+                Err(Error::NoTranscript)
+            )
+        };
         // No foreground opencode: no process vouches for the reported session.
         host.reports(id(NEW));
         host.foreground(json!([{"name": "node", "pid": 42}]));

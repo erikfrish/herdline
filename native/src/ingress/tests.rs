@@ -81,7 +81,10 @@ impl Host {
                 "valid test fixture or expected ingress reply", error
             )
         });
-        let host = Self { xdg: std::cell::RefCell::new(None), home };
+        let host = Self {
+            xdg: std::cell::RefCell::new(None),
+            home,
+        };
         host.xdg.replace(Some(host.runtime()));
         fs::create_dir_all(host.runtime()).unwrap_or_else(|error| {
             panic!(
@@ -106,12 +109,15 @@ impl Host {
     }
 
     fn uid() -> String {
-        let output = Command::new("id").arg("-u").output().unwrap_or_else(|error| {
-            panic!(
-                "{}: {:?}",
-                "valid test fixture or expected ingress reply", error
-            )
-        });
+        let output = Command::new("id")
+            .arg("-u")
+            .output()
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{}: {:?}",
+                    "valid test fixture or expected ingress reply", error
+                )
+            });
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
     }
 
@@ -159,7 +165,12 @@ impl Host {
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .env_remove("XDG_RUNTIME_DIR")
-            .envs(self.xdg.borrow().iter().map(|dir| ("XDG_RUNTIME_DIR", dir.clone())))
+            .envs(
+                self.xdg
+                    .borrow()
+                    .iter()
+                    .map(|dir| ("XDG_RUNTIME_DIR", dir.clone())),
+            )
             .output()
             .unwrap_or_else(|error| {
                 panic!(
@@ -197,7 +208,11 @@ fn only_the_shells_own_runtime_directory_is_looked_in() {
     let host = Host::new();
     // The extension published in the shell's $XDG_RUNTIME_DIR: found.
     host.publish("s1", &sidecar_json("s1"));
-    assert!(matches!(host.discover(&expected()), Discovery::Found(_)), "{:?}", host.discover(&expected()));
+    assert!(
+        matches!(host.discover(&expected()), Discovery::Found(_)),
+        "{:?}",
+        host.discover(&expected())
+    );
 
     // The shell names another runtime directory: the agent's endpoint is
     // not looked for anywhere else, so it is absent and the pane route is used.
@@ -215,7 +230,12 @@ fn only_the_shells_own_runtime_directory_is_looked_in() {
     host.xdg.replace(None);
     assert_eq!(host.discover(&expected()), Discovery::Absent);
     let fallback = host.run_user().join(Host::uid());
-    fs::create_dir_all(fallback.parent().unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply"))).unwrap_or_else(|error| {
+    fs::create_dir_all(
+        fallback
+            .parent()
+            .unwrap_or_else(|| panic!("{}", "valid test fixture or expected ingress reply")),
+    )
+    .unwrap_or_else(|error| {
         panic!(
             "{}: {:?}",
             "valid test fixture or expected ingress reply", error

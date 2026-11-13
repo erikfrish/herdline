@@ -10,7 +10,9 @@
 //! Every rule below names the pinned source it mirrors, Kilo-Org/kilocode tag
 //! v7.8.27 (commit 03a6f07d053cd7e6aa88fa1e258e93510335259f).
 
-use super::{Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, Usage, cap, text_block};
+use super::{
+    Block, Entry, Identity, Image, Kind, Marker, Read, Response, Source, Usage, cap, text_block,
+};
 use crate::{Error, Result, ssh::Exec};
 use herdr_client::shell_quote;
 use serde_json::{Value, json};
@@ -91,10 +93,16 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [STORE_LAYOUT, EVENT_STORE, OUTSIDE_HOME, IN_MEMORY, UNREADABLE]
-                .into_iter()
-                .find(|known| *known == format)
-                .ok_or(Error::BadReply)?,
+            [
+                STORE_LAYOUT,
+                EVENT_STORE,
+                OUTSIDE_HOME,
+                IN_MEMORY,
+                UNREADABLE,
+            ]
+            .into_iter()
+            .find(|known| *known == format)
+            .ok_or(Error::BadReply)?,
         ));
     }
     if reply.get("error").is_some() {
@@ -127,8 +135,15 @@ fn entry(row: &Value) -> Option<Entry> {
         Some("assistant") if info["summary"] == true => (Kind::Compaction, None),
         Some(role @ ("user" | "assistant")) => (Kind::Message, Some(role.to_owned())),
         other => {
-            let name = if row["bad"] == true { "unreadable" } else { other.unwrap_or("none") };
-            blocks.push(text_block(&format!("Unsupported Kilo message: {}", cap(name, 32).0), false));
+            let name = if row["bad"] == true {
+                "unreadable"
+            } else {
+                other.unwrap_or("none")
+            };
+            blocks.push(text_block(
+                &format!("Unsupported Kilo message: {}", cap(name, 32).0),
+                false,
+            ));
             (Kind::Message, Some("system".to_owned()))
         }
     };
@@ -136,7 +151,10 @@ fn entry(row: &Value) -> Option<Entry> {
     let mut image = || {
         let part = images;
         images += 1;
-        Image { part, source: Source::Unreadable }
+        Image {
+            part,
+            source: Source::Unreadable,
+        }
     };
     for part in row["parts"].as_array().into_iter().flatten() {
         match part["t"].as_str().unwrap_or_default() {
@@ -153,7 +171,10 @@ fn entry(row: &Value) -> Option<Entry> {
             "tool" => {
                 let call_id = part["call"].as_str().unwrap_or_default().to_owned();
                 let name = cap(part["name"].as_str().unwrap_or_default(), 128).0;
-                let (args, truncated) = cap(part["input"].as_str().unwrap_or_default(), super::ARGS_LIMIT);
+                let (args, truncated) = cap(
+                    part["input"].as_str().unwrap_or_default(),
+                    super::ARGS_LIMIT,
+                );
                 blocks.push(Block::ToolCall {
                     call_id: call_id.clone(),
                     name: name.clone(),
@@ -163,9 +184,13 @@ fn entry(row: &Value) -> Option<Entry> {
                 });
                 let is_error = part["status"] == "error";
                 if is_error || part["status"] == "completed" {
-                    let output = part[if is_error { "error" } else { "output" }].as_str().unwrap_or_default();
-                    let (text, truncated) =
-                        cap(&crate::herdr_setup::plain_text(output.as_bytes()), super::RESULT_LIMIT);
+                    let output = part[if is_error { "error" } else { "output" }]
+                        .as_str()
+                        .unwrap_or_default();
+                    let (text, truncated) = cap(
+                        &crate::herdr_setup::plain_text(output.as_bytes()),
+                        super::RESULT_LIMIT,
+                    );
                     let count = part["images"].as_u64().unwrap_or(0).min(64);
                     blocks.push(Block::ToolResult {
                         call_id,
@@ -196,10 +221,19 @@ fn entry(row: &Value) -> Option<Entry> {
     if let Some(name) = info["error"]["name"].as_str() {
         // MessageAbortedError (schema MessageV2): the turn was stopped; it names no one.
         if name == "MessageAbortedError" {
-            blocks.push(Block::Marker { marker: Marker::Stopped, text: String::new(), truncated: false });
+            blocks.push(Block::Marker {
+                marker: Marker::Stopped,
+                text: String::new(),
+                truncated: false,
+            });
         } else {
-            let message = info["error"]["message"].as_str().filter(|text| !text.is_empty());
-            blocks.push(text_block(&format!("[{}]", cap(message.unwrap_or(name), 512).0), false));
+            let message = info["error"]["message"]
+                .as_str()
+                .filter(|text| !text.is_empty());
+            blocks.push(text_block(
+                &format!("[{}]", cap(message.unwrap_or(name), 512).0),
+                false,
+            ));
         }
     }
     if kind == Kind::Other {
@@ -210,12 +244,15 @@ fn entry(row: &Value) -> Option<Entry> {
         let input = tokens["input"].as_u64().unwrap_or(0)
             + tokens["cache"]["read"].as_u64().unwrap_or(0)
             + tokens["cache"]["write"].as_u64().unwrap_or(0);
-        let output = tokens["output"].as_u64().unwrap_or(0) + tokens["reasoning"].as_u64().unwrap_or(0);
+        let output =
+            tokens["output"].as_u64().unwrap_or(0) + tokens["reasoning"].as_u64().unwrap_or(0);
         Usage {
             input,
             output,
             total_tokens: input + output,
-            cost: info["cost"].as_f64().filter(|cost| cost.is_finite() && *cost >= 0.0),
+            cost: info["cost"]
+                .as_f64()
+                .filter(|cost| cost.is_finite() && *cost >= 0.0),
         }
     });
     Some(Entry {
@@ -236,7 +273,10 @@ fn entry(row: &Value) -> Option<Entry> {
 
 fn file_name(part: &Value) -> String {
     let name = part["name"].as_str().filter(|name| !name.is_empty());
-    format!("[file: {}]", cap(name.or(part["mime"].as_str()).unwrap_or("unknown"), 256).0)
+    format!(
+        "[file: {}]",
+        cap(name.or(part["mime"].as_str()).unwrap_or("unknown"), 256).0
+    )
 }
 
 /// The host side. The store comes from this shell's own HOME, XDG_DATA_HOME

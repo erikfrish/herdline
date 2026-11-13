@@ -99,7 +99,6 @@ class ComposerBaselineTest {
         readOnly = false, menu = false, menuItems = emptyList(), fit = fit, noticeActions = emptyList(), inlineNotice = null,
         onMenu = {}, insertEnabled = true, sendEnabled = true, onInsert = {}, onSend = {}, destinationMismatch = false,
         onTerminalKeyboard = {}, onLargerEditor = {}, onFieldFocus = {}, locked = false, inFlight = false,
-        outputFocus = null, onOutputFocus = {},
     )
 
     private fun bounds(): Map<String, DpRect> {

@@ -5,7 +5,14 @@
 //! Mastra Code writes; it pins what the reader does with such rows.
 
 use super::*;
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, path::PathBuf, process::Command, time::{Duration, Instant}};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    path::PathBuf,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 const TID: &str = "thread-0a1b2c3d";
 const OTHER: &str = "thread-ffee0011";
@@ -38,8 +45,16 @@ conn.close()
 /// The storage variables the host script takes from its shell, unset for
 /// every run so only the ones a test names are seen.
 const WANTED: [&str; 10] = [
-    "MASTRA_STORAGE_BACKEND", "MASTRA_DB_URL", "MASTRA_DB_PATH", "MASTRA_APP_DATA_DIR", "XDG_DATA_HOME",
-    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+    "MASTRA_STORAGE_BACKEND",
+    "MASTRA_DB_URL",
+    "MASTRA_DB_PATH",
+    "MASTRA_APP_DATA_DIR",
+    "XDG_DATA_HOME",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
 ];
 
 struct Host {
@@ -63,7 +78,10 @@ impl Host {
             "terminal_id": "term_1",
         }, "type": "pane_info"}});
         fs::write(home.path().join("pane.json"), pane.to_string()).unwrap();
-        let host = Self { home, env: Default::default() };
+        let host = Self {
+            home,
+            env: Default::default(),
+        };
         host.process(json!({"name": agent, "pid": 42}));
         let herdr = bin.join("herdr");
         fs::write(
@@ -91,7 +109,11 @@ impl Host {
 
     /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
+        self.env.replace(
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        );
     }
 
     /// Herdr's `foreground_cwd` for the pane, created unless it is meant
@@ -145,14 +167,27 @@ impl Host {
         }
         let output = command
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(tid), &options(read)))
+            .arg(query_script(
+                "lab",
+                "w1:p1",
+                &self.expect(tid),
+                &options(read),
+            ))
             .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        response(&serde_json::from_slice(&output.stdout).unwrap(), &self.expect(tid), false)
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        response(
+            &serde_json::from_slice(&output.stdout).unwrap(),
+            &self.expect(tid),
+            false,
+        )
     }
 }
 
@@ -161,7 +196,13 @@ fn message(thread: &str, id: &str, role: &str, created: &str, content: Value) ->
 }
 
 fn said(thread: &str, id: &str, role: &str, created: &str, words: &str) -> Value {
-    message(thread, id, role, created, json!({"format": 2, "parts": [{"type": "text", "text": words}]}))
+    message(
+        thread,
+        id,
+        role,
+        created,
+        json!({"format": 2, "parts": [{"type": "text", "text": words}]}),
+    )
 }
 
 fn texts(page: &Response) -> Vec<String> {
@@ -208,7 +249,10 @@ fn reads_only_the_reported_thread_in_created_order_with_ties_broken_by_id() {
         json!({"id": "m-d", "thread_id": TID, "role": "assistant", "createdAt": "2026-01-01T00:00:04.000Z", "content": "plain"}),
     ]}));
     let tail = host.page(TID, Read::Tail).unwrap();
-    assert_eq!(texts(&tail), ["first-a", "first-b", "second", "third", "plain"]);
+    assert_eq!(
+        texts(&tail),
+        ["first-a", "first-b", "second", "third", "plain"]
+    );
     assert_eq!(tail.entries[0].timestamp, Some(1_767_225_601_000));
     assert_eq!(tail.entries[3].role.as_deref(), Some("assistant"));
     assert!(!tail.has_older);
@@ -223,7 +267,10 @@ fn an_edited_message_keeps_its_place_and_the_next_page_rereads_it() {
     ]}));
     let tail = host.page(TID, Read::Tail).unwrap();
     // The upsert rewrites content, never createdAt or the row.
-    write(&db, "c.execute(\"UPDATE mastra_messages SET content=? WHERE id='m-2'\",(json.dumps({'format':2,'parts':[{'type':'text','text':'part and more'}]}),))");
+    write(
+        &db,
+        "c.execute(\"UPDATE mastra_messages SET content=? WHERE id='m-2'\",(json.dumps({'format':2,'parts':[{'type':'text','text':'part and more'}]}),))",
+    );
     let next = host.page(TID, Read::After { offset: tail.end }).unwrap();
     assert!(!next.reset);
     assert_eq!(texts(&next), ["part and more"]);
@@ -240,13 +287,19 @@ fn a_deleted_or_late_older_message_starts_the_next_page_over() {
     ]}));
     let tail = host.page(TID, Read::Tail).unwrap();
     // A revert deletes the newest, and a new message takes its place.
-    write(&db, "c.execute(\"DELETE FROM mastra_messages WHERE id IN ('m-2','m-3')\")\n\
-        c.execute(\"INSERT INTO mastra_messages (id,thread_id,content,role,createdAt) VALUES ('m-4',?,'four','user','2026-01-01T00:00:04.000Z')\",(sys.argv[2],))");
+    write(
+        &db,
+        "c.execute(\"DELETE FROM mastra_messages WHERE id IN ('m-2','m-3')\")\n\
+        c.execute(\"INSERT INTO mastra_messages (id,thread_id,content,role,createdAt) VALUES ('m-4',?,'four','user','2026-01-01T00:00:04.000Z')\",(sys.argv[2],))",
+    );
     let next = host.page(TID, Read::After { offset: tail.end }).unwrap();
     assert!(next.reset);
     assert_eq!(texts(&next), ["one", "four"]);
     // A row written late with an older createdAt shifts every later place.
-    write(&db, "c.execute(\"INSERT INTO mastra_messages (id,thread_id,content,role,createdAt) VALUES ('m-0',?,'zero','user','2026-01-01T00:00:00.000Z')\",(sys.argv[2],))");
+    write(
+        &db,
+        "c.execute(\"INSERT INTO mastra_messages (id,thread_id,content,role,createdAt) VALUES ('m-0',?,'zero','user','2026-01-01T00:00:00.000Z')\",(sys.argv[2],))",
+    );
     let shifted = host.page(TID, Read::After { offset: next.end }).unwrap();
     assert!(shifted.reset);
     assert_eq!(texts(&shifted), ["zero", "one", "four"]);
@@ -258,7 +311,15 @@ fn a_deleted_or_late_older_message_starts_the_next_page_over() {
 fn a_page_before_the_first_shown_reads_the_older_messages() {
     let host = Host::new(TID, "mastracode");
     let messages: Vec<Value> = (0..205)
-        .map(|i| said(TID, &format!("m-{i:03}"), "user", &format!("2026-01-01T00:{:02}:{:02}.000Z", i / 60, i % 60), &format!("w{i}")))
+        .map(|i| {
+            said(
+                TID,
+                &format!("m-{i:03}"),
+                "user",
+                &format!("2026-01-01T00:{:02}:{:02}.000Z", i / 60, i % 60),
+                &format!("w{i}"),
+            )
+        })
         .collect();
     host.default_store(json!({"threads": [TID], "messages": messages}));
     let tail = host.page(TID, Read::Tail).unwrap();
@@ -273,20 +334,37 @@ fn a_page_before_the_first_shown_reads_the_older_messages() {
 fn session_init_and_an_unknown_thread_are_not_found_never_the_latest_thread() {
     let host = Host::new("session-init", "mastracode");
     host.default_store(json!({"threads": [OTHER], "messages": [said(OTHER, "m-1", "user", "2026-01-01T00:00:01.000Z", "latest")]}));
-    assert!(matches!(host.page("session-init", Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page("session-init", Read::Tail),
+        Err(Error::NoTranscript)
+    ));
     let host = Host::new(TID, "mastracode");
     host.default_store(json!({"threads": [OTHER], "messages": [said(OTHER, "m-1", "user", "2026-01-01T00:00:01.000Z", "latest")]}));
-    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(TID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
 fn only_user_signals_are_the_users_words() {
     let host = Host::new(TID, "mastracode");
     let signal = |id: &str, kind: &str, words: &str| {
-        message(TID, id, "signal", "2026-01-01T00:00:01.000Z",
-            json!({"format": 2, "parts": [{"type": "text", "text": words}], "metadata": {"signal": {"type": kind}}}))
+        message(
+            TID,
+            id,
+            "signal",
+            "2026-01-01T00:00:01.000Z",
+            json!({"format": 2, "parts": [{"type": "text", "text": words}], "metadata": {"signal": {"type": kind}}}),
+        )
     };
-    let mut typed = message(TID, "m-4", "signal", "2026-01-01T00:00:04.000Z", json!({"format": 2, "parts": [{"type": "text", "text": "by type"}]}));
+    let mut typed = message(
+        TID,
+        "m-4",
+        "signal",
+        "2026-01-01T00:00:04.000Z",
+        json!({"format": 2, "parts": [{"type": "text", "text": "by type"}]}),
+    );
     typed["type"] = json!("user-message");
     host.default_store(json!({"threads": [TID], "messages": [
         signal("m-1", "user", "typed by the user"),
@@ -295,12 +373,21 @@ fn only_user_signals_are_the_users_words() {
         typed,
     ]}));
     let page = host.page(TID, Read::Tail).unwrap();
-    let roles: Vec<_> = page.entries.iter().map(|entry| entry.role.as_deref().unwrap()).collect();
+    let roles: Vec<_> = page
+        .entries
+        .iter()
+        .map(|entry| entry.role.as_deref().unwrap())
+        .collect();
     assert_eq!(roles, ["user", "system", "system", "user"]);
     // The harness's own signals show their kind, never their content.
     assert_eq!(
         texts(&page),
-        ["typed by the user", "[Mastra Code reactive signal]", "[Mastra Code notification signal]", "by type"]
+        [
+            "typed by the user",
+            "[Mastra Code reactive signal]",
+            "[Mastra Code notification signal]",
+            "by type"
+        ]
     );
 }
 
@@ -324,7 +411,10 @@ fn tool_calls_pair_with_their_result_error_or_denial() {
     let host = Host::new(TID, "mastracode");
     let tool = |call: &str, state: &str, extra: Value| {
         let mut invocation = json!({"toolCallId": call, "toolName": "bash", "args": {"command": "ls"}, "state": state});
-        invocation.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        invocation
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         json!({"type": "tool-invocation", "toolInvocation": invocation})
     };
     host.default_store(json!({"threads": [TID], "messages": [message(TID, "m-1", "assistant", "2026-01-01T00:00:01.000Z",
@@ -336,10 +426,18 @@ fn tool_calls_pair_with_their_result_error_or_denial() {
             tool("c4", "output-denied", json!({})),
         ]}))]}));
     let page = host.page(TID, Read::Tail).unwrap();
-    let [call, result, _, failed, pending, _, denied] = &page.entries[0].blocks[..] else { panic!("{page:?}") };
-    assert!(matches!(call, Block::ToolCall { call_id, name, args, .. } if call_id == "c1" && name == "bash" && args.contains("ls")));
-    assert!(matches!(result, Block::ToolResult { call_id, text, is_error: false, .. } if call_id == "c1" && text == "a\nb"));
-    assert!(matches!(failed, Block::ToolResult { call_id, text, is_error: true, .. } if call_id == "c2" && text == "boom"));
+    let [call, result, _, failed, pending, _, denied] = &page.entries[0].blocks[..] else {
+        panic!("{page:?}")
+    };
+    assert!(
+        matches!(call, Block::ToolCall { call_id, name, args, .. } if call_id == "c1" && name == "bash" && args.contains("ls"))
+    );
+    assert!(
+        matches!(result, Block::ToolResult { call_id, text, is_error: false, .. } if call_id == "c1" && text == "a\nb")
+    );
+    assert!(
+        matches!(failed, Block::ToolResult { call_id, text, is_error: true, .. } if call_id == "c2" && text == "boom")
+    );
     assert!(matches!(pending, Block::ToolCall { call_id, .. } if call_id == "c3"));
     assert!(matches!(denied, Block::ToolResult { call_id, is_error: true, .. } if call_id == "c4"));
 }
@@ -361,7 +459,12 @@ fn images_are_refused_and_file_data_is_never_shipped() {
         Block::Image(Image { source: Source::Unreadable, part: 1 }),
     ] if text == "[file: notes.txt]"));
     let shipped = serde_json::to_string(&page).unwrap();
-    assert!(!shipped.contains("iVBOR") && !shipped.contains("VE9QLVNFQ1JFVA") && !shipped.contains("/9j/"), "{shipped}");
+    assert!(
+        !shipped.contains("iVBOR")
+            && !shipped.contains("VE9QLVNFQ1JFVA")
+            && !shipped.contains("/9j/"),
+        "{shipped}"
+    );
 }
 
 #[test]
@@ -372,16 +475,27 @@ fn a_remote_store_is_refused_wherever_it_is_chosen() {
     for vars in [
         vec![("MASTRA_STORAGE_BACKEND", "pg")],
         vec![("MASTRA_DB_URL", "libsql://db.example.turso.io")],
-        vec![("MASTRA_STORAGE_BACKEND", "libsql"), ("MASTRA_DB_URL", "https://db.example")],
+        vec![
+            ("MASTRA_STORAGE_BACKEND", "libsql"),
+            ("MASTRA_DB_URL", "https://db.example"),
+        ],
     ] {
         host.environ(&vars);
         assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE, "{vars:?}");
     }
     host.environ(&[]);
     let settings = host.data().join("settings.json");
-    fs::write(&settings, r#"{"storage":{"backend":"pg","pg":{"host":"db"}}}"#).unwrap();
+    fs::write(
+        &settings,
+        r#"{"storage":{"backend":"pg","pg":{"host":"db"}}}"#,
+    )
+    .unwrap();
     assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE);
-    fs::write(&settings, r#"{"storage":{"libsql":{"url":"libsql://db.example"}}}"#).unwrap();
+    fs::write(
+        &settings,
+        r#"{"storage":{"libsql":{"url":"libsql://db.example"}}}"#,
+    )
+    .unwrap();
     assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE);
     fs::remove_file(&settings).unwrap();
     let global = host.home.path().join(".mastracode/database.json");
@@ -398,12 +512,18 @@ fn a_process_replaced_mid_read_gives_no_answer_not_even_a_refusal() {
     host.default_store(json!({"threads": [TID], "messages": [said(TID, "m-1", "user", "2026-01-01T00:00:01.000Z", "hi")]}));
     let replaced = json!({"name": "mastracode", "pid": 43});
     host.process_then(replaced.clone());
-    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(TID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
     host.process(json!({"name": "mastracode", "pid": 42}));
     host.environ(&[("MASTRA_STORAGE_BACKEND", "pg")]);
     assert_eq!(refused(host.page(TID, Read::Tail)), REMOTE);
     host.process_then(replaced);
-    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(TID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -435,7 +555,11 @@ fn the_project_database_json_is_found_from_the_agents_own_cwd_and_git_root() {
     let repo = host.home.path().join("repo");
     let project = host.store(&host.home.path().join("project.db"), spec("project"));
     fs::create_dir_all(repo.join(".mastracode")).unwrap();
-    fs::write(repo.join(".mastracode/database.json"), json!({"url": format!("file:{}", project.display())}).to_string()).unwrap();
+    fs::write(
+        repo.join(".mastracode/database.json"),
+        json!({"url": format!("file:{}", project.display())}).to_string(),
+    )
+    .unwrap();
     // Below the folder but outside any git work tree, the root is the cwd itself.
     host.cwd(&repo.join("sub"));
     assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["default"]);
@@ -445,9 +569,17 @@ fn the_project_database_json_is_found_from_the_agents_own_cwd_and_git_root() {
     assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
     // extensions.worktreeConfig alone keeps the work tree where it is; a
     // core.worktree in config.worktree moves it.
-    fs::write(repo.join(".git/config"), "[extensions]\n\tworktreeConfig = true\n").unwrap();
+    fs::write(
+        repo.join(".git/config"),
+        "[extensions]\n\tworktreeConfig = true\n",
+    )
+    .unwrap();
     assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
-    fs::write(repo.join(".git/config.worktree"), "[core]\n\tworktree = /elsewhere\n").unwrap();
+    fs::write(
+        repo.join(".git/config.worktree"),
+        "[core]\n\tworktree = /elsewhere\n",
+    )
+    .unwrap();
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
     fs::remove_file(repo.join(".git/config.worktree")).unwrap();
     // Git reads a true core.bare in any of its spellings: no work tree.
@@ -458,7 +590,10 @@ fn the_project_database_json_is_found_from_the_agents_own_cwd_and_git_root() {
     fs::write(repo.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
     assert_eq!(texts(&host.page(TID, Read::Tail).unwrap()), ["project"]);
     // An include can set either from a file this does not read.
-    for include in ["[include]\n\tpath = more", "[includeIf \"gitdir:~/\"]\n\tpath = more"] {
+    for include in [
+        "[include]\n\tpath = more",
+        "[includeIf \"gitdir:~/\"]\n\tpath = more",
+    ] {
         fs::write(repo.join(".git/config"), format!("{include}\n")).unwrap();
         assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN, "{include}");
     }
@@ -478,7 +613,11 @@ fn a_work_tree_moved_off_the_cwds_ancestors_is_refused_never_the_default_store()
     let elsewhere = host.home.path().join("elsewhere");
     let other = host.store(&host.home.path().join("other.db"), spec("other"));
     fs::create_dir_all(elsewhere.join(".mastracode")).unwrap();
-    fs::write(elsewhere.join(".mastracode/database.json"), json!({"url": format!("file:{}", other.display())}).to_string()).unwrap();
+    fs::write(
+        elsewhere.join(".mastracode/database.json"),
+        json!({"url": format!("file:{}", other.display())}).to_string(),
+    )
+    .unwrap();
     host.environ(&[("GIT_WORK_TREE", elsewhere.to_str().unwrap())]);
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
     // A repository's own core.worktree is refused the same way.
@@ -487,7 +626,11 @@ fn a_work_tree_moved_off_the_cwds_ancestors_is_refused_never_the_default_store()
     let repo = host.home.path().join("repo");
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-    fs::write(repo.join(".git/config"), format!("[core]\n\tworktree = {}\n", elsewhere.display())).unwrap();
+    fs::write(
+        repo.join(".git/config"),
+        format!("[core]\n\tworktree = {}\n", elsewhere.display()),
+    )
+    .unwrap();
     host.cwd(&repo);
     assert_eq!(refused(host.page(TID, Read::Tail)), UNKNOWN);
 }
@@ -528,7 +671,13 @@ fn a_store_outside_home_is_refused_without_being_opened() {
 fn a_fifo_at_the_store_path_is_refused_without_waiting() {
     let host = Host::new(TID, "mastracode");
     fs::create_dir_all(host.data()).unwrap();
-    assert!(Command::new("mkfifo").arg(host.data().join("mastra.db")).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(host.data().join("mastra.db"))
+            .status()
+            .unwrap()
+            .success()
+    );
     let started = Instant::now();
     assert_eq!(refused(host.page(TID, Read::Tail)), UNREADABLE);
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -577,7 +726,10 @@ fn a_thread_past_the_scan_bound_is_refused_before_any_content() {
 fn another_agent_reporting_a_mastracode_id_is_never_read_as_mastracode() {
     let host = Host::new(TID, "opencode");
     host.default_store(json!({"threads": [TID], "messages": [said(TID, "m-1", "user", "2026-01-01T00:00:01.000Z", "hi")]}));
-    assert!(matches!(host.page(TID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(TID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -586,11 +738,26 @@ fn a_mastracode_pane_needs_its_own_node_wrapped_process() {
         let pane = json!({"result": {"pane": {"pane_id": "w1:p1", "terminal_id": "term_1", "agent_status": "idle",
             "agent_session": {"agent": "mastracode", "kind": "id", "source": "herdr:mastracode", "value": TID}}}});
         let process = json!({"result": {"process_info": {"foreground_processes": [process]}}});
-        super::super::identity(&pane, &process).map(|(identity, _)| identity.pid).unwrap()
+        super::super::identity(&pane, &process)
+            .map(|(identity, _)| identity.pid)
+            .unwrap()
     };
-    assert_eq!(report(json!({"name": "node", "pid": 42, "argv": ["node", "/usr/lib/node_modules/mastracode/dist/cli.js"]})), Some(42));
-    assert_eq!(report(json!({"name": "node", "pid": 42, "argv": ["node", "/home/u/.local/bin/mastracode"]})), Some(42));
-    assert_eq!(report(json!({"name": "node", "pid": 42, "argv": ["node", "/srv/other/cli.js"]})), None);
+    assert_eq!(
+        report(
+            json!({"name": "node", "pid": 42, "argv": ["node", "/usr/lib/node_modules/mastracode/dist/cli.js"]})
+        ),
+        Some(42)
+    );
+    assert_eq!(
+        report(
+            json!({"name": "node", "pid": 42, "argv": ["node", "/home/u/.local/bin/mastracode"]})
+        ),
+        Some(42)
+    );
+    assert_eq!(
+        report(json!({"name": "node", "pid": 42, "argv": ["node", "/srv/other/cli.js"]})),
+        None
+    );
     // The host script must find the same process, or every read is refused.
     let host = Host::new(TID, "mastracode");
     host.process(json!({"name": "node", "pid": 42, "argv": ["node", "/usr/lib/node_modules/mastracode/dist/cli.js"]}));

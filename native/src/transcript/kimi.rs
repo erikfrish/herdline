@@ -25,7 +25,14 @@ const VERSION: &str = "kimi_wire_version";
 /// The pane's foreground process is none [`foreground_pid`] accepts, so
 /// there is no Kimi process whose working directory binds the session.
 const UNNAMED: &str = "kimi_process_unnamed";
-const REFUSALS: [&str; 6] = [OUTSIDE_HOME, AMBIGUOUS, UNREADABLE, TOO_LARGE, VERSION, UNNAMED];
+const REFUSALS: [&str; 6] = [
+    OUTSIDE_HOME,
+    AMBIGUOUS,
+    UNREADABLE,
+    TOO_LARGE,
+    VERSION,
+    UNNAMED,
+];
 
 /// Herdr's name is the process's comm (herdr platform/linux.rs:385-387), and
 /// Kimi Code sets `process.title = 'kimi-code'` first thing (cli/main.ts:181,
@@ -33,7 +40,13 @@ const REFUSALS: [&str; 6] = [OUTSIDE_HOME, AMBIGUOUS, UNREADABLE, TOO_LARGE, VER
 /// `kimi` or `kimi-code` (detect/mod.rs:213).
 const PROCESS_NAMES: [&str; 2] = ["kimi", "kimi-code"];
 /// The npm package's entry, as Herdr matches a `node` launch (detect/mod.rs:723-731).
-const NODE_ENTRY: [&str; 5] = ["node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"];
+const NODE_ENTRY: [&str; 5] = [
+    "node_modules",
+    "@moonshot-ai",
+    "kimi-code",
+    "dist",
+    "main.mjs",
+];
 
 /// The pane's Kimi Code process: the first foreground process named
 /// [`PROCESS_NAMES`], else the first `node` whose script (its first argument
@@ -41,18 +54,39 @@ const NODE_ENTRY: [&str; 5] = ["node_modules", "@moonshot-ai", "kimi-code", "dis
 /// folded as Herdr compares. The host script's `identity()` picks the same.
 pub(super) fn foreground_pid(process: &Value) -> Option<u32> {
     let all = process["result"]["process_info"]["foreground_processes"].as_array()?;
-    let pid = |process: &Value| process["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok());
-    let named = all.iter().find(|process| PROCESS_NAMES.iter().any(|name| process["name"] == *name));
-    named.and_then(pid).or_else(|| all.iter().find(|process| process["name"] == "node" && node_entry(&process["argv"])).and_then(pid))
+    let pid = |process: &Value| {
+        process["pid"]
+            .as_u64()
+            .and_then(|pid| u32::try_from(pid).ok())
+    };
+    let named = all
+        .iter()
+        .find(|process| PROCESS_NAMES.iter().any(|name| process["name"] == *name));
+    named.and_then(pid).or_else(|| {
+        all.iter()
+            .find(|process| process["name"] == "node" && node_entry(&process["argv"]))
+            .and_then(pid)
+    })
 }
 
 fn node_entry(argv: &Value) -> bool {
-    let Some(script) = argv.as_array().and_then(|argv| argv.iter().skip(1).filter_map(Value::as_str).find(|arg| !arg.starts_with('-'))) else {
+    let Some(script) = argv.as_array().and_then(|argv| {
+        argv.iter()
+            .skip(1)
+            .filter_map(Value::as_str)
+            .find(|arg| !arg.starts_with('-'))
+    }) else {
         return false;
     };
-    let parts: Vec<&str> = script.split(['/', '\\']).filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = script
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
     parts.len() >= NODE_ENTRY.len()
-        && parts[parts.len() - NODE_ENTRY.len()..].iter().zip(NODE_ENTRY).all(|(part, entry)| part.eq_ignore_ascii_case(entry))
+        && parts[parts.len() - NODE_ENTRY.len()..]
+            .iter()
+            .zip(NODE_ENTRY)
+            .all(|(part, entry)| part.eq_ignore_ascii_case(entry))
 }
 
 /// The protocol this reader is pinned to (migration.ts:19-20).
@@ -72,26 +106,76 @@ const SWITCHED: &str = "agent.switched";
 /// index, 67 types) plus the journal header and the tree's own records
 /// (tree.ts:4, fork.ts:43). Any other type is shown as an unsupported row.
 const KNOWN: [&str; 70] = [
-    "metadata", SWITCHED, "context.undone",
-    "changeNotifier.snapshot", "config.update", "context.append_loop_event",
-    "context.append_message", "context.apply_compaction", "context.clear", "context.undo",
-    "cron.add", "cron.cursor", "cron.delete", "environment.set_binding",
-    "file_history.checkpoint", "file_history.tracked", "forked", "full_compaction.begin",
-    "full_compaction.cancel", "full_compaction.complete", "goal.clear", "goal.create",
-    "goal.update", "interaction.request", "interaction.resolved",
-    "interruptionReminder.recorded", "interruptionReminder.requested", "llm.request",
-    "llm.tools_snapshot", "mcp.server_failed", "mcp.server_failure_resolved",
-    "mcp.tools_discovered", "permission.record_approval_result", "permission.set_mode",
-    "plan_mode.cancel", "plan_mode.enter", "plan_mode.exit", "plan.revision",
-    "plugin.session_start", "profile.bind", "prompt.aborted", "prompt.completed",
-    "prompt.steered", "subagent.cancelled", "subagent.completed", "subagent.failed",
-    "subagent.spawned", "subagent.started", "swarm_mode.enter", "swarm_mode.exit",
-    "task.started", "task.terminated", "token_counting.measured", "token_counting.rebased",
-    "token_counting.truncated", "token_counting.turn_recorded", "tool_select.initialized",
-    "tool_select.tools_changed", "tools.register_user_tool", "tools.reset_active_tools",
-    "tools.set_active_tools", "tools.unregister_user_tool", "tools.update_store",
-    "tower_mode.enter", "tower_mode.exit", "turn.cancel", "turn.ended", "turn.prompt",
-    "turn.steer", "usage.record",
+    "metadata",
+    SWITCHED,
+    "context.undone",
+    "changeNotifier.snapshot",
+    "config.update",
+    "context.append_loop_event",
+    "context.append_message",
+    "context.apply_compaction",
+    "context.clear",
+    "context.undo",
+    "cron.add",
+    "cron.cursor",
+    "cron.delete",
+    "environment.set_binding",
+    "file_history.checkpoint",
+    "file_history.tracked",
+    "forked",
+    "full_compaction.begin",
+    "full_compaction.cancel",
+    "full_compaction.complete",
+    "goal.clear",
+    "goal.create",
+    "goal.update",
+    "interaction.request",
+    "interaction.resolved",
+    "interruptionReminder.recorded",
+    "interruptionReminder.requested",
+    "llm.request",
+    "llm.tools_snapshot",
+    "mcp.server_failed",
+    "mcp.server_failure_resolved",
+    "mcp.tools_discovered",
+    "permission.record_approval_result",
+    "permission.set_mode",
+    "plan_mode.cancel",
+    "plan_mode.enter",
+    "plan_mode.exit",
+    "plan.revision",
+    "plugin.session_start",
+    "profile.bind",
+    "prompt.aborted",
+    "prompt.completed",
+    "prompt.steered",
+    "subagent.cancelled",
+    "subagent.completed",
+    "subagent.failed",
+    "subagent.spawned",
+    "subagent.started",
+    "swarm_mode.enter",
+    "swarm_mode.exit",
+    "task.started",
+    "task.terminated",
+    "token_counting.measured",
+    "token_counting.rebased",
+    "token_counting.truncated",
+    "token_counting.turn_recorded",
+    "tool_select.initialized",
+    "tool_select.tools_changed",
+    "tools.register_user_tool",
+    "tools.reset_active_tools",
+    "tools.set_active_tools",
+    "tools.unregister_user_tool",
+    "tools.update_store",
+    "tower_mode.enter",
+    "tower_mode.exit",
+    "turn.cancel",
+    "turn.ended",
+    "turn.prompt",
+    "turn.steer",
+    "usage.record",
 ];
 
 /// loopEventFold.ts:11-12, the tool message a call without a recorded result
@@ -231,7 +315,10 @@ fn wire(data: &[u8]) -> Vec<Line> {
                 Ok(record) => {
                     count += 1;
                     if record["type"].is_string() {
-                        lines.push(Line { line: count, record });
+                        lines.push(Line {
+                            line: count,
+                            record,
+                        });
                     }
                 }
                 Err(_) if next.is_some() => break,
@@ -308,7 +395,8 @@ fn compare(a: &str, b: &str) -> f64 {
     let a: Vec<&str> = a.split('.').collect();
     let b: Vec<&str> = b.split('.').collect();
     for at in 0..a.len().max(b.len()) {
-        let diff = number(a.get(at).copied().unwrap_or("0")) - number(b.get(at).copied().unwrap_or("0"));
+        let diff =
+            number(a.get(at).copied().unwrap_or("0")) - number(b.get(at).copied().unwrap_or("0"));
         if diff != 0.0 {
             return diff;
         }
@@ -327,12 +415,22 @@ fn number(text: &str) -> f64 {
         "-Infinity" => return f64::NEG_INFINITY,
         _ => {}
     }
-    for (prefix, radix) in [("0x", 16), ("0X", 16), ("0o", 8), ("0O", 8), ("0b", 2), ("0B", 2)] {
+    for (prefix, radix) in [
+        ("0x", 16),
+        ("0X", 16),
+        ("0o", 8),
+        ("0O", 8),
+        ("0b", 2),
+        ("0B", 2),
+    ] {
         if let Some(digits) = text.strip_prefix(prefix) {
             return u64::from_str_radix(digits, radix).map_or(f64::NAN, |value| value as f64);
         }
     }
-    if !text.bytes().all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-')) {
+    if !text
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-'))
+    {
         return f64::NAN;
     }
     text.parse().unwrap_or(f64::NAN)
@@ -393,7 +491,11 @@ fn restorable(lines: &[Line]) -> std::result::Result<Vec<usize>, &'static str> {
         if let Some(undo) = record["legacyUndoLine"].as_f64() {
             paired.push(undo);
         }
-        edges.push(Edge { line: line.line, base, upto });
+        edges.push(Edge {
+            line: line.line,
+            base,
+            upto,
+        });
         branches.push(branch);
     }
     let last = lines.last().map_or(0, |line| line.line);
@@ -404,12 +506,24 @@ fn restorable(lines: &[Line]) -> std::result::Result<Vec<usize>, &'static str> {
     for (at, edge) in edges.iter().enumerate() {
         // A branch named twice keeps its last segment (the Map in
         // activeChain).
-        segments.insert(branch, Segment { edge: opening, to: edge.line as f64 });
+        segments.insert(
+            branch,
+            Segment {
+                edge: opening,
+                to: edge.line as f64,
+            },
+        );
         branch = branches[at];
         opening = Some(at);
         from = edge.line + 1;
     }
-    segments.insert(branch, Segment { edge: opening, to: last.max(from - 1) as f64 });
+    segments.insert(
+        branch,
+        Segment {
+            edge: opening,
+            to: last.max(from - 1) as f64,
+        },
+    );
 
     // The base chain from the active branch to `main`, walked iteratively.
     let mut walk = Vec::new();
@@ -516,10 +630,18 @@ struct Message {
 enum Row {
     Message(Message),
     /// The summary a compaction leaves; what precedes it is not shown.
-    Summary { line: u64, time: Option<u64>, text: String },
+    Summary {
+        line: u64,
+        time: Option<u64>,
+        text: String,
+    },
     /// A record or loop event of a type this reader does not know, counted
     /// while the same type repeats.
-    Unsupported { line: u64, name: String, count: u64 },
+    Unsupported {
+        line: u64,
+        name: String,
+        count: u64,
+    },
 }
 
 /// contextTranscript.ts:37-158 createContextTranscriptReducer with the
@@ -578,7 +700,10 @@ impl<'a> Fold<'a> {
         let lines = self.lines;
         let Line { line, record } = &lines[at];
         let line = *line;
-        let time = record["time"].as_f64().filter(|time| *time >= 0.0).map(|time| time as u64);
+        let time = record["time"]
+            .as_f64()
+            .filter(|time| *time >= 0.0)
+            .map(|time| time as u64);
         let kind = record["type"].as_str().unwrap_or_default();
         match kind {
             "context.append_message" => match message(&record["message"], line, time) {
@@ -594,7 +719,11 @@ impl<'a> Fold<'a> {
                 }
                 self.floor = self.rows.len();
                 self.cleared = false;
-                self.rows.push(Row::Summary { line, time, text: summary(record) });
+                self.rows.push(Row::Summary {
+                    line,
+                    time,
+                    text: summary(record),
+                });
             }
             "context.clear" => {
                 self.floor = self.rows.len();
@@ -613,7 +742,11 @@ impl<'a> Fold<'a> {
             return;
         };
         let anchors = self.anchors();
-        let Some(&cut) = anchors.len().checked_sub(count).and_then(|at| anchors.get(at)) else {
+        let Some(&cut) = anchors
+            .len()
+            .checked_sub(count)
+            .and_then(|at| anchors.get(at))
+        else {
             return;
         };
         self.records.truncate(cut);
@@ -638,7 +771,9 @@ impl<'a> Fold<'a> {
             match record["type"].as_str() {
                 Some("context.clear" | "context.apply_compaction") => anchors.clear(),
                 Some("turn.steer") => {
-                    let prompt = record["messageId"].as_str().or_else(|| record["promptIds"][0].as_str());
+                    let prompt = record["messageId"]
+                        .as_str()
+                        .or_else(|| record["promptIds"][0].as_str());
                     let notify = Value::from("notify");
                     let empty = record["input"].as_array().is_none_or(Vec::is_empty);
                     if anchor(Some(&notify), empty, prompt, record.get("origin")) {
@@ -673,8 +808,8 @@ impl<'a> Fold<'a> {
             }
             let message = &record["message"];
             let owned_message = message["id"] == prompt && message["role"] == "user";
-            let owned_injection =
-                message["origin"]["kind"] == "injection" && message["origin"]["ownerPromptId"] == prompt;
+            let owned_injection = message["origin"]["kind"] == "injection"
+                && message["origin"]["ownerPromptId"] == prompt;
             if owned_message && injection {
                 break;
             }
@@ -753,7 +888,13 @@ impl<'a> Fold<'a> {
                     Value::Array(parts) => parts.clone(),
                     _ => Vec::new(),
                 };
-                self.rows.push(Row::Message(tool(line, time, id, content, result["isError"] == true)));
+                self.rows.push(Row::Message(tool(
+                    line,
+                    time,
+                    id,
+                    content,
+                    result["isError"] == true,
+                )));
                 self.flush();
             }
             other => {
@@ -804,7 +945,8 @@ impl<'a> Fold<'a> {
             });
             if !recorded {
                 let content = vec![json!({"type": "text", "text": INTERRUPTED})];
-                self.rows.push(Row::Message(tool(line, time, id, content, true)));
+                self.rows
+                    .push(Row::Message(tool(line, time, id, content, true)));
             }
         }
         self.flush();
@@ -846,13 +988,19 @@ impl<'a> Fold<'a> {
     fn unsupported(&mut self, line: u64, name: &str) {
         let name = cap(name, 64).0;
         if self.rows.len() > self.floor
-            && let Some(Row::Unsupported { name: last, count, .. }) = self.rows.last_mut()
+            && let Some(Row::Unsupported {
+                name: last, count, ..
+            }) = self.rows.last_mut()
             && *last == name
         {
             *count += 1;
             return;
         }
-        self.rows.push(Row::Unsupported { line, name, count: 1 });
+        self.rows.push(Row::Unsupported {
+            line,
+            name,
+            count: 1,
+        });
     }
 
     /// What is shown: the rows from the last clear or compaction on, an
@@ -877,7 +1025,11 @@ impl<'a> Fold<'a> {
         let mut id = |line: u64| {
             let n = seen.entry(line).or_default();
             *n += 1;
-            Some(if *n == 1 { line.to_string() } else { format!("{line}.{n}") })
+            Some(if *n == 1 {
+                line.to_string()
+            } else {
+                format!("{line}.{n}")
+            })
         };
         for row in rows {
             match row {
@@ -892,11 +1044,29 @@ impl<'a> Fold<'a> {
                         Role::Assistant => "assistant",
                         Role::Tool => "tool",
                     };
-                    entries.push(entry(id(message.line), Kind::Message, Some(role), blocks, message.time, message.usage));
+                    entries.push(entry(
+                        id(message.line),
+                        Kind::Message,
+                        Some(role),
+                        blocks,
+                        message.time,
+                        message.usage,
+                    ));
                 }
                 Row::Summary { line, time, text } => {
-                    let text = if text.trim().is_empty() { "Conversation compacted" } else { text };
-                    entries.push(entry(id(*line), Kind::Compaction, Some("user"), vec![text_block(text, false)], *time, None));
+                    let text = if text.trim().is_empty() {
+                        "Conversation compacted"
+                    } else {
+                        text
+                    };
+                    entries.push(entry(
+                        id(*line),
+                        Kind::Compaction,
+                        Some("user"),
+                        vec![text_block(text, false)],
+                        *time,
+                        None,
+                    ));
                 }
                 Row::Unsupported { line, name, count } => {
                     let text = if *count > 1 {
@@ -904,7 +1074,14 @@ impl<'a> Fold<'a> {
                     } else {
                         format!("Unsupported Kimi record: {name}")
                     };
-                    entries.push(entry(id(*line), Kind::Message, Some("system"), vec![text_block(&text, false)], None, None));
+                    entries.push(entry(
+                        id(*line),
+                        Kind::Message,
+                        Some("system"),
+                        vec![text_block(&text, false)],
+                        None,
+                        None,
+                    ));
                 }
             }
         }
@@ -918,7 +1095,12 @@ impl<'a> Fold<'a> {
 
 /// turnUndo.ts:49-55 isUndoAnchorTurnPrompt with isUndoAnchorOrigin
 /// (41-47). A `null` origin, where Kimi would throw, is no anchor.
-fn anchor(trigger: Option<&Value>, empty: bool, prompt: Option<&str>, origin: Option<&Value>) -> bool {
+fn anchor(
+    trigger: Option<&Value>,
+    empty: bool,
+    prompt: Option<&str>,
+    origin: Option<&Value>,
+) -> bool {
     if trigger.is_some_and(|trigger| trigger == "continue") {
         return false;
     }
@@ -929,8 +1111,10 @@ fn anchor(trigger: Option<&Value>, empty: bool, prompt: Option<&str>, origin: Op
         return true;
     };
     origin["kind"] == "user"
-        || (matches!(origin["kind"].as_str(), Some("skill_activation" | "plugin_command"))
-            && origin["trigger"] == "user-slash")
+        || (matches!(
+            origin["kind"].as_str(),
+            Some("skill_activation" | "plugin_command")
+        ) && origin["trigger"] == "user-slash")
 }
 
 /// turnUndo.ts:37-39 isValidUndoCount: a safe integer above zero.
@@ -942,7 +1126,9 @@ fn undo_count(count: &Value) -> Option<usize> {
 
 /// A tool call id as the fold's Map keys it.
 fn key(value: &Value) -> String {
-    value.as_str().map_or_else(|| value.to_string(), str::to_owned)
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
 }
 
 /// vacuousContent.ts:162-173 isVacuousContentPart; an unknown part is not.
@@ -968,12 +1154,20 @@ fn usage(usage: &Value) -> Option<Usage> {
     let input = usage["inputOther"].as_u64().unwrap_or(0)
         + usage["inputCacheRead"].as_u64().unwrap_or(0)
         + usage["inputCacheCreation"].as_u64().unwrap_or(0);
-    Some(Usage { input, output, total_tokens: input + output, cost: None })
+    Some(Usage {
+        input,
+        output,
+        total_tokens: input + output,
+        cost: None,
+    })
 }
 
 /// contextTranscript.ts:215-222 readCompactionSummaryText.
 fn summary(record: &Value) -> String {
-    if let Some(text) = record["summary"].as_str().or_else(|| record["contextSummary"].as_str()) {
+    if let Some(text) = record["summary"]
+        .as_str()
+        .or_else(|| record["contextSummary"].as_str())
+    {
         return text.to_owned();
     }
     let summary = &record["summary"];
@@ -1036,7 +1230,11 @@ fn message(message: &Value, line: u64, time: Option<u64>) -> Option<Message> {
         calls,
         call_id: (role == Role::Tool).then(|| key(&message["toolCallId"])),
         is_error: message["isError"] == true,
-        usage: if role == Role::Assistant { usage(&message["usage"]) } else { None },
+        usage: if role == Role::Assistant {
+            usage(&message["usage"])
+        } else {
+            None
+        },
     })
 }
 
@@ -1046,7 +1244,10 @@ fn message(message: &Value, line: u64, time: Option<u64>) -> Option<Message> {
 /// follow its parts. Media (`image_url`, also a `kimi-file://` reference,
 /// `audio_url`, `video_url`) is never fetched.
 fn blocks(message: &Message, names: &HashMap<&str, &str>) -> Vec<Block> {
-    let image = |part: usize| Image { part, source: Source::Unreadable };
+    let image = |part: usize| Image {
+        part,
+        source: Source::Unreadable,
+    };
     if message.role == Role::Tool {
         let mut text = String::new();
         let mut images = Vec::new();

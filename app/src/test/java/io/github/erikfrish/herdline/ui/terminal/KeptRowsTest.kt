@@ -33,7 +33,7 @@ class KeptRowsTest {
             asked = gridRows(view, cell, hold = false, holdHeightPx = 0, lastRows = asked, capPx = 0f, keep = keep)
             askedSeen += asked
             val box = drawn - 4 until drawn
-            val shown = drawnRows(view.toFloat(), viewOffset(view, 0, 0, cell, drawn), cell, drawn)
+            val shown = drawnRows(view.toFloat(), viewOffset(view, cell, drawn), cell, drawn)
             val ok = drawn == asked && shown != null && box.first in shown && box.last in shown
             notice = !ok
             drawn = asked
@@ -67,7 +67,7 @@ class KeptRowsTest {
     fun aShorterViewOfKeptRowsCountsOnlyTheWholeRowsItDraws() {
         // 32.5 rows of a 34-row frame: the bottom-aligned frame cuts row 1, and only rows 2..33 count.
         val view = (32.5f * cell).toInt()
-        assertEquals(2..33, drawnRows(view.toFloat(), viewOffset(view, 0, 0, cell, rows), cell, rows))
+        assertEquals(2..33, drawnRows(view.toFloat(), viewOffset(view, cell, rows), cell, rows))
     }
 
     @Test

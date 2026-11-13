@@ -39,8 +39,6 @@ class TapHintTest {
         last = last,
         rect = Viewport.Rect(0, 0, 400, 120),
         offsetYPx = offset,
-        hiddenRows = 0,
-        clipBottomPx = 0,
         cellWidthPx = 10f,
         cellHeightPx = cell,
     )
@@ -111,13 +109,12 @@ class TapHintTest {
     @Test
     fun theTerminalSaysTheHintOnlyWhileThePillIsHidden() {
         val sentence = "Tap to type"
-        // Hidden: the terminal carries it, after what output focus hides.
-        assertEquals(sentence, terminalDescription(null, wanted = true, top = null, sentence = sentence))
-        assertEquals("2 rows hidden $sentence", terminalDescription("2 rows hidden", wanted = true, top = null, sentence = sentence))
+        // Hidden: the terminal carries it.
+        assertEquals(sentence, terminalDescription(wanted = true, top = null, sentence = sentence))
         // Shown: the pill is its own node, the terminal has no copy.
-        assertNull(terminalDescription(null, wanted = true, top = 102, sentence = sentence))
+        assertNull(terminalDescription(wanted = true, top = 102, sentence = sentence))
         // Not wanted at all: nothing.
-        assertNull(terminalDescription(null, wanted = false, top = null, sentence = sentence))
+        assertNull(terminalDescription(wanted = false, top = null, sentence = sentence))
     }
 
     @Test
@@ -177,7 +174,7 @@ class TapHintTest {
     @Test
     fun aNoticeOverTheTerminalHidesItAndItsGoingBringsItBack() {
         fun wanted(noticeOver: Boolean = false, typedOnce: Boolean = false, chatMode: Boolean = false) =
-            tapHintWanted(chatMode, imeVisible = false, typedOnce = typedOnce, focusApplies = false, connectedWithView = true, noticeOver = noticeOver)
+            tapHintWanted(chatMode, imeVisible = false, typedOnce = typedOnce, connectedWithView = true, noticeOver = noticeOver)
         assertTrue(wanted())
         // A snackbar (Chat's refusal) or the no-room notice over it: not drawn.
         assertFalse(wanted(noticeOver = true))

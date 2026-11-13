@@ -90,10 +90,17 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(format) = reply["format"].as_str() {
         return Err(Error::UnsupportedFormat(
-            [OUTSIDE_HOME, AMBIGUOUS, STALE, UNREGISTERED, UNREADABLE, TOO_LARGE]
-                .into_iter()
-                .find(|known| *known == format)
-                .ok_or(Error::BadReply)?,
+            [
+                OUTSIDE_HOME,
+                AMBIGUOUS,
+                STALE,
+                UNREGISTERED,
+                UNREADABLE,
+                TOO_LARGE,
+            ]
+            .into_iter()
+            .find(|known| *known == format)
+            .ok_or(Error::BadReply)?,
         ));
     }
     if reply.get("error").is_some() {
@@ -120,17 +127,30 @@ fn entry(row: &Value) -> Option<Entry> {
     let mut image = || {
         let part = images;
         images += 1;
-        Image { part, source: Source::Unreadable }
+        Image {
+            part,
+            source: Source::Unreadable,
+        }
     };
     let mut blocks = Vec::new();
     let role = match row["kind"].as_str().unwrap_or_default() {
         kind @ ("user" | "assistant") => {
             for part in row["parts"].as_array().into_iter().flatten() {
                 match part["t"].as_str().unwrap_or_default() {
-                    "text" => blocks.push(text_block(part["text"].as_str().unwrap_or_default(), false)),
-                    "thought" => blocks.push(text_block(part["text"].as_str().unwrap_or_default(), true)),
+                    "text" => {
+                        blocks.push(text_block(part["text"].as_str().unwrap_or_default(), false))
+                    }
+                    "thought" => {
+                        blocks.push(text_block(part["text"].as_str().unwrap_or_default(), true))
+                    }
                     "image" => blocks.push(Block::Image(image())),
-                    "note" => blocks.push(text_block(&format!("[{}]", cap(part["text"].as_str().unwrap_or_default(), 512).0), false)),
+                    "note" => blocks.push(text_block(
+                        &format!(
+                            "[{}]",
+                            cap(part["text"].as_str().unwrap_or_default(), 512).0
+                        ),
+                        false,
+                    )),
                     // The host kept only the parts that fit the page budget.
                     "cut" => blocks.push(cut()),
                     _ => {}
@@ -142,8 +162,17 @@ fn entry(row: &Value) -> Option<Entry> {
             let call = &row["call"];
             let call_id = cap(call["id"].as_str().unwrap_or_default(), 256).0;
             let name = cap(call["name"].as_str().unwrap_or_default(), 128).0;
-            let (args, truncated) = cap(call["input"].as_str().unwrap_or_default(), super::ARGS_LIMIT);
-            blocks.push(Block::ToolCall { call_id, name, args, intent: None, truncated });
+            let (args, truncated) = cap(
+                call["input"].as_str().unwrap_or_default(),
+                super::ARGS_LIMIT,
+            );
+            blocks.push(Block::ToolCall {
+                call_id,
+                name,
+                args,
+                intent: None,
+                truncated,
+            });
             if row["result"].is_object() {
                 blocks.push(result(&row["result"], &mut image));
             }
@@ -158,16 +187,31 @@ fn entry(row: &Value) -> Option<Entry> {
             match row["entries"].as_array().filter(|items| !items.is_empty()) {
                 Some(items) => blocks.extend(items.iter().map(|item| {
                     let (text, truncated) = cap(item["text"].as_str().unwrap_or_default(), 512);
-                    let marker = if item["done"] == true { Marker::Done } else { Marker::ToDo };
-                    Block::Marker { marker, text, truncated }
+                    let marker = if item["done"] == true {
+                        Marker::Done
+                    } else {
+                        Marker::ToDo
+                    };
+                    Block::Marker {
+                        marker,
+                        text,
+                        truncated,
+                    }
                 })),
                 None => blocks.push(text_block(row["text"].as_str().unwrap_or_default(), false)),
             }
             "assistant"
         }
         other => {
-            let name = if other == "bad" { "unreadable" } else { row["name"].as_str().unwrap_or("none") };
-            blocks.push(text_block(&format!("Unsupported Grok update: {}", cap(name, 64).0), false));
+            let name = if other == "bad" {
+                "unreadable"
+            } else {
+                row["name"].as_str().unwrap_or("none")
+            };
+            blocks.push(text_block(
+                &format!("Unsupported Grok update: {}", cap(name, 64).0),
+                false,
+            ));
             "system"
         }
     };

@@ -148,7 +148,13 @@ impl Exec {
                     .map(|output| {
                         let mut tail = output.stdout;
                         let tail = tail.split_off(tail.len().saturating_sub(job.limit));
-                        Output { exit_status: output.status.code().and_then(|code| u32::try_from(code).ok()), tail }
+                        Output {
+                            exit_status: output
+                                .status
+                                .code()
+                                .and_then(|code| u32::try_from(code).ok()),
+                            tail,
+                        }
                     });
                 let _ = job.reply.send(output);
             }

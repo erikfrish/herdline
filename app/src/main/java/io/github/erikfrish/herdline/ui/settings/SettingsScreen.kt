@@ -316,6 +316,8 @@ fun SettingsScreen(app: HerdlineApp, onBack: (() -> Unit)?, backLabel: String? =
                 Group {
                     ItemRow(
                         title = stringResource(R.string.vibrate_on_bell),
+                        detail = stringResource(R.string.vibrate_on_bell_help),
+                        detailMaxLines = Int.MAX_VALUE,
                         leading = { IconBadge(Icons.Default.Notifications, Color(0xFFF08A3C)) },
                         onClick = { app.settings.update { it.copy(vibrateOnBell = !it.vibrateOnBell) } },
                         trailing = { Switch(settings.vibrateOnBell, { on -> app.settings.update { it.copy(vibrateOnBell = on) } }) },

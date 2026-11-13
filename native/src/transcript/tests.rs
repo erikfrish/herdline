@@ -17,7 +17,13 @@ const PROCESS: &str = r#"{"result":{"process_info":{"foreground_processes":[{"na
 /// The root variables the resolver takes from its shell, unset for every
 /// run so only the ones a test names are seen.
 const ROOT_VARIABLES: [&str; 7] = [
-    "OMP_PROFILE", "PI_PROFILE", "PI_CONFIG_DIR", "PI_CODING_AGENT_DIR", "XDG_DATA_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME",
+    "OMP_PROFILE",
+    "PI_PROFILE",
+    "PI_CONFIG_DIR",
+    "PI_CODING_AGENT_DIR",
+    "XDG_DATA_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
 ];
 
 /// Runs [`script`] against a fake Herdr in a scratch home, as the host would.
@@ -41,7 +47,10 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Default::default() }
+        Self {
+            home,
+            env: Default::default(),
+        }
     }
 
     fn sessions(&self) -> std::path::PathBuf {
@@ -80,7 +89,12 @@ impl Host {
             "foreground_processes": [{"name": name, "pid": 42, "argv": argv}],
             "pane_id": "w1:p1", "shell_pid": 7}}});
         fs::write(self.home.path().join("proc.json"), process.to_string()).unwrap();
-        self.env.replace(variables.iter().map(|(key, value)| (key.to_string(), value.clone())).collect());
+        self.env.replace(
+            variables
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.clone()))
+                .collect(),
+        );
     }
 }
 
@@ -163,7 +177,8 @@ fn identity_refuses_panes_without_an_omp_session_file() {
 fn a_gemini_pane_is_named_only_by_its_binding_never_by_a_reported_ref() {
     // Even beside a session ref Herdr could report, a Gemini pane without
     // the owned launcher's tokens is refused, not read as that ref.
-    let mut pane: Value = serde_json::from_str(&pane_json("/home/u/.omp/agent/sessions/x/s.jsonl")).unwrap();
+    let mut pane: Value =
+        serde_json::from_str(&pane_json("/home/u/.omp/agent/sessions/x/s.jsonl")).unwrap();
     pane["result"]["pane"]["agent"] = "gemini".into();
     assert!(matches!(
         identity(&pane, &Value::Null),
@@ -177,31 +192,59 @@ fn a_gemini_pane_is_named_only_by_its_binding_never_by_a_reported_ref() {
         {"pid": 42, "argv": ["/usr/bin/node", "/home/u/.local/share/herdline/gemini"]},
     ]}}});
     let (identity, status) = identity(&pane, &launcher).unwrap();
-    assert_eq!((identity.agent.as_str(), identity.path.as_str(), identity.pid, status.as_str()), ("gemini", id, Some(42), "blocked"));
+    assert_eq!(
+        (
+            identity.agent.as_str(),
+            identity.path.as_str(),
+            identity.pid,
+            status.as_str()
+        ),
+        ("gemini", id, Some(42), "blocked")
+    );
 }
 
 #[test]
 fn a_letta_pane_is_named_only_by_herdrs_letta_ref_beside_its_one_foreground_letta() {
     let mut pane: Value = serde_json::from_str(&pane_json("x")).unwrap();
     pane["result"]["pane"]["agent"] = "letta".into();
-    pane["result"]["pane"]["agent_session"] =
-        serde_json::json!({"agent": "letta", "kind": "id", "source": "herdr:letta", "value": "agent-1:conv-2"});
+    pane["result"]["pane"]["agent_session"] = serde_json::json!({"agent": "letta", "kind": "id", "source": "herdr:letta", "value": "agent-1:conv-2"});
     let letta = |pids: &[u64]| {
-        let list: Vec<Value> = pids.iter().map(|pid| serde_json::json!({"name": "letta", "pid": pid})).collect();
+        let list: Vec<Value> = pids
+            .iter()
+            .map(|pid| serde_json::json!({"name": "letta", "pid": pid}))
+            .collect();
         serde_json::json!({"result": {"process_info": {"foreground_processes": list}}})
     };
     let (identity, status) = identity(&pane, &letta(&[42])).unwrap();
     assert_eq!(
-        (identity.agent.as_str(), identity.path.as_str(), identity.pid, identity.source.as_str(), status.as_str()),
-        ("letta", "agent-1:conv-2", Some(42), "herdr:letta", "blocked")
+        (
+            identity.agent.as_str(),
+            identity.path.as_str(),
+            identity.pid,
+            identity.source.as_str(),
+            status.as_str()
+        ),
+        (
+            "letta",
+            "agent-1:conv-2",
+            Some(42),
+            "herdr:letta",
+            "blocked"
+        )
     );
     // No letta in the foreground, or two: none is guessed.
     let omp: Value = serde_json::from_str(PROCESS).unwrap();
     assert!(matches!(identity_of(&pane, &omp), Err(Error::NoTranscript)));
-    assert!(matches!(identity_of(&pane, &letta(&[42, 43])), Err(Error::NoTranscript)));
+    assert!(matches!(
+        identity_of(&pane, &letta(&[42, 43])),
+        Err(Error::NoTranscript)
+    ));
     // A ref Herdr did not give as its own Letta id is refused in words.
     pane["result"]["pane"]["agent_session"]["source"] = "hook".into();
-    assert!(matches!(identity_of(&pane, &letta(&[42])), Err(Error::UnsupportedFormat("letta_local_format"))));
+    assert!(matches!(
+        identity_of(&pane, &letta(&[42])),
+        Err(Error::UnsupportedFormat("letta_local_format"))
+    ));
 }
 
 fn identity_of(pane: &Value, process: &Value) -> Result<Identity> {
@@ -431,7 +474,10 @@ impl Host {
         let path = file.to_str().unwrap().to_owned();
         fs::write(host.home.path().join("pane.json"), pane_json(&path)).unwrap();
         let argv: Vec<&str> = ["omp"].into_iter().chain(args.iter().copied()).collect();
-        let env: Vec<_> = env.iter().map(|(key, value)| (*key, value.to_string())).collect();
+        let env: Vec<_> = env
+            .iter()
+            .map(|(key, value)| (*key, value.to_string()))
+            .collect();
         host.agent("omp", &argv, &env);
         let identity = Identity {
             pane_id: "w1:p1".into(),
@@ -947,7 +993,8 @@ fn configured_session_roots_are_read_only_when_the_foreground_process_names_them
 
 #[test]
 fn configured_session_roots_do_not_follow_overrides_the_agent_ignores() {
-    let cases: &[(&[&str], &[(&str, &str)], &str, &str)] = &[
+    type Case<'a> = (&'a [&'a str], &'a [(&'a str, &'a str)], &'a str, &'a str);
+    let cases: &[Case<'_>] = &[
         (
             &["--profile", "qa", "--profile=work"],
             &[
@@ -1016,7 +1063,8 @@ fn configured_session_roots_do_not_follow_overrides_the_agent_ignores() {
 #[test]
 fn an_invalid_session_root_override_refuses_only_itself() {
     // (variables, sessions that resolve, a session that is refused)
-    let cases: &[(&[(&str, &str)], &[&str], &str)] = &[
+    type Case<'a> = (&'a [(&'a str, &'a str)], &'a [&'a str], &'a str);
+    let cases: &[Case<'_>] = &[
         // PI_CONFIG_DIR leaves HOME: the default root still reads.
         (
             &[("PI_CONFIG_DIR", "../escape")],
@@ -1025,22 +1073,34 @@ fn an_invalid_session_root_override_refuses_only_itself() {
         ),
         // A relative PI_CODING_AGENT_DIR and XDG_DATA_HOME: the default root still reads.
         (
-            &[("PI_CODING_AGENT_DIR", "relative-agent"), ("XDG_DATA_HOME", "relative-data")],
+            &[
+                ("PI_CODING_AGENT_DIR", "relative-agent"),
+                ("XDG_DATA_HOME", "relative-data"),
+            ],
             &[".omp/agent/sessions/p/s.jsonl"],
             "relative-agent/sessions/p/s.jsonl",
         ),
         // A valid PI_CONFIG_DIR still wins beside an invalid XDG_DATA_HOME.
         (
-            &[("PI_CONFIG_DIR", "custom-config"), ("XDG_DATA_HOME", "relative-data")],
+            &[
+                ("PI_CONFIG_DIR", "custom-config"),
+                ("XDG_DATA_HOME", "relative-data"),
+            ],
             &["custom-config/agent/sessions/p/s.jsonl"],
             "relative-data/omp/sessions/p/s.jsonl",
         ),
     ];
     for (variables, allowed, refused) in cases {
         let host = Host::new("unused");
-        let variables: Vec<_> = variables.iter().map(|(key, value)| (*key, value.to_string())).collect();
+        let variables: Vec<_> = variables
+            .iter()
+            .map(|(key, value)| (*key, value.to_string()))
+            .collect();
         host.agent("omp", &["omp"], &variables);
-        let checks = allowed.iter().map(|r| (*r, true)).chain([(*refused, false)]);
+        let checks = allowed
+            .iter()
+            .map(|r| (*r, true))
+            .chain([(*refused, false)]);
         for (relative, accepted) in checks {
             let file = host.home.path().join(relative);
             fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1056,7 +1116,10 @@ fn an_invalid_session_root_override_refuses_only_itself() {
                 );
             } else {
                 assert!(
-                    matches!(parse_reply(status, &bytes), Err(Error::TranscriptUnconfined)),
+                    matches!(
+                        parse_reply(status, &bytes),
+                        Err(Error::TranscriptUnconfined)
+                    ),
                     "{variables:?} {relative}"
                 );
             }
@@ -1078,7 +1141,11 @@ fn launch(host: &Host, bun: bool, args: &[&str], variables: &[(&str, String)]) {
 fn read_reported(host: &Host, relative: &str) -> (Vec<u8>, Result<Vec<u8>>) {
     let file = host.home.path().join(relative);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(&file, format!("{{\"type\":\"session\",\"id\":\"{relative}\"}}\n")).unwrap();
+    fs::write(
+        &file,
+        format!("{{\"type\":\"session\",\"id\":\"{relative}\"}}\n"),
+    )
+    .unwrap();
     let path = file.to_str().unwrap();
     fs::write(host.home.path().join("pane.json"), pane_json(path)).unwrap();
     let (status, bytes) = host.run(tail(path));
@@ -1095,9 +1162,19 @@ fn the_profile_is_the_one_omp_itself_takes_from_its_arguments() {
         (false, &["--profile", "x"], profile("x"), None),
         // A string flag takes the next token whatever it looks like: the
         // system prompt is literally `--profile`, and `foo` is the message.
-        (false, &["--system-prompt", "--profile", "foo"], DEFAULT.into(), Some(profile("foo"))),
+        (
+            false,
+            &["--system-prompt", "--profile", "foo"],
+            DEFAULT.into(),
+            Some(profile("foo")),
+        ),
         // From a first-token subcommand on, its flags are its own.
-        (true, &["grep", "--profile", "x"], DEFAULT.into(), Some(profile("x"))),
+        (
+            true,
+            &["grep", "--profile", "x"],
+            DEFAULT.into(),
+            Some(profile("x")),
+        ),
         // An optional value is never flag-looking, so the profile still applies.
         (true, &["--resume", "--profile", "x"], profile("x"), None),
         // The plain launches keep the default root.
@@ -1123,22 +1200,45 @@ fn the_profile_is_the_one_omp_itself_takes_from_its_arguments() {
 fn a_tilde_or_a_symlinked_config_never_widens_the_roots() {
     let host = Host::new("unused");
     // `~` is never expanded by OMP: a relative override, refused alone.
-    launch(&host, false, &[], &[("PI_CODING_AGENT_DIR", "~/custom".into())]);
-    assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
-    assert!(matches!(read_reported(&host, "custom/sessions/p/s.jsonl").1, Err(Error::TranscriptUnconfined)));
+    launch(
+        &host,
+        false,
+        &[],
+        &[("PI_CODING_AGENT_DIR", "~/custom".into())],
+    );
+    assert!(
+        read_reported(&host, ".omp/agent/sessions/p/s.jsonl")
+            .1
+            .is_ok()
+    );
+    assert!(matches!(
+        read_reported(&host, "custom/sessions/p/s.jsonl").1,
+        Err(Error::TranscriptUnconfined)
+    ));
     // OMP compares a PI_CODING_AGENT_DIR its parent derived from PI_PROFILE
     // to the raw join, so a symlinked ~/.omp still drops it.
     let host = Host::new("unused");
     let home = host.home.path().to_str().unwrap().to_owned();
     fs::create_dir_all(host.home.path().join("real-omp")).unwrap();
-    std::os::unix::fs::symlink(host.home.path().join("real-omp"), host.home.path().join(".omp")).unwrap();
+    std::os::unix::fs::symlink(
+        host.home.path().join("real-omp"),
+        host.home.path().join(".omp"),
+    )
+    .unwrap();
     let variables = [
         ("OMP_PROFILE", String::new()),
         ("PI_PROFILE", "work".to_owned()),
-        ("PI_CODING_AGENT_DIR", format!("{home}/.omp/profiles/work/agent")),
+        (
+            "PI_CODING_AGENT_DIR",
+            format!("{home}/.omp/profiles/work/agent"),
+        ),
     ];
     launch(&host, false, &[], &variables);
-    assert!(read_reported(&host, "real-omp/agent/sessions/p/s.jsonl").1.is_ok());
+    assert!(
+        read_reported(&host, "real-omp/agent/sessions/p/s.jsonl")
+            .1
+            .is_ok()
+    );
     assert!(matches!(
         read_reported(&host, "real-omp/profiles/work/agent/sessions/p/s.jsonl").1,
         Err(Error::TranscriptUnconfined)
@@ -1164,7 +1264,10 @@ fn a_file_outside_home_is_refused_as_outside_home() {
     )
     .unwrap();
     let (status, out) = host.run(tail(link));
-    assert!(matches!(parse_reply(status, &out), Err(Error::SessionRootOutsideHome)));
+    assert!(matches!(
+        parse_reply(status, &out),
+        Err(Error::SessionRootOutsideHome)
+    ));
 }
 
 #[test]
@@ -1174,22 +1277,34 @@ fn page_and_blob_store_follow_the_same_profile() {
     let parsed = entries("omp", text.as_bytes(), 0);
     // `--profile` is the system prompt here: omp runs the default profile,
     // so its page and its blobs are both the default ones.
-    let (host, identity) =
-        Host::with_session(&text, &["--system-prompt", "--profile", "x"], &[]);
+    let (host, identity) = Host::with_session(&text, &["--system-prompt", "--profile", "x"], &[]);
     let (status, bytes) = host.run(tail(&identity.path));
-    assert_eq!(parse_reply(status, &bytes).unwrap().file.unwrap().data, text.as_bytes());
+    assert_eq!(
+        parse_reply(status, &bytes).unwrap().file.unwrap().data,
+        text.as_bytes()
+    );
     host.store(".omp/profiles/x/agent/blobs");
     fs::write(host.store(".omp/agent/blobs").join(&hash), PNG).unwrap();
-    assert_eq!(host.media(&identity, &at(&parsed, 0, 1, Some(&hash))), png());
+    assert_eq!(
+        host.media(&identity, &at(&parsed, 0, 1, Some(&hash))),
+        png()
+    );
 }
 
 #[test]
 fn an_agent_dir_derived_from_the_environment_profile_is_dropped_under_profile_default() {
     let host = Host::new("unused");
     let derived = format!("{}/.omp/profiles/w/agent", host.home.path().display());
-    let variables = [("OMP_PROFILE", "w".to_owned()), ("PI_CODING_AGENT_DIR", derived)];
+    let variables = [
+        ("OMP_PROFILE", "w".to_owned()),
+        ("PI_CODING_AGENT_DIR", derived),
+    ];
     launch(&host, false, &["--profile", "default"], &variables);
-    assert!(read_reported(&host, ".omp/agent/sessions/p/s.jsonl").1.is_ok());
+    assert!(
+        read_reported(&host, ".omp/agent/sessions/p/s.jsonl")
+            .1
+            .is_ok()
+    );
     assert!(matches!(
         read_reported(&host, ".omp/profiles/w/agent/sessions/p/s.jsonl").1,
         Err(Error::TranscriptUnconfined)

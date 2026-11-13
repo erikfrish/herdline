@@ -187,7 +187,10 @@ fn a_prompt_on_a_held_grids_top_row_is_drawn_and_takes_text() {
     let mut hidden = prompt.clone();
     hidden.cursor.visible = false;
     assert_eq!(shown_cursor_row(&hidden), None);
-    assert_eq!(cursor_view(&hidden, rows_px(1)), view(&hidden, rows_px(1), 0, 0));
+    assert_eq!(
+        cursor_view(&hidden, rows_px(1)),
+        view(&hidden, rows_px(1), 0, 0)
+    );
 }
 
 /// Ten rows, 20 columns: pane `focused`'s inner rect on rows 1-3 over the

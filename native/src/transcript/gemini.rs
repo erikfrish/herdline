@@ -130,7 +130,10 @@ fn string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 
 /// `isObjectProperty`: present and a non-null object, arrays included.
 fn object<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
-    value.as_object()?.get(key).filter(|v| v.is_object() || v.is_array())
+    value
+        .as_object()?
+        .get(key)
+        .filter(|v| v.is_object() || v.is_array())
 }
 
 /// `isMessageRecord`: a string id and no `$patch`.
@@ -144,13 +147,21 @@ fn message_id(value: &Value) -> Option<&str> {
 
 /// `applySinglePatch` outside `metadataOnly` (:268-299).
 fn patch_one(messages: &mut Messages, patch: &Value) -> Result<(), Throw> {
-    let Some(id) = string(patch, "id") else { return Ok(()) };
-    let Some(existing) = messages.by_id.get_mut(id) else { return Ok(()) };
+    let Some(id) = string(patch, "id") else {
+        return Ok(());
+    };
+    let Some(existing) = messages.by_id.get_mut(id) else {
+        return Ok(());
+    };
     if let Some(content) = patch.get("content") {
         existing["content"] = content.clone();
     }
-    let Some(patches) = patch.get("toolCalls").and_then(Value::as_array) else { return Ok(()) };
-    if existing.get("type").and_then(Value::as_str) != Some("gemini") || !truthy(existing.get("toolCalls")) {
+    let Some(patches) = patch.get("toolCalls").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    if existing.get("type").and_then(Value::as_str) != Some("gemini")
+        || !truthy(existing.get("toolCalls"))
+    {
         return Ok(());
     }
     // `existing.toolCalls.find`: only an array has it.
@@ -192,7 +203,10 @@ fn patch(messages: &mut Messages, patch: &Value) -> Result<(), Throw> {
         patch_one(messages, patch)?;
     }
     if let Some(updates) = patch.get("updates").and_then(Value::as_array) {
-        for update in updates.iter().filter(|update| string(update, "id").is_some()) {
+        for update in updates
+            .iter()
+            .filter(|update| string(update, "id").is_some())
+        {
             patch_one(messages, update)?;
         }
     }
@@ -220,7 +234,11 @@ fn load(messages: &mut Messages, list: &Value) {
     }
 }
 
-fn line(messages: &mut Messages, metadata: &mut Map<String, Value>, record: &Value) -> Result<(), Throw> {
+fn line(
+    messages: &mut Messages,
+    metadata: &mut Map<String, Value>,
+    record: &Value,
+) -> Result<(), Throw> {
     if let Some(target) = string(record, "$rewindTo") {
         messages.rewind(target);
     } else if let Some(body) = object(record, "$patch") {
@@ -252,7 +270,9 @@ pub(super) fn fold(data: &[u8]) -> Option<Conversation> {
         if raw.trim().is_empty() {
             continue;
         }
-        let Ok(record) = serde_json::from_str::<Value>(raw) else { continue };
+        let Ok(record) = serde_json::from_str::<Value>(raw) else {
+            continue;
+        };
         let _ = line(&mut messages, &mut metadata, &record);
     }
     if truthy(metadata.get("sessionId")) && truthy(metadata.get("projectHash")) {
@@ -273,8 +293,16 @@ fn legacy(text: &str) -> Option<Conversation> {
     let map = record.as_object()?;
     Some(Conversation {
         session_id: map.get("sessionId")?.as_str()?.to_owned(),
-        project_hash: map.get("projectHash").and_then(Value::as_str).unwrap_or_default().to_owned(),
-        messages: map.get("messages").and_then(Value::as_array).cloned().unwrap_or_default(),
+        project_hash: map
+            .get("projectHash")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        messages: map
+            .get("messages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
     })
 }
 
@@ -313,13 +341,21 @@ impl Conversation {
         let mut since = None;
         for message in &self.messages {
             since = since.max(string(message, "timestamp").and_then(iso_timestamp));
-            for call in message.get("toolCalls").and_then(Value::as_array).into_iter().flatten() {
+            for call in message
+                .get("toolCalls")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 match string(call, "agentId") {
                     Some(id) => {
                         named.insert(id);
                     }
                     None if string(call, "name") == Some("invoke_agent")
-                        && matches!(string(call, "status"), Some("success" | "error" | "cancelled")) =>
+                        && matches!(
+                            string(call, "status"),
+                            Some("success" | "error" | "cancelled")
+                        ) =>
                     {
                         since = since.max(string(call, "timestamp").and_then(iso_timestamp));
                     }
@@ -378,7 +414,10 @@ impl Conversation {
 /// has ended while its siblings still run.
 fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
     let head: Value = serde_json::from_slice(data.split(|&byte| byte == b'\n').next()?).ok()?;
-    if string(&head, "sessionId") != Some(id) || string(&head, "kind") != Some("subagent") || string(&head, "projectHash") != Some(project) {
+    if string(&head, "sessionId") != Some(id)
+        || string(&head, "kind") != Some("subagent")
+        || string(&head, "projectHash") != Some(project)
+    {
         return None;
     }
     let start = string(&head, "startTime").and_then(iso_timestamp)?;
@@ -388,18 +427,29 @@ fn live(id: &str, data: &[u8], project: &str) -> Option<(u64, Subagent)> {
         .iter()
         .find(|message| message["type"] == "user")
         .and_then(|message| clean(&part_text(&message["content"]), 1024));
-    let last = child.messages.iter().rev().find(|message| message["type"] == "gemini");
+    let last = child
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message["type"] == "gemini");
     let calls = last.and_then(|message| message["toolCalls"].as_array());
     let done = calls.is_some_and(|calls| {
-        calls.iter().any(|call| string(call, "name") == Some("complete_task") && string(call, "status") == Some("success"))
+        calls.iter().any(|call| {
+            string(call, "name") == Some("complete_task")
+                && string(call, "status") == Some("success")
+        })
     });
     let stage = last.filter(|_| !done).and_then(|message| {
         let tool = calls.and_then(|calls| calls.last()).and_then(|call| {
-            string(call, "displayName").filter(|name| !name.trim().is_empty()).or_else(|| string(call, "name"))
+            string(call, "displayName")
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| string(call, "name"))
         });
         match tool {
             Some(name) => clean(name, 128),
-            None => part_text(&message["content"]).lines().find_map(|line| clean(line, 256)),
+            None => part_text(&message["content"])
+                .lines()
+                .find_map(|line| clean(line, 256)),
         }
     });
     Some((
@@ -428,7 +478,12 @@ fn entry(message: &Value) -> Option<Entry> {
     let kind = message.get("type").and_then(Value::as_str);
     let mut blocks = Vec::new();
     if kind == Some("gemini") {
-        for thought in message.get("thoughts").and_then(Value::as_array).into_iter().flatten() {
+        for thought in message
+            .get("thoughts")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let text = [string(thought, "subject"), string(thought, "description")]
                 .into_iter()
                 .flatten()
@@ -440,17 +495,28 @@ fn entry(message: &Value) -> Option<Entry> {
             }
         }
     }
-    let display = message.get("displayContent").filter(|value| truthy(Some(value))).map(part_text);
+    let display = message
+        .get("displayContent")
+        .filter(|value| truthy(Some(value)))
+        .map(part_text);
     let text = match display.filter(|text| !text.is_empty()) {
         Some(text) => text,
         None => part_text(message.get("content").unwrap_or(&Value::Null)),
     };
     let text = text.trim();
-    if !text.is_empty() && !text.starts_with("<session_context>") && !text.starts_with("<hook_context>") {
+    if !text.is_empty()
+        && !text.starts_with("<session_context>")
+        && !text.starts_with("<hook_context>")
+    {
         blocks.push(text_block(text, false));
     }
     if kind != Some("user") {
-        for call in message.get("toolCalls").and_then(Value::as_array).into_iter().flatten() {
+        for call in message
+            .get("toolCalls")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             tool(call, &mut blocks);
         }
     }
@@ -494,8 +560,16 @@ fn tool(call: &Value, blocks: &mut Vec<Block>) {
         Some(args) => serde_json::to_string_pretty(args).unwrap_or_default(),
     };
     let (args, truncated) = cap(&args, ARGS_LIMIT);
-    let intent = string(call, "description").filter(|text| !text.is_empty()).map(|text| cap(text, 512).0);
-    blocks.push(Block::ToolCall { call_id: call_id.clone(), name: name.clone(), args, intent, truncated });
+    let intent = string(call, "description")
+        .filter(|text| !text.is_empty())
+        .map(|text| cap(text, 512).0);
+    blocks.push(Block::ToolCall {
+        call_id: call_id.clone(),
+        name: name.clone(),
+        args,
+        intent,
+        truncated,
+    });
     let status = string(call, "status").unwrap_or_default();
     if !matches!(status, "success" | "error" | "cancelled") {
         return;
@@ -522,7 +596,9 @@ fn tool(call: &Value, blocks: &mut Vec<Block>) {
 /// name of its `chats/<parent>/<id>.jsonl`), else the call's; the error is
 /// the activity Gemini appended for it.
 fn subagent(call: &Value, status: &str) -> Option<Subagent> {
-    let display = call.get("resultDisplay").filter(|display| display["isSubagentProgress"] == true)?;
+    let display = call
+        .get("resultDisplay")
+        .filter(|display| display["isSubagentProgress"] == true)?;
     let state = match (string(display, "state")?, status) {
         ("running", "cancelled") | ("cancelled", _) => "cancelled",
         ("running", "error") | ("error", _) => "failed",
@@ -535,7 +611,12 @@ fn subagent(call: &Value, status: &str) -> Option<Subagent> {
         .filter(|id| !id.trim().is_empty() && id.len() <= 256)?;
     let error = display["recentActivity"]
         .as_array()
-        .and_then(|activity| activity.iter().rev().find(|item| item["type"] == "thought" && item["status"] == "error"))
+        .and_then(|activity| {
+            activity
+                .iter()
+                .rev()
+                .find(|item| item["type"] == "thought" && item["status"] == "error")
+        })
         .and_then(|item| child_text(item, "content", OUTPUT_LIMIT));
     Some(Subagent {
         id: id.to_owned(),
@@ -572,7 +653,9 @@ fn result_text(call: &Value) -> String {
     };
     let mut out = Vec::new();
     for part in parts {
-        let body = part.get("functionResponse").map(|response| &response["response"]);
+        let body = part
+            .get("functionResponse")
+            .map(|response| &response["response"]);
         match body {
             Some(body) => match string(body, "output").or_else(|| string(body, "error")) {
                 Some(text) => out.push(text.to_owned()),
@@ -597,14 +680,24 @@ fn part_text(value: &Value) -> String {
         Value::Array(parts) => parts.iter().map(part_text).collect(),
         Value::Object(part) => {
             let named = |key: &str| {
-                let name = part[key].get("name").and_then(Value::as_str).unwrap_or("undefined");
+                let name = part[key]
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("undefined");
                 format!("{name}]")
             };
             if part.contains_key("videoMetadata") {
                 "[Video Metadata]".to_owned()
             } else if let Some(thought) = part.get("thought") {
                 // A template literal writes null as `null`.
-                format!("[Thought: {}]", if thought.is_null() { "null".to_owned() } else { js_string(thought) })
+                format!(
+                    "[Thought: {}]",
+                    if thought.is_null() {
+                        "null".to_owned()
+                    } else {
+                        js_string(thought)
+                    }
+                )
             } else if part.contains_key("codeExecutionResult") {
                 "[Code Execution Result]".to_owned()
             } else if part.contains_key("executableCode") {
@@ -616,8 +709,14 @@ fn part_text(value: &Value) -> String {
             } else if part.contains_key("functionResponse") {
                 format!("[Function Response: {}", named("functionResponse"))
             } else if let Some(inline) = part.get("inlineData") {
-                let mime = inline.get("mimeType").and_then(Value::as_str).unwrap_or("unknown");
-                let data = inline.get("data").and_then(Value::as_str).unwrap_or_default();
+                let mime = inline
+                    .get("mimeType")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let data = inline
+                    .get("data")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 let kb = (data.len() * 3).div_ceil(4) as f64 / 1024.0;
                 let category = ["audio/", "video/", "image/"]
                     .into_iter()
@@ -651,7 +750,10 @@ fn usage(tokens: &Value) -> Option<Usage> {
     Some(Usage {
         input,
         output,
-        total_tokens: tokens.get("total").and_then(Value::as_u64).unwrap_or(input + output),
+        total_tokens: tokens
+            .get("total")
+            .and_then(Value::as_u64)
+            .unwrap_or(input + output),
         cost: None,
     })
 }

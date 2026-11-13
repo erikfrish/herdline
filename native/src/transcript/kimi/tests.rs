@@ -40,8 +40,14 @@ fn event(body: Value) -> Value {
 /// A user turn as Kimi writes it: the prompt record, then its message.
 fn turn(prompt: &str, words: &str) -> Vec<Value> {
     vec![
-        rec("turn.prompt", json!({"promptId": prompt, "input": [{"type": "text", "text": words}], "origin": {"kind": "user"}})),
-        rec("context.append_message", json!({"message": {"id": prompt, "role": "user", "content": [{"type": "text", "text": words}], "toolCalls": []}})),
+        rec(
+            "turn.prompt",
+            json!({"promptId": prompt, "input": [{"type": "text", "text": words}], "origin": {"kind": "user"}}),
+        ),
+        rec(
+            "context.append_message",
+            json!({"message": {"id": prompt, "role": "user", "content": [{"type": "text", "text": words}], "toolCalls": []}}),
+        ),
     ]
 }
 
@@ -49,7 +55,9 @@ fn turn(prompt: &str, words: &str) -> Vec<Value> {
 fn step(uuid: &str, words: &str) -> Vec<Value> {
     vec![
         event(json!({"type": "step.begin", "uuid": uuid})),
-        event(json!({"type": "content.part", "stepUuid": uuid, "part": {"type": "text", "text": words}})),
+        event(
+            json!({"type": "content.part", "stepUuid": uuid, "part": {"type": "text", "text": words}}),
+        ),
         event(json!({"type": "step.end", "uuid": uuid})),
     ]
 }
@@ -91,11 +99,26 @@ fn sample_fixture_shows_the_user_turn_and_the_answer_with_its_usage() {
     assert_eq!(entries[0].id.as_deref(), Some("6"));
     assert_eq!(entries[0].timestamp, Some(1_779_256_800_001));
     assert_eq!(entries[1].role.as_deref(), Some("assistant"));
-    assert_eq!(entries[1].usage, Some(Usage { input: 10, output: 5, total_tokens: 15, cost: None }));
+    assert_eq!(
+        entries[1].usage,
+        Some(Usage {
+            input: 10,
+            output: 5,
+            total_tokens: 15,
+            cost: None
+        })
+    );
     assert_eq!((entries[1].offset, entries[1].end), (1, 2));
 
-    let current = SAMPLE.replacen(r#""protocol_version":"1.1""#, r#""protocol_version":"1.5""#, 1);
-    assert_eq!(texts(&project(current.as_bytes()).unwrap()), ["hi", "hello"]);
+    let current = SAMPLE.replacen(
+        r#""protocol_version":"1.1""#,
+        r#""protocol_version":"1.5""#,
+        1,
+    );
+    assert_eq!(
+        texts(&project(current.as_bytes()).unwrap()),
+        ["hi", "hello"]
+    );
 }
 
 #[test]
@@ -113,10 +136,16 @@ fn tool_results_link_to_their_call_and_an_unanswered_call_is_interrupted() {
     ]);
     let entries = project_all(&records);
     let blocks: Vec<&Block> = entries.iter().flat_map(|entry| &entry.blocks).collect();
-    assert!(matches!(blocks[1], Block::ToolCall { call_id, name, args, .. } if call_id == "t1" && name == "Bash" && args == r#"{"cmd":"ls"}"#));
-    assert!(matches!(blocks[2], Block::ToolResult { call_id, name, text, is_error: false, .. } if call_id == "t1" && name == "Bash" && text == "a.txt"));
+    assert!(
+        matches!(blocks[1], Block::ToolCall { call_id, name, args, .. } if call_id == "t1" && name == "Bash" && args == r#"{"cmd":"ls"}"#)
+    );
+    assert!(
+        matches!(blocks[2], Block::ToolResult { call_id, name, text, is_error: false, .. } if call_id == "t1" && name == "Bash" && text == "a.txt")
+    );
     assert!(matches!(blocks[3], Block::ToolCall { call_id, .. } if call_id == "t2"));
-    assert!(matches!(blocks[4], Block::ToolResult { call_id, name, text, is_error: true, .. } if call_id == "t2" && name == "Read" && text == INTERRUPTED));
+    assert!(
+        matches!(blocks[4], Block::ToolResult { call_id, name, text, is_error: true, .. } if call_id == "t2" && name == "Read" && text == INTERRUPTED)
+    );
     assert_eq!(blocks.len(), 5);
 }
 
@@ -130,7 +159,10 @@ fn an_unpaired_undo_hides_the_abandoned_turn() {
 #[test]
 fn a_branch_switch_shows_its_base_up_to_the_fork_then_the_branch() {
     let mut records = two_turns();
-    records.push(rec(SWITCHED, json!({"branch": "b1", "base": {"branch": "main", "line": 6}})));
+    records.push(rec(
+        SWITCHED,
+        json!({"branch": "b1", "base": {"branch": "main", "line": 6}}),
+    ));
     records.extend(turn("p3", "three"));
     records.extend(step("a3", "third"));
     let entries = project_all(&records);
@@ -141,7 +173,10 @@ fn a_branch_switch_shows_its_base_up_to_the_fork_then_the_branch() {
 #[test]
 fn a_paired_legacy_undo_is_applied_once_by_its_switch() {
     let mut records = two_turns();
-    records.push(rec(SWITCHED, json!({"branch": "u1", "base": {"branch": "main", "line": 6}, "legacyUndoLine": 13})));
+    records.push(rec(
+        SWITCHED,
+        json!({"branch": "u1", "base": {"branch": "main", "line": 6}, "legacyUndoLine": 13}),
+    ));
     records.push(rec("context.undo", json!({"count": 1})));
     records.push(rec("context.undone", json!({})));
     assert_eq!(texts(&project_all(&records)), ["one", "first"]);
@@ -160,7 +195,10 @@ fn clear_shows_a_boundary_and_only_what_follows() {
 #[test]
 fn compaction_shows_its_summary_and_hides_what_precedes() {
     let mut records = two_turns();
-    records.push(rec("context.apply_compaction", json!({"summary": "they counted", "keptUserMessageCount": 0})));
+    records.push(rec(
+        "context.apply_compaction",
+        json!({"summary": "they counted", "keptUserMessageCount": 0}),
+    ));
     records.extend(turn("p3", "three"));
     let entries = project_all(&records);
     assert_eq!(entries[0].kind, Kind::Compaction);
@@ -175,26 +213,43 @@ fn compaction_shows_its_summary_and_hides_what_precedes() {
 fn protocol_one_zero_tool_calls_are_flattened() {
     let records = [
         meta("1.0"),
-        rec("context.append_message", json!({"message": {"role": "assistant", "content": [], "toolCalls": [
-            {"type": "function", "id": "c1", "function": {"name": "Read", "arguments": "{\"path\":\"a\"}"}}
-        ]}})),
-        rec("context.append_message", json!({"message": {"role": "tool", "toolCallId": "c1", "content": [{"type": "text", "text": "ok"}]}})),
+        rec(
+            "context.append_message",
+            json!({"message": {"role": "assistant", "content": [], "toolCalls": [
+                {"type": "function", "id": "c1", "function": {"name": "Read", "arguments": "{\"path\":\"a\"}"}}
+            ]}}),
+        ),
+        rec(
+            "context.append_message",
+            json!({"message": {"role": "tool", "toolCallId": "c1", "content": [{"type": "text", "text": "ok"}]}}),
+        ),
     ];
     let entries = project_all(&records);
-    assert!(matches!(&entries[0].blocks[0], Block::ToolCall { name, args, .. } if name == "Read" && args == r#"{"path":"a"}"#));
-    assert!(matches!(&entries[1].blocks[0], Block::ToolResult { name, text, .. } if name == "Read" && text == "ok"));
+    assert!(
+        matches!(&entries[0].blocks[0], Block::ToolCall { name, args, .. } if name == "Read" && args == r#"{"path":"a"}"#)
+    );
+    assert!(
+        matches!(&entries[1].blocks[0], Block::ToolResult { name, text, .. } if name == "Read" && text == "ok")
+    );
 }
 
 #[test]
 fn versions_without_a_migration_path_or_newer_than_allowed_are_refused() {
     for version in ["0.9", "1.4.0"] {
-        assert_eq!(project(journal(&[meta(version)]).as_bytes()).err(), Some(VERSION), "{version}");
+        assert_eq!(
+            project(journal(&[meta(version)]).as_bytes()).err(),
+            Some(VERSION),
+            "{version}"
+        );
     }
     let mut ahead = meta("1.6");
     ahead["min_protocol_version"] = json!("1.6");
     assert_eq!(project(journal(&[ahead]).as_bytes()).err(), Some(VERSION));
     let malformed = json!({"type": "metadata", "created_at": 1});
-    assert_eq!(project(journal(&[malformed]).as_bytes()).err(), Some(UNREADABLE));
+    assert_eq!(
+        project(journal(&[malformed]).as_bytes()).err(),
+        Some(UNREADABLE)
+    );
 }
 
 #[test]
@@ -261,7 +316,11 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, process, env: Default::default() }
+        Self {
+            home,
+            process,
+            env: Default::default(),
+        }
     }
 
     /// Herdr's `foreground_cwd` for the pane: `cwd`, or none reported.
@@ -278,15 +337,29 @@ impl Host {
 
     /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
+        self.env.replace(
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        );
     }
 
     /// The session directory of `sid` in `bucket` under `sessions`, bound
     /// to `$HOME/work`, with `records` as its main journal.
-    fn session_in(&self, sessions: &std::path::Path, bucket: &str, sid: &str, records: &[Value]) -> PathBuf {
+    fn session_in(
+        &self,
+        sessions: &std::path::Path,
+        bucket: &str,
+        sid: &str,
+        records: &[Value],
+    ) -> PathBuf {
         let dir = sessions.join(bucket).join(sid);
         fs::create_dir_all(dir.join("agents/main")).unwrap();
-        fs::write(dir.join("state.json"), json!({"cwd": self.path("work")}).to_string()).unwrap();
+        fs::write(
+            dir.join("state.json"),
+            json!({"cwd": self.path("work")}).to_string(),
+        )
+        .unwrap();
         fs::write(dir.join("agents/main/wire.jsonl"), journal(records)).unwrap();
         dir
     }
@@ -360,7 +433,12 @@ fn a_store_that_is_relative_or_outside_home_is_refused_never_the_default() {
         assert_eq!(refused(host.page()), OUTSIDE_HOME, "{root}");
     }
     let elsewhere = tempfile::tempdir().unwrap();
-    host.session_in(&elsewhere.path().join("sessions"), "bucket1", SID, &two_turns());
+    host.session_in(
+        &elsewhere.path().join("sessions"),
+        "bucket1",
+        SID,
+        &two_turns(),
+    );
     host.environ(&[("KIMI_CODE_HOME", elsewhere.path().to_str().unwrap())]);
     assert_eq!(refused(host.page()), OUTSIDE_HOME);
 }
@@ -404,7 +482,8 @@ fn a_linked_journal_is_unreadable() {
     let dir = host.session("bucket1", &[]);
     fs::write(host.path("real.jsonl"), journal(&two_turns())).unwrap();
     fs::remove_file(dir.join("agents/main/wire.jsonl")).unwrap();
-    std::os::unix::fs::symlink(host.path("real.jsonl"), dir.join("agents/main/wire.jsonl")).unwrap();
+    std::os::unix::fs::symlink(host.path("real.jsonl"), dir.join("agents/main/wire.jsonl"))
+        .unwrap();
     assert_eq!(refused(host.page()), UNREADABLE);
 }
 
@@ -412,7 +491,10 @@ fn a_linked_journal_is_unreadable() {
 fn an_id_kimi_would_not_look_up_is_no_transcript() {
     let host = Host::new("session_../x");
     host.session("bucket1", &two_turns());
-    assert!(matches!(host.page_of("session_../x", 0), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page_of("session_../x", 0),
+        Err(Error::NoTranscript)
+    ));
     assert!(!session_id("session_../x"));
     assert!(session_id(SID));
 }
@@ -432,7 +514,11 @@ fn kimi_code_by_either_name_or_as_node_on_its_entry_is_read() {
         let host = Host::running(SID, process.clone());
         host.session("bucket1", &two_turns());
         assert_eq!(host.expect(SID).pid, Some(42), "{process}");
-        assert_eq!(texts(&host.page().unwrap().entries), ["one", "first", "two", "second"], "{process}");
+        assert_eq!(
+            texts(&host.page().unwrap().entries),
+            ["one", "first", "two", "second"],
+            "{process}"
+        );
     }
 }
 
@@ -459,11 +545,21 @@ fn the_bound_directory_is_cwd_and_only_a_missing_one_falls_back_to_work_dir() {
     let host = Host::new(SID);
     let dir = host.session("bucket1", &two_turns());
     let work = host.path("work");
-    for state in [json!({"workDir": work}), json!({"cwd": null, "workDir": work})] {
+    for state in [
+        json!({"workDir": work}),
+        json!({"cwd": null, "workDir": work}),
+    ] {
         fs::write(dir.join("state.json"), state.to_string()).unwrap();
-        assert_eq!(texts(&host.page().unwrap().entries), ["one", "first", "two", "second"], "{state}");
+        assert_eq!(
+            texts(&host.page().unwrap().entries),
+            ["one", "first", "two", "second"],
+            "{state}"
+        );
     }
-    for state in [json!({"cwd": "", "workDir": work}), json!({"cwd": 7, "workDir": work})] {
+    for state in [
+        json!({"cwd": "", "workDir": work}),
+        json!({"cwd": 7, "workDir": work}),
+    ] {
         fs::write(dir.join("state.json"), state.to_string()).unwrap();
         assert_eq!(refused(host.page()), UNREADABLE, "{state}");
     }

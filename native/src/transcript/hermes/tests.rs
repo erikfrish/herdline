@@ -72,7 +72,10 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Default::default() }
+        Self {
+            home,
+            env: Default::default(),
+        }
     }
 
     fn root(&self) -> PathBuf {
@@ -108,7 +111,12 @@ impl Host {
         let bin = self.home.path().join(".local/bin");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .arg(query_script(
+                "lab",
+                "w1:p1",
+                &self.expect(sid),
+                &options(read),
+            ))
             .env_remove("HERMES_HOME")
             .env_remove("HERMES_DATA_DIR_SUFFIX")
             .envs(self.env.borrow().iter().cloned())
@@ -116,7 +124,11 @@ impl Host {
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
@@ -162,7 +174,8 @@ fn reads_exactly_the_reported_session_among_others() {
 #[test]
 fn after_resumes_across_a_compaction_without_repeating_a_clone() {
     let host = Host::new(SID);
-    let parent = json!({"id": OTHER, "source": "cli", "started_at": 1.0, "end_reason": "compression"});
+    let parent =
+        json!({"id": OTHER, "source": "cli", "started_at": 1.0, "end_reason": "compression"});
     let child = json!({"id": SID, "source": "cli", "started_at": 2.0, "parent_session_id": OTHER});
     let uid = |mut row: Value, uid: &str| {
         row["message_uid"] = json!(uid);
@@ -180,7 +193,11 @@ fn after_resumes_across_a_compaction_without_repeating_a_clone() {
     let tail = host.page(SID, Read::Tail).unwrap();
     assert_eq!(texts(&tail), ["first", "second", "third"]);
     // A compression continuation is this conversation: no boundary.
-    assert!(tail.entries.iter().all(|entry| entry.kind != Kind::Boundary));
+    assert!(
+        tail.entries
+            .iter()
+            .all(|entry| entry.kind != Kind::Boundary)
+    );
     let caught_up = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert!(caught_up.entries.is_empty());
     Command::new("python3")
@@ -199,7 +216,8 @@ fn after_resumes_across_a_compaction_without_repeating_a_clone() {
 #[test]
 fn a_branch_child_shows_only_itself_after_a_boundary() {
     let host = Host::new(SID);
-    let parent = json!({"id": OTHER, "source": "cli", "started_at": 1.0, "end_reason": "compression"});
+    let parent =
+        json!({"id": OTHER, "source": "cli", "started_at": 1.0, "end_reason": "compression"});
     let fork = json!({"id": SID, "source": "cli", "started_at": 2.0, "parent_session_id": OTHER,
         "model_config": json!({"_branched_from": OTHER}).to_string()});
     host.store(
@@ -214,7 +232,12 @@ fn a_branch_child_shows_only_itself_after_a_boundary() {
     assert_eq!(texts(&page), ["branch turn"]);
     // An `after` page never repeats the boundary below newer rows.
     let after = host.page(SID, Read::After { offset: 0 }).unwrap();
-    assert!(after.entries.iter().all(|entry| entry.kind != Kind::Boundary));
+    assert!(
+        after
+            .entries
+            .iter()
+            .all(|entry| entry.kind != Kind::Boundary)
+    );
 }
 
 #[test]
@@ -226,7 +249,10 @@ fn another_schema_format_is_refused_with_both_formats() {
             json!({"version": [found], "sessions": [session(SID)], "messages": [message(SID, "user", "hidden")]}),
         );
         match host.page(SID, Read::Tail) {
-            Err(Error::UnsupportedHermes { found: got, supported }) => {
+            Err(Error::UnsupportedHermes {
+                found: got,
+                supported,
+            }) => {
                 assert_eq!(got, Some(found));
                 assert_eq!(supported, SCHEMA_VERSION);
             }
@@ -265,8 +291,12 @@ fn a_store_linked_outside_home_is_refused() {
     let link = host.home.path().join("linked");
     std::os::unix::fs::symlink(&real, &link).unwrap();
     // HERMES_HOME names the in-home link; its target is outside HOME.
-    host.env.replace(vec![("HERMES_HOME".into(), link.display().to_string())]);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::TranscriptUnconfined)));
+    host.env
+        .replace(vec![("HERMES_HOME".into(), link.display().to_string())]);
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::TranscriptUnconfined)
+    ));
 }
 
 #[test]
@@ -276,11 +306,23 @@ fn reading_leaves_the_store_untouched() {
         &host.root(),
         json!({"version": [SCHEMA_VERSION], "sessions": [session(SID)], "messages": [message(SID, "user", "hi")]}),
     );
-    let before = (fs::read(&db).unwrap(), fs::metadata(&db).unwrap().modified().unwrap());
+    let before = (
+        fs::read(&db).unwrap(),
+        fs::metadata(&db).unwrap().modified().unwrap(),
+    );
     host.page(SID, Read::Tail).unwrap();
-    assert_eq!(before, (fs::read(&db).unwrap(), fs::metadata(&db).unwrap().modified().unwrap()));
+    assert_eq!(
+        before,
+        (
+            fs::read(&db).unwrap(),
+            fs::metadata(&db).unwrap().modified().unwrap()
+        )
+    );
     for sidecar in ["-wal", "-shm", "-journal"] {
-        assert!(!host.root().join(format!("state.db{sidecar}")).exists(), "{sidecar}");
+        assert!(
+            !host.root().join(format!("state.db{sidecar}")).exists(),
+            "{sidecar}"
+        );
     }
 }
 
@@ -300,9 +342,19 @@ fn decodes_parts_and_fails_closed_on_malformed_rows() {
         ]}),
     );
     let page = host.page(SID, Read::Tail).unwrap();
-    let [parts, malformed, unknown] = &page.entries[..] else { panic!("{page:?}") };
-    assert!(matches!(&parts.blocks[1], Block::Image(Image { source: Source::Unreadable, .. })));
+    let [parts, malformed, unknown] = &page.entries[..] else {
+        panic!("{page:?}")
+    };
+    assert!(matches!(
+        &parts.blocks[1],
+        Block::Image(Image {
+            source: Source::Unreadable,
+            ..
+        })
+    ));
     assert!(matches!(&parts.blocks[2], Block::Text { text, .. } if text == "[file]"));
-    assert!(matches!(&malformed.blocks[..], [Block::Text { text, .. }] if text == "\u{0}json:{not json"));
+    assert!(
+        matches!(&malformed.blocks[..], [Block::Text { text, .. }] if text == "\u{0}json:{not json")
+    );
     assert!(matches!(&unknown.blocks[0], Block::Text { text, .. } if text.contains("critic")));
 }

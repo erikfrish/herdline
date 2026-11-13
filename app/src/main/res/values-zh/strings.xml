@@ -133,20 +133,6 @@
     <string name="connection_connecting">正在连接</string>
     <string name="connection_lost">连接已断开</string>
     <string name="connection_failed">无法连接</string>
-    <!-- J2 F: output focus while typing. -->
-    <string name="output_focus_on">专注输出</string>
-    <string name="output_focus_off">显示完整终端</string>
-    <string name="output_focus_menu">输入时专注输出</string>
-    <string name="output_focus_help">键盘弹出时隐藏底部几行，不会删除任何内容。</string>
-    <plurals name="output_focus_hidden">
-        <item quantity="other">底部 %1$d 行已隐藏</item>
-    </plurals>
-    <string name="output_focus_show_all">全部显示</string>
-    <string name="output_focus_nothing">专注输出 · 未隐藏任何内容</string>
-    <string name="output_focus_turn_off">关闭</string>
-    <plurals name="output_focus_strip_description">
-        <item quantity="other">专注输出已开启。终端底部 %1$d 行已隐藏。</item>
-    </plurals>
     <string name="split_right">向右分屏</string>
     <string name="split_down">向下分屏</string>
     <string name="zoom_pane">放大窗格</string>
@@ -234,7 +220,8 @@
     <string name="font_size">字号：%1$d sp</string>
     <string name="font_size_help">也可以在终端上双指捏合缩放。</string>
     <string name="section_terminal">终端</string>
-    <string name="vibrate_on_bell">响铃时振动</string>
+    <string name="vibrate_on_bell">响铃时触感反馈</string>
+    <string name="vibrate_on_bell_help">仅在屏幕上显示会话时生效，聊天和终端均可。遵循 Android 触感反馈设置，且设备需要支持振动。</string>
     <string name="keep_screen_on">保持屏幕常亮</string>
     <string name="keep_screen_on_help">仅在显示会话界面时</string>
     <string name="section_about">关于</string>
@@ -265,7 +252,6 @@
     <string name="reason_editor_caret_unseen">无法确认代理处于输入提示处：此版本的 Herdr 未传递代理的输入光标。未发送任何内容。</string>
     <string name="reason_editor_hidden">输入框没有全部显示在屏幕上。请显示整个输入框（收起键盘、滚动到底部或使用更小的字号），然后再次发送。未发送任何内容。</string>
     <string name="reason_target_not_visible">窗格的光标行不在屏幕上。请让它显示出来（收起键盘、滚动到底部或使用更小的字号），然后再次插入。未发送任何内容。</string>
-    <string name="composer_back_to_bottom">回到底部</string>
     <string name="reason_resizing">屏幕仍在调整大小。请稍后再试。未发送任何内容。</string>
     <string name="composer_checking">正在检查窗格，然后才能发送…</string>
     <string name="composer_checking_resizing">正在检查窗格，然后才能发送：窗格仍在调整大小…</string>

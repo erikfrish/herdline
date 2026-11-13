@@ -5,7 +5,14 @@
 //! with such rows.
 
 use super::*;
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, path::PathBuf, process::Command, time::{Duration, Instant}};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    path::PathBuf,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 const SID: &str = "ses_0a1b2c3d4e5fAbCdEfGhIjKlMn";
 const OTHER: &str = "ses_0a1b2c3d4e60ZyXwVuTsRqPoNm";
@@ -69,7 +76,10 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Default::default() }
+        Self {
+            home,
+            env: Default::default(),
+        }
     }
 
     /// The pane's foreground Kilo, now (`proc.json`) or once the first report
@@ -84,7 +94,11 @@ impl Host {
 
     /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
+        self.env.replace(
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        );
     }
 
     /// Kilo's default data dir, `~/.local/share/kilo`.
@@ -120,7 +134,12 @@ impl Host {
         let bin = self.home.path().join(".local/bin");
         let output = Command::new("/bin/sh")
             .arg("-c")
-            .arg(query_script("lab", "w1:p1", &self.expect(sid), &options(read)))
+            .arg(query_script(
+                "lab",
+                "w1:p1",
+                &self.expect(sid),
+                &options(read),
+            ))
             .env_remove("XDG_DATA_HOME")
             .env_remove("KILO_DB")
             .envs(self.env.borrow().iter().cloned())
@@ -128,8 +147,16 @@ impl Host {
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        response(&serde_json::from_slice(&output.stdout).unwrap(), &self.expect(sid), false)
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        response(
+            &serde_json::from_slice(&output.stdout).unwrap(),
+            &self.expect(sid),
+            false,
+        )
     }
 }
 
@@ -142,14 +169,22 @@ fn message(session: &str, id: &str, data: Value) -> Value {
 }
 
 fn user(session: &str, id: &str) -> Value {
-    message(session, id, json!({"role": "user", "time": {"created": 1000}, "agent": "code",
-        "model": {"providerID": "p", "modelID": "m"}}))
+    message(
+        session,
+        id,
+        json!({"role": "user", "time": {"created": 1000}, "agent": "code",
+        "model": {"providerID": "p", "modelID": "m"}}),
+    )
 }
 
 fn assistant(session: &str, id: &str) -> Value {
-    message(session, id, json!({"role": "assistant", "time": {"created": 2000}, "parentID": "msg_1",
+    message(
+        session,
+        id,
+        json!({"role": "assistant", "time": {"created": 2000}, "parentID": "msg_1",
         "modelID": "m", "providerID": "p", "mode": "code", "agent": "code", "path": {"cwd": "/w", "root": "/w"},
-        "cost": 0, "tokens": {"input": 1, "output": 2, "reasoning": 0, "cache": {"read": 0, "write": 0}}}))
+        "cost": 0, "tokens": {"input": 1, "output": 2, "reasoning": 0, "cache": {"read": 0, "write": 0}}}),
+    )
 }
 
 fn part(session: &str, message: &str, id: &str, data: Value) -> Value {
@@ -200,7 +235,15 @@ fn reads_only_the_reported_session_in_order_and_rereads_a_streaming_message() {
     assert_eq!(texts(&tail), ["first", "a", "b"]);
     assert_eq!(tail.entries[1].role.as_deref(), Some("assistant"));
     let append = "import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);c.execute(\"INSERT INTO part VALUES ('prt_2d','msg_2',?,1,1,'{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"c\\\"}')\",(sys.argv[2],));c.commit()";
-    assert!(Command::new("python3").args(["-c", append]).arg(&db).arg(SID).status().unwrap().success());
+    assert!(
+        Command::new("python3")
+            .args(["-c", append])
+            .arg(&db)
+            .arg(SID)
+            .status()
+            .unwrap()
+            .success()
+    );
     // The last message shown is read again with the part it streamed since.
     let next = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert_eq!(texts(&next), ["a", "b", "c"]);
@@ -241,7 +284,11 @@ fn after_a_revert_the_next_page_starts_over_with_only_current_messages() {
     let next = host.page(SID, Read::After { offset: tail.end }).unwrap();
     assert!(next.reset);
     assert_eq!(texts(&next), ["one", "four", "five"]);
-    let ids: Vec<_> = next.entries.iter().map(|entry| entry.id.as_deref().unwrap()).collect();
+    let ids: Vec<_> = next
+        .entries
+        .iter()
+        .map(|entry| entry.id.as_deref().unwrap())
+        .collect();
     assert_eq!(ids, ["msg_1", "msg_4", "msg_5"]);
 }
 
@@ -281,12 +328,18 @@ fn a_process_replaced_mid_read_gives_no_answer_not_even_a_refusal() {
         json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "hi")]}),
     );
     host.process("proc.next", 43);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
     host.process("proc.json", 42);
     host.environ(&[("KILO_DB", ":memory:")]);
     assert_eq!(refused(host.page(SID, Read::Tail)), IN_MEMORY);
     host.process("proc.next", 43);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -300,14 +353,23 @@ fn only_the_shells_own_xdg_data_home_places_the_store() {
     // Set only for the agent, it is not known here: the default store has
     // no such session, and nothing else is searched.
     host.environ(&[]);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
 fn a_fifo_at_the_store_path_is_refused_without_waiting() {
     let host = Host::new(SID, "kilo");
     fs::create_dir_all(host.data()).unwrap();
-    assert!(Command::new("mkfifo").arg(host.data().join("kilo.db")).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(host.data().join("kilo.db"))
+            .status()
+            .unwrap()
+            .success()
+    );
     let started = Instant::now();
     assert_eq!(refused(host.page(SID, Read::Tail)), UNREADABLE);
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -347,20 +409,34 @@ fn one_message_larger_than_the_page_budget_is_shown_cut_not_failed() {
     match &blocks[0] {
         Block::Text { text, truncated } => {
             assert!(*truncated);
-            assert!(text.len() <= super::super::TEXT_LIMIT && text.chars().all(|c| c == '\u{8a9e}'));
+            assert!(
+                text.len() <= super::super::TEXT_LIMIT && text.chars().all(|c| c == '\u{8a9e}')
+            );
         }
         other => panic!("{other:?}"),
     }
     let results: Vec<_> = blocks
         .iter()
         .filter_map(|block| match block {
-            Block::ToolResult { text, truncated, .. } => Some((text.len(), *truncated)),
+            Block::ToolResult {
+                text, truncated, ..
+            } => Some((text.len(), *truncated)),
             _ => None,
         })
         .collect();
     assert!(!results.is_empty() && results.len() < 150);
-    assert!(results.iter().all(|&(len, truncated)| truncated && len <= super::super::RESULT_LIMIT));
-    assert!(matches!(blocks.last(), Some(Block::Text { truncated: true, .. })));
+    assert!(
+        results
+            .iter()
+            .all(|&(len, truncated)| truncated && len <= super::super::RESULT_LIMIT)
+    );
+    assert!(matches!(
+        blocks.last(),
+        Some(Block::Text {
+            truncated: true,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -377,11 +453,19 @@ fn a_tool_call_pairs_with_its_result_or_its_error() {
         ]}),
     );
     let page = host.page(SID, Read::Tail).unwrap();
-    let [call, result, failed_call, failed] = &page.entries[0].blocks[..] else { panic!("{page:?}") };
-    assert!(matches!(call, Block::ToolCall { call_id, name, args, .. } if call_id == "c1" && name == "bash" && args.contains("ls")));
-    assert!(matches!(result, Block::ToolResult { call_id, text, is_error: false, .. } if call_id == "c1" && text == "a\nb"));
+    let [call, result, failed_call, failed] = &page.entries[0].blocks[..] else {
+        panic!("{page:?}")
+    };
+    assert!(
+        matches!(call, Block::ToolCall { call_id, name, args, .. } if call_id == "c1" && name == "bash" && args.contains("ls"))
+    );
+    assert!(
+        matches!(result, Block::ToolResult { call_id, text, is_error: false, .. } if call_id == "c1" && text == "a\nb")
+    );
     assert!(matches!(failed_call, Block::ToolCall { call_id, .. } if call_id == "c2"));
-    assert!(matches!(failed, Block::ToolResult { call_id, text, is_error: true, .. } if call_id == "c2" && text == "boom"));
+    assert!(
+        matches!(failed, Block::ToolResult { call_id, text, is_error: true, .. } if call_id == "c2" && text == "boom")
+    );
 }
 
 #[test]
@@ -406,10 +490,17 @@ fn images_are_refused_and_file_urls_are_never_read() {
         Block::Image(Image { source: Source::Unreadable, .. }),
         Block::Text { text, .. },
     ] if text == "[file: secret.txt]"));
-    assert!(matches!(&page.entries[1].blocks[1], Block::ToolResult { images, .. }
-        if matches!(&images[..], [Image { source: Source::Unreadable, .. }])));
+    assert!(
+        matches!(&page.entries[1].blocks[1], Block::ToolResult { images, .. }
+        if matches!(&images[..], [Image { source: Source::Unreadable, .. }]))
+    );
     let shipped = serde_json::to_string(&page).unwrap();
-    assert!(!shipped.contains("TOP-SECRET") && !shipped.contains("iVBOR") && !shipped.contains("file://"), "{shipped}");
+    assert!(
+        !shipped.contains("TOP-SECRET")
+            && !shipped.contains("iVBOR")
+            && !shipped.contains("file://"),
+        "{shipped}"
+    );
 }
 
 #[test]
@@ -419,11 +510,17 @@ fn a_session_only_in_the_v2_event_store_is_refused_never_empty() {
             "time_created": 1, "time_updated": 1, "data": "{\"text\":\"hidden\"}"})
     };
     let host = Host::new(SID, "kilo");
-    host.store(&host.data().join("kilo.db"), json!({"session": [session(SID)], "session_message": [v2(SID, json!(1))]}));
+    host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)], "session_message": [v2(SID, json!(1))]}),
+    );
     assert_eq!(refused(host.page(SID, Read::Tail)), EVENT_STORE);
     // A row without seq is not the event store's, and a new session is empty.
     let host = Host::new(SID, "kilo");
-    host.store(&host.data().join("kilo.db"), json!({"session": [session(SID)], "session_message": [v2(SID, Value::Null)]}));
+    host.store(
+        &host.data().join("kilo.db"),
+        json!({"session": [session(SID)], "session_message": [v2(SID, Value::Null)]}),
+    );
     assert!(host.page(SID, Read::Tail).unwrap().entries.is_empty());
 }
 
@@ -434,14 +531,15 @@ fn an_unknown_session_id_is_not_found() {
         &host.data().join("kilo.db"),
         json!({"session": [session(OTHER)], "message": [user(OTHER, "msg_1")], "part": [text(OTHER, "msg_1", "prt_1", "other")]}),
     );
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
 fn kilo_db_is_followed_relative_or_absolute_and_memory_is_refused() {
-    let spec = |words: &str| {
-        json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", words)]})
-    };
+    let spec = |words: &str| json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", words)]});
     let host = Host::new(SID, "kilo");
     host.store(&host.data().join("kilo.db"), spec("default"));
     host.store(&host.data().join("custom.db"), spec("relative"));
@@ -464,8 +562,14 @@ fn neither_a_channel_db_nor_an_opencode_db_stands_in_for_kilo_db() {
     let spec = json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "wrong")]});
     host.store(&host.data().join("kilo-rc.db"), spec.clone());
     host.store(&host.data().join("opencode-local.db"), spec.clone());
-    host.store(&host.home.path().join(".local/share/opencode/opencode.db"), spec);
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    host.store(
+        &host.home.path().join(".local/share/opencode/opencode.db"),
+        spec,
+    );
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -512,7 +616,10 @@ fn a_wal_store_sqlite_cannot_open_read_only_is_refused_and_left_untouched() {
 #[test]
 fn a_store_without_the_v1_tables_is_refused() {
     let host = Host::new(SID, "kilo");
-    host.store(&host.data().join("kilo.db"), json!({"drop": ["part"], "session": [session(SID)], "message": [user(SID, "msg_1")]}));
+    host.store(
+        &host.data().join("kilo.db"),
+        json!({"drop": ["part"], "session": [session(SID)], "message": [user(SID, "msg_1")]}),
+    );
     assert_eq!(refused(host.page(SID, Read::Tail)), STORE_LAYOUT);
 }
 
@@ -523,7 +630,10 @@ fn another_agent_reporting_a_kilo_id_is_never_read_as_kilo() {
         &host.data().join("kilo.db"),
         json!({"session": [session(SID)], "message": [user(SID, "msg_1")], "part": [text(SID, "msg_1", "prt_1", "kilo")]}),
     );
-    assert!(matches!(host.page(SID, Read::Tail), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.page(SID, Read::Tail),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -537,7 +647,10 @@ fn a_kilo_pane_needs_an_exact_session_id_and_its_own_process() {
     assert_eq!(report(SID, "kilo-code").unwrap().pid, Some(42));
     assert_eq!(report(SID, "opencode").unwrap().pid, None);
     for value in ["ses_", "sess_abc", "msg_0a1b2c", "ses_a.b", "SES_abc"] {
-        assert!(matches!(report(value, "kilo"), Err(Error::NoTranscript)), "{value}");
+        assert!(
+            matches!(report(value, "kilo"), Err(Error::NoTranscript)),
+            "{value}"
+        );
     }
 }
 
@@ -548,10 +661,17 @@ fn an_aborted_message_reads_as_a_stop_and_other_errors_keep_their_words() {
     };
     assert_eq!(
         blocks(json!({"name": "MessageAbortedError", "message": "aborted"})),
-        [Block::Marker { marker: Marker::Stopped, text: String::new(), truncated: false }]
+        [Block::Marker {
+            marker: Marker::Stopped,
+            text: String::new(),
+            truncated: false
+        }]
     );
     assert_eq!(
         blocks(json!({"name": "APIError", "message": "rate limited"})),
-        [Block::Text { text: "[rate limited]".to_owned(), truncated: false }]
+        [Block::Text {
+            text: "[rate limited]".to_owned(),
+            truncated: false
+        }]
     );
 }

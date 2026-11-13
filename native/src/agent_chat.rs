@@ -117,11 +117,16 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     if engine == Engine::Pty {
         return Ok(absent().to_string());
     }
-    let control = matches!(request.op, Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort);
+    let control = matches!(
+        request.op,
+        Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort
+    );
     match engine {
         // Dialogs, Stop, Promote and children have no Codex path here: a
         // truthful absence of that op, not a request Kotlin may treat as done.
-        Engine::Codex if control || matches!(request.op, Op::Promote | Op::Children) => return Ok(unsupported_op(request.op).to_string()),
+        Engine::Codex if control || matches!(request.op, Op::Promote | Op::Children) => {
+            return Ok(unsupported_op(request.op).to_string());
+        }
         // Its daemon steers or starts a turn; it never queues behind one.
         Engine::Codex if request.deliver_as == Some(DeliverAs::Queue) => {
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
@@ -131,7 +136,9 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         // to promote. Said as such, never an absence a send could fall
         // through to the pane on. Permissions, questions and Stop stay in
         // `opencode_ctl.py`.
-        Engine::Kilo if request.op == Op::Promote => return Ok(unsupported_op(request.op).to_string()),
+        Engine::Kilo if request.op == Op::Promote => {
+            return Ok(unsupported_op(request.op).to_string());
+        }
         Engine::Kilo if request.deliver_as == Some(DeliverAs::Queue) => {
             return Ok(json!({"endpoint": "unsupported", "missing": ["queue"]}).to_string());
         }
@@ -139,10 +146,17 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     let mut submitted = None;
     if request.op == Op::DialogSubmit {
-        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_permission_id(id) || valid_form_id(id)).ok_or(Error::BadReply)?;
+        let dialog_id = request
+            .dialog_id
+            .as_deref()
+            .filter(|id| valid_permission_id(id) || valid_form_id(id))
+            .ok_or(Error::BadReply)?;
         let data = request.answer.as_ref().map(|answer| &answer["data"]);
         submitted = Some(if valid_permission_id(dialog_id) {
-            let Some(decision) = data.and_then(|data| data["decision"].as_str()).filter(|d| DECISIONS.contains(d)) else {
+            let Some(decision) = data
+                .and_then(|data| data["decision"].as_str())
+                .filter(|d| DECISIONS.contains(d))
+            else {
                 // Nothing left the phone: the answer is not one the server takes.
                 return Ok(submit_result(dialog_id, "invalid").to_string());
             };
@@ -161,7 +175,11 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
     }
     if request.op == Op::DialogCancel {
         // Only a question is declined; a permission's answer is a decision.
-        let dialog_id = request.dialog_id.as_deref().filter(|id| valid_form_id(id)).ok_or(Error::BadReply)?;
+        let dialog_id = request
+            .dialog_id
+            .as_deref()
+            .filter(|id| valid_form_id(id))
+            .ok_or(Error::BadReply)?;
         submitted = Some(json!({"dialogId": dialog_id}).to_string());
     }
     let text = composer::clean(&request.text);
@@ -181,9 +199,13 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         // as a prompt file next to the text, read and sent on the host
         // ([`control_step`], [`kilo_step`]); a prompt of files alone is not
         // pinned, so its text stays required.
-        let images = engine == Engine::Codex && request.attachments.iter().all(|a| a.kind == attach::Kind::Image);
+        let images = engine == Engine::Codex
+            && request
+                .attachments
+                .iter()
+                .all(|a| a.kind == attach::Kind::Image);
         let files = matches!(engine, Engine::OpenCode | Engine::Kilo);
-        if text.trim().is_empty() && !(images && !request.attachments.is_empty()) {
+        if text.trim().is_empty() && (!images || request.attachments.is_empty()) {
             return Ok(refused(composer::Refusal::EmptyText).to_string());
         }
         if text.len() > MAX_TEXT_BYTES {
@@ -199,7 +221,12 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
             if request.attachments.len() > attach::MAX_FILES {
                 return Ok(refused(composer::Refusal::AttachmentTooMany).to_string());
             }
-            if engine == Engine::OpenCode && request.attachments.iter().any(|a| a.size > attach::OPENCODE_LIMIT) {
+            if engine == Engine::OpenCode
+                && request
+                    .attachments
+                    .iter()
+                    .any(|a| a.size > attach::OPENCODE_LIMIT)
+            {
                 return Ok(refused(composer::Refusal::AttachmentTooLarge).to_string());
             }
         }
@@ -263,10 +290,19 @@ pub fn run(exec: &Exec, herdr_session: &str, request: Request) -> Result<String>
         }
     };
     let answer = match (engine, word.split_once('\t')) {
-        (Engine::Codex, Some((word, payload))) => codex_reply(word, payload, request.op, &request.id)?,
+        (Engine::Codex, Some((word, payload))) => {
+            codex_reply(word, payload, request.op, &request.id)?
+        }
         // The verifier refused before the client ran, or nothing answered.
-        (Engine::Codex, None) => gate_reply(&word, request.op).map_or_else(|| unreadable(request.op, &request.id), Ok)?,
-        _ => control_reply(&word, request.op, &request.id, request.dialog_id.as_deref().unwrap_or(""))?,
+        (Engine::Codex, None) => {
+            gate_reply(&word, request.op).map_or_else(|| unreadable(request.op, &request.id), Ok)?
+        }
+        _ => control_reply(
+            &word,
+            request.op,
+            &request.id,
+            request.dialog_id.as_deref().unwrap_or(""),
+        )?,
     };
     Ok(answer.to_string())
 }
@@ -298,7 +334,9 @@ fn codex_reply(word: &str, payload: &str, op: Op, id: &str) -> Result<Value> {
             live(json!({"id": id, "outcome": "accepted", "state": payload}))
         }
         // A status check found no trace of the request: still possibly queued.
-        "unknown" if op == Op::Status => live(json!({"id": id, "outcome": "unknown", "state": payload})),
+        "unknown" if op == Op::Status => {
+            live(json!({"id": id, "outcome": "unknown", "state": payload}))
+        }
         "state" if op == Op::State && payload.is_object() => live(json!({"state": payload})),
         "withdrawn" if op == Op::Withdraw && payload["withdrawn"].is_boolean() => live(json!({
             "withdrawn": payload["withdrawn"],
@@ -385,7 +423,9 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         },
         ("queued", Op::Send) => accepted(id),
         ("state", Op::State) => {
-            let state = serde_json::from_str(payload).ok().and_then(|state| crate::ingress::state(&state));
+            let state = serde_json::from_str(payload)
+                .ok()
+                .and_then(|state| crate::ingress::state(&state));
             live(json!({"state": state.ok_or(Error::BadReply)?}))
         }
         // In the inbox or the history: held. Nowhere: possibly still on
@@ -403,7 +443,9 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         // ones: a permission or question past them is never a cut list
         // passed off as the whole.
         ("dialogs", Op::Dialogs) => live(json!({"dialogs": dialog_list(payload, false)?})),
-        ("dialogs_more", Op::Dialogs) => live(json!({"dialogs": dialog_list(payload, true)?, "more": true})),
+        ("dialogs_more", Op::Dialogs) => {
+            live(json!({"dialogs": dialog_list(payload, true)?, "more": true}))
+        }
         ("submitted" | "not_open" | "invalid", Op::DialogSubmit) => submit_result(dialog_id, word),
         ("cancelled" | "not_open", Op::DialogCancel) => submit_result(dialog_id, word),
         // Another client answered it first: nothing of ours was taken.
@@ -421,7 +463,9 @@ fn control_reply(line: &str, op: Op, id: &str, dialog_id: &str) -> Result<Value>
         // `children_more` with the first MAX_CHILDREN when there are others,
         // never a cut list as the whole.
         ("children", Op::Children) => live(json!({"children": children_list(payload, false)?})),
-        ("children_more", Op::Children) => live(json!({"children": children_list(payload, true)?, "more": true})),
+        ("children_more", Op::Children) => {
+            live(json!({"children": children_list(payload, true)?, "more": true}))
+        }
         _ => return unreadable(op, id),
     })
 }
@@ -432,13 +476,19 @@ fn dialog_list(payload: &str, more: bool) -> Result<Value> {
     let dialogs: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
     let named = dialogs.as_array().is_some_and(|all| {
         (!more || all.len() == MAX_DIALOGS)
-            && all.iter().all(|d| match (d["dialogId"].as_str(), d["kind"].as_str()) {
-                (Some(id), Some("permission")) => valid_permission_id(id),
-                (Some(id), Some("form")) => valid_form_id(id),
-                _ => false,
-            })
+            && all
+                .iter()
+                .all(|d| match (d["dialogId"].as_str(), d["kind"].as_str()) {
+                    (Some(id), Some("permission")) => valid_permission_id(id),
+                    (Some(id), Some("form")) => valid_form_id(id),
+                    _ => false,
+                })
     });
-    if named { Ok(dialogs) } else { Err(Error::BadReply) }
+    if named {
+        Ok(dialogs)
+    } else {
+        Err(Error::BadReply)
+    }
 }
 
 /// A list of children, each exactly an id and a title; a list said to have
@@ -446,14 +496,25 @@ fn dialog_list(payload: &str, more: bool) -> Result<Value> {
 fn children_list(payload: &str, more: bool) -> Result<Value> {
     let children: Value = serde_json::from_str(payload).map_err(|_| Error::BadReply)?;
     let named = children.as_array().is_some_and(|all| {
-        (if more { all.len() == MAX_CHILDREN } else { all.len() <= MAX_CHILDREN })
-            && all.iter().all(|c| {
-                c.as_object().is_some_and(|c| c.len() == 2)
-                    && c["id"].as_str().is_some_and(|id| !id.is_empty() && id.len() <= 128 && safe_id(id))
-                    && c["title"].as_str().is_some_and(|title| title.chars().count() <= 200)
-            })
+        (if more {
+            all.len() == MAX_CHILDREN
+        } else {
+            all.len() <= MAX_CHILDREN
+        }) && all.iter().all(|c| {
+            c.as_object().is_some_and(|c| c.len() == 2)
+                && c["id"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty() && id.len() <= 128 && safe_id(id))
+                && c["title"]
+                    .as_str()
+                    .is_some_and(|title| title.chars().count() <= 200)
+        })
     });
-    if named { Ok(children) } else { Err(Error::BadReply) }
+    if named {
+        Ok(children)
+    } else {
+        Err(Error::BadReply)
+    }
 }
 
 fn submit_result(dialog_id: &str, result: &str) -> Value {
@@ -473,7 +534,8 @@ fn valid_form_id(id: &str) -> bool {
 }
 
 fn safe_id(id: &str) -> bool {
-    id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    id.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 /// The refusal word for a failed binding: what the app already shows for
@@ -504,14 +566,23 @@ fn codex_step(request: &Request, text: &str) -> String {
         Op::Status => "status",
         Op::State => "state",
         Op::Withdraw => "withdraw",
-        Op::Dialogs | Op::DialogSubmit | Op::DialogCancel | Op::Abort | Op::Promote | Op::Children => unreachable!("answered as unsupported"),
+        Op::Dialogs
+        | Op::DialogSubmit
+        | Op::DialogCancel
+        | Op::Abort
+        | Op::Promote
+        | Op::Children => unreachable!("answered as unsupported"),
     };
     let deliver = match request.deliver_as {
         Some(DeliverAs::Steer) => "steer",
         Some(DeliverAs::Auto) | None => "auto",
         Some(DeliverAs::Queue) => unreachable!("answered as unsupported"),
     };
-    let images: Vec<&str> = request.attachments.iter().map(|a| a.path.as_str()).collect();
+    let images: Vec<&str> = request
+        .attachments
+        .iter()
+        .map(|a| a.path.as_str())
+        .collect();
     format!(
         r#"codex=$(command -v codex) || codex=$HOME/.codex/bin/codex
 [ -x "${{codex:-}}" ] || {{ printf 'cli\tnull\n'; exit 0; }}
@@ -551,7 +622,10 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
         _ => unreachable!("answered as unsupported or served by control_step"),
     };
     let (helper, fd) = if media {
-        (concat!(include_str!("agent_chat/opencode_media.py"), "\n"), " media 3<&0")
+        (
+            concat!(include_str!("agent_chat/opencode_media.py"), "\n"),
+            " media 3<&0",
+        )
     } else {
         ("", "")
     };
@@ -575,10 +649,23 @@ fn kilo_step(request: &Request, text: &str, media: bool) -> String {
 /// namespace and reads [`media_input`] from the command's stdin on fd 3 (the
 /// script itself is fd 0): the files are read, checked and encoded on the
 /// host, in the process that sends them, never in an argument or a reply.
-fn control_step(engine: Engine, op: &str, instance: &Identity, payload: &str, media: bool) -> String {
-    let flavor = if engine == Engine::Kilo { "kilo" } else { "opencode" };
+fn control_step(
+    engine: Engine,
+    op: &str,
+    instance: &Identity,
+    payload: &str,
+    media: bool,
+) -> String {
+    let flavor = if engine == Engine::Kilo {
+        "kilo"
+    } else {
+        "opencode"
+    };
     let (helper, fd) = if media {
-        (concat!(include_str!("agent_chat/opencode_media.py"), "\n"), " media 3<&0")
+        (
+            concat!(include_str!("agent_chat/opencode_media.py"), "\n"),
+            " media 3<&0",
+        )
     } else {
         ("", "")
     };
@@ -625,7 +712,13 @@ fn media_input(request: &Request) -> Result<Vec<u8>> {
 /// only after it passes, `step`'s own single word, with `$root` the pane's
 /// root pid from that same report ([`PANE_ROOT`]). A report the verifier
 /// rejects prints its own refusal word and `step` never runs.
-fn host_gate(exec: &Exec, herdr_session: &str, expect: &Identity, step: &str, input: Option<Vec<u8>>) -> Result<String> {
+fn host_gate(
+    exec: &Exec,
+    herdr_session: &str,
+    expect: &Identity,
+    step: &str,
+    input: Option<Vec<u8>>,
+) -> Result<String> {
     let pane = expect.pane_id.as_str();
     let mut report = transcript::instance_script(herdr_session, pane);
     report.push('\n');

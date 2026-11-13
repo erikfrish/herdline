@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AttachmentKind
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.attachmentKind
 import io.github.erikfrish.herdline.data.Binding
 import io.github.erikfrish.herdline.data.DraftAttachment
@@ -72,18 +73,15 @@ import kotlinx.coroutines.withContext
 
 /**
  * Whether the composer offers to attach files: the draft may be edited, its
- * target is an agent whose route carries files and whose instance was read
- * (OMP turns a pasted path into `[Image #N]`; OpenCode and Kilo take them as
- * the prompt's files; a staged file is bound to that instance), and the draft
- * has room for another.
+ * target is an agent whose route carries files ([Harness.files]) and whose
+ * instance was read (a staged file is bound to that instance), and the
+ * draft has room for another.
  */
 internal fun attachOffered(busy: Boolean, target: Connection.ComposerTarget?, count: Int, max: Int): Boolean =
     !busy && target?.instance != null && carriesFiles(target.agent) && count < max
 
-/** The agents a delivery carries staged files to: OMP by its pasted paths, OpenCode and Kilo as prompt files. */
-internal fun carriesFiles(agent: String?): Boolean = agent?.lowercase(Locale.ROOT) in FILE_AGENTS
-
-private val FILE_AGENTS = setOf("omp", "opencode", "kilo")
+/** A delivery to [agent] carries staged files, by its Harness row. */
+private fun carriesFiles(agent: String?): Boolean = agent != null && Harness.of(agent).files
 
 /** Why the + menu's attach items are disabled; the first that applies is named. */
 internal enum class AttachBlock { NotConnected, Held, Sending, Rebind, NeedsAgent, Full }

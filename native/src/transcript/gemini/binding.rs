@@ -84,18 +84,24 @@ pub(in crate::transcript) fn identity(pane: &Value, process: &Value) -> Result<O
     }
     let tokens = &pane["tokens"];
     let token = |key: &str| tokens[key].as_str();
-    let (Some(id), Some(pid), Some(generation)) = (token(TOKEN_ID), token(TOKEN_PID), token(TOKEN_GEN)) else {
+    let (Some(id), Some(pid), Some(generation)) =
+        (token(TOKEN_ID), token(TOKEN_PID), token(TOKEN_GEN))
+    else {
         return Err(Error::UnsupportedFormat(UNBOUND));
     };
     let pid = match pid.parse::<u32>() {
-        Ok(value) if uuid(id) && nonce(generation) && !pid.starts_with('0') && pid.len() <= 10 => value,
+        Ok(value) if uuid(id) && nonce(generation) && !pid.starts_with('0') && pid.len() <= 10 => {
+            value
+        }
         _ => return Err(Error::UnsupportedFormat(UNBOUND)),
     };
     let processes = process["result"]["process_info"]["foreground_processes"]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
-    let mut owned = processes.iter().filter(|process| process["pid"].as_u64() == Some(u64::from(pid)));
+    let mut owned = processes
+        .iter()
+        .filter(|process| process["pid"].as_u64() == Some(u64::from(pid)));
     match (owned.next(), owned.next()) {
         (Some(process), None) if launcher(&process["argv"]) => {}
         _ => return Err(Error::UnsupportedFormat(STALE)),
@@ -124,12 +130,19 @@ fn uuid(value: &str) -> bool {
 
 /// The launcher's nonce: 128 bits as lowercase hex.
 fn nonce(value: &str) -> bool {
-    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// `node <dir>/gemini`: Herdr's argv of the owned launcher, nothing else.
 fn launcher(argv: &Value) -> bool {
-    let base = |value: &Value| value.as_str().map(|arg| arg.rsplit('/').next().unwrap_or(arg).to_owned());
+    let base = |value: &Value| {
+        value
+            .as_str()
+            .map(|arg| arg.rsplit('/').next().unwrap_or(arg).to_owned())
+    };
     match argv.as_array().map(Vec::as_slice) {
         Some([node, script, ..]) => {
             base(node).is_some_and(|name| node_name(&name))
@@ -141,8 +154,13 @@ fn launcher(argv: &Value) -> bool {
 }
 
 fn node_name(name: &str) -> bool {
-    let rest = name.strip_prefix("nodejs").or_else(|| name.strip_prefix("node"));
-    rest.is_some_and(|rest| rest.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.'))
+    let rest = name
+        .strip_prefix("nodejs")
+        .or_else(|| name.strip_prefix("node"));
+    rest.is_some_and(|rest| {
+        rest.bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    })
 }
 
 /// The whole session, or "not modified" when the open file's device, inode,
@@ -200,7 +218,10 @@ fn answer(bytes: &[u8], expect: &Identity, reset: bool) -> Result<Response> {
     }
     if let Some(name) = head["refused"].as_str() {
         return Err(Error::UnsupportedFormat(
-            REFUSALS.into_iter().find(|known| *known == name).ok_or(Error::BadReply)?,
+            REFUSALS
+                .into_iter()
+                .find(|known| *known == name)
+                .ok_or(Error::BadReply)?,
         ));
     }
     match head["error"].as_str() {
@@ -223,7 +244,11 @@ fn answer(bytes: &[u8], expect: &Identity, reset: bool) -> Result<Response> {
         let mut rest = data;
         let mut slices = Vec::with_capacity(parts.len());
         for part in parts {
-            let length = part.as_u64().and_then(|length| usize::try_from(length).ok()).filter(|length| *length <= rest.len()).ok_or(Error::BadReply)?;
+            let length = part
+                .as_u64()
+                .and_then(|length| usize::try_from(length).ok())
+                .filter(|length| *length <= rest.len())
+                .ok_or(Error::BadReply)?;
             let (slice, after) = rest.split_at(length);
             slices.push(slice);
             rest = after;
@@ -233,7 +258,10 @@ fn answer(bytes: &[u8], expect: &Identity, reset: bool) -> Result<Response> {
         }
         let mut children = Vec::with_capacity(ids.len());
         for (id, slice) in ids.iter().zip(&slices[1..]) {
-            children.push((id.as_str().filter(|id| uuid(id)).ok_or(Error::BadReply)?, *slice));
+            children.push((
+                id.as_str().filter(|id| uuid(id)).ok_or(Error::BadReply)?,
+                *slice,
+            ));
         }
         // (e) again, on what Gemini itself would load: a `$set` may rewrite
         // the id after the header.

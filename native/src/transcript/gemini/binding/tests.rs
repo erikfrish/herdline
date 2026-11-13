@@ -55,7 +55,10 @@ echo
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { home, env: Vec::new() }
+        Self {
+            home,
+            env: Vec::new(),
+        }
     }
 
     fn path(&self, rel: &str) -> PathBuf {
@@ -69,11 +72,26 @@ echo
     }
 
     /// The report the check after the read sees.
-    fn report_after(&self, pane: &str, agent: Option<&str>, tokens: Value, pid: u32, argv: &[&str]) {
+    fn report_after(
+        &self,
+        pane: &str,
+        agent: Option<&str>,
+        tokens: Value,
+        pid: u32,
+        argv: &[&str],
+    ) {
         self.write_report(".after", pane, agent, tokens, pid, argv);
     }
 
-    fn write_report(&self, suffix: &str, pane: &str, agent: Option<&str>, tokens: Value, pid: u32, argv: &[&str]) {
+    fn write_report(
+        &self,
+        suffix: &str,
+        pane: &str,
+        agent: Option<&str>,
+        tokens: Value,
+        pid: u32,
+        argv: &[&str],
+    ) {
         let report = json!({"id": "cli:pane:get", "result": {"pane": {
             "agent": agent,
             "agent_status": "idle",
@@ -82,17 +100,29 @@ echo
             "tokens": tokens,
         }, "type": "pane_info"}});
         fs::write(self.path(&format!("pane{suffix}.json")), report.to_string()).unwrap();
-        let name = argv.first().map_or("node", |arg| arg.rsplit('/').next().unwrap());
+        let name = argv
+            .first()
+            .map_or("node", |arg| arg.rsplit('/').next().unwrap());
         let process = json!({"result": {"process_info": {"pane_id": pane, "shell_pid": 7,
             "foreground_processes": [{"name": name, "pid": pid, "argv": argv}]}}});
-        fs::write(self.path(&format!("proc{suffix}.json")), process.to_string()).unwrap();
+        fs::write(
+            self.path(&format!("proc{suffix}.json")),
+            process.to_string(),
+        )
+        .unwrap();
         let _ = fs::remove_file(self.path("calls"));
     }
 
     /// A launched Gemini whose SessionStart reported: tokens, the launcher
     /// in the foreground, its sidecar and its published session.
     fn bind(&self, pane: &str, sid: &str, pid: u32, generation: &str) {
-        self.report(pane, Some("gemini"), tokens(sid, pid, generation), pid, &LAUNCHER);
+        self.report(
+            pane,
+            Some("gemini"),
+            tokens(sid, pid, generation),
+            pid,
+            &LAUNCHER,
+        );
         self.sidecar(pane, &json!({"pid": pid, "nonce": generation}).to_string());
         self.publish(pane, generation, sid);
     }
@@ -129,13 +159,22 @@ echo
             fs::write(dir.join(".project_root"), PROJECT).unwrap();
         }
         let file = dir.join("chats").join(name);
-        fs::write(&file, records.iter().map(|record| record.to_string() + "\n").collect::<String>()).unwrap();
+        fs::write(
+            &file,
+            records
+                .iter()
+                .map(|record| record.to_string() + "\n")
+                .collect::<String>(),
+        )
+        .unwrap();
         file
     }
 
     /// The pane's identity, as transcript.rs derives it from the report.
     fn identity(&self) -> Result<Option<Identity>> {
-        let read = |name: &str| serde_json::from_str::<Value>(&fs::read_to_string(self.path(name)).unwrap()).unwrap();
+        let read = |name: &str| {
+            serde_json::from_str::<Value>(&fs::read_to_string(self.path(name)).unwrap()).unwrap()
+        };
         identity(&read("pane.json"), &read("proc.json"))
     }
 
@@ -147,7 +186,10 @@ echo
             .envs(self.env.iter().cloned())
             .env("HOME", self.home.path())
             .env("XDG_RUNTIME_DIR", self.path("run"))
-            .env("PATH", format!("{}:/usr/bin:/bin", self.path(".local/bin").display()))
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", self.path(".local/bin").display()),
+            )
             .output()
             .unwrap();
         if !output.status.success() {
@@ -213,7 +255,10 @@ fn each_pane_reads_only_the_session_its_launcher_reported() {
 
     host.bind("w1:p1", SID, 42, GEN);
     let one = host.identity().unwrap().unwrap();
-    assert_eq!((one.path.as_str(), one.pid, one.source.as_str()), (SID, Some(42), SOURCE));
+    assert_eq!(
+        (one.path.as_str(), one.pid, one.source.as_str()),
+        (SID, Some(42), SOURCE)
+    );
     let page = host.read("w1:p1", &one, 0).unwrap();
     assert_eq!(shown(&page), ["for one"]);
     // Unchanged since that stamp: nothing is sent again.
@@ -224,7 +269,10 @@ fn each_pane_reads_only_the_session_its_launcher_reported() {
     let two = host.identity().unwrap().unwrap();
     assert_eq!(shown(&host.read("w1:p2", &two, 0).unwrap()), ["for two"]);
     // The other pane's identity is not this pane's.
-    assert!(matches!(host.read("w1:p2", &one, 0), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.read("w1:p2", &one, 0),
+        Err(Error::NoTranscript)
+    ));
 }
 
 #[test]
@@ -278,15 +326,30 @@ fn tokens_left_after_gemini_exits_are_refused_whatever_runs_next() {
     fs::remove_file(host.sidecars().join("w1:p1.json")).unwrap();
     host.report("w1:p1", None, tokens(SID, 42, GEN), 50, &["/bin/bash"]);
     assert!(host.identity().unwrap().is_none());
-    assert!(matches!(host.read("w1:p1", &gone, 0), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.read("w1:p1", &gone, 0),
+        Err(Error::NoTranscript)
+    ));
 
     // Herdr still names Gemini a moment longer, or a SIGKILL left the
     // sidecar and pid 42 now runs something else: the pid is not the
     // launcher's either way.
-    host.report("w1:p1", Some("gemini"), tokens(SID, 42, GEN), 50, &["/bin/bash"]);
+    host.report(
+        "w1:p1",
+        Some("gemini"),
+        tokens(SID, 42, GEN),
+        50,
+        &["/bin/bash"],
+    );
     assert_eq!(unbound(host.identity()), STALE);
     host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
-    host.report("w1:p1", Some("gemini"), tokens(SID, 42, GEN), 42, &["/usr/bin/vim", "notes"]);
+    host.report(
+        "w1:p1",
+        Some("gemini"),
+        tokens(SID, 42, GEN),
+        42,
+        &["/usr/bin/vim", "notes"],
+    );
     assert_eq!(unbound(host.identity()), STALE);
     assert_eq!(refused(host.read("w1:p1", &gone, 0)), STALE);
 }
@@ -326,7 +389,10 @@ fn a_missing_or_unsafe_sidecar_is_refused() {
     fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), SIDECAR);
 
-    host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN, "extra": 1}).to_string());
+    host.sidecar(
+        "w1:p1",
+        &json!({"pid": 42, "nonce": GEN, "extra": 1}).to_string(),
+    );
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), SIDECAR);
 
     host.sidecar("w1:p1", &body);
@@ -359,15 +425,30 @@ fn only_the_underscored_tokens_of_a_launched_gemini_bind() {
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), UNBOUND);
 
     let upper = SID.to_uppercase();
-    host.report("w1:p1", Some("gemini"), tokens(&upper, 42, GEN), 42, &LAUNCHER);
+    host.report(
+        "w1:p1",
+        Some("gemini"),
+        tokens(&upper, 42, GEN),
+        42,
+        &LAUNCHER,
+    );
     assert_eq!(unbound(host.identity()), UNBOUND);
 
     // Gemini started from its own npm entry, not the owned launcher: with no
     // tokens it is unbound, with tokens left behind it is not their process.
-    let unwrapped = ["/usr/bin/node", "/usr/lib/node_modules/@google/gemini-cli/dist/index.js"];
+    let unwrapped = [
+        "/usr/bin/node",
+        "/usr/lib/node_modules/@google/gemini-cli/dist/index.js",
+    ];
     host.report("w1:p1", Some("gemini"), json!({}), 42, &unwrapped);
     assert_eq!(unbound(host.identity()), UNBOUND);
-    host.report("w1:p1", Some("gemini"), tokens(SID, 42, GEN), 42, &unwrapped);
+    host.report(
+        "w1:p1",
+        Some("gemini"),
+        tokens(SID, 42, GEN),
+        42,
+        &unwrapped,
+    );
     assert_eq!(unbound(host.identity()), STALE);
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), STALE);
 }
@@ -380,7 +461,10 @@ fn the_file_is_the_only_one_whose_header_is_the_session() {
 
     // The same short id in the name, another session in the header.
     host.session("app", &name(TWIN), &chat(TWIN, "not mine"));
-    assert!(matches!(host.read("w1:p1", &expect, 0), Err(Error::NoTranscript)));
+    assert!(matches!(
+        host.read("w1:p1", &expect, 0),
+        Err(Error::NoTranscript)
+    ));
 
     host.session("app", &name(SID), &chat(SID, "mine"));
     assert_eq!(shown(&host.read("w1:p1", &expect, 0).unwrap()), ["mine"]);
@@ -399,7 +483,11 @@ fn the_file_is_the_only_one_whose_header_is_the_session() {
     fs::write(host.path(".gemini/tmp/app/.project_root"), PROJECT).unwrap();
 
     // Two files claim the session: none is picked.
-    host.session("app-1", "session-2026-11-12T11-30-6f1c2a9e.jsonl", &chat(SID, "copy"));
+    host.session(
+        "app-1",
+        "session-2026-11-12T11-30-6f1c2a9e.jsonl",
+        &chat(SID, "copy"),
+    );
     assert_eq!(refused(host.read("w1:p1", &expect, 0)), AMBIGUOUS);
 }
 
@@ -411,15 +499,28 @@ fn a_binding_that_changes_while_the_file_is_read_is_never_shown() {
     host.bind("w1:p1", SID, 42, GEN);
     let expect = host.identity().unwrap().unwrap();
 
-    host.report_after("w1:p1", Some("gemini"), tokens(OTHER, 42, GEN), 42, &LAUNCHER);
-    assert!(matches!(host.read("w1:p1", &expect, 0), Err(Error::NoTranscript)));
+    host.report_after(
+        "w1:p1",
+        Some("gemini"),
+        tokens(OTHER, 42, GEN),
+        42,
+        &LAUNCHER,
+    );
+    assert!(matches!(
+        host.read("w1:p1", &expect, 0),
+        Err(Error::NoTranscript)
+    ));
 
     fs::remove_file(host.path("pane.after.json")).unwrap();
     fs::remove_file(host.path("proc.after.json")).unwrap();
     let file = host.sidecars().join("w1:p1.json");
     fs::write(
         host.path("flip.sh"),
-        format!("printf '%s' '{}' >'{}'\n", json!({"pid": 42, "nonce": NEW_GEN}), file.display()),
+        format!(
+            "printf '%s' '{}' >'{}'\n",
+            json!({"pid": 42, "nonce": NEW_GEN}),
+            file.display()
+        ),
     )
     .unwrap();
     let _ = fs::remove_file(host.path("calls"));
@@ -433,13 +534,19 @@ fn the_store_stays_inside_home_without_links() {
     let expect = host.identity().unwrap().unwrap();
 
     host.env = vec![("GEMINI_CLI_HOME".into(), "/tmp".into())];
-    assert!(matches!(host.read("w1:p1", &expect, 0), Err(Error::SessionRootOutsideHome)));
+    assert!(matches!(
+        host.read("w1:p1", &expect, 0),
+        Err(Error::SessionRootOutsideHome)
+    ));
 
     host.env.clear();
     let real = tempfile::tempdir().unwrap();
     fs::create_dir_all(real.path().join("tmp/app/chats")).unwrap();
     symlink(real.path(), host.path(".gemini")).unwrap();
-    assert!(matches!(host.read("w1:p1", &expect, 0), Err(Error::TranscriptUnconfined)));
+    assert!(matches!(
+        host.read("w1:p1", &expect, 0),
+        Err(Error::TranscriptUnconfined)
+    ));
 }
 
 const CHILD: &str = "4aa4baf8-9311-46fd-a863-4041ff3538f8";
@@ -485,16 +592,26 @@ fn a_running_child_is_read_from_its_own_file_and_its_changes_change_the_stamp() 
 
     let dir = host.path(&format!(".gemini/tmp/app/chats/{SID}"));
     fs::create_dir(&dir).unwrap();
-    fs::write(dir.join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFolder")).unwrap();
+    fs::write(
+        dir.join(format!("{CHILD}.jsonl")),
+        child(CHILD, "ReadFolder"),
+    )
+    .unwrap();
     // Not a child's name: never read.
     fs::write(dir.join("notes.jsonl"), child(SIBLING, "Elsewhere")).unwrap();
     let page = host.read("w1:p1", &expect, before.end).unwrap();
-    assert_eq!(running(&page), [(CHILD.to_owned(), Some("ReadFolder".to_owned()))]);
+    assert_eq!(
+        running(&page),
+        [(CHILD.to_owned(), Some("ReadFolder".to_owned()))]
+    );
     assert_eq!(shown(&page), ["go"]);
 
     fs::write(dir.join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFile")).unwrap();
     let next = host.read("w1:p1", &expect, page.end).unwrap();
-    assert_eq!(running(&next), [(CHILD.to_owned(), Some("ReadFile".to_owned()))]);
+    assert_eq!(
+        running(&next),
+        [(CHILD.to_owned(), Some("ReadFile".to_owned()))]
+    );
 }
 
 #[test]
@@ -504,24 +621,40 @@ fn a_linked_child_dir_or_file_is_never_followed_and_the_session_still_reads() {
     host.bind("w1:p1", SID, 42, GEN);
     let expect = host.identity().unwrap().unwrap();
     let real = tempfile::tempdir().unwrap();
-    fs::write(real.path().join(format!("{CHILD}.jsonl")), child(CHILD, "ReadFolder")).unwrap();
+    fs::write(
+        real.path().join(format!("{CHILD}.jsonl")),
+        child(CHILD, "ReadFolder"),
+    )
+    .unwrap();
 
     let dir = host.path(&format!(".gemini/tmp/app/chats/{SID}"));
     symlink(real.path(), &dir).unwrap();
     let page = host.read("w1:p1", &expect, 0).unwrap();
-    assert_eq!((shown(&page), running(&page)), (vec!["go".to_owned()], vec![]));
+    assert_eq!(
+        (shown(&page), running(&page)),
+        (vec!["go".to_owned()], vec![])
+    );
 
     fs::remove_file(&dir).unwrap();
     fs::create_dir(&dir).unwrap();
-    symlink(real.path().join(format!("{CHILD}.jsonl")), dir.join(format!("{CHILD}.jsonl"))).unwrap();
+    symlink(
+        real.path().join(format!("{CHILD}.jsonl")),
+        dir.join(format!("{CHILD}.jsonl")),
+    )
+    .unwrap();
     let page = host.read("w1:p1", &expect, 0).unwrap();
-    assert_eq!((shown(&page), running(&page)), (vec!["go".to_owned()], vec![]));
+    assert_eq!(
+        (shown(&page), running(&page)),
+        (vec!["go".to_owned()], vec![])
+    );
 }
 
 #[test]
 fn a_child_the_session_names_is_not_sent_and_leaves_its_place_to_the_next_newest() {
     let host = Host::new();
-    let ids: Vec<String> = (0..9).map(|n| format!("{n:08x}-0000-4000-8000-000000000000")).collect();
+    let ids: Vec<String> = (0..9)
+        .map(|n| format!("{n:08x}-0000-4000-8000-000000000000"))
+        .collect();
     let named = &ids[8];
     let mut records = chat(SID, "go");
     // Before the children started, as a batch recorded earlier is.
@@ -537,9 +670,17 @@ fn a_child_the_session_names_is_not_sent_and_leaves_its_place_to_the_next_newest
         let file = dir.join(format!("{id}.jsonl"));
         fs::write(&file, child(id, "ReadFolder")).unwrap();
         let at = std::time::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + n as u64);
-        fs::File::options().write(true).open(&file).unwrap().set_modified(at).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
     }
-    let mut shown: Vec<_> = running(&host.read("w1:p1", &expect, 0).unwrap()).into_iter().map(|(id, _)| id).collect();
+    let mut shown: Vec<_> = running(&host.read("w1:p1", &expect, 0).unwrap())
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
     shown.sort();
     assert_eq!(shown, ids[..8]);
 }
@@ -569,7 +710,11 @@ if (process.argv.includes('--wait')) setInterval(() => {}, 1000);
 fn wait_for(path: &Path) -> Value {
     let start = Instant::now();
     while !path.exists() {
-        assert!(start.elapsed() < Duration::from_secs(20), "{} never appeared", path.display());
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "{} never appeared",
+            path.display()
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
@@ -603,20 +748,39 @@ fn the_launcher_runs_gemini_in_its_own_process_and_clears_only_its_own_sidecar()
     assert_eq!(seen["pid"], first.id());
     assert_eq!(seen["argv"], json!(["--wait", "-p", "x"]));
     assert_eq!(seen["env"]["GEMINI_CLI_NO_RELAUNCH"], "true");
-    assert_eq!(seen["env"]["GEMINI_CLI_HERDLINE_PID"], first.id().to_string());
+    assert_eq!(
+        seen["env"]["GEMINI_CLI_HERDLINE_PID"],
+        first.id().to_string()
+    );
     assert_eq!(seen["env"]["GEMINI_CLI_HERDLINE_PANE"], "w1:p1");
     assert_eq!(seen["env"]["GEMINI_CLI_HERDLINE_SOCKET"], "/tmp/herdr.sock");
-    let nonce = seen["env"]["GEMINI_CLI_HERDLINE_GEN"].as_str().unwrap().to_owned();
+    let nonce = seen["env"]["GEMINI_CLI_HERDLINE_GEN"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert!(super::nonce(&nonce));
     assert_eq!(read(), json!({"pid": first.id(), "nonce": nonce}));
-    assert_eq!(fs::metadata(&sidecar).unwrap().permissions().mode() & 0o777, 0o600);
-    assert_eq!(fs::metadata(sidecar.parent().unwrap()).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(
+        fs::metadata(&sidecar).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        fs::metadata(sidecar.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
 
     // A second launch in the pane takes the sidecar; the first one's exit
     // leaves it alone.
     let mut second = launch(&dir, &run, &host.path("b.json"), &["--wait"]);
     let other = wait_for(&host.path("b.json"));
-    let other_nonce = other["env"]["GEMINI_CLI_HERDLINE_GEN"].as_str().unwrap().to_owned();
+    let other_nonce = other["env"]["GEMINI_CLI_HERDLINE_GEN"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert_ne!(other_nonce, nonce);
     unsafe_kill(first.id(), "TERM");
     first.wait().unwrap();
@@ -628,13 +792,22 @@ fn the_launcher_runs_gemini_in_its_own_process_and_clears_only_its_own_sidecar()
     assert_eq!(read(), json!({"pid": second.id(), "nonce": other_nonce}));
 
     // A run to its end removes what it wrote.
-    let status = launch(&dir, &run, &host.path("c.json"), &[]).wait().unwrap();
+    let status = launch(&dir, &run, &host.path("c.json"), &[])
+        .wait()
+        .unwrap();
     assert!(status.success());
     assert!(!sidecar.exists());
 }
 
 fn unsafe_kill(pid: u32, signal: &str) {
-    assert!(Command::new("kill").arg(format!("-{signal}")).arg(pid.to_string()).status().unwrap().success());
+    assert!(
+        Command::new("kill")
+            .arg(format!("-{signal}"))
+            .arg(pid.to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 /// A stand-in Herdr for one launcher's panes, with Herdr's own rules for a
@@ -677,7 +850,10 @@ fn at(ms: u32) -> String {
 
 /// The tokens of launcher pid 42, nonce [`GEN`], on `sid`.
 fn bound(sid: Option<&str>) -> Value {
-    sid.map_or(json!({}), |sid| json!({TOKEN_ID: sid, TOKEN_PID: "42", TOKEN_GEN: GEN}))
+    sid.map_or(
+        json!({}),
+        |sid| json!({TOKEN_ID: sid, TOKEN_PID: "42", TOKEN_GEN: GEN}),
+    )
 }
 
 /// The shipped hook of launcher pid 42, nonce [`GEN`], started in pane
@@ -723,7 +899,10 @@ impl Fake {
             .env_clear()
             .env("HOME", self.host.home.path())
             .env("XDG_RUNTIME_DIR", self.host.path("run"))
-            .env("PATH", format!("{}:/usr/bin:/bin", self.host.path(".local/bin").display()))
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", self.host.path(".local/bin").display()),
+            )
             .env("GEMINI_CLI_HERDLINE_PANE", "w1:p1")
             .env("GEMINI_CLI_HERDLINE_PID", "42")
             .env("GEMINI_CLI_HERDLINE_GEN", GEN)
@@ -734,7 +913,11 @@ impl Fake {
             .unwrap();
         let input = json!({"hook_event_name": event, "session_id": sid, "timestamp": at(ms),
             "transcript_path": "/somewhere/else.jsonl", "cwd": PROJECT});
-        std::io::Write::write_all(&mut child.stdin.take().unwrap(), input.to_string().as_bytes()).unwrap();
+        std::io::Write::write_all(
+            &mut child.stdin.take().unwrap(),
+            input.to_string().as_bytes(),
+        )
+        .unwrap();
         assert_eq!(child.wait_with_output().unwrap().stdout, b"{}");
     }
 
@@ -750,7 +933,10 @@ impl Fake {
                 .unwrap();
             serde_json::from_slice::<Value>(&output.stdout).unwrap()
         };
-        identity(&herdr(&["pane", "get", "w1:p1"]), &herdr(&["pane", "process-info", "--pane", "w1:p1"]))
+        identity(
+            &herdr(&["pane", "get", "w1:p1"]),
+            &herdr(&["pane", "process-info", "--pane", "w1:p1"]),
+        )
     }
 }
 
@@ -762,7 +948,16 @@ fn a_late_session_end_never_clears_the_session_that_replaced_it() {
     let first = fake.state()["reports"][0].clone();
     assert_eq!(
         first.as_array().unwrap()[..8],
-        ["/tmp/herdr.sock", "pane", "report-metadata", "w1:p1", "--agent", "gemini", "--source", SOURCE]
+        [
+            "/tmp/herdr.sock",
+            "pane",
+            "report-metadata",
+            "w1:p1",
+            "--agent",
+            "gemini",
+            "--source",
+            SOURCE
+        ]
     );
 
     // `/new`: Gemini ends the old session, then starts the new one in the
@@ -785,11 +980,13 @@ fn a_late_session_end_never_clears_the_session_that_replaced_it() {
     // A newer launch took the pane's sidecar: this run's hooks report
     // nothing at all, start or end.
     let before = fake.reports();
-    fake.host.sidecar("w1:p1", &json!({"pid": 43, "nonce": NEW_GEN}).to_string());
+    fake.host
+        .sidecar("w1:p1", &json!({"pid": 43, "nonce": NEW_GEN}).to_string());
     fake.hook("SessionEnd", OTHER, 10000);
     fake.hook("SessionStart", SID, 10000);
     // A runtime dir reached through a link is not trusted either.
-    fake.host.sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
+    fake.host
+        .sidecar("w1:p1", &json!({"pid": 42, "nonce": GEN}).to_string());
     fs::rename(fake.host.path("run"), fake.host.path("run-real")).unwrap();
     symlink(fake.host.path("run-real"), fake.host.path("run")).unwrap();
     fake.hook("SessionEnd", OTHER, 10000);
@@ -797,7 +994,10 @@ fn a_late_session_end_never_clears_the_session_that_replaced_it() {
     fs::rename(fake.host.path("run-real"), fake.host.path("run")).unwrap();
     // Not the strict lowercase uuid.
     fake.hook("SessionStart", &SID.to_uppercase(), 10000);
-    assert_eq!((fake.reports(), fake.tokens()), (before, bound(Some(OTHER))));
+    assert_eq!(
+        (fake.reports(), fake.tokens()),
+        (before, bound(Some(OTHER)))
+    );
 
     // The current session's own end clears it.
     fake.hook("SessionEnd", OTHER, 11000);
@@ -856,15 +1056,27 @@ fn a_renumbered_pane_is_refused_and_never_reported_into() {
     let moved = host.identity().unwrap().unwrap();
     assert_eq!(refused(host.read("w1:p1", &moved, 0)), STALE);
     // 43's tokens on the pane 42 now runs in: not its process.
-    host.report("w1:p1", Some("gemini"), tokens(OTHER, 43, NEW_GEN), 42, &LAUNCHER);
+    host.report(
+        "w1:p1",
+        Some("gemini"),
+        tokens(OTHER, 43, NEW_GEN),
+        42,
+        &LAUNCHER,
+    );
     assert_eq!(unbound(host.identity()), STALE);
 
     // 42's hook still holds the launch-time id, now another launcher's pane:
     // it reports nothing there.
     let fake = Fake::new();
     fake.set("tokens", tokens(OTHER, 43, NEW_GEN));
-    fake.set("fg", json!({"w1:p1": [{"name": "node", "pid": 43, "argv": LAUNCHER}]}));
+    fake.set(
+        "fg",
+        json!({"w1:p1": [{"name": "node", "pid": 43, "argv": LAUNCHER}]}),
+    );
     fake.hook("SessionStart", SID, 1000);
     fake.hook("SessionEnd", OTHER, 2000);
-    assert_eq!((fake.reports(), fake.tokens()), (0, tokens(OTHER, 43, NEW_GEN)));
+    assert_eq!(
+        (fake.reports(), fake.tokens()),
+        (0, tokens(OTHER, 43, NEW_GEN))
+    );
 }

@@ -620,18 +620,6 @@ private fun typingCompact(landscape: Boolean, imeVisible: Boolean, windowHeightD
 internal fun extraKeyRowCount(landscape: Boolean, imeVisible: Boolean, windowHeightDp: Int): Int =
     if (typingCompact(landscape, imeVisible, windowHeightDp)) 1 else 2
 
-/**
- * Where the + menu's output-focus item goes among the shown [menu] entries
- *: the index it is placed before. Right after the larger
- * editor; with that hidden, before the terminal keyboard; else last.
- */
-internal fun outputFocusSlot(menu: List<ComposerAction>): Int {
-    val editor = menu.indexOf(ComposerAction.LargerEditor)
-    if (editor >= 0) return editor + 1
-    val keyboard = menu.indexOf(ComposerAction.TerminalKeyboard)
-    return if (keyboard >= 0) keyboard else menu.size
-}
-
 /** What the "pane too short for Send" notice may offer besides its reason and row count. */
 internal enum class ShortPaneOffer { Zoom, HideKeyboard, Portrait }
 
@@ -653,18 +641,74 @@ internal fun shortPaneOffers(
     ShortPaneOffer.Portrait.takeIf { landscape && portraitReachesSend },
 )
 
-/** What the "box not all on screen" notices may offer besides their reason (HG-VIS). */
-internal enum class HiddenOffer { HideKeyboard, BackToBottom }
-
 /**
- * The offers on the editor_hidden and target_not_visible notices: hiding the
- * keyboard while it is up, leaving output focus while it hides rows. Never
- * zoom, which changes the host's size and not what the phone draws.
+ * Why Insert is off, the first gate that holds it; null exactly while it is
+ * on. Only the local gates and the native check's own refusal, never a probe
+ * of its own: the + menu names the reason instead of Insert's help.
  */
-internal fun hiddenOffers(imeVisible: Boolean, hiddenRows: Int): List<HiddenOffer> = listOfNotNull(
-    HiddenOffer.HideKeyboard.takeIf { imeVisible },
-    HiddenOffer.BackToBottom.takeIf { hiddenRows > 0 },
-)
+internal sealed interface InsertBlock {
+    /** A Send, Insert or Steer is on its way. */
+    data object Sending : InsertBlock
+    /** The last delivery is not confirmed (R1). */
+    data object Held : InsertBlock
+    /** A queued request is being withdrawn back into the draft. */
+    data object Withdrawing : InsertBlock
+    data class Unbound(val binding: Binding) : InsertBlock
+    /** Nothing written and nothing attached. */
+    data object Empty : InsertBlock
+    data object Uploading : InsertBlock
+    /** A file failed, or isn't uploaded for this target. */
+    data object FilesNotReady : InsertBlock
+    /** No native check of the pane yet. */
+    data object Unchecked : InsertBlock
+    /** The desktop isn't on this tab, so the box can't be read (TC-RCPT-4). */
+    data object OffDesktop : InsertBlock
+    /** The native check refused Insert for [reason], a refusal code. */
+    data class Refused(val reason: String?) : InsertBlock
+}
+
+internal fun insertBlock(
+    sending: Boolean,
+    withdrawing: Boolean,
+    draft: Draft,
+    binding: Binding,
+    attachments: AttachmentsState,
+    insert: ComposerCheck.Gate?,
+    desktopElsewhere: Boolean,
+): InsertBlock? = when {
+    sending -> InsertBlock.Sending
+    draft.unsettled -> InsertBlock.Held
+    withdrawing -> InsertBlock.Withdrawing
+    binding != Binding.Bound -> InsertBlock.Unbound(binding)
+    draft.blank -> InsertBlock.Empty
+    attachments == AttachmentsState.Uploading -> InsertBlock.Uploading
+    attachments != AttachmentsState.None && attachments != AttachmentsState.Ready -> InsertBlock.FilesNotReady
+    insert == null -> InsertBlock.Unchecked
+    insert.ok -> null
+    desktopElsewhere && insert.reason == "not_visible" -> InsertBlock.OffDesktop
+    else -> InsertBlock.Refused(insert.reason)
+}
+
+/** [block]'s words for the + menu's Insert item. */
+@StringRes
+internal fun insertBlockRes(block: InsertBlock): Int = when (block) {
+    InsertBlock.Sending -> R.string.composer_sending
+    InsertBlock.Held -> R.string.composer_locked_reason
+    InsertBlock.Withdrawing -> R.string.composer_insert_withdrawing
+    is InsertBlock.Unbound -> when (block.binding) {
+        Binding.Offline, Binding.Bound -> R.string.reason_not_connected
+        Binding.BootChanged -> R.string.reason_boot_changed
+        Binding.AgentChanged -> R.string.reason_agent_changed
+        Binding.AgentRestarted -> R.string.reason_agent_restarted
+        Binding.InstanceUnknown -> R.string.reason_instance_unknown
+    }
+    InsertBlock.Empty -> R.string.reason_empty_text
+    InsertBlock.Uploading -> R.string.composer_insert_uploading
+    InsertBlock.FilesNotReady -> R.string.composer_insert_files_not_ready
+    InsertBlock.Unchecked -> R.string.composer_insert_unchecked
+    InsertBlock.OffDesktop -> R.string.composer_insert_off_desktop
+    is InsertBlock.Refused -> reasonRes(block.reason ?: "")
+}
 
 /**
  * Which precheck refusal the notice slot shows, fed every recomposition with
@@ -768,19 +812,6 @@ fun Composer(
      * side column (J2 ruling S), at whatever width it gives: [ComposerFit.Side].
      */
     side: Boolean = false,
-    /**
-     * J2 F, output focus: null offers no + menu item (Chat, or F not
-     * offered); false offers "Focus on output", true "Show full terminal".
-     */
-    outputFocus: Boolean? = null,
-    /** The user picked the output-focus item; the argument is the state wanted. */
-    onOutputFocus: (Boolean) -> Unit = {},
-    /**
-     * Once each time a Send, Insert, Append or Steer is confirmed delivered,
-     * or a steer's paste is left in the pane's box: text has landed in the
-     * pane, so the caller shows the full terminal.
-     */
-    onDelivered: () -> Unit = {},
     /** True while the shown draft's delivery is unsettled or its Unlocked notice is up (K12), false once it clears. */
     onReceiptNotice: (Boolean) -> Unit = {},
     /**
@@ -874,9 +905,6 @@ fun Composer(
                     onTerminalKeyboard = onTerminalKeyboard,
                     onOpenTerminal = onOpenTerminal,
                     onZoom = onZoom,
-                    outputFocus = outputFocus,
-                    onOutputFocus = onOutputFocus,
-                    onDelivered = onDelivered,
                     onReceiptNotice = onReceiptNotice,
                     onDeliveryStart = onDeliveryStart,
                     viewport = viewport,
@@ -914,9 +942,6 @@ private fun Editor(
     onTerminalKeyboard: () -> Unit,
     onOpenTerminal: () -> Unit,
     onZoom: () -> Unit,
-    outputFocus: Boolean?,
-    onOutputFocus: (Boolean) -> Unit,
-    onDelivered: () -> Unit,
     onReceiptNotice: (Boolean) -> Unit,
     onDeliveryStart: () -> Unit,
     viewport: Viewport?,
@@ -1081,8 +1106,6 @@ private fun Editor(
         liveReceiptNotice(receiptNotice)
         onDispose { liveReceiptNotice(false) }
     }
-    // Called from the delivery coroutines, so it reads the latest callback.
-    val delivered by rememberUpdatedState(onDelivered)
 
     fun settle(p: Pending, update: Connection.DeliveryUpdate) {
         when (update) {
@@ -1097,7 +1120,6 @@ private fun Editor(
                 )
                 if (!p.watched) value = TextFieldValue(next.text, TextRange(next.text.length))
                 save(next)
-                if (!p.watched) delivered()
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)),
@@ -1133,7 +1155,6 @@ private fun Editor(
             // The draft is held since the tap, so the files it holds are the ones sent.
             save(draft.copy(sent = sent.copy(state = SentState.Confirmed, at = System.currentTimeMillis()), attachments = emptyList()))
             via.unlock(key.nodeId, key.session, key.pane)
-            delivered()
             return@LaunchedEffect
         }
         inPaneWatched = true
@@ -1297,10 +1318,7 @@ private fun Editor(
                 refusal = phase.reason
             }
             // The paste sits in the pane's box, settled; the draft stays here.
-            is SteerPhase.Left -> {
-                save(draft.copy(sent = steerBefore))
-                delivered()
-            }
+            is SteerPhase.Left -> save(draft.copy(sent = steerBefore))
             else -> {}
         }
         when (step.effect) {
@@ -1695,11 +1713,17 @@ private fun Editor(
     val busy = draftBusy
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
-    val insertEnabled = !busy && draft.mayDeliver(binding) && attachReady && check?.insert?.ok == true
-    // Insert is off only because the desktop isn't on this tab,
-    // so Herdr's frame has no rows to read the box from (live_box's
-    // not_visible). The + menu says so; the desktop is never moved for it.
-    val insertOffDesktop = !insertEnabled && reading && desktop != key.pane && check?.insert?.reason == "not_visible"
+    // Why Insert is off, named in the + menu; the desktop is never moved for it (TC-RCPT-4).
+    val insertBlocked = insertBlock(
+        sending = sending || pending != null || steer.active,
+        withdrawing = withdrawing != null,
+        draft = draft,
+        binding = binding,
+        attachments = attachState,
+        insert = check?.insert,
+        desktopElsewhere = reading && desktop != key.pane,
+    )
+    val insertEnabled = insertBlocked == null
     val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
     // Endpoint steering accepts ready attachments; PTY steering stays text-only.
     val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
@@ -1892,15 +1916,10 @@ private fun Editor(
             // its cursor row (any other pane). The draft stays as it is; only
             // the user shows more, never the app on its own.
             "editor_hidden", "target_not_visible" -> {
-                val actions = hiddenOffers(imeVisible, viewport?.hiddenRows ?: 0).map { offer ->
-                    when (offer) {
-                        HiddenOffer.HideKeyboard -> NoticeAction(stringResource(R.string.composer_hide_keyboard), tag = "composer:hide_keyboard") {
-                            keyboard?.hide()
-                        }
-                        HiddenOffer.BackToBottom -> NoticeAction(stringResource(R.string.composer_back_to_bottom), tag = "composer:back_to_bottom") { onOutputFocus(false) }
-                    }
-                }
-                Notice(reasonText(code ?: ""), actions.getOrNull(0), actions.getOrNull(1))
+                val hide = NoticeAction(stringResource(R.string.composer_hide_keyboard), tag = "composer:hide_keyboard") {
+                    keyboard?.hide()
+                }.takeIf { imeVisible }
+                Notice(reasonText(code ?: ""), hide)
             }
             "remote_draft" -> remoteDraft
             // UR4: each unreadable-box cause says what was measured. Only rows
@@ -2029,7 +2048,7 @@ private fun Editor(
         inlineNotice = notice?.text?.takeIf { !fit.noticeBlock },
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
-        insertOffDesktop = insertOffDesktop,
+        insertReason = insertBlocked?.let { stringResource(insertBlockRes(it)) },
         sendEnabled = sendEnabled,
         sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
@@ -2046,8 +2065,6 @@ private fun Editor(
         // In flight the draft is sending, not locked (QA HB2-w); held once it stays unconfirmed.
         locked = draft.unsettled && !waiting,
         inFlight = waiting,
-        outputFocus = outputFocus,
-        onOutputFocus = onOutputFocus,
         onAttachImage = { menu = false; withConsent { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) } },
         onAttachFile = { menu = false; withConsent { pickFiles.launch(arrayOf("*/*")) } },
         attachReason = when (attachBlocked) {
@@ -2200,8 +2217,8 @@ internal fun ComposerBand(
     inlineNotice: String?,
     onMenu: (Boolean) -> Unit,
     insertEnabled: Boolean,
-    /** Insert is off because the desktop isn't on this tab: its menu item says so. */
-    insertOffDesktop: Boolean = false,
+    /** Why Insert is off, shown in its menu item instead of its help; null while it is on. */
+    insertReason: String? = null,
     sendEnabled: Boolean,
     /** Send queues behind the running turn: the button says Queue (§1 S). */
     sendQueues: Boolean = false,
@@ -2215,9 +2232,6 @@ internal fun ComposerBand(
     locked: Boolean,
     /** A delivery is on its way: the To-line says so instead of the agent's status (R9). */
     inFlight: Boolean,
-    /** The output-focus item's state, or null for none (J2 F). */
-    outputFocus: Boolean?,
-    onOutputFocus: (Boolean) -> Unit,
     /** UR3's pickers: the menu offers them only while [attachReason] is null. */
     onAttachImage: () -> Unit = {},
     onAttachFile: () -> Unit = {},
@@ -2254,27 +2268,6 @@ internal fun ComposerBand(
                 Icon(Icons.Default.Add, stringResource(R.string.composer_menu), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { onMenu(false) }) {
-                // J2 F's item sits after the larger editor (or before the
-                // terminal keyboard, or last); it is not a Controls entry.
-                val focusAt = if (outputFocus != null) outputFocusSlot(menuItems) else -1
-                val focusItem = @Composable {
-                    if (outputFocus != null) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(stringResource(if (outputFocus) R.string.output_focus_off else R.string.output_focus_on))
-                                    Text(
-                                        stringResource(R.string.output_focus_help),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            onClick = { onMenu(false); onOutputFocus(!outputFocus) },
-                            modifier = Modifier.testTag("composer:output_focus"),
-                        )
-                    }
-                }
                 // UR3's pickers lead the menu, also while they can't be used:
                 // then each names why instead of its help.
                 val attachItem = @Composable { title: Int, help: Int, tag: String, onClick: () -> Unit ->
@@ -2300,31 +2293,17 @@ internal fun ComposerBand(
                 }
                 attachItem(R.string.attachment_attach_image, R.string.attach_image_help, "composer:attach_image", onAttachImage)
                 attachItem(R.string.attachment_attach_file, R.string.attach_file_help, "composer:attach_file", onAttachFile)
-                menuItems.forEachIndexed { index, action ->
-                    if (index == focusAt) focusItem()
+                menuItems.forEach { action ->
                     when (action) {
                         ComposerAction.Insert -> DropdownMenuItem(
                             text = {
                                 Column {
                                     Text(stringResource(R.string.composer_insert_no_enter))
-                                    // Held: the reason instead of the help; off while the
-                                    // desktop is on another tab: that reason;
-                                    // otherwise a disabled item's help is dimmed with its title (R4).
-                                    val offDesktop = !insertEnabled && !locked && insertOffDesktop
+                                    // Off: the reason it is off; on: its help.
                                     Text(
-                                        stringResource(
-                                            when {
-                                                locked -> R.string.composer_locked_reason
-                                                offDesktop -> R.string.composer_insert_off_desktop
-                                                else -> R.string.composer_insert_no_enter_help
-                                            },
-                                        ),
+                                        insertReason ?: stringResource(R.string.composer_insert_no_enter_help),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (insertEnabled || locked || offDesktop) {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
-                                        },
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             },
@@ -2363,7 +2342,6 @@ internal fun ComposerBand(
                         )
                     }
                 }
-                if (focusAt == menuItems.size) focusItem()
             }
         }
         // The field's inner width, which the To-line is fitted to by display columns (U1-1).

@@ -7,11 +7,10 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.67](https://github.com/erikfrish/herdline/releases/tag/v0.6.67), experimental prerelease.**
-> Focused automated keyboard and gesture checks passed on emulators.
-> The signed release APK itself and phones were not runtime-tested.
-> Support for every agent harness is not complete; stock OMP remote image/form
-> control and stock Samsung Now Bar placement are not claimed supported.
+> **Latest public release: [0.6.68](https://github.com/erikfrish/herdline/releases/tag/v0.6.68), experimental prerelease.**
+> Focused emulator QA and automated checks passed with documented limits.
+> Physical phones and locale behavior below Android 13 were not verified.
+> Support for every agent harness and Samsung Now Bar placement remain unverified.
 
 Herdline is a native Android client for a [Herdr](https://herdr.dev/) daemon
 running on a machine you reach over SSH. It is a client only: Herdr on the
@@ -253,6 +252,13 @@ Requirements:
 - `socat` for the native ingress socket tests (`sudo apt-get install socat` on Ubuntu)
 - [just](https://github.com/casey/just), optional, for the recipes below
 
+The app currently targets SDK 36. Android's local-network runtime permission
+is enforced for target SDK 37+, not merely because the device runs API 37.
+Do not add or request `ACCESS_LOCAL_NETWORK` while targeting 36. A target SDK
+37 migration must include the permission request before direct LAN SSH,
+denial/revocation handling, and a permission-specific error rather than a
+generic no-route message. See [Android's local-network permission contract](https://developer.android.com/privacy-and-security/local-network-permission).
+
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
@@ -265,6 +271,18 @@ just test       # Rust core tests on the host, then Kotlin unit tests
 
 Gradle runs cargo-ndk before every build. If Zig cannot fetch Ghostty's
 dependencies, prefetch each URL it reports with `zig fetch <url>`.
+
+### Publication verification
+
+The manually dispatched Release workflow first calls the repository's CI
+workflow at the same source commit. Publication depends on that invocation
+succeeding; it never reuses a green check from an older commit. CI checks the
+Rust workspace, builds the APKs and runs the existing rendered Tabs header,
+pin-sheet and Terminal IME tests on a fresh hosted emulator. These bounded
+checks are not a full device regression or proof of Samsung Now Bar placement.
+Release verification and ordinary push CI have separate concurrency groups.
+The feed update no longer carries a skip-CI marker; GitHub's own rule that
+`GITHUB_TOKEN` pushes do not trigger another workflow still applies.
 
 ### Fast changed-feature checks
 

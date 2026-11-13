@@ -1,0 +1,12 @@
+Herdline 0.6.68 (Experimental)
+
+- Removed the ineffective Output focus switch and its obsolete output-window code.
+- Disabled Insert without Enter now explains why it is unavailable, in English and Chinese. Delivery safety checks remain unchanged.
+- Notification text and actions refresh after app or system language changes without reconnecting.
+- Bell touch feedback works in foreground Chat and Terminal, reads the current setting for each bell, and follows Android touch-feedback settings. No background vibration is added.
+- Attach and Stop capabilities now share the authoritative Harness route definitions.
+- Updated dependencies, including russh 0.65.1, AGP 9.5.1 and Gradle 9.8.2. Repaired Rust formatting and Clippy failures; added exact-source CI verification before workflow publication and bounded rendered UI checks.
+
+Verification: 131 selected JVM tests, Rust workspace tests, Clippy, formatting and actionlint passed. Eleven instrumented UI tests passed. Emulator QA verified menu removal, enabled Insert and representative refusal reasons, bell on/off behavior, notification language changes, and Working → Done → Working.
+
+Limits: not every transient Insert refusal was exercised on a device; locale behavior below Android 13 was source-reviewed only. Physical vibration, physical phones and Samsung Now Bar placement are not verified. This is an experimental candidate, not a fully verified stable release.

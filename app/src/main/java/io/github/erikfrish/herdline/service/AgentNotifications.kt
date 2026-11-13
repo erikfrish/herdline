@@ -23,6 +23,7 @@ import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
+import io.github.erikfrish.herdline.data.AppLanguages
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.ui.MainActivity
 
@@ -122,15 +123,17 @@ object AgentNotifications {
         return PromotionDetails(requested, manager.canPostPromotedNotifications(), posted?.hasPromotableCharacteristics(), posted?.let { it.flags and Notification.FLAG_PROMOTED_ONGOING != 0 } ?: false)
     }
 
+    /** Creates the channels, or renames them to the language in effect now. */
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
+        val texts = AppLanguages.localized(context)
         OBSOLETE_CHANNELS.forEach(manager::deleteNotificationChannel)
         manager.createNotificationChannels(
             listOf(
-                NotificationChannel(CHANNEL_ATTENTION, context.getString(R.string.channel_attention), NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(CHANNEL_DONE, context.getString(R.string.channel_done), NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(CHANNEL_CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW).apply { description = context.getString(R.string.attached_detail) },
-                NotificationChannel(CHANNEL_LIVE, context.getString(R.string.channel_live), NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel(CHANNEL_ATTENTION, texts.getString(R.string.channel_attention), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CHANNEL_DONE, texts.getString(R.string.channel_done), NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(CHANNEL_CONNECTION, texts.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_LOW).apply { description = texts.getString(R.string.attached_detail) },
+                NotificationChannel(CHANNEL_LIVE, texts.getString(R.string.channel_live), NotificationManager.IMPORTANCE_LOW),
             ),
         )
     }
@@ -276,10 +279,11 @@ object AgentNotifications {
 
     /**
      * Re-posts every shown notification on its own tag, silently. Called on
-     * the lock and unlock edges and when the privacy setting changes: while
-     * the device is locked the permitted content stands as the main content
-     * (see [publish]), and when it unlocks the full content must return
-     * without a second sound. A re-post of unchanged words is skipped.
+     * the lock and unlock edges, when the privacy setting changes and when
+     * the language does: while the device is locked the permitted content
+     * stands as the main content (see [publish]), and when it unlocks the
+     * full content must return without a second sound. A re-post of
+     * unchanged words is skipped.
      */
     fun republish(context: Context, lock: LockDetail) {
         if (!canNotify(context)) return
@@ -425,9 +429,10 @@ object AgentNotifications {
     private fun publish(context: Context, manager: NotificationManager, note: Note, lock: LockDetail, silent: Boolean, force: Boolean) {
         val nodeId = note.key.nodeId
         val attention = note.kind == AlertKind.NeedsInput
-        val stale = note.staleSince?.let { context.getString(R.string.live_stale, DateFormat.getTimeFormat(context).format(it)) }
+        val local = AppLanguages.localized(context)
+        val stale = note.staleSince?.let { local.getString(R.string.live_stale, DateFormat.getTimeFormat(local).format(it)) }
         val locked = LockGate.isDeviceLocked(context)
-        val texts = ResourceTexts(context)
+        val texts = ResourceTexts(local)
         val channel = channelOf(note.kind)
         // The Needs input glyph: the same shape as the in-app Blocked diamond.
         val icon = if (attention) R.drawable.ic_needs_input else R.drawable.ic_notification

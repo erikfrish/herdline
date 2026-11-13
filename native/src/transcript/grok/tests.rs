@@ -6,7 +6,14 @@
 //! does with such lines.
 
 use super::*;
-use std::{fs, io::Write as _, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::{Duration, Instant}};
+use std::{
+    fs,
+    io::Write as _,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::Command,
+    time::{Duration, Instant},
+};
 
 const SID: &str = "0195f3a2-7c41-7d2e-9b1a-3f6c2d8e4a10";
 
@@ -42,7 +49,10 @@ impl Host {
         )
         .unwrap();
         fs::set_permissions(&herdr, fs::Permissions::from_mode(0o755)).unwrap();
-        let host = Self { home, env: Default::default() };
+        let host = Self {
+            home,
+            env: Default::default(),
+        };
         host.registry(&json!([{"session_id": sid, "pid": 42, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"}]).to_string());
         host
     }
@@ -56,7 +66,11 @@ impl Host {
 
     /// The shell's environment: its HOME and these variables.
     fn environ(&self, vars: &[(&str, &str)]) {
-        self.env.replace(vars.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect());
+        self.env.replace(
+            vars.iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect(),
+        );
     }
 
     /// `~/.grok/sessions/<cwd dir>/<sid>/updates.jsonl` (`paths.rs:132-141`).
@@ -78,8 +92,16 @@ impl Host {
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        response(&serde_json::from_slice(&output.stdout).unwrap(), &expect, false)
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        response(
+            &serde_json::from_slice(&output.stdout).unwrap(),
+            &expect,
+            false,
+        )
     }
 }
 
@@ -110,7 +132,11 @@ fn chunk(kind: &str, words: &str) -> String {
 }
 
 fn append(path: &PathBuf, lines: &[String]) {
-    let mut file = fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
     for line in lines {
         writeln!(file, "{line}").unwrap();
     }
@@ -164,8 +190,16 @@ fn chunks_merge_into_one_row_per_turn_and_a_streaming_row_is_read_again() {
     assert_eq!(next.entries[0].offset, tail.entries[1].offset);
     assert_eq!(texts(&next), ["think", "abc"]);
     // A line still being written is not read until it ends.
-    fs::OpenOptions::new().append(true).open(&file).unwrap().write_all(b"{\"timestamp\":1,").unwrap();
-    assert_eq!(texts(&host.page(Read::Tail).unwrap()), ["hello", "think", "abc"]);
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&file)
+        .unwrap()
+        .write_all(b"{\"timestamp\":1,")
+        .unwrap();
+    assert_eq!(
+        texts(&host.page(Read::Tail).unwrap()),
+        ["hello", "think", "abc"]
+    );
 }
 
 #[test]
@@ -174,28 +208,66 @@ fn a_tool_call_pairs_with_its_final_update_or_its_failure() {
     append(
         &host.file("%2Fw"),
         &[
-            acp(json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Read a.txt", "kind": "read",
-                "status": "pending", "rawInput": {"path": "a.txt"}})),
-            acp(json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "in_progress",
-                "content": [{"type": "content", "content": {"type": "text", "text": "partial"}}]})),
-            acp(json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed",
-                "content": [{"type": "content", "content": {"type": "text", "text": "done"}}]})),
-            acp(json!({"sessionUpdate": "tool_call", "toolCallId": "t2", "title": "Run make", "status": "in_progress"})),
-            acp(json!({"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "failed", "rawOutput": "boom"})),
+            acp(
+                json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Read a.txt", "kind": "read",
+                "status": "pending", "rawInput": {"path": "a.txt"}}),
+            ),
+            acp(
+                json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "in_progress",
+                "content": [{"type": "content", "content": {"type": "text", "text": "partial"}}]}),
+            ),
+            acp(
+                json!({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed",
+                "content": [{"type": "content", "content": {"type": "text", "text": "done"}}]}),
+            ),
+            acp(
+                json!({"sessionUpdate": "tool_call", "toolCallId": "t2", "title": "Run make", "status": "in_progress"}),
+            ),
+            acp(
+                json!({"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "failed", "rawOutput": "boom"}),
+            ),
         ],
     );
     let page = host.page(Read::Tail).unwrap();
-    let blocks: Vec<_> = page.entries.iter().flat_map(|entry| entry.blocks.clone()).collect();
+    let blocks: Vec<_> = page
+        .entries
+        .iter()
+        .flat_map(|entry| entry.blocks.clone())
+        .collect();
     match blocks.as_slice() {
         [
-            Block::ToolCall { call_id: c1, name: n1, args, .. },
-            Block::ToolResult { call_id: r1, text: t1, is_error: false, .. },
+            Block::ToolCall {
+                call_id: c1,
+                name: n1,
+                args,
+                ..
+            },
+            Block::ToolResult {
+                call_id: r1,
+                text: t1,
+                is_error: false,
+                ..
+            },
             Block::ToolCall { call_id: c2, .. },
-            Block::ToolResult { call_id: r2, text: t2, is_error: true, .. },
+            Block::ToolResult {
+                call_id: r2,
+                text: t2,
+                is_error: true,
+                ..
+            },
         ] => {
-            assert_eq!((c1.as_str(), n1.as_str(), r1.as_str(), t1.as_str()), ("t1", "Read a.txt", "t1", "done"));
-            assert_eq!(serde_json::from_str::<Value>(args).unwrap(), json!({"path": "a.txt"}));
-            assert_eq!((c2.as_str(), r2.as_str(), t2.as_str()), ("t2", "t2", "boom"));
+            assert_eq!(
+                (c1.as_str(), n1.as_str(), r1.as_str(), t1.as_str()),
+                ("t1", "Read a.txt", "t1", "done")
+            );
+            assert_eq!(
+                serde_json::from_str::<Value>(args).unwrap(),
+                json!({"path": "a.txt"})
+            );
+            assert_eq!(
+                (c2.as_str(), r2.as_str(), t2.as_str()),
+                ("t2", "t2", "boom")
+            );
         }
         other => panic!("{other:?}"),
     }
@@ -220,7 +292,9 @@ fn a_rewound_branch_is_dropped_and_the_next_page_starts_over() {
     append(
         &file,
         &[
-            xai(json!({"sessionUpdate": "rewind_marker", "target_prompt_index": 1, "created_at": "2026-11-12T00:00:00Z"})),
+            xai(
+                json!({"sessionUpdate": "rewind_marker", "target_prompt_index": 1, "created_at": "2026-11-12T00:00:00Z"}),
+            ),
             chunk("user_message_chunk", "replacement"),
         ],
     );
@@ -264,14 +338,21 @@ fn images_are_shown_unreadable_and_their_bytes_never_leave_the_host() {
         &[
             acp(json!({"sessionUpdate": "user_message_chunk",
                 "content": {"type": "image", "data": "SECRETPIXELS", "mimeType": "image/png"}})),
-            acp(json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Screenshot", "status": "completed",
-                "content": [{"type": "content", "content": {"type": "image", "data": "SECRETPIXELS", "mimeType": "image/png"}}]})),
+            acp(
+                json!({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Screenshot", "status": "completed",
+                "content": [{"type": "content", "content": {"type": "image", "data": "SECRETPIXELS", "mimeType": "image/png"}}]}),
+            ),
         ],
     );
     let page = host.page(Read::Tail).unwrap();
-    let unreadable = Image { part: 0, source: Source::Unreadable };
+    let unreadable = Image {
+        part: 0,
+        source: Source::Unreadable,
+    };
     assert_eq!(page.entries[0].blocks, [Block::Image(unreadable.clone())]);
-    assert!(matches!(&page.entries[1].blocks[1], Block::ToolResult { images, .. } if *images == [unreadable]));
+    assert!(
+        matches!(&page.entries[1].blocks[1], Block::ToolResult { images, .. } if *images == [unreadable])
+    );
     assert!(!format!("{page:?}").contains("SECRETPIXELS"));
 }
 
@@ -280,9 +361,15 @@ fn an_unknown_session_is_not_found_and_two_matches_are_refused() {
     let host = Host::new(SID, "grok");
     assert!(matches!(host.page(Read::Tail), Err(Error::NoTranscript)));
     // Another session in the store is never shown in its place.
-    let other = host.home.path().join(".grok/sessions/%2Fw/0195f3a2-0000-7000-8000-000000000000");
+    let other = host
+        .home
+        .path()
+        .join(".grok/sessions/%2Fw/0195f3a2-0000-7000-8000-000000000000");
     fs::create_dir_all(&other).unwrap();
-    append(&other.join("updates.jsonl"), &[chunk("user_message_chunk", "other")]);
+    append(
+        &other.join("updates.jsonl"),
+        &[chunk("user_message_chunk", "other")],
+    );
     assert!(matches!(host.page(Read::Tail), Err(Error::NoTranscript)));
     append(&host.file("%2Fa"), &[chunk("user_message_chunk", "one")]);
     append(&host.file("%2Fb"), &[chunk("user_message_chunk", "two")]);
@@ -294,10 +381,16 @@ fn the_registry_only_refuses_and_never_shows_its_own_session() {
     const OTHER: &str = "0195f3a2-0000-7000-8000-000000000000";
     let entry = |sid: &str, pid: u32| json!({"session_id": sid, "pid": pid, "cwd": "/w", "opened_at": "2026-11-12T10:00:00Z"});
     let host = Host::new(SID, "grok");
-    append(&host.file("%2Fw"), &[chunk("user_message_chunk", "herdr's")]);
+    append(
+        &host.file("%2Fw"),
+        &[chunk("user_message_chunk", "herdr's")],
+    );
     let other = host.home.path().join(".grok/sessions/%2Fw").join(OTHER);
     fs::create_dir_all(&other).unwrap();
-    append(&other.join("updates.jsonl"), &[chunk("user_message_chunk", "registry's")]);
+    append(
+        &other.join("updates.jsonl"),
+        &[chunk("user_message_chunk", "registry's")],
+    );
     // Another process's entries do not count either way.
     host.registry(&json!([entry(OTHER, 7), entry(SID, 42)]).to_string());
     assert_eq!(texts(&host.page(Read::Tail).unwrap()), ["herdr's"]);
@@ -306,7 +399,12 @@ fn the_registry_only_refuses_and_never_shows_its_own_session() {
     assert_eq!(refused(host.page(Read::Tail)), STALE);
     host.registry(&json!([entry(SID, 42), entry(OTHER, 42)]).to_string());
     assert_eq!(refused(host.page(Read::Tail)), AMBIGUOUS);
-    for body in [json!([entry(SID, 7)]).to_string(), "[]".into(), "{not json".into(), json!([{"pid": 42}]).to_string()] {
+    for body in [
+        json!([entry(SID, 7)]).to_string(),
+        "[]".into(),
+        "{not json".into(),
+        json!([{"pid": 42}]).to_string(),
+    ] {
         host.registry(&body);
         assert_eq!(refused(host.page(Read::Tail)), UNREGISTERED, "{body}");
     }
@@ -320,7 +418,10 @@ fn a_store_outside_home_or_a_relative_grok_home_is_refused() {
     let host = Host::new(SID, "grok");
     let real = outside.path().join("sessions/%2Fw").join(SID);
     fs::create_dir_all(&real).unwrap();
-    append(&real.join("updates.jsonl"), &[chunk("user_message_chunk", "outside")]);
+    append(
+        &real.join("updates.jsonl"),
+        &[chunk("user_message_chunk", "outside")],
+    );
     host.environ(&[("GROK_HOME", outside.path().to_str().unwrap())]);
     assert_eq!(refused(host.page(Read::Tail)), OUTSIDE_HOME);
     // Never resolved against a cwd this cannot know, even when one would match.
@@ -338,7 +439,13 @@ fn a_store_outside_home_or_a_relative_grok_home_is_refused() {
 #[test]
 fn a_fifo_at_the_session_path_is_refused_without_waiting() {
     let host = Host::new(SID, "grok");
-    assert!(Command::new("mkfifo").arg(host.file("%2Fw")).status().unwrap().success());
+    assert!(
+        Command::new("mkfifo")
+            .arg(host.file("%2Fw"))
+            .status()
+            .unwrap()
+            .success()
+    );
     let started = Instant::now();
     assert_eq!(refused(host.page(Read::Tail)), UNREADABLE);
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -350,7 +457,12 @@ fn a_session_file_past_the_parse_bound_is_refused_promptly() {
     let file = host.file("%2Fw");
     append(&file, &[chunk("user_message_chunk", "big")]);
     // Sparse: 32 MiB and one byte, without writing them.
-    fs::OpenOptions::new().write(true).open(&file).unwrap().set_len(32 * 1024 * 1024 + 1).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_len(32 * 1024 * 1024 + 1)
+        .unwrap();
     let started = Instant::now();
     assert_eq!(refused(host.page(Read::Tail)), TOO_LARGE);
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -362,14 +474,25 @@ fn one_turn_larger_than_the_page_budget_is_shown_cut_not_failed() {
     // 60 alternating thought and text chunks of 40 KB each: separate blocks,
     // each under the field clip, together far past the 1.5 MiB budget.
     let lines: Vec<_> = (0..60)
-        .map(|i| chunk(if i % 2 == 0 { "agent_thought_chunk" } else { "agent_message_chunk" }, &"x".repeat(40_000)))
+        .map(|i| {
+            chunk(
+                if i % 2 == 0 {
+                    "agent_thought_chunk"
+                } else {
+                    "agent_message_chunk"
+                },
+                &"x".repeat(40_000),
+            )
+        })
         .collect();
     append(&host.file("%2Fw"), &lines);
     let page = host.page(Read::Tail).unwrap();
     assert_eq!(page.entries.len(), 1);
     let blocks = &page.entries[0].blocks;
     assert!(blocks.len() > 2 && blocks.len() < 60);
-    assert!(matches!(blocks.last(), Some(Block::Text { text, truncated: true }) if !text.starts_with('x')));
+    assert!(
+        matches!(blocks.last(), Some(Block::Text { text, truncated: true }) if !text.starts_with('x'))
+    );
 }
 
 #[test]
@@ -396,17 +519,38 @@ fn a_plan_reads_as_one_marker_per_item() {
         ]}))],
     );
     let page = host.page(Read::Tail).unwrap();
-    let marker = |marker: Marker, text: &str| Block::Marker { marker, text: text.to_owned(), truncated: false };
+    let marker = |marker: Marker, text: &str| Block::Marker {
+        marker,
+        text: text.to_owned(),
+        truncated: false,
+    };
     assert_eq!(
         page.entries[0].blocks,
-        [marker(Marker::Done, "read the log"), marker(Marker::ToDo, "fix the bug"), marker(Marker::ToDo, "ship")]
+        [
+            marker(Marker::Done, "read the log"),
+            marker(Marker::ToDo, "fix the bug"),
+            marker(Marker::ToDo, "ship")
+        ]
     );
 }
 
 #[test]
 fn a_plan_row_without_items_still_reads_as_its_text() {
-    let row = entry(&json!({"id": 3, "kind": "plan", "ts": 1, "text": "[completed] read the log"})).unwrap();
-    assert_eq!(row.blocks, [Block::Text { text: "[completed] read the log".to_owned(), truncated: false }]);
+    let row = entry(&json!({"id": 3, "kind": "plan", "ts": 1, "text": "[completed] read the log"}))
+        .unwrap();
+    assert_eq!(
+        row.blocks,
+        [Block::Text {
+            text: "[completed] read the log".to_owned(),
+            truncated: false
+        }]
+    );
     let empty = entry(&json!({"id": 4, "kind": "plan", "text": "[plan]", "entries": []})).unwrap();
-    assert_eq!(empty.blocks, [Block::Text { text: "[plan]".to_owned(), truncated: false }]);
+    assert_eq!(
+        empty.blocks,
+        [Block::Text {
+            text: "[plan]".to_owned(),
+            truncated: false
+        }]
+    );
 }

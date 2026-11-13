@@ -32,19 +32,18 @@ private const val ROUND_SLACK_PX = 0.5f
 
 /**
  * Whether the tap-to-type hint is wanted at all (QF-9): on Terminal, the
- * keyboard down, before the user first typed, outside output focus, connected
- * with a view; and (A-26) with no notice over the terminal, which would sit
- * over the pill and let its text peek out. Unwanted, it is not composed, so it
- * leaves the TalkBack tree; wanted again, it is placed only after the settle.
+ * keyboard down, before the user first typed, connected with a view; and
+ * (A-26) with no notice over the terminal, which would sit over the pill and
+ * let its text peek out. Unwanted, it is not composed, so it leaves the
+ * TalkBack tree; wanted again, it is placed only after the settle.
  */
 internal fun tapHintWanted(
     chatMode: Boolean,
     imeVisible: Boolean,
     typedOnce: Boolean,
-    focusApplies: Boolean,
     connectedWithView: Boolean,
     noticeOver: Boolean,
-): Boolean = !chatMode && !imeVisible && !typedOnce && !focusApplies && connectedWithView && !noticeOver
+): Boolean = !chatMode && !imeVisible && !typedOnce && connectedWithView && !noticeOver
 
 /**
  * Where the tap-to-type hint's top goes, in px from the view's top, or null
@@ -115,13 +114,13 @@ internal fun tapHintSpanPx(frame: RenderFrame, viewport: Viewport): IntRange {
 }
 
 /**
- * The terminal's contentDescription (QF-9b S2): [window], what output focus
- * hides, and the hint's [sentence] only while the hint is [wanted] but hidden
- * ([top] null). While the pill shows, it is its own node and the terminal
- * carries no copy, so TalkBack never reads the sentence twice.
+ * The terminal's contentDescription (QF-9b S2): the hint's [sentence] only
+ * while the hint is [wanted] but hidden ([top] null). While the pill shows, it
+ * is its own node and the terminal carries no copy, so TalkBack never reads
+ * the sentence twice.
  */
-internal fun terminalDescription(window: String?, wanted: Boolean, top: Int?, sentence: String): String? =
-    listOfNotNull(window, sentence.takeIf { wanted && top == null }).joinToString(" ").ifEmpty { null }
+internal fun terminalDescription(wanted: Boolean, top: Int?, sentence: String): String? =
+    sentence.takeIf { wanted && top == null }
 
 /**
  * Whether [a] and [b] look the same on screen (QF9-R): every field TerminalView

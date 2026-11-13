@@ -207,26 +207,15 @@ import io.github.erikfrish.herdline.ui.terminal.extraKeysFrom
 import io.github.erikfrish.herdline.ui.terminal.ExtraKeysRow
 import io.github.erikfrish.herdline.ui.terminal.TerminalTypefaces
 import io.github.erikfrish.herdline.ui.terminal.TerminalView
-import io.github.erikfrish.herdline.ui.terminal.OutputFocusStrip
-import io.github.erikfrish.herdline.ui.terminal.OutputFocusStripHeight
-import io.github.erikfrish.herdline.ui.terminal.OutputWindow
-import io.github.erikfrish.herdline.ui.terminal.armedWindow
-import io.github.erikfrish.herdline.ui.terminal.drag
-import io.github.erikfrish.herdline.ui.terminal.next
-import io.github.erikfrish.herdline.ui.terminal.suggestedHidden
-import androidx.compose.material3.Checkbox
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.state.ToggleableState
 import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.sessionAccent
 import io.github.erikfrish.herdline.ui.theme.terminalScheme
@@ -309,6 +298,8 @@ fun SessionScreen(
     onSettings: () -> Unit,
 ) {
     val context = LocalContext.current
+    // The bell's feedback goes through the screen's root view, so Chat and Terminal both feel it.
+    val feedbackView = LocalView.current
     val settings by app.settings.settings.collectAsState()
     val fontChanges by app.fonts.changes.collectAsState()
     val state by connection.state.collectAsState()
@@ -376,16 +367,8 @@ fun SessionScreen(
     }
     // Raw input: the terminal's keyboard and extra keys take the composer's place.
     var rawKeys by rememberSaveable { mutableStateOf(false) }
-    // Output focus: armed only by the user, per session screen; a
-    // reconnect is a new Connection and starts with it off.
-    var outputFocus by rememberSaveable(connection) { mutableStateOf(false) }
-    var outputWindow by remember(connection) { mutableStateOf<OutputWindow?>(null) }
     // A K12 notice reads the bottom rows: the full terminal while it shows.
     var receiptNotice by remember { mutableStateOf(false) }
-    fun setOutputFocus(on: Boolean) {
-        outputFocus = on
-        outputWindow = null
-    }
     val scope = rememberCoroutineScope()
     var composerField by remember { mutableStateOf(false) }
     // The pane-row estimate behind the too-short notice's offers (PaneRows.kt):
@@ -470,7 +453,12 @@ fun SessionScreen(
             when (event) {
                 is Connection.Event.Clipboard -> context.getSystemService(ClipboardManager::class.java)
                     .setPrimaryClip(ClipData.newPlainText("Herdline", event.text))
-                is Connection.Event.Bell -> if (settings.vibrateOnBell) terminal?.performHapticFeedback(BellHaptic)
+                is Connection.Event.Bell -> {
+                    // Read at the bell, never a stale composition's value; only on this screen, in the foreground, unlocked.
+                    val wanted = app.settings.settings.value.vibrateOnBell && app.viewingSession == node.id &&
+                        feedbackView.isAttachedToWindow && feedbackView.hasWindowFocus() && !LockGate.isDeviceLocked(context)
+                    if (wanted) feedbackView.performHapticFeedback(BellHaptic)
+                }
                 is Connection.Event.Problem -> banners = banners.add(AgentNote(event.message, null, NoteKind.Problem, null, ++noteCount))
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
@@ -920,21 +908,6 @@ fun SessionScreen(
                 // Sideways and typing, the composer becomes a column beside the content (J2).
                 val sessionWidth = if (wide) windowWidth - (if (settings.sidebarOpen) SidebarWidth else SidebarRailWidth) - 1.dp else windowWidth
                 val sideComposer = sideComposerWidthDp(sessionWidth.value, typingShort)?.dp?.takeIf { !composerHidden }
-                // Typing beside the content, Terminal only: the armed window over the grid.
-                val focusWanted = outputFocus && sideComposer != null && !chatMode && !rawKeys
-                val focusApplies = focusWanted && !receiptNotice
-                val stripPx = with(LocalDensity.current) { OutputFocusStripHeight.roundToPx() }
-                LaunchedEffect(frame, focusApplies, outputFocus) {
-                    val shown = frame
-                    // Suspended F (the receipt notice, the side composer or IME on the move) arms anew when it applies again.
-                    if (!focusApplies) outputWindow = null
-                    if (!focusApplies || shown == null) return@LaunchedEffect
-                    val pane = shown.panes.firstOrNull { it.focused }
-                    val suggestion = pane?.let { suggestedHidden(shown, it) }
-                    outputWindow = outputWindow?.next(pane?.id, suggestion, terminal?.hasSelection == true, shown.rows)
-                        ?: armedWindow(pane?.id, suggestion, shown.rows)
-                }
-                val hiddenRows = if (focusApplies) outputWindow?.hidden ?: 0 else 0
                 // The terminal hears the column's height under the header as it is measured, before its own layout.
                 SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
@@ -992,7 +965,6 @@ fun SessionScreen(
                                                 tabId = tab?.id,
                                                 tabLabel = tab?.label,
                                                 pane = focusedPane,
-                                                zoomed = tab?.zoomed == true,
                                                 split = (tab?.let { t -> view?.panesOf(t.id)?.size } ?: 0) > 1,
                                                 paneActions = !wide,
                                                 settingsFirst = short,
@@ -1002,8 +974,6 @@ fun SessionScreen(
                                                 onReconnect = if (lostLive) ::retry else null,
                                                 onSettings = onSettings,
                                                 pinned = focusedPane?.takeIf { view?.agentIn(it) != null }?.let { MonitorKey(node.id, it) in monitored },
-                                                outputFocus = outputFocus.takeIf { !chatMode && !wide },
-                                                onOutputFocus = ::setOutputFocus,
                                                 onPin = { focusedPane?.let(pinOrUnpin) },
                                                 onWorksHere = focusedPane?.let { p -> view?.agentIn(p) }?.let { agent -> { harnessCard = HarnessCardKey(agent.pane, agent.agent) } },
                                             )
@@ -1232,7 +1202,6 @@ fun SessionScreen(
                             chatMode = chatMode,
                             imeVisible = imeVisible,
                             typedOnce = typedOnce,
-                            focusApplies = focusApplies,
                             connectedWithView = view != null && state is Connection.State.Connected,
                             noticeOver = snackbar.currentSnackbarData != null || noRoom,
                         )
@@ -1254,8 +1223,6 @@ fun SessionScreen(
                                 (composerHidden || composerPane != null)
                             // Until the session's view is in, the mode is not known: neither mode's grid goes yet.
                             val terminalShown = view != null && !chatMode
-                            // A screen-reader user who skips the strip still hears that rows are hidden.
-                            val windowDescription = if (hiddenRows > 0) pluralStringResource(R.plurals.output_focus_strip_description, hiddenRows, hiddenRows) else null
                             AndroidView(
                                 // TerminalView fills its canvas with drawColor; unclipped it would paint over the header.
                                 modifier = Modifier.fillMaxSize().clipToBounds().testTag("terminal"),
@@ -1269,12 +1236,6 @@ fun SessionScreen(
                                             view,
                                             onCell = { cellPx = it },
                                             drew = { drawnViewport = it },
-                                            windowDrag = { lines ->
-                                                outputWindow?.takeIf { view.hiddenRows > 0 }?.drag(lines)?.let { (window, used) ->
-                                                    outputWindow = window
-                                                    used
-                                                } ?: 0
-                                            },
                                             onLatchCleared = { latched = it },
                                             // A tap on a pane in the mirror is a choice on this phone: read there, as Terminal focuses it.
                                             onPaneTapped = { readHere(it) },
@@ -1291,14 +1252,10 @@ fun SessionScreen(
                                     view.chatSettled = chatSettled
                                     view.scheme = scheme
                                     view.frame = frame
-                                    view.showWindow(hiddenRows, if (focusApplies) stripPx else 0)
                                     // While the hint is hidden, TalkBack hears it on the terminal instead (QF-9b S2).
-                                    view.contentDescription = terminalDescription(windowDescription, hintWanted, hintTop, tapToType)
+                                    view.contentDescription = terminalDescription(hintWanted, hintTop, tapToType)
                                 },
                             )
-                        }
-                        if (focusApplies) {
-                            OutputFocusStrip(hiddenRows, onOff = { setOutputFocus(false) }, modifier = Modifier.align(Alignment.BottomCenter))
                         }
                         if (hintWanted) {
                             // QF-9b: any change to the frame, the view or the pill hides it at once, so output
@@ -1322,7 +1279,7 @@ fun SessionScreen(
                             // Across the focused pane's columns only, so it never sits over its border.
                             val span = frame?.let { shown -> drawnViewport?.let { tapHintSpanPx(shown, it) } }
                             // An overlay, so it never changes the terminal's height: the extra keys have no room to
-                            // spare. Opaque, as OutputFocusStrip is: a translucent pill let glyphs through and lost
+                            // spare. Opaque: a translucent pill let glyphs through and lost
                             // contrast. No input: a tap falls through to the terminal, which opens the keyboard.
                             // Shown, it is plain text, so TalkBack reads it and tests find the tag; no role, so it
                             // is no button. Hidden, it leaves the semantics tree and the terminal says it.
@@ -1558,10 +1515,8 @@ fun SessionScreen(
                         )
                     } else {
                         val density = LocalDensity.current
-                        // Beside the content, the composer takes none of its height; the
-                        // output-focus strip takes its own from the terminal's.
-                        val contentSpace = contentPx - if (focusApplies) stripPx else 0
-                        val now = SessionSpace(windowPx.first, windowPx.second, if (sideComposer != null) contentSpace else contentSpace + composerPx)
+                        // Beside the content, the composer takes none of its height.
+                        val now = SessionSpace(windowPx.first, windowPx.second, if (sideComposer != null) contentPx else contentPx + composerPx)
                         LaunchedEffect(now, imeVisible, orientation) {
                             if (!imeVisible && contentPx > 0 && composerPx > 0) openSpace[orientation] = now
                         }
@@ -1621,11 +1576,6 @@ fun SessionScreen(
                             hideKeyboardReachesSend = reach.hideKeyboard,
                             portraitReachesSend = reach.portrait,
                             side = sideComposer != null,
-                            outputFocus = outputFocus.takeIf { !chatMode },
-                            onOutputFocus = ::setOutputFocus,
-                            // What landed in the agent's input must be seen before it is edited or run;
-                            // the receipt's own notice may still be suspending F when it lands.
-                            onDelivered = { if (focusWanted) setOutputFocus(false) },
                             onReceiptNotice = { receiptNotice = it },
                             // The grid in force at the tap, before the delivery changes the layout (HG-1, S-4a-r).
                             onDeliveryStart = { terminal?.freezeAt() },
@@ -1817,7 +1767,6 @@ private fun terminalListener(
     view: TerminalView,
     onCell: (Int) -> Unit,
     drew: (Viewport?) -> Unit,
-    windowDrag: (Int) -> Int,
     onLatchCleared: (Int) -> Unit,
     onPaneTapped: (String) -> Unit,
     /** Any key, text or scroll the user sent from the terminal: they found their way in. */
@@ -1879,11 +1828,6 @@ private fun terminalListener(
     }
 
     override fun onModifiersConsumed() = onLatchCleared(0)
-
-    override fun onWindowDrag(towardBottom: Int): Int {
-        onUsed()
-        return windowDrag(towardBottom)
-    }
 }
 
 /**
@@ -1904,7 +1848,6 @@ private fun SessionMenu(
     tabId: String?,
     tabLabel: String?,
     pane: String?,
-    zoomed: Boolean,
     /** The tab has more than one pane: closing its only pane would close the tab. */
     split: Boolean,
     paneActions: Boolean,
@@ -1917,9 +1860,6 @@ private fun SessionMenu(
     /** Whether the focused pane's agent is pinned as a live update; null when it runs no agent. */
     pinned: Boolean?,
     onPin: () -> Unit,
-    /** Whether output focus is armed; null where the item is not offered (Chat, or a wide layout). */
-    outputFocus: Boolean?,
-    onOutputFocus: (Boolean) -> Unit,
     /** Opens "What works here"; null when the focused pane runs no Herdr agent. */
     onWorksHere: (() -> Unit)? = null,
 ) {
@@ -1929,21 +1869,13 @@ private fun SessionMenu(
         icon: ImageVector,
         enabled: Boolean = true,
         destructive: Boolean = false,
-        subtitle: Int? = null,
         tag: String? = null,
         run: () -> Unit,
     ) {
         val color = (if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             .let { if (enabled) it else it.copy(alpha = 0.38f) }
         DropdownMenuItem(
-            text = {
-                Column {
-                    Text(stringResource(label), color = color)
-                    if (subtitle != null) {
-                        Text(stringResource(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
+            text = { Text(stringResource(label), color = color) },
             leadingIcon = { Icon(icon, null, tint = color.copy(alpha = 0.8f), modifier = Modifier.size(20.dp)) },
             enabled = enabled,
             onClick = { onDismiss(); run() },
@@ -1979,34 +1911,9 @@ private fun SessionMenu(
             divider()
             item(R.string.session_split_right_shared, Icons.AutoMirrored.Filled.KeyboardArrowRight, pane != null) { pane?.let { connection.split(it, "right") } }
             item(R.string.session_split_down_shared, Icons.Default.KeyboardArrowDown, pane != null) { pane?.let { connection.split(it, "down") } }
-            // Zoom is Herdr's: the desktop zooms too, so the item says so.
-            item(if (zoomed) R.string.session_unzoom_shared else R.string.zoom_shared, Icons.Default.Search, pane != null, subtitle = R.string.session_zoom_help) {
-                pane?.let(connection::toggleZoom)
-            }
             // As in the pane toolbar: the only pane is closed with its tab, by Close tab.
             if (split) {
                 item(R.string.session_close_pane, Icons.Default.Close, pane != null, destructive = true) { pane?.let { onPrompt(Prompt.ClosePane(it)) } }
-            }
-            if (outputFocus != null) {
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(stringResource(R.string.output_focus_menu), color = MaterialTheme.colorScheme.onSurface)
-                            Text(
-                                stringResource(R.string.output_focus_help),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), modifier = Modifier.size(20.dp)) },
-                    trailingIcon = { Checkbox(checked = outputFocus, onCheckedChange = null) },
-                    onClick = { onDismiss(); onOutputFocus(!outputFocus) },
-                    contentPadding = PaddingValues(horizontal = 18.dp),
-                    modifier = Modifier
-                        .testTag("session:menu:output_focus")
-                        .semantics { role = Role.Checkbox; toggleableState = ToggleableState(outputFocus) },
-                )
             }
         }
         if (!settingsFirst) {

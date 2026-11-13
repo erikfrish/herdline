@@ -31,9 +31,9 @@ mod gemini;
 mod grok;
 mod hermes;
 mod kilo;
+mod kimi;
 mod letta;
 mod mastracode;
-mod kimi;
 mod opencode;
 mod pi;
 mod qwen;
@@ -193,7 +193,11 @@ pub enum Refused {
     OutsideHome,
     /// The agent's store is in a schema format the reader was not written
     /// for; `found` is null when the store names no single format.
-    UnsupportedVersion { agent: &'static str, found: Option<u32>, supported: u32 },
+    UnsupportedVersion {
+        agent: &'static str,
+        found: Option<u32>,
+        supported: u32,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -435,7 +439,11 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
             refused: Refused::OutsideHome,
         }),
         Err(Error::UnsupportedHermes { found, supported }) => Ok(Answer::Refused {
-            refused: Refused::UnsupportedVersion { agent: "hermes", found, supported },
+            refused: Refused::UnsupportedVersion {
+                agent: "hermes",
+                found,
+                supported,
+            },
         }),
         Err(error) => Err(error),
     }
@@ -459,7 +467,16 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             Some(identity)
                 if matches!(
                     identity.agent.as_str(),
-                    "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini" | "letta"
+                    "opencode"
+                        | "qwen"
+                        | "hermes"
+                        | "kilo"
+                        | "grok"
+                        | "copilot"
+                        | "mastracode"
+                        | "kimi"
+                        | "gemini"
+                        | "letta"
                 ) =>
             {
                 let page = match identity.agent.as_str() {
@@ -468,9 +485,13 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                     "kilo" => kilo::page(exec, session, &request.pane, identity, read, reset),
                     "grok" => grok::page(exec, session, &request.pane, identity, read, reset),
                     "copilot" => copilot::page(exec, session, &request.pane, identity, read, reset),
-                    "mastracode" => mastracode::page(exec, session, &request.pane, identity, read, reset),
+                    "mastracode" => {
+                        mastracode::page(exec, session, &request.pane, identity, read, reset)
+                    }
                     "kimi" => kimi::page(exec, session, &request.pane, identity, read, reset),
-                    "gemini" => gemini::binding::page(exec, session, &request.pane, identity, read, reset),
+                    "gemini" => {
+                        gemini::binding::page(exec, session, &request.pane, identity, read, reset)
+                    }
                     "letta" => letta::page(exec, session, &request.pane, identity, read, reset),
                     _ => opencode::page(exec, session, &request.pane, identity, read, reset),
                 };
@@ -517,14 +538,14 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                 // File resolution can refuse the old reference after a fork or
                 // restart. The already-emitted pane report still identifies the
                 // replacement; adopt it rather than polling the old path forever.
-                if let Ok(Some(current)) = parse_instance(Some(0), &output.tail) {
-                    if expect.as_ref() != Some(&current) {
-                        expect = Some(current);
-                        read = Read::Tail;
-                        window = FIRST_WINDOW;
-                        reset = true;
-                        continue;
-                    }
+                if let Ok(Some(current)) = parse_instance(Some(0), &output.tail)
+                    && expect.as_ref() != Some(&current)
+                {
+                    expect = Some(current);
+                    read = Read::Tail;
+                    window = FIRST_WINDOW;
+                    reset = true;
+                    continue;
                 }
                 return Err(error);
             }
@@ -588,7 +609,18 @@ fn image(
     // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
     // Copilot, Mastra Code, Kimi, Gemini and Letta history is read without
     // its media: chat never fetches any, so every image is Unreadable.
-    if matches!(expect.agent.as_str(), "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi" | "gemini" | "letta") {
+    if matches!(
+        expect.agent.as_str(),
+        "qwen"
+            | "hermes"
+            | "kilo"
+            | "grok"
+            | "copilot"
+            | "mastracode"
+            | "kimi"
+            | "gemini"
+            | "letta"
+    ) {
         return refused(Refusal::Unsupported);
     }
     let len = match media.end.checked_sub(media.offset) {
@@ -1092,7 +1124,18 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         .filter(|agent| {
             matches!(
                 *agent,
-                "omp" | "pi" | "claude" | "codex" | "opencode" | "qwen" | "hermes" | "kilo" | "grok" | "copilot" | "mastracode" | "kimi"
+                "omp"
+                    | "pi"
+                    | "claude"
+                    | "codex"
+                    | "opencode"
+                    | "qwen"
+                    | "hermes"
+                    | "kilo"
+                    | "grok"
+                    | "copilot"
+                    | "mastracode"
+                    | "kimi"
             )
         })
         .ok_or(Error::NoTranscript)?;
@@ -1123,8 +1166,12 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         // and Kilo each run as either of two, Mastra Code usually as node,
         // Kimi Code as either of two or as node running its npm entry.
         pid: match agent {
-            "hermes" => hermes::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
-            "kilo" => kilo::PROCESS_NAMES.iter().find_map(|name| foreground_pid(process, name)),
+            "hermes" => hermes::PROCESS_NAMES
+                .iter()
+                .find_map(|name| foreground_pid(process, name)),
+            "kilo" => kilo::PROCESS_NAMES
+                .iter()
+                .find_map(|name| foreground_pid(process, name)),
             "mastracode" => mastracode::pid(process),
             "kimi" => kimi::foreground_pid(process),
             _ => foreground_pid(process, agent),
@@ -1301,10 +1348,10 @@ fn entries(agent: &str, lines: &[u8], start: u64) -> Vec<Entry> {
             _ => entry(&value, at, offset),
         };
         // One `usage` per message id, however many content lines share it.
-        if let Some(key) = message_key(agent, &value) {
-            if !used.insert(key) {
-                entry.usage = None;
-            }
+        if let Some(key) = message_key(agent, &value)
+            && !used.insert(key)
+        {
+            entry.usage = None;
         }
         entries.push(entry);
     }

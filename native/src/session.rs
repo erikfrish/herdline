@@ -6,9 +6,9 @@
 //! of queueing them. Rarer events go through a small bounded queue.
 
 use crate::{
-    Error, Result, attach, clipboard, control,
+    Error, Result, attach, clipboard,
     composer::{self, Refusal, Registry},
-    delivery, hold, ingress,
+    control, delivery, hold, ingress,
     input::{self, Modifiers, Touch},
     render::RenderFrame,
     screen::Screen,
@@ -410,7 +410,9 @@ impl Session {
     /// it from a background thread.
     pub fn ingress(&self, request: &str) -> Result<String> {
         let request: ingress::Request = serde_json::from_str(request)?;
-        if request.session != self.shared.session || lock(&self.shared.boot).as_deref() != Some(request.boot.as_str()) {
+        if request.session != self.shared.session
+            || lock(&self.shared.boot).as_deref() != Some(request.boot.as_str())
+        {
             return Ok(delivery::refused(Refusal::BootChanged));
         }
         if request.op == ingress::Op::Send && hold::holds().is_held(&request.target()) {
@@ -425,7 +427,9 @@ impl Session {
                 _ => Err(Error::NotReady),
             };
         };
-        if request.op == ingress::Op::Abort && !matches!(request.instance.agent.as_str(), "opencode" | "kilo") {
+        if request.op == ingress::Op::Abort
+            && !matches!(request.instance.agent.as_str(), "opencode" | "kilo")
+        {
             return Ok(self.stop_pty(&exec, &request));
         }
         if request.instance.agent == "omp" {
@@ -447,18 +451,26 @@ impl Session {
             tracing::info!(?reason, "stop refused");
             json!({"route": "pty", "outcome": "refused", "reason": reason}).to_string()
         };
-        let uncertain = json!({"route": "pty", "outcome": "uncertain", "reason": Refusal::Unconfirmed}).to_string();
+        let uncertain =
+            json!({"route": "pty", "outcome": "uncertain", "reason": Refusal::Unconfirmed})
+                .to_string();
         let pane = request.pane.as_str();
         let instance = &request.instance;
         let target = request.target();
-        let fenced = |now: Option<&transcript::Identity>| composer::same_instance(instance, now).is_ok();
+        let fenced =
+            |now: Option<&transcript::Identity>| composer::same_instance(instance, now).is_ok();
         if !fenced(self.read_instance(pane).as_ref()) {
             return refused(pty::Refusal::AgentChanged);
         }
         // Where the history stood before the key: only lines after it count.
         let confirms = pty::confirms(&instance.agent);
         let read = |read| {
-            let request = transcript::Request { pane: pane.to_owned(), expect: Some(instance.clone()), read, media: None };
+            let request = transcript::Request {
+                pane: pane.to_owned(),
+                expect: Some(instance.clone()),
+                read,
+                media: None,
+            };
             match transcript::fetch(exec, &self.shared.session, &request) {
                 Ok(transcript::Answer::Page(page)) if page.identity == *instance => Some(page),
                 Ok(_) => None,
@@ -468,7 +480,11 @@ impl Session {
                 }
             }
         };
-        let before = if confirms { read(transcript::Read::Tail).map(|page| page.end) } else { None };
+        let before = if confirms {
+            read(transcript::Read::Tail).map(|page| page.end)
+        } else {
+            None
+        };
         // Chat reads a pane apart from the desktop's tab: off Herdr's shared
         // surface, its own visible screen is read for it, and the instance
         // fenced again past that read. Nothing is focused or resized.
@@ -490,7 +506,16 @@ impl Session {
         }
         // The frame at the tap decides, under the same locks as a delivery;
         // the pane's read screen only when the frame does not hold it.
-        let decided = self.with_surface(|registry, surface| pty::admit(registry, surface, &request.boot, pane, &instance.agent, screen.as_deref()));
+        let decided = self.with_surface(|registry, surface| {
+            pty::admit(
+                registry,
+                surface,
+                &request.boot,
+                pane,
+                &instance.agent,
+                screen.as_deref(),
+            )
+        });
         let key = match decided {
             Ok(key) => key,
             Err(reason) => return refused(reason),
@@ -512,7 +537,9 @@ impl Session {
                 pty::Press::Unknown => return uncertain,
             }
         } else {
-            let sent = self.handle.send_input(&request.boot, pane, vec![input::esc()]);
+            let sent = self
+                .handle
+                .send_input(&request.boot, pane, vec![input::esc()]);
             drop(steers);
             drop(holds);
             if let Err(error) = sent {
@@ -532,10 +559,11 @@ impl Session {
                 if registry.boot.as_deref() != Some(request.boot.as_str()) {
                     return uncertain;
                 }
-                registry
-                    .panes
-                    .get(pane)
-                    .is_some_and(|facts| facts.status.is_some_and(|status| status != herdr_client::protocol::AgentStatus::Working))
+                registry.panes.get(pane).is_some_and(|facts| {
+                    facts.status.is_some_and(|status| {
+                        status != herdr_client::protocol::AgentStatus::Working
+                    })
+                })
             };
             if !left_working {
                 continue;
@@ -544,7 +572,10 @@ impl Session {
             let Some(page) = read(transcript::Read::After { offset: before }) else {
                 return uncertain;
             };
-            if !page.reset && pty::shows_stop(&page.entries) && fenced(self.read_instance(pane).as_ref()) {
+            if !page.reset
+                && pty::shows_stop(&page.entries)
+                && fenced(self.read_instance(pane).as_ref())
+            {
                 return json!({"route": "pty", "outcome": "stopped", "key": key}).to_string();
             }
         }

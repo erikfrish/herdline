@@ -123,7 +123,6 @@ import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.StopRoute
 import io.github.erikfrish.herdline.core.StopRefused
 import androidx.annotation.StringRes
-import io.github.erikfrish.herdline.core.stop
 import io.github.erikfrish.herdline.core.ChatDialog
 import io.github.erikfrish.herdline.core.DIALOG_ANSWERED_ELSEWHERE
 import io.github.erikfrish.herdline.core.IngressProbe

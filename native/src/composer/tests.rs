@@ -1080,7 +1080,10 @@ fn claude_captured(cols: usize, prompt: &str, below: &[&str]) -> Vec<String> {
 // footer (cut or whole), a cut inside the mode words, an ellipsis after
 // the whole row, a mode never captured.
 const CLAUDE_UNKNOWN_BELOW: [&[&str]; 7] = [
-    &["  /clear    Clear conversation history", "  ⏵⏵ auto mode on (shift+tab"],
+    &[
+        "  /clear    Clear conversation history",
+        "  ⏵⏵ auto mode on (shift+tab",
+    ],
     &["  ⏵⏵ auto mode on (shift+tab · 3 files"],
     &["  ⏵⏵ auto mode on (shift+tab to cycle) · 3 files"],
     &["  ⏸ plan mode on (shift+tab to cycle)x"],
@@ -1418,10 +1421,19 @@ fn rgb(color: libghostty_vt::style::RgbColor) -> u32 {
 #[test]
 fn claude_chat_send_needs_its_caret_or_a_cursor_in_the_box() {
     type Edit = fn(&mut FrameData, u16, u16);
+    type Case<'a> = (
+        String,
+        u16,
+        u16,
+        Vec<&'a str>,
+        u16,
+        Edit,
+        Result<(), Refusal>,
+    );
     let same: Edit = |_, _, _| {};
     let [w30, w80] = [0, 1].map(|i| CLAUDE_CAPTURED_FOOTERS[i].1);
     let auto = [w30[0]];
-    let mut rows: Vec<(String, u16, u16, Vec<&str>, u16, Edit, Result<(), Refusal>)> = Vec::new();
+    let mut rows: Vec<Case<'_>> = Vec::new();
     for (cols, height, footers) in [(30, 20, w30), (80, 39, w80)] {
         for footer in footers {
             rows.push((
