@@ -22,6 +22,7 @@ import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
 import io.github.erikfrish.herdline.core.IngressSend
 import io.github.erikfrish.herdline.core.QUEUE_STEERING
+import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.SentRecord
@@ -128,15 +129,36 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
 }
 
 /**
- * [panel] beside the composer's notice of a Send refused for [refused]. A server the session
- * does not run, or one that can't be told apart, is said once: by the send-time notice, which
- * also says nothing was sent, so the panel's status of the same cause goes. Without such a
- * refusal, or for any other code, the panel stays as it is.
+ * Whether the composer's notice of [cause] says what [panel] says: one unusable endpoint, named
+ * by a Send refused for it or by Send's precheck. A server the session does not run, or one that
+ * can't be told apart, is that same cause only by name; any other failed check is the general
+ * [REASON_UNUSABLE], whatever the check was.
  */
-internal fun besideRefusal(panel: QueuePanel, refused: String?): QueuePanel =
-    if (panel is QueuePanel.Unusable && refused in SERVER_CAUSES && panel.reason == refused) QueuePanel.Hidden else panel
+internal fun sameCause(panel: QueuePanel, cause: String?): Boolean =
+    panel is QueuePanel.Unusable && cause != null &&
+        if (panel.reason in SERVER_CAUSES) cause == panel.reason else cause == REASON_UNUSABLE
 
-/** The unusable-endpoint causes both the panel and a refused Send name in their own words. */
+/**
+ * The code the composer's notice says of Send's block: a refused Send's [refusal], else Send's
+ * [precheck] with no Send at all; null while the slot [shown] says something else first.
+ */
+internal fun noticeCause(refusal: String?, precheck: String?, shown: String?): String? =
+    (refusal ?: precheck)?.takeIf { it == shown }
+
+/** [panel] beside the composer's notice of [cause]: one cause is said once, in the notice. */
+internal fun besideNotice(panel: QueuePanel, cause: String?): QueuePanel =
+    if (sameCause(panel, cause)) QueuePanel.Hidden else panel
+
+/**
+ * The notice's words for [cause] beside [panel], the more specific of the two: for a missing or
+ * untrusted server Send's own, which also say nothing was sent; for any other unusable endpoint
+ * the panel's, which name the check that failed (its reason, the format argument).
+ */
+@StringRes
+internal fun causeRes(cause: String, panel: QueuePanel): Int =
+    if (cause == REASON_UNUSABLE && panel is QueuePanel.Unusable && sameCause(panel, cause)) unusableRes(panel.reason) else reasonRes(cause)
+
+/** The unusable-endpoint causes both the panel and the notice name in their own words. */
 private val SERVER_CAUSES = setOf("needs_server", "server_discovery")
 
 /**

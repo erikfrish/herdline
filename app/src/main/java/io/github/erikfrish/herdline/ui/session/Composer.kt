@@ -1628,6 +1628,7 @@ private fun Editor(
         ),
     )
 
+    val panel = if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
     // Which single notice the slot shows, highest priority first.
     val notice = when {
         // Held while offline: the unconfirmed delivery stays said (R8).
@@ -1815,7 +1816,7 @@ private fun Editor(
                 reasonText(code ?: ""),
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
-            else -> Notice(reasonText(code ?: ""), cause = code)
+            else -> Notice(stringResource(causeRes(code ?: "", panel), (panel as? QueuePanel.Unusable)?.reason.orEmpty()), cause = code)
         }
         !attachReady -> Notice(stringResource(R.string.attachment_held), warning = attachState != AttachmentsState.Uploading)
         value.text.isEmpty() && confirmationShown -> draft.sent?.let { sent ->
@@ -1841,12 +1842,9 @@ private fun Editor(
     }
 
     if (reading) {
-        // A refused Send's notice already says why, in the send-time words: the panel's status of the same cause goes.
+        // An unusable endpoint the notice names is said there, once: the panel's line of the same cause goes.
         IngressQueuePanel(
-            besideRefusal(
-                if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe),
-                refusal?.takeIf { it == notice?.cause },
-            ),
+            besideNotice(panel, noticeCause(refusal, steadyPrecheck, notice?.cause)),
             withdrawing,
             withdrawNote,
             ::withdraw,
