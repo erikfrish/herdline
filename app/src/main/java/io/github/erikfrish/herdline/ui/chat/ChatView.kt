@@ -526,7 +526,7 @@ private fun ChatContent(
                 }
                 // The live state names each child under the tool call that spawned it; a read
                 // that fails keeps the last one. Only OMP's endpoint has one.
-                if (target.agent == "omp") {
+                if (target.agent.equals("omp", ignoreCase = true)) {
                     withContext(Dispatchers.IO) { connection.ingressState(target) }.onSuccess { probe ->
                         ompProbe = probe
                         liveSubagents = (probe as? IngressProbe.Live)?.state?.subagents.orEmpty()

@@ -610,8 +610,9 @@ User, assistant and tool-result images are read through the existing
 
 Chat's Send goes into OMP through the `herdline-ingress` extension
 (`host/omp/herdline-ingress.ts`, a repository asset: installed only on the
-user's own decision), using only OMP's public extension API (Slices O and
-O2 of the herdline-omp `erikfrish/herdline-ingress` branch).
+user's own decision), using OMP extension hooks that only the herdline-omp
+`erikfrish/herdline-ingress` branch has (Slices O and O2; see the upstream
+prerequisite above).
 
 - **Route.** With a Live endpoint for exactly the draft's instance, Send and
   steer go through it and the PTY box checks do not gate them; `auto`
