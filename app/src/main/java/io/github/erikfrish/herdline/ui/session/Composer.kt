@@ -1702,9 +1702,11 @@ private fun Editor(
     // check or by a steer whose paste never showed. Append inserts this draft
     // after it, without Enter; replacing it means clearing it in Terminal
     // first, since no remote clear exists that could not also reach an empty
-    // OMP prompt (where Ctrl+C arms exit).
+    // OMP prompt (where Ctrl+C arms exit). Append is an Insert, so it shows
+    // only while Insert is enabled; without it the notice names only the
+    // clear (TC-RCPT-5).
     val remoteDraft = Notice(
-        stringResource(R.string.composer_remote_draft),
+        stringResource(if (insertEnabled) R.string.composer_remote_draft else R.string.composer_remote_draft_no_append),
         // The one action here that delivers the draft: filled.
         NoticeAction(stringResource(R.string.composer_append), tag = "composer:append", primary = true) { deliver(submit = false) }.takeIf { insertEnabled },
         NoticeAction(

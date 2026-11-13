@@ -68,6 +68,7 @@
     <string name="reason_scrolled">窗格已向上滚动。请滚动到底部，再发送一次。未发送任何内容。</string>
     <string name="reason_remote_draft">输入框中已有文字</string>
     <string name="composer_remote_draft">代理的输入框中已有文字。“追加”会把你的文字加在后面，不按 Enter。</string>
+    <string name="composer_remote_draft_no_append">代理的输入框中已有文字。请在终端中清除后再发送。未发送任何内容。</string>
     <string name="composer_clear_in_terminal">在终端中清除</string>
     <string name="composer_clear_in_terminal_description">打开终端以清除输入框</string>
     <string name="reason_empty_text">没有可投递的内容</string>
