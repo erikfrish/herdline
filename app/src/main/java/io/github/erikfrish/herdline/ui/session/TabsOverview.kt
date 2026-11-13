@@ -812,7 +812,7 @@ private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, 
         glyph != null -> ({ StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = 18.dp) })
         selected -> ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) })
         else -> null
-    }, onClick = onClick)
+    }, tagPrefix = "overview", onClick = onClick)
 }
 
 @Composable

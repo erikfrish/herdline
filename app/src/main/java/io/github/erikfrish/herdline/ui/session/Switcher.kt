@@ -600,6 +600,7 @@ internal fun FilterChip(
     color: Color,
     tag: String,
     leading: (@Composable () -> Unit)? = null,
+    tagPrefix: String = "switcher",
     onClick: () -> Unit,
 ) {
     val fill by animateColorAsState(if (selected) color.copy(alpha = 0.22f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f), label = "chip")
@@ -608,7 +609,7 @@ internal fun FilterChip(
         Modifier
             .heightIn(min = 48.dp)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .testTag("switcher:filter:$tag"),
+            .testTag("$tagPrefix:filter:$tag"),
         contentAlignment = Alignment.Center,
     ) {
         Row(
