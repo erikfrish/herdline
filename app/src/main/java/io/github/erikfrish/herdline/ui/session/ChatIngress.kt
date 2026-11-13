@@ -136,7 +136,7 @@ internal fun queuePanel(probe: IngressProbe?): QueuePanel = when (probe) {
  * the missing control says so rather than vanish without a reason.
  */
 internal fun ompControlMissing(agent: String?, probe: IngressProbe?): Boolean =
-    agentNamed(agent, setOf("omp")) && (probe == IngressProbe.Absent || probe is IngressProbe.Unsupported)
+    agent.equals("omp", ignoreCase = true) && (probe == IngressProbe.Absent || probe is IngressProbe.Unsupported)
 
 /**
  * Whether the composer's notice of [cause] says what [panel] says: one unusable endpoint, named
