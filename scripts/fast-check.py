@@ -19,6 +19,7 @@ PROFILES = {
     "notifications": (["LiveFieldsTest", "DoneCardsTest"], []),
     "receipts": (["HandedReceiptTest", "SteerFlowTest", "ChatModelTest"], []),
     "forms": (["ChatFormsTest", "WaitingQuestionTest"], []),
+    "terminal": (["OutputFocusTest", "LineEditTest"], ["ui.terminal.TerminalViewImeTest"]),
 }
 PACKAGE = "io.github.erikfrish.herdline.qa"
 RUNNER = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"

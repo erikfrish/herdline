@@ -85,8 +85,9 @@ wide characters, colours and the cursor come from Ghostty.
   place. Two compact key rows add Esc, Tab, latching Ctrl and Alt, arrows,
   Enter, Backspace and shell symbols. Terminal has no Chat field; the keyboard
   types directly into the agent, including its autocomplete navigation.
-- Drag or fling to scroll, pinch to change the font size, long-press to select
-  and copy.
+- Drag or fling to scroll. Starting a one-finger vertical scroll hides the
+  soft keyboard; tap the terminal to open it again. Pinch zoom and selection
+  do not dismiss it. Pinch to change the font size, long-press to select and copy.
 - Closing a pane, tab or workspace asks first, because Herdr ends the programs
   in it.
 
@@ -269,7 +270,7 @@ dependencies, prefetch each URL it reports with `zig fetch <url>`.
 
 ### Fast changed-feature checks
 
-Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`)
+Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`, `terminal`)
 for the changed area only. The runner executes selected test owners, fails
 on failures or skipped owners, and writes timing plus logs under
 `app/build/reports/fast-check/`. Its check deadline is 120 seconds; a timeout
@@ -281,6 +282,7 @@ For rendered header or pin tests on an assigned emulator:
 ```sh
 just check-ui header emulator-5558
 just check-ui pin emulator-5558
+just check-ui terminal emulator-5558
 # QA2's isolated server uses its own exact transport and wrapper:
 just check-ui header localfilesystem:/bridge/guest.sock /home/erikfrish/.cache/herdline-qa2/sandbox/bin/adbq
 ```
