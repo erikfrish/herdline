@@ -6,14 +6,16 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.erikfrish.herdline.core.RenderFrame
-import org.junit.Assert.assertFalse
+import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -89,6 +91,17 @@ class TerminalViewImeTest {
             )
         }
         compose.waitUntil(TIMEOUT) { compose.runOnIdle { view.isAttachedToWindow && view.height > 0 } }
+    }
+
+    /** The keyboard and any selection go with this test's view, so the next test starts with neither. */
+    @After
+    fun hideKeyboard() {
+        if (!::view.isInitialized) return
+        compose.runOnIdle {
+            view.clearSelection()
+            view.hideKeyboard()
+        }
+        compose.waitUntil(TIMEOUT) { !keyboardShown() }
     }
 
     @Test
@@ -206,8 +219,13 @@ class TerminalViewImeTest {
 
     /** Fails if the keyboard goes down within a bounded window after the gesture. */
     private fun assertKeyboardStays() {
-        val hid = runCatching { compose.waitUntil(SETTLE) { !keyboardShown() } }.isSuccess
-        assertFalse("the keyboard was dismissed", hid)
+        try {
+            compose.waitUntil(SETTLE) { !keyboardShown() }
+        } catch (_: ComposeTimeoutException) {
+            // The window ran out with the keyboard still up.
+            return
+        }
+        fail("the keyboard was dismissed")
     }
 
     // Touches, in screen pixels
