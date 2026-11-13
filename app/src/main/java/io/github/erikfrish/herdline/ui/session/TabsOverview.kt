@@ -471,7 +471,12 @@ private fun OverviewRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (status != null) StatusGlyph(card.tab.status, 8.dp, Modifier.unseenMark(changed, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
+                if (status != null) {
+                    StatusGlyph(card.tab.status, 8.dp, Modifier.unseenMark(changed, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
+                } else if (changed) {
+                    // NIT-2: no glyph for Unknown, so the mark sits on a bare box the glyph's size.
+                    Box(Modifier.size(8.dp).unseenMark(true, 8.dp, scheme.surfaceContainerHigh, scheme.onSurface))
+                }
                 Text(
                     listOfNotNull(status, panes).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,

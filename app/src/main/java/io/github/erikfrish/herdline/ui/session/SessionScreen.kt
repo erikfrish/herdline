@@ -1031,6 +1031,11 @@ fun SessionScreen(
                                                     stringResource(R.string.chat_desktop_elsewhere_spoken_numbered, tabName, spoken.desktop, spoken.number, spoken.count)
                                                 is DesktopSpoken.InWorkspace ->
                                                     stringResource(R.string.chat_desktop_elsewhere_spoken_workspace, tabName, spoken.desktop, spoken.workspace)
+                                                is DesktopSpoken.InWorkspaceNumbered ->
+                                                    stringResource(
+                                                        R.string.chat_desktop_elsewhere_spoken_workspace_numbered,
+                                                        tabName, spoken.desktop, spoken.number, spoken.count,
+                                                    )
                                             },
                                         )
                                     }

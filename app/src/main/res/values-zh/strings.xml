@@ -466,6 +466,7 @@
     <string name="chat_desktop_elsewhere_spoken_same_tab">正在此处阅读 %1$s。桌面焦点在此标签页的另一个窗格。</string>
     <string name="chat_desktop_elsewhere_spoken_numbered">正在此处阅读 %1$s。桌面焦点在 %2$s（第 %3$d 个标签页，共 %4$d 个）。</string>
     <string name="chat_desktop_elsewhere_spoken_workspace">正在此处阅读 %1$s。桌面焦点在 %3$s 中的 %2$s。</string>
+    <string name="chat_desktop_elsewhere_spoken_workspace_numbered">正在此处阅读 %1$s。桌面焦点在第 %3$d 个工作区（共 %4$d 个）中的 %2$s。</string>
     <string name="chat_send_route">发送到 %1$s 的终端</string>
     <string name="terminal_opening">正在为 %1$s 打开终端…</string>
     <string name="terminal_open_failed">无法为 %1$s 打开终端。你仍在这里阅读它。</string>

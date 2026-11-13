@@ -60,17 +60,30 @@ fun desktopElsewhere(reading: String?, desktop: String?): String? =
 
 /**
  * A tab as the header says it: its [title] as displayed ([tabTitle]), its
- * 1-based [number] of [count] in its workspace's tabs, and that workspace's
- * [workspace] title as `session_place_spoken` says it.
+ * 1-based [number] of [count] in its workspace's tabs, that workspace's
+ * [workspace] title as `session_place_spoken` says it, and the workspace's
+ * 1-based place [workspaceNumber] of [workspaceCount] by `Workspace.number`.
  */
-data class SpokenTab(val id: String, val title: String, val number: Int, val count: Int, val workspace: String)
+data class SpokenTab(
+    val id: String,
+    val title: String,
+    val number: Int,
+    val count: Int,
+    val workspace: String,
+    val workspaceNumber: Int,
+    val workspaceCount: Int,
+)
 
 /** [tabId] as the header says it; a workspace without a readable label is [fallback], as the header's is. Null when not in view. */
 fun ShellView.spokenTab(tabId: String, fallback: String): SpokenTab? {
     val tab = tabs.firstOrNull { it.id == tabId } ?: return null
     val siblings = tabsOf(tab.workspace)
     val workspace = workspaces.firstOrNull { it.id == tab.workspace }?.let { readableTitle(it.label) } ?: fallback
-    return SpokenTab(tab.id, tabTitle(tab.id), siblings.indexOfFirst { it.id == tab.id } + 1, siblings.size, workspace)
+    val place = workspaces.sortedBy { it.number }.indexOfFirst { it.id == tab.workspace } + 1
+    return SpokenTab(
+        tab.id, tabTitle(tab.id), siblings.indexOfFirst { it.id == tab.id } + 1, siblings.size,
+        workspace, place, workspaces.size,
+    )
 }
 
 /** Which S2 sentence says where the desktop is (SN-1). */
@@ -86,18 +99,24 @@ sealed interface DesktopSpoken {
 
     /** A tab of another workspace with the same name: that workspace. */
     data class InWorkspace(val desktop: String, val workspace: String) : DesktopSpoken
+
+    /** As [InWorkspace], but that workspace is said as the one read here: its n of N. */
+    data class InWorkspaceNumbered(val desktop: String, val number: Int, val count: Int) : DesktopSpoken
 }
 
 /**
  * SN-1: the desktop's tab is said by name unless that name is the one of
  * [readTab], the tab read here (exact, as displayed: a case difference is
  * text the user sees differ). Then it is told apart by where it is: the same
- * tab, its place in the same workspace, or the other workspace.
+ * tab, its place in the same workspace, or the other workspace, by its
+ * place there too when that workspace is said as the one read here.
  */
 fun desktopSpoken(readTab: SpokenTab, desktopTab: SpokenTab, sameWorkspace: Boolean): DesktopSpoken = when {
     desktopTab.title != readTab.title -> DesktopSpoken.Named(desktopTab.title)
     desktopTab.id == readTab.id -> DesktopSpoken.SameTab
     sameWorkspace -> DesktopSpoken.Numbered(desktopTab.title, desktopTab.number, desktopTab.count)
+    desktopTab.workspace == readTab.workspace ->
+        DesktopSpoken.InWorkspaceNumbered(desktopTab.title, desktopTab.workspaceNumber, desktopTab.workspaceCount)
     else -> DesktopSpoken.InWorkspace(desktopTab.title, desktopTab.workspace)
 }
 

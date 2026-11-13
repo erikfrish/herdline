@@ -149,4 +149,18 @@ class ChatTargetTest {
         val view = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { if (it.id == "w2") it.copy(label = " ") else it }) }
         assertEquals(DesktopSpoken.InWorkspace("l6-read", "node"), view.spoken("t6", "u1"))
     }
+
+    @Test
+    fun aDesktopWorkspaceSaidAsTheOneReadHereIsSaidByItsPlace() {
+        // SHOULD-1, acceptance 5: both workspaces "ws", reading t6, the desktop on u1 is "in workspace 2 of 2".
+        val sameLabel = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { it.copy(label = "ws") }) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), sameLabel.spoken("t6", "u1"))
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 1, 2), sameLabel.spoken("u1", "t6"))
+        // Both unreadable: both said as the node's title, so numbered too.
+        val unreadable = sameNames().let { v -> v.copy(workspaces = v.workspaces.map { it.copy(label = " ") }) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), unreadable.spoken("t6", "u1"))
+        // The place is by Workspace.number, not list order.
+        val reordered = sameLabel.let { v -> v.copy(workspaces = v.workspaces.reversed()) }
+        assertEquals(DesktopSpoken.InWorkspaceNumbered("l6-read", 2, 2), reordered.spoken("t6", "u1"))
+    }
 }

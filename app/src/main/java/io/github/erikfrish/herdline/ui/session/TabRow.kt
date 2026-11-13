@@ -97,12 +97,14 @@ internal fun ShellView.heldPaneOf(tab: String, held: Set<String>): String? =
  * statuses [before] to [now]: a tab that was marked stays so, and a tab whose
  * glyph [bumps] (a real change into Blocked or Done) is marked, until it is
  * the [selectedId] tab, which never is. A tab with no earlier status is not
- * marked: nothing was seen before, so nothing changed since.
+ * marked: nothing was seen before, so nothing changed since. When that is the
+ * set [unseen] already holds, it is [unseen] itself, so a frame that changes
+ * no mark hands the same instance down and the rows that take it can skip.
  */
 internal fun nextUnseen(before: Map<String, AgentStatus>, now: List<Tab>, selectedId: String?, unseen: Set<String>): Set<String> =
     now.mapNotNullTo(HashSet()) { t ->
         t.id.takeIf { it != selectedId && (it in unseen || bumps(before[it], t.status)) }
-    }
+    }.let { if (it == unseen) unseen else it }
 
 /** What [rememberUnseenTabs] last applied: each tab's status and the marked tabs. */
 internal class SeenTabs(
@@ -309,6 +311,9 @@ internal fun TabRow(
                         ) {
                             if (t.status != AgentStatus.Unknown) {
                                 StatusGlyph(t.status, 10.dp, Modifier.unseenMark(mark, 10.dp, haloColor, markColor))
+                            } else if (mark) {
+                                // NIT-2: a marked tab whose agent fell to Unknown keeps the mark, on a bare glyph-sized box.
+                                Box(Modifier.size(10.dp).unseenMark(true, 10.dp, haloColor, markColor))
                             }
                             Text(
                                 tabRowTitle(title(t)),

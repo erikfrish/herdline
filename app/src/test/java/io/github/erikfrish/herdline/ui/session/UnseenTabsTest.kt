@@ -10,6 +10,7 @@ import androidx.compose.runtime.saveable.SaverScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,6 +46,18 @@ class UnseenTabsTest {
     @Test
     fun aClosedTabLosesItsMark() {
         assertEquals(emptySet<String>(), nextUnseen(mapOf("t1" to AgentStatus.Done), emptyList(), selectedId = null, unseen = setOf("t1")))
+    }
+
+    @Test
+    fun anUnchangedSetIsHandedBackAsTheSameInstanceAndAChangedOneIsNot() {
+        // SHOULD-2: a frame that changes no mark keeps the instance, so rows taking it can skip.
+        val unseen = setOf("t1")
+        val now = listOf(tab("t1", AgentStatus.Working), tab("t2", AgentStatus.Working))
+        val before = mapOf("t1" to AgentStatus.Done, "t2" to AgentStatus.Working)
+        assertSame(unseen, nextUnseen(before, now, selectedId = null, unseen = unseen))
+        // t2 turning Done adds a mark: a new set with it.
+        val bumped = listOf(tab("t1", AgentStatus.Working), tab("t2", AgentStatus.Done))
+        assertEquals(setOf("t1", "t2"), nextUnseen(before, bumped, selectedId = null, unseen = unseen))
     }
 
     @Test
