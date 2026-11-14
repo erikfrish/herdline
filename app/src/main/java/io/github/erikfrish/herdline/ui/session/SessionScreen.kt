@@ -8,7 +8,8 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
-import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
@@ -2439,27 +2440,38 @@ private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = n
     )
 }
 
-/** The host views a session on screen holds awake, and by how many sessions: two overlap while one cross-fades into the next. */
-private val awakeHolds = java.util.WeakHashMap<View, Int>()
+/** The windows a session on screen holds awake, and by how many sessions: two overlap while one cross-fades into the next. */
+private val awakeHolds = java.util.WeakHashMap<Window, Int>()
 
 /**
- * Keep screen on, while this session is composed: on the host view, never on the terminal's AndroidView,
- * which could outlive its composition and keep the window awake.
+ * Keep screen on, while this session is composed: the activity window's own FLAG_KEEP_SCREEN_ON, set and cleared
+ * here alone. A view's keepScreenOn only adds a derived flag to the window's layout params; once those were applied
+ * again as the client's own flags, ViewRootImpl kept the window awake after the view cleared it.
  * Released when it turns off or the session leaves for Nodes or Settings.
  */
 @Composable
 private fun KeepScreenOn(on: Boolean) {
     val host = LocalView.current
     DisposableEffect(on, host) {
-        if (on) {
-            awakeHolds[host] = (awakeHolds[host] ?: 0) + 1
-            host.keepScreenOn = true
+        val window = if (on) {
+            generateSequence(host.context) { (it as? ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()?.window
+        } else {
+            null
+        }
+        if (window != null) {
+            awakeHolds[window] = (awakeHolds[window] ?: 0) + 1
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose {
-            if (on) {
-                val left = (awakeHolds[host] ?: 1) - 1
-                if (left > 0) awakeHolds[host] = left else awakeHolds.remove(host)
-                host.keepScreenOn = left > 0
+            if (window != null) {
+                val left = (awakeHolds[window] ?: 1) - 1
+                if (left > 0) {
+                    awakeHolds[window] = left
+                } else {
+                    awakeHolds.remove(window)
+                    // Window.setFlags always dispatches its attributes, so this also replaces a stale client flag.
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
             }
         }
     }
