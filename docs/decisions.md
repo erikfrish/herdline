@@ -365,6 +365,8 @@ Switcher:
   once on release, after at least 24 dp (and touch slop) on a clearly
   dominant axis. A diagonal, second finger, cancellation or destination
   change cancels it. Layout reset restores the header-swipes switch.
+  With the switch off, a drag is still not a tap: it neither navigates nor
+  opens Tabs. Ordinary tap and long press remain available.
 - **Lock-screen words** (`service/NotificationContent.kt`):
   - There is one pure choice per notification (attached card, connection
     lost, agent note, group summary), made from the privacy setting and the

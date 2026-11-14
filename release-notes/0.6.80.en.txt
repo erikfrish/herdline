@@ -1,0 +1,7 @@
+Herdline 0.6.80 (experimental) — header swipes without accidental taps
+
+- Includes the header gesture controls from 0.6.79: left/right select next/previous tab within the current workspace, down opens Tabs or reveals the wide sidebar, up hides the keyboard. Settings > Layout > Gestures turns navigation swipes off; tap and long-press actions remain.
+- Fixes a disabled-gesture drag being mistaken for a title tap and opening Tabs. With Header swipes off, intentional drags no longer navigate or click. Ordinary taps still open Tabs and long presses still offer Rename / Close.
+- No content gestures, delivery actions, default changes, or host-focus policy changes beyond the existing navigation actions. Drafts and delivery holds remain pane-bound.
+
+Verification is recorded separately: the four-direction feature delta belongs to the exact 10117 QA artifact; the disabled-drag repair has its own regression and exact-candidate check. Experimental local candidate only; no publication or phone installation is implied.

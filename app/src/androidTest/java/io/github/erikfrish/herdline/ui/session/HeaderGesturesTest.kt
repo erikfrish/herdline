@@ -98,19 +98,24 @@ class HeaderGesturesTest {
         assertEquals(listOf("long"), presses.toList())
         assertEquals(emptyList<HeaderSwipe>(), swipes.toList())
 
-        // Disabled: the gesture is inert and the plain tap still works.
+        // Disabled navigation must not turn an intentional in-bounds drag into the title's click.
         enabled = false
         compose.waitForIdle()
-        within { c, travel ->
-            down(c)
-            moveTo(c + Offset(2 * travel, 0f))
-            up()
-        }
-        assertEquals(emptyList<HeaderSwipe>(), swipes.toList())
-        // A tap on the disabled control keeps its ordinary click.
         presses.clear()
+        for (direction in listOf(-1f, 1f)) {
+            within { c, travel ->
+                down(c - Offset(direction * travel, 0f))
+                moveTo(c + Offset(direction * travel, 0f))
+                up()
+            }
+            assertEquals(emptyList<HeaderSwipe>(), swipes.toList())
+            assertEquals(emptyList<String>(), presses.toList())
+        }
         place().performTouchInput { click(center) }
         assertEquals(listOf("click"), presses.toList())
+        presses.clear()
+        place().performTouchInput { longClick(center) }
+        assertEquals(listOf("long"), presses.toList())
     }
 
     @Test

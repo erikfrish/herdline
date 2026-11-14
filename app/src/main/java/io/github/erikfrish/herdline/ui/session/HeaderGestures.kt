@@ -42,9 +42,9 @@ private val SwipeTravel = 24.dp
  * finger touches even briefly, after the long press time (which belongs to
  * the menu), when some other handler consumes the gesture, or when [target]
  * changes while the finger is down. Such a release is consumed too, so it
- * never falls through as a click. A gesture that started with [enabled] false
- * or a null [target] stays inert: plain clicks, long presses and cancellation
- * behave exactly as they always did.
+ * never falls through as a click. With [enabled] false or a null [target],
+ * navigation stays off but drags still cancel the title click. Ordinary
+ * taps and long presses keep their existing actions.
  *
  * [target] identifies the host / session / workspace / tab the press belongs
  * to. It is captured at touch down and compared by identity, so any change —
@@ -80,7 +80,7 @@ internal fun Modifier.headerSwipes(
             var navigate: HeaderSwipe? = null
             var swallow = false
             var dead = false
-            if (armed && event.changes.size > 1) {
+            if (event.changes.size > 1) {
                 dead = true // fingers landing together: multi-touch, no recognition
                 swallow = true
             }
@@ -89,7 +89,7 @@ internal fun Modifier.headerSwipes(
             while (true) {
                 event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.firstOrNull { it.id == id }
-                if (armed && event.changes.size > 1) {
+                if (event.changes.size > 1) {
                     dead = true // multi-touch ends recognition for good
                     swallow = true
                 }
@@ -98,7 +98,7 @@ internal fun Modifier.headerSwipes(
                     dead = true
                     swallow = true
                 }
-                if (armed && !dead && navigate == null && change != null) {
+                if (!dead && navigate == null && change != null) {
                     val dx = change.position.x - startX
                     val dy = change.position.y - startY
                     if (maxOf(abs(dx), abs(dy)) >= travel) {
@@ -108,6 +108,7 @@ internal fun Modifier.headerSwipes(
                         } else {
                             swallow = true // a failed swipe never clicks either
                             navigate = when {
+                                !armed -> { dead = true; null }
                                 abs(dx) >= 2 * abs(dy) -> if (dx > 0) HeaderSwipe.Right else HeaderSwipe.Left
                                 abs(dy) >= 2 * abs(dx) -> if (dy > 0) HeaderSwipe.Down else HeaderSwipe.Up
                                 else -> { dead = true; null }
