@@ -672,6 +672,11 @@ prerequisite above).
 - **Route.** With a Live endpoint for exactly the draft's instance, Send and
   steer go through it and the PTY box checks do not gate them; `auto`
   steers a working agent and starts an idle one's turn. Insert stays on PTY.
+- **Availability follows the route.** In Chat, an `unsupported` or `unusable`
+  endpoint disables Send even if the pane's send check passes. A Live endpoint
+  still takes precedence over the pane check; absence keeps the pane fallback.
+  Insert remains governed by its own PTY check. The compact Unsupported panel
+  explains the disabled button without a duplicate warning or a Checking notice.
 - **Fallback.** Only `{"endpoint":"absent"}` (this instance publishes no
   endpoint, known before anything was sent) lets Send type into the pane.
   `unsupported` (extension installed, OMP lacks hooks; the sidecar lists

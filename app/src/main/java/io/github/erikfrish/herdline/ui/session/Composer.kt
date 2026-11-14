@@ -1685,11 +1685,9 @@ private fun Editor(
     // Why Send is off before it is tapped: a disabled button cannot be
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
-    // A live endpoint takes Chat's Send without the pane: the box checks,
-    // which read what the pane shows, neither gate nor explain it then.
-    val endpointReady = reading && probe is IngressProbe.Live
-    val sendGate = if (reading) check?.chatSend else check?.send
-    val precheck = sendPrecheckCode(sendGate?.takeIf { !endpointReady && !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason, probe)
+    // Match the route delivery actually uses; only an absent endpoint permits the pane fallback.
+    val sendGate = composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send)
+    val precheck = sendGate?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
     var settleTick by remember(key) { mutableStateOf(0) }
@@ -1724,7 +1722,7 @@ private fun Editor(
         desktopElsewhere = reading && desktop != key.pane,
     )
     val insertEnabled = insertBlocked == null
-    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && (endpointReady || sendGate?.ok == true)
+    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && sendGate?.ok == true
     // Endpoint steering accepts ready attachments; PTY steering stays text-only.
     val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
         draft.instance != null && (endpointSteer || draft.attachments.isEmpty() && check?.steer?.ok == true)
@@ -1866,6 +1864,8 @@ private fun Editor(
             NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
         )
         blocked != null -> when (val code = blocked) {
+            // The compact panel already explains this refusal and opens its full hook diagnostic.
+            REASON_UNSUPPORTED -> if (panel is QueuePanel.Unsupported) null else Notice(reasonText(code ?: ""), cause = code)
             // Insert goes only where its own check passes; Send stays disabled.
             "agent_working" -> {
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
@@ -1968,7 +1968,9 @@ private fun Editor(
             )
         }
         else -> null
-    } ?: when (silentSendHold(sendEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason))) {
+    } ?: when (silentSendHold(sendEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason)).takeUnless {
+        reading && !mismatched && panel is QueuePanel.Unsupported
+    }) {
         // Never a silent dead Send: while a reason settles, or the tap is
         // being checked, the slot says so (lab.8 Chat report), and names a
         // resize the check sees right now (10018 RZ-text).

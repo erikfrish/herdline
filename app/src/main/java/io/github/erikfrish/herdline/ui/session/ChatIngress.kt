@@ -24,10 +24,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
 import io.github.erikfrish.herdline.core.IngressSend
 import io.github.erikfrish.herdline.core.QUEUE_STEERING
+import io.github.erikfrish.herdline.core.REASON_UNSUPPORTED
 import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.data.Draft
@@ -106,13 +108,26 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
-/**
- * The code Send's precheck shows for the pane's refused box check [gate]: where the
- * endpoint said its server is missing or can't be told apart, that reason, since the
- * box check is the PTY route's and says nothing of the program's own server.
- */
-internal fun sendPrecheckCode(gate: String?, probe: IngressProbe?): String? =
-    gate?.let { code -> (probe as? IngressProbe.Unusable)?.reason?.takeIf { it == "needs_server" || it == "server_discovery" } ?: code }
+/** The route Send will actually use: a known endpoint refusal cannot fall back to a successful pane check. */
+internal fun composerSendGate(reading: Boolean, probe: IngressProbe?, pane: ComposerCheck.Gate?): ComposerCheck.Gate? {
+    if (!reading) return pane
+    return when (probe) {
+        is IngressProbe.Live -> ENDPOINT_READY
+        is IngressProbe.Unsupported -> ENDPOINT_UNSUPPORTED
+        is IngressProbe.Unusable -> when (probe.reason) {
+            "needs_server" -> ENDPOINT_NEEDS_SERVER
+            "server_discovery" -> ENDPOINT_SERVER_DISCOVERY
+            else -> ENDPOINT_UNUSABLE
+        }
+        IngressProbe.Absent, null -> pane
+    }
+}
+
+private val ENDPOINT_READY = ComposerCheck.Gate(true, null)
+private val ENDPOINT_UNSUPPORTED = ComposerCheck.Gate(false, REASON_UNSUPPORTED)
+private val ENDPOINT_UNUSABLE = ComposerCheck.Gate(false, REASON_UNUSABLE)
+private val ENDPOINT_NEEDS_SERVER = ComposerCheck.Gate(false, "needs_server")
+private val ENDPOINT_SERVER_DISCOVERY = ComposerCheck.Gate(false, "server_discovery")
 
 /** What the queue panel shows. */
 internal sealed interface QueuePanel {
