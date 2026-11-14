@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10104,
-    "versionName": "0.6.68",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.68/herdline-0.6.68.apk",
-    "sha256": "c359ecc69222d96a3a1fb5f12edaf6474c1c7b5003f6fd0a2803ea081aa0631f",
-    "size": 25030811,
+    "versionCode": 10118,
+    "versionName": "0.6.80",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.80/herdline-0.6.80.apk",
+    "sha256": "438663da8bb5efe2205e8a08670b6e40eeade748e049bf370deba699bcb41621",
+    "size": 25051275,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused QA variant emulator checks passed; exact signed release APK and physical phones not runtime-tested. Limits are documented in the release notes."
+      "reason": "Focused QA passed; signed APK upgrade/cold-launch smoke passed. Connected gestures: QA variant only; not full QA."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.68 (Experimental)\n\n- Removed the ineffective Output focus switch and its obsolete output-window code.\n- Disabled Insert without Enter now explains why it is unavailable, in English and Chinese. Delivery safety checks remain unchanged.\n- Notification text and actions refresh after app or system language changes without reconnecting.\n- Bell touch feedback works in foreground Chat and Terminal, reads the current setting for each bell, and follows Android touch-feedback settings. No background vibration is added.\n- Attach and Stop capabilities now share the authoritative Harness route definitions.\n- Updated dependencies, including russh 0.65.1, AGP 9.5.1 and Gradle 9.8.2. Repaired Rust formatting and Clippy failures; added exact-source CI verification before workflow publication and bounded rendered UI checks.\n\nVerification: 131 selected JVM tests, Rust workspace tests, Clippy, formatting and actionlint passed. Eleven instrumented UI tests passed. Emulator QA verified menu removal, enabled Insert and representative refusal reasons, bell on/off behavior, notification language changes, and Working → Done → Working.\n\nLimits: not every transient Insert refusal was exercised on a device; locale behavior below Android 13 was source-reviewed only. Physical vibration, physical phones and Samsung Now Bar placement are not verified. This is an experimental candidate, not a fully verified stable release."
+      "en": "Herdline 0.6.80 (Experimental)\n\nChanges since 0.6.68:\n- Header gestures: swipe left/right on the workspace/tab title for next/previous tab, down for Tabs, up to hide the keyboard. Tabs stop at workspace ends. Settings > Layout > Gestures disables swipes without turning drags into taps. Buttons, tap/long-press, drafts and delivery holds remain.\n- App updates: responsive cancellation, recovery of a verified APK waiting for install permission after process death, and one installer handoff at a time. Every handoff rechecks the APK; startup never downloads or installs automatically.\n- Hide preferences now work in List, Two columns and Workspace rails. Hidden filters no longer retain an invisible selection. English/Chinese help explains Tab order and reset/privacy scope accurately.\n- Keep screen on releases after navigation or disabling the setting. Notification switches also suppress matching Herdr echoes. Header accessibility bounds exclude scrolled Chat actions.\n- Unsupported OMP endpoints show a compact refusal with scrollable Details. Send is disabled when the endpoint refuses, without changing Insert or the absent-endpoint fallback.\n\nVerification: focused QA-variant checks cover these changes; the gesture regression fails before the fix and passes afterward. The signed APK passed an isolated upgrade/cold-launch smoke, preserving the saved host, settings and trust; its gesture switch persisted. Connected gestures were tested on the QA variant, not the signed APK. Updater checks used a real published APK and Android installer. This is not a full-device QA pass.\n\nLimits: phones, wide-sidebar gestures, Android 11 permission-toggle process death, and some updater timing/localization cases remain unverified. Full harness support and stock Samsung Now Bar placement are not claimed. Public OMP through 18.20.2 lacks required control APIs; image Steer, Chat questionnaire replies and acknowledged Steer remain unavailable. No patched OMP was deployed.\n"
     }
   }
 }
