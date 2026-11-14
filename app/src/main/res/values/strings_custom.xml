@@ -151,7 +151,7 @@
     <string name="controls_places">Places (pinned and recent)</string>
     <string name="controls_filters">Status filters</string>
     <string name="controls_filters_help">While hidden, the Tabs list always shows All.</string>
-    <string name="controls_fixed">Send, Chat | Terminal, Search and the order selector are always shown. Insert without Enter stays in the + menu or inside the larger editor.</string>
+    <string name="controls_fixed">Send, Chat | Terminal and Search cannot be hidden here. The order selector stays visible in List and the sidebar. Insert without Enter stays in the + menu or inside the larger editor.</string>
     <string name="composer_hide_keyboard">Hide keyboard</string>
     <string name="composer_portrait_reaches_send">%1$s. Portrait gives the pane 12 rows</string>
     <string name="terminal_pane_no_room">No row left for this pane: Herdr\'s border takes the whole terminal</string>

@@ -1,10 +1,14 @@
 # Session order
 
-The switcher lists places in one of two orders. The order is chosen with
-the **Order** selector (Workspace | Last activity) under the search field of
-the Tabs sheet and the tablet sidebar, or in Settings › Layout › Tab order.
-Both write the same persisted setting (`target_order` in the `settings`
-preferences); the default is Workspace.
+The Tabs sheet in **List** view and the tablet sidebar list places in one of
+two orders. Choose with the **Order** selector (Workspace | Last activity)
+under their search field, or in Settings › Layout › Tab order. Both write
+the same persisted setting (`target_order` in the `settings` preferences);
+the default is Workspace.
+
+**Two columns** and **Workspace rails** always group tabs by workspace in
+Herdr's workspace and tab order. They have no Order selector and do not use
+the saved Tab order choice. Returning to List restores that choice.
 
 | Order | What it shows |
 |---|---|
@@ -76,8 +80,8 @@ empty; a plain search finds them the same way.
 ## The Tabs view
 
 The phone Tabs sheet opens as the list (`TabsView.List`, the default), as
-the same rows in a compact two-column layout (`TabsView.TwoColumns`), or as
-workspace rails (`TabsView.Rails`): workspaces scroll down, and each
+a compact two-column tab overview grouped by workspace (`TabsView.TwoColumns`),
+or as workspace rails (`TabsView.Rails`): workspaces scroll down, and each
 workspace's tabs sit in one row that scrolls sideways, ending in a New tab
 tile for that workspace (not while a search or filter narrows the list).
 The view is chosen in Settings › Layout › Tabs view.
