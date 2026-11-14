@@ -1,7 +1,12 @@
-Herdline 0.6.80 (experimental) — header swipes without accidental taps
+Herdline 0.6.80 (Experimental)
 
-- Includes the header gesture controls from 0.6.79: left/right select next/previous tab within the current workspace, down opens Tabs or reveals the wide sidebar, up hides the keyboard. Settings > Layout > Gestures turns navigation swipes off; tap and long-press actions remain.
-- Fixes a disabled-gesture drag being mistaken for a title tap and opening Tabs. With Header swipes off, intentional drags no longer navigate or click. Ordinary taps still open Tabs and long presses still offer Rename / Close.
-- No content gestures, delivery actions, default changes, or host-focus policy changes beyond the existing navigation actions. Drafts and delivery holds remain pane-bound.
+Changes since 0.6.68:
+- Header gestures: swipe left/right on the workspace/tab title for next/previous tab, down for Tabs, up to hide the keyboard. Tabs stop at workspace ends. Settings > Layout > Gestures disables swipes without turning drags into taps. Buttons, tap/long-press, drafts and delivery holds remain.
+- App updates: responsive cancellation, recovery of a verified APK waiting for install permission after process death, and one installer handoff at a time. Every handoff rechecks the APK; startup never downloads or installs automatically.
+- Hide preferences now work in List, Two columns and Workspace rails. Hidden filters no longer retain an invisible selection. English/Chinese help explains Tab order and reset/privacy scope accurately.
+- Keep screen on releases after navigation or disabling the setting. Notification switches also suppress matching Herdr echoes. Header accessibility bounds exclude scrolled Chat actions.
+- Unsupported OMP endpoints show a compact refusal with scrollable Details. Send is disabled when the endpoint refuses, without changing Insert or the absent-endpoint fallback.
 
-Verification is recorded separately: the four-direction feature delta belongs to the exact 10117 QA artifact; the disabled-drag repair has its own regression and exact-candidate check. Experimental local candidate only; no publication or phone installation is implied.
+Verification: focused QA-variant checks cover these changes; the gesture regression fails before the fix and passes afterward. The signed APK passed an isolated upgrade/cold-launch smoke, preserving the saved host, settings and trust; its gesture switch persisted. Connected gestures were tested on the QA variant, not the signed APK. Updater checks used a real published APK and Android installer. This is not a full-device QA pass.
+
+Limits: phones, wide-sidebar gestures, Android 11 permission-toggle process death, and some updater timing/localization cases remain unverified. Full harness support and stock Samsung Now Bar placement are not claimed. Public OMP through 18.20.2 lacks required control APIs; image Steer, Chat questionnaire replies and acknowledged Steer remain unavailable. No patched OMP was deployed.
