@@ -1,0 +1,7 @@
+Herdline 0.6.76 (experimental) — accessibility bounds respect the full header
+
+- The session header now occludes scrolled Chat accessibility nodes as one non-merging container, including the gaps between header controls. The earlier stacking fix restored header targets but left a partly scrolled action's reported rectangle extending into those gaps.
+- No label, action, merged controls, spacer or resized touch target is introduced. Drawing, scrolling and header taps are unchanged. The pinned Compose 1.12 container property is used with a local deprecation suppression because the newer traversal-group property does not affect the uncovered accessibility-bounds pass.
+- Includes the updater lifecycle, installer single-flight, all-view hide preferences, reset-privacy wording, window-owned Keep screen on and disabled-attention echo suppression repairs from 0.6.69–0.6.75.
+
+The full updater lifecycle and seven Settings section families have exercised evidence with explicit exclusions. The exact-candidate accessibility boundary retest is recorded separately; this text states the intended implementation, not an unobserved device pass. No publication or phone installation is implied.

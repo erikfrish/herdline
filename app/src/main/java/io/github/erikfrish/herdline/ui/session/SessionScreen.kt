@@ -124,6 +124,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.isContainer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -930,8 +931,10 @@ fun SessionScreen(
                 SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
                     val headerColor = accent.copy(alpha = if (dark) 0.14f else 0.1f).compositeOver(chromeColor)
-                    // Header targets take precedence over clipped Chat actions in the accessibility tree too.
-                    Box(Modifier.zIndex(1f)) {
+                    // Compose 1.12 needs an important, non-merging header boundary to occlude its gaps too.
+                    // isTraversalGroup does not participate in that pass; this adds no label, action or focus stop.
+                    @Suppress("DEPRECATION")
+                    Box(Modifier.zIndex(1f).semantics { isContainer = true }) {
                         Box(
                             Modifier
                                 .matchParentSize()

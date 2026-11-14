@@ -98,6 +98,12 @@ they start with `native/`.
   scrolled Chat action claimed part of the header's accessibility rectangle.
   Header targets retain their full bounds; Chat actions remain reachable in
   the visible content without hiding them or shrinking their touch targets.
+  - With the pinned Compose 1.12 dependency the header also declares a
+    non-merging accessibility container, so its full rectangle occludes the
+    gaps between targets. `isTraversalGroup` alone is not important to the
+    uncovered-bounds pass. The locally suppressed deprecated `isContainer`
+    API adds no label or action; verify platform accessibility bounds again
+    on a Compose upgrade, including a partly scrolled action and the header.
 - **Hidden status filters mean All.** Opening Tabs with its status chips
   hidden resets any earlier chip selection to All in List, Two columns and
   Workspace rails. Hiding the controls never leaves an invisible filter
