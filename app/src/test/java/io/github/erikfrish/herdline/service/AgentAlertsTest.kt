@@ -66,10 +66,14 @@ class AgentAlertsTest {
     fun herdrsPanelessEchoOfAPaneNotificationNeverAddsASecondRow() {
         // lab.3 D6: Herdr's pane-less copy arrived ~1 s after the pane's Finished.
         val bare = AlertKey("lab", null)
-        val posted = mapOf(pane to 10_000L)
-        assertTrue(HerdrEcho.isEcho(bare, 11_000L, posted))
-        assertFalse(HerdrEcho.isEcho(bare, 16_000L, posted))
-        assertFalse(HerdrEcho.isEcho(AlertKey("box", null), 11_000L, posted))
+        val echo = HerdrEcho()
+        // Received, whether or not its switch let anything show it: the copy is still an echo.
+        echo.received(pane, 10_000L)
+        assertTrue(echo.isEcho(bare, 11_000L))
+        // A pane-less one later, or on another host, is a notification of its own.
+        assertFalse(echo.isEcho(bare, 16_000L))
+        assertFalse(echo.isEcho(AlertKey("box", null), 11_000L))
+        assertFalse(echo.isEcho(AlertKey("lab", "w1:p2"), 11_000L))
         // The copy first, the pane's own notification second: the copy goes.
         assertEquals(bare, HerdrEcho.echoBefore(pane, 11_000L, mapOf(bare to 10_000L)))
         assertNull(HerdrEcho.echoBefore(pane, 20_000L, mapOf(bare to 10_000L)))

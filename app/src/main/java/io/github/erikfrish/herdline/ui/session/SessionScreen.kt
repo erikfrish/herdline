@@ -183,6 +183,8 @@ import io.github.erikfrish.herdline.data.PaneModes
 import io.github.erikfrish.herdline.data.showsChat
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.service.AgentNotifications
+import io.github.erikfrish.herdline.service.AlertKey
+import io.github.erikfrish.herdline.service.HerdrEcho
 import io.github.erikfrish.herdline.service.MonitorKey
 import io.github.erikfrish.herdline.service.LockGate
 import io.github.erikfrish.herdline.service.NoteSurface
@@ -319,6 +321,8 @@ fun SessionScreen(
     // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
+    // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
+    val bareBanners = remember { HashMap<Long, Long>() }
     var latched by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var prompt by remember { mutableStateOf<Prompt?>(null) }
@@ -465,13 +469,23 @@ fun SessionScreen(
                 is Connection.Event.Problem -> banners = banners.add(AgentNote(event.message, null, NoteKind.Problem, null, ++noteCount))
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
+                    val key = AlertKey(node.id, event.pane)
+                    val now = System.currentTimeMillis()
+                    // Before any switch: a pane notification nothing shows still makes its pane-less copy an echo.
+                    AgentNotifications.echoes.received(key, now)
+                    if (event.pane != null) {
+                        // Every pane-less banner before now is either this one's echo or past its window.
+                        bareBanners.forEach { (id, at) -> if (HerdrEcho.follows(at, now)) banners = banners.dismiss(id) }
+                        bareBanners.clear()
+                    }
                     val route = routeNote(
                         viewing = app.viewingSession == node.id,
                         locked = LockGate.isDeviceLocked(context),
                         enabled = if (event.attention) settings.notifyAttention else settings.notifyDone,
                     )
-                    if (route == NoteSurface.Banner) {
+                    if (route == NoteSurface.Banner && !AgentNotifications.echoes.isEcho(key, now)) {
                         val shown = connection.view.value
+                        val id = ++noteCount
                         banners = banners.add(
                             AgentNote(
                                 // The system notification's words: Herdr's title, and where the pane is.
@@ -479,9 +493,10 @@ fun SessionScreen(
                                 location = event.pane?.let { pane -> shown?.let { notificationBody(it, pane) } } ?: event.body,
                                 kind = if (event.attention) NoteKind.Attention else NoteKind.Finished,
                                 pane = event.pane,
-                                id = ++noteCount,
+                                id = id,
                             ),
                         )
+                        if (event.pane == null) bareBanners[id] = now
                     }
                 }
             }

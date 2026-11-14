@@ -86,23 +86,45 @@ class AgentAlerts {
 
 /**
  * Herdr follows a pane's semantic notification with a classic one that names
- * no pane, about a second later (lab.3 D6). The pane's own row already says
- * it, so a pane-less notification posted within [WINDOW_MS] of a pane
+ * no pane, about a second later (lab.3 D6). The pane's own notification already
+ * says it, so a pane-less notification received within [WINDOW_MS] of a pane
  * notification of the same node is an echo. A pane-less one with no pane
  * notification near it, such as a program's own terminal notification, stays.
+ *
+ * What counts is the pane notification Herdr sent, not one Herdline showed: with
+ * its switch off nothing shows it, and its classic copy, which always reads as a
+ * completion, must not slip through the other switch.
  */
-object HerdrEcho {
-    const val WINDOW_MS = 5_000L
+class HerdrEcho {
+    private val panes = HashMap<AlertKey, Long>()
 
-    /** Whether a notification for [key] at [at] repeats one [posted] for a pane of its node. */
-    fun isEcho(key: AlertKey, at: Long, posted: Map<AlertKey, Long>): Boolean =
-        key.pane == null && posted.any { (k, t) -> k.nodeId == key.nodeId && k.pane != null && at - t in 0..WINDOW_MS }
+    /**
+     * Herdr's notification for [key] arrived at [at], before any switch or surface
+     * decides on it. Each receiver of the event records it; a repeat only moves its time.
+     */
+    @Synchronized
+    fun received(key: AlertKey, at: Long) {
+        panes.values.removeAll { at - it > WINDOW_MS }
+        if (key.pane != null) panes[key] = maxOf(at, panes[key] ?: at)
+    }
 
-    /** The pane-less notification of [key]'s node that a pane notification at [at] shows was an echo. */
-    fun echoBefore(key: AlertKey, at: Long, posted: Map<AlertKey, Long>): AlertKey? {
-        if (key.pane == null) return null
-        val bare = AlertKey(key.nodeId, null)
-        return bare.takeIf { posted[it]?.let { t -> at - t in 0..WINDOW_MS } == true }
+    /** Whether a notification for [key] at [at] repeats a pane notification of its node received just before. */
+    @Synchronized
+    fun isEcho(key: AlertKey, at: Long): Boolean =
+        key.pane == null && panes.any { (k, t) -> k.nodeId == key.nodeId && follows(t, at) }
+
+    companion object {
+        const val WINDOW_MS = 5_000L
+
+        /** Whether [at] is within [WINDOW_MS] after [earlier]. */
+        fun follows(earlier: Long, at: Long): Boolean = at - earlier in 0..WINDOW_MS
+
+        /** The pane-less notification of [key]'s node that a pane notification at [at] shows was an echo. */
+        fun echoBefore(key: AlertKey, at: Long, posted: Map<AlertKey, Long>): AlertKey? {
+            if (key.pane == null) return null
+            val bare = AlertKey(key.nodeId, null)
+            return bare.takeIf { posted[it]?.let { t -> follows(t, at) } == true }
+        }
     }
 }
 

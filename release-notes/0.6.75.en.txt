@@ -1,0 +1,7 @@
+Herdline 0.6.75 (experimental) — notification switches also cover Herdr echoes
+
+- Herdr's pane notification is now recorded before the app decides whether its attention or finished switch allows it. A plain pane-less copy cannot slip through the Finished switch when the original Needs input notification is disabled.
+- Reverse-order plain copies are withdrawn even if the semantic pane notification is not shown. The same echo observation applies to the in-session banner. Independent pane-less notifications outside the existing matching window and notifications from other hosts retain their previous behavior.
+- Includes the updater lifecycle, single-flight installer, overview hiding, reset privacy wording, header accessibility and window-owned keep-awake repairs from 0.6.69–0.6.74.
+
+The bypass was reproduced on the QA emulator with attention off and finished notifications on. Exact-candidate regression checks and the complete Settings walkthrough are recorded separately; this text describes the implemented correction, not a full device-coverage claim. No publication or phone installation is implied.

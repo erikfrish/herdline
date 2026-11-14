@@ -55,6 +55,13 @@ if it comes second, withdrawn if it came first. A pane-less one with no pane
 notification near it, such as an agent's own terminal notification from the
 pane Herdr has focused, still shows and opens the session.
 
+Echo matching observes received semantic notifications before user switches
+choose whether to display them. Turning Needs input off must therefore not
+let its plain copy through the Finished switch. The session banner uses the
+same received-event observation; reverse-order copies are withdrawn there
+as well. Independent pane-less notifications outside the matching window
+and notifications from another host remain unaffected.
+
 ## Alert policy
 
 - A new Needs input or Done for a pane alerts on its channel.
