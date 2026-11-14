@@ -350,8 +350,21 @@ Switcher:
   - Backward scroll is unchanged.
   - Panes whose program reads the mouse or uses the alternate screen get
     every step, as do shells and an open popup.
-- **Swipe between tabs** is not offered: the tab row scrolls sideways, and
-  tabs are switched by tapping them or with ‹ ›.
+- **Header swipes.** Only the workspace/tab title button recognises these
+  optional, default-on shortcuts; Settings › Layout › Gestures disables them.
+  Left selects the next tab and right the previous one in the current
+  workspace, stopping at either end. Down opens Tabs on a phone or reveals
+  the sidebar on a wide layout; up hides the keyboard without clearing focus
+  or the draft. The direction is physical, not reversed by the locale.
+  Tab changes use the existing button actions: Chat-to-Chat reading stays
+  local, while opening Terminal can change Herdr's shared focus.
+  The content and sideways-scrolling tab strip never acquire navigation
+  gestures; text selection, terminal pinch and Android's edge Back remain
+  unchanged. Tap still opens Tabs and long press opens Rename / Close.
+  No gesture sends, inserts, stops an agent or closes a tab. A swipe acts
+  once on release, after at least 24 dp (and touch slop) on a clearly
+  dominant axis. A diagonal, second finger, cancellation or destination
+  change cancels it. Layout reset restores the header-swipes switch.
 - **Lock-screen words** (`service/NotificationContent.kt`):
   - There is one pure choice per notification (attached card, connection
     lost, agent note, group summary), made from the privacy setting and the

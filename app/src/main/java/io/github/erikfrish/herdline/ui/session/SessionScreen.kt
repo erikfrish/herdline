@@ -117,6 +117,7 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.pluralStringResource
@@ -391,6 +392,7 @@ fun SessionScreen(
     val modes = remember { PaneModes.get(context) }
     val modeChoices by modes.choices.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
+    val keyboard = LocalSoftwareKeyboardController.current
     // Once the keyboard has opened here, the user knows the way in; the hint never comes back (D3-2).
     var typedOnce by remember { mutableStateOf(false) }
     LaunchedEffect(imeVisible) { if (imeVisible) typedOnce = true }
@@ -1104,6 +1106,32 @@ fun SessionScreen(
                                 ).joinToString(", ").ifEmpty { null }
                                 // The desktop's tab name alone: the monitor glyph beside it says "desktop".
                                 val desktopText = desktopOther?.let { view?.paneTabTitle(it) }
+                                // A changed destination or mode cancels a finger already down; never retarget its release.
+                                val gestureTarget = remember(node.id, node.session, view?.boot, workspace?.id, tab?.id, focusedPane, chatMode) { Any() }
+                                val headerGestures = Modifier.headerSwipes(
+                                    enabled = settings.headerGestures && state is Connection.State.Connected && !closed && pendingTab == null && terminalOpening == null,
+                                    target = gestureTarget,
+                                ) { swipe ->
+                                    when (swipe) {
+                                        HeaderSwipe.Left, HeaderSwipe.Right -> {
+                                            val current = tab?.id
+                                            val shown = connection.view.value
+                                            if (shown != null && shown.boot == view?.boot && current != null) {
+                                                val available = workspace?.id?.let(shown::tabsOf).orEmpty()
+                                                val index = available.indexOfFirst { it.id == current }
+                                                val step = if (swipe == HeaderSwipe.Left) 1 else -1
+                                                if (index >= 0) available.getOrNull(index + step)?.let { chooseTab(it.id) }
+                                            }
+                                        }
+                                        HeaderSwipe.Down -> if (wide) {
+                                            app.settings.update { it.copy(sidebarOpen = true) }
+                                        } else openSwitcher()
+                                        HeaderSwipe.Up -> {
+                                            keyboard?.hide()
+                                            terminal?.hideKeyboard()
+                                        }
+                                    }
+                                }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
@@ -1120,7 +1148,7 @@ fun SessionScreen(
                                         onClick = if (wide) ::toggleSidebar else ::openSwitcher,
                                         onRename = tab?.let { t -> { prompt = Prompt.RenameTab(t.id, t.label) } },
                                         onClose = tab?.let { t -> { prompt = Prompt.CloseTab(t.id, t.label) } },
-                                        modifier = modifier,
+                                        modifier = modifier.then(headerGestures),
                                     )
                                 }
                                 if (typingShort) {

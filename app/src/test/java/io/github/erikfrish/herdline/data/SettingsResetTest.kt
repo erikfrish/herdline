@@ -30,6 +30,7 @@ class SettingsResetTest {
         hideIdleDone = true,
         composerMenu = listOf("larger_editor", "insert"),
         sheetSections = listOf("filters"),
+        headerGestures = false,
         terminalSuggestions = true,
         notifyAttention = false,
         notifyDone = false,
@@ -63,6 +64,7 @@ class SettingsResetTest {
         "composerMenu" to { it.composerMenu },
         "sheetSections" to { it.sheetSections },
         "hideIdleDone" to { it.hideIdleDone },
+        "headerGestures" to { it.headerGestures },
         "terminalSuggestions" to { it.terminalSuggestions },
         "notifyAttention" to { it.notifyAttention },
         "notifyDone" to { it.notifyDone },
@@ -78,7 +80,7 @@ class SettingsResetTest {
         ResetScope.Appearance to setOf("themeMode", "appTheme", "darkScheme", "lightScheme", "uiScale", "density", "accent", "iconVariant"),
         ResetScope.Terminal to setOf("font", "fontSize", "vibrateOnBell", "keepScreenOn", "extraKeys", "showExtraKeys"),
         ResetScope.Composer to setOf("terminalSuggestions"),
-        ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "tabsView", "hideShells", "hideIdleDone", "composerMenu", "sheetSections"),
+        ResetScope.Layout to setOf("layoutMode", "sidebarOpen", "targetOrder", "startFilter", "tabsView", "hideShells", "hideIdleDone", "composerMenu", "sheetSections", "headerGestures"),
         ResetScope.Notifications to setOf("notifyAttention", "notifyDone", "notifyConnection", "liveActivity", "notificationFields", "lockDetail"),
     )
 

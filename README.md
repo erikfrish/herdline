@@ -297,17 +297,18 @@ The feed update no longer carries a skip-CI marker; GitHub's own rule that
 
 ### Fast changed-feature checks
 
-Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`, `terminal`)
+Use `just check header` (or `gestures`, `pin`, `notifications`, `receipts`, `forms`, `terminal`)
 for the changed area only. The runner executes selected test owners, fails
 on failures or skipped owners, and writes timing plus logs under
 `app/build/reports/fast-check/`. Its check deadline is 120 seconds; a timeout
 is a failure, not a reduced test set. `just test` remains an explicit full
 check, not the default after every change.
 
-For rendered header or pin tests on an assigned emulator:
+For rendered header, gesture, pin or terminal tests on an assigned emulator:
 
 ```sh
 just check-ui header emulator-5558
+just check-ui gestures emulator-5558
 just check-ui pin emulator-5558
 just check-ui terminal emulator-5558
 # QA2's isolated server uses its own exact transport and wrapper:

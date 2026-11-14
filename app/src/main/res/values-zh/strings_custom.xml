@@ -21,7 +21,7 @@
     <string name="summary_appearance">主题、颜色、语言、界面大小、启动器图标样式</string>
     <string name="summary_terminal">字体、额外按键、响铃、保持屏幕常亮</string>
     <string name="summary_composer">终端中的键盘建议</string>
-    <string name="summary_layout">侧边栏布局、标签页顺序、控件</string>
+    <string name="summary_layout">侧边栏布局、标签页顺序、页眉手势、控件</string>
     <string name="summary_notifications">需要你、已完成、实时卡片、锁屏</string>
     <string name="summary_security">SSH 密钥、已知主机</string>
     <string name="summary_about">版本、更新、许可证、重置</string>
@@ -42,6 +42,11 @@
     <string name="layout_compact">抽屉</string>
     <string name="layout_wide">侧边栏</string>
     <string name="layout_help">窗口至少 840 dp 宽、480 dp 高时，“自动”会把 Herdr 的侧边栏放在终端旁边。它的 ‹ 按钮可将其折叠为工作区栏。</string>
+
+    <string name="section_gestures">手势</string>
+    <string name="header_gestures">页眉滑动</string>
+    <string name="header_gestures_help">在工作区/标签页标题上滑动，标签页栏和按钮不响应。左滑：下一个标签页。右滑：上一个。下滑：标签页面板（宽布局下展开侧边栏）。上滑：收起键盘。到工作区两端即止。切换遵循标签页按钮的规则：聊天之间切换只影响本机；打开终端可能改变主机焦点。轻点和长按操作保持不变。</string>
+
     <string name="hide_help">只有标签页面板和侧边栏会隐藏行，列表下方一行会显示隐藏了多少，并带有“显示”。搜索仍能找到它们。需要你的标签页从不隐藏。手机标签页栏、标签页 n/N、代理和通知始终计入每个标签页。</string>
     <string name="terminal_suggestions">终端中的键盘建议</string>
     <string name="section_extra_keys">额外按键</string>
@@ -118,11 +123,11 @@
     <string name="restore_appearance_confirm">模式、颜色主题、终端配色、界面大小、密度、强调色和启动器图标样式将恢复默认。语言保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_terminal_confirm">字体、字号、响铃振动、保持屏幕常亮和额外按键将恢复默认。导入和下载的字体保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_composer_confirm">终端中的键盘建议恢复为关闭。节点、密钥和草稿保持不变。</string>
-    <string name="restore_layout_confirm">会话布局、侧边栏的展开或折叠、标签页顺序、标签页视图、启动筛选、两个隐藏开关以及“控件”页上的每个控件将恢复默认。固定项保持不变。节点、密钥和草稿保持不变。</string>
+    <string name="restore_layout_confirm">会话布局、侧边栏的展开或折叠、标签页顺序、页眉滑动开关、标签页视图、启动筛选、两个隐藏开关以及“控件”页上的每个控件将恢复默认。固定项保持不变。节点、密钥和草稿保持不变。</string>
     <string name="restore_controls_confirm">每个 + 菜单项和标签页列表分区都会按原始顺序恢复。节点、密钥和草稿保持不变。</string>
     <string name="restore_notifications_confirm">所有通知和实时卡片重新开启，通知内容字段恢复默认的选择和顺序，代理和连接通知在锁屏上恢复为“隐藏”。实时更新保留你固定时选择的锁屏级别。Android 自身的通知设置保持不变。节点、密钥和草稿保持不变。</string>
     <string name="reset_settings">重置为默认</string>
-    <string name="reset_settings_detail">外观、终端和额外按键、输入框、包括标签页列表和控件在内的布局、通知和锁屏。语言、实时更新的锁屏级别、节点、密钥和草稿保持不变。</string>
+    <string name="reset_settings_detail">外观、终端和额外按键、输入框、包括标签页列表、页眉手势和控件在内的布局、通知和锁屏。语言、实时更新的锁屏级别、节点、密钥和草稿保持不变。</string>
     <string name="reset_settings_confirm">要将此页面上的所有设置重置为默认吗？</string>
     <string name="reset">重置</string>
     <string name="controls_title">控件</string>

@@ -95,4 +95,18 @@ class SettingsStoreTest {
         assertEquals(LockDetail.Full, reloaded.settings.value.lockDetail)
         assertEquals(LockDetail.NamesOnly, reloaded.liveLockDetail.value)
     }
+
+    @Test
+    fun headerSwipesStayOffAfterARestartUntilTheLayoutIsRestored() {
+        val prefs = MemoryPrefs()
+        val store = SettingsStore(prefs)
+        store.update { it.copy(headerGestures = false) }
+        assertEquals(false, SettingsStore(prefs).settings.value.headerGestures)
+        // A reset of another page leaves the choice alone; the Layout page's own reset brings the toggle back.
+        val reloaded = SettingsStore(prefs)
+        reloaded.restore(ResetScope.Notifications)
+        assertEquals(false, reloaded.settings.value.headerGestures)
+        reloaded.restore(ResetScope.Layout)
+        assertEquals(true, reloaded.settings.value.headerGestures)
+    }
 }

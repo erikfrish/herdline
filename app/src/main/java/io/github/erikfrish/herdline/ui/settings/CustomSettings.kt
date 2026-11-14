@@ -170,7 +170,7 @@ internal fun LazyListScope.interfaceSettings(store: SettingsStore, settings: Set
     }
 }
 
-/** The sidebar layout, the switcher's session order, how the Tabs list opens, and the Controls page. */
+/** The sidebar layout, the switcher's session order, header swipes, how the Tabs list opens, and the Controls page. */
 internal fun LazyListScope.layoutSettings(store: SettingsStore, settings: Settings, onControls: () -> Unit) {
     item {
         Group {
@@ -187,6 +187,14 @@ internal fun LazyListScope.layoutSettings(store: SettingsStore, settings: Settin
                 TargetOrder.entries.indexOf(settings.targetOrder),
                 help = stringResource(R.string.order_help),
             ) { index -> store.update { it.copy(targetOrder = TargetOrder.entries[index]) } }
+        }
+    }
+    item { SectionHeader(stringResource(R.string.section_gestures)) }
+    item {
+        Group {
+            Toggle(stringResource(R.string.header_gestures), stringResource(R.string.header_gestures_help), settings.headerGestures) { on ->
+                store.update { it.copy(headerGestures = on) }
+            }
         }
     }
     item { SectionHeader(stringResource(R.string.section_tabs_list)) }
