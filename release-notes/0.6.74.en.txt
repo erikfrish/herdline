@@ -1,0 +1,7 @@
+Herdline 0.6.74 (experimental) — window-owned Keep screen on
+
+- Keep screen on now owns only the Activity window's KEEP_SCREEN_ON bit. Releasing the last visible-session hold explicitly clears that bit through Window attributes, including after Settings and Hosts round trips. Other window flags are not changed.
+- The first view-owned repair in 0.6.73 did not resolve the full navigation path. A single diagnostic run showed all holds disposed and no view requesting keep-awake while the decor window retained its client flag. The final repair changes that owner; the diagnostic trace is removed.
+- Includes the updater lifecycle and single-flight handoff, overview hide preferences, reset privacy wording and header accessibility corrections from 0.6.69–0.6.72.
+
+Exact-candidate runtime verification of the formerly failing navigation path and the full Settings/updater scope is recorded separately. The platform caller that copied the derived flag into the client flags was not identified. No physical-phone verification or publication is implied.

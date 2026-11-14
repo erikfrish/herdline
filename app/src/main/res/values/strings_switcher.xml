@@ -47,7 +47,7 @@
     <string name="order_label">Order</string>
     <string name="order_workspace">Workspace</string>
     <string name="order_last_activity">Last activity</string>
-    <string name="order_help">Last activity lists tabs by Herdr\'s last state change on each host. Times show only changes Herdline saw itself.</string>
+    <string name="order_help">Applies to List and the sidebar. Two columns and Workspace rails keep Herdr\'s order. Last activity lists tabs by Herdr\'s last state change on each host. Times show only changes Herdline saw itself.</string>
     <string name="order_limit">Ordered by Herdr\'s last state change. Times show only changes Herdline saw itself.</string>
     <string name="order_limit_short">Ordered by Herdr\'s last state change. Times: only changes Herdline saw.</string>
     <string name="order_unranked">No state change yet · Herdr order</string>

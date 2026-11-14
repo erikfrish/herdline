@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.session
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -18,15 +24,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
 import io.github.erikfrish.herdline.core.IngressSend
 import io.github.erikfrish.herdline.core.QUEUE_STEERING
+import io.github.erikfrish.herdline.core.REASON_UNSUPPORTED
 import io.github.erikfrish.herdline.core.REASON_UNUSABLE
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.SentRecord
 import io.github.erikfrish.herdline.data.SentState
+import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 
 /*
  * Chat's Send through the OMP endpoint (core/Ingress.kt): the pure rules the
@@ -99,13 +108,26 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
-/**
- * The code Send's precheck shows for the pane's refused box check [gate]: where the
- * endpoint said its server is missing or can't be told apart, that reason, since the
- * box check is the PTY route's and says nothing of the program's own server.
- */
-internal fun sendPrecheckCode(gate: String?, probe: IngressProbe?): String? =
-    gate?.let { code -> (probe as? IngressProbe.Unusable)?.reason?.takeIf { it == "needs_server" || it == "server_discovery" } ?: code }
+/** The route Send will actually use: a known endpoint refusal cannot fall back to a successful pane check. */
+internal fun composerSendGate(reading: Boolean, probe: IngressProbe?, pane: ComposerCheck.Gate?): ComposerCheck.Gate? {
+    if (!reading) return pane
+    return when (probe) {
+        is IngressProbe.Live -> ENDPOINT_READY
+        is IngressProbe.Unsupported -> ENDPOINT_UNSUPPORTED
+        is IngressProbe.Unusable -> when (probe.reason) {
+            "needs_server" -> ENDPOINT_NEEDS_SERVER
+            "server_discovery" -> ENDPOINT_SERVER_DISCOVERY
+            else -> ENDPOINT_UNUSABLE
+        }
+        IngressProbe.Absent, null -> pane
+    }
+}
+
+private val ENDPOINT_READY = ComposerCheck.Gate(true, null)
+private val ENDPOINT_UNSUPPORTED = ComposerCheck.Gate(false, REASON_UNSUPPORTED)
+private val ENDPOINT_UNUSABLE = ComposerCheck.Gate(false, REASON_UNUSABLE)
+private val ENDPOINT_NEEDS_SERVER = ComposerCheck.Gate(false, "needs_server")
+private val ENDPOINT_SERVER_DISCOVERY = ComposerCheck.Gate(false, "server_discovery")
 
 /** What the queue panel shows. */
 internal sealed interface QueuePanel {
@@ -257,12 +279,7 @@ internal fun IngressQueuePanel(
     }
     when (panel) {
         QueuePanel.Hidden -> Column(modifier) { noteText() }
-        is QueuePanel.Unsupported -> Text(
-            stringResource(R.string.ingress_unsupported, panel.missing),
-            style = MaterialTheme.typography.bodySmall,
-            color = error,
-            modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unsupported"),
-        )
+        is QueuePanel.Unsupported -> UnsupportedEndpoint(panel.missing, modifier)
         is QueuePanel.Unusable -> Text(
             stringResource(unusableRes(panel.reason), panel.reason),
             style = MaterialTheme.typography.bodySmall,
@@ -308,5 +325,46 @@ internal fun IngressQueuePanel(
             }
             noteText()
         }
+    }
+}
+
+/** The refusal stays visible; the unbounded host diagnostic belongs in a scrollable dialog. */
+@Composable
+private fun UnsupportedEndpoint(missing: String, modifier: Modifier) {
+    var details by remember(missing) { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().padding(bottom = 4.dp).testTag("ingress:unsupported"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.ingress_unsupported_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = { details = true },
+            modifier = Modifier.heightIn(min = 48.dp).testTag("ingress:details"),
+        ) { Text(stringResource(R.string.ingress_details)) }
+    }
+    if (details) {
+        GlassAlertDialog(
+            onDismissRequest = { details = false },
+            title = { Text(stringResource(R.string.ingress_details_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.ingress_unsupported, missing),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.verticalScroll(rememberScrollState()).testTag("ingress:diagnostic"),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { details = false }, modifier = Modifier.testTag("ingress:details_close")) {
+                    Text(stringResource(R.string.close))
+                }
+            },
+        )
     }
 }

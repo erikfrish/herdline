@@ -93,6 +93,9 @@ object AgentNotifications {
     private data class SummaryPost(val words: Redacted, val lock: LockDetail)
 
     private val alerts = AgentAlerts()
+
+    /** Herdr's pane notifications as received, shared by the system notifications and the session banner. */
+    internal val echoes = HerdrEcho()
     private val notes = HashMap<String, Note>()
     private val children = Posted<ChildPost>()
     private val summaries = Posted<SummaryPost>()
@@ -171,7 +174,22 @@ object AgentNotifications {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** A daemon notification for [pane] of [nodeId] arrived while Herdline is in the background. */
+    /**
+     * Herdr's notification for [pane] of [nodeId] arrived, before its switch decides
+     * whether anything shows it. A pane notification takes back the pane-less copy
+     * posted just before it: Herdr's echo, come first.
+     */
+    fun received(context: Context, nodeId: String, pane: String?) {
+        val key = AlertKey(nodeId, pane)
+        val now = System.currentTimeMillis()
+        echoes.received(key, now)
+        val bare = HerdrEcho.echoBefore(key, now, notes.values.associate { it.key to it.at }) ?: return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        cancel(manager, bare)
+        tidy(manager, nodeId)
+    }
+
+    /** A daemon notification for [pane] of [nodeId] arrived while Herdline is in the background; [received] saw it first. */
     fun post(
         context: Context,
         nodeId: String,
@@ -186,8 +204,7 @@ object AgentNotifications {
         if (!canNotify(context)) return
         val key = AlertKey(nodeId, pane)
         val now = System.currentTimeMillis()
-        val posted = notes.values.associate { it.key to it.at }
-        if (HerdrEcho.isEcho(key, now, posted)) return
+        if (echoes.isEcho(key, now)) return
         val kind = if (attention) AlertKind.NeedsInput else AlertKind.Done
         val manager = context.getSystemService(NotificationManager::class.java)
         val alert = alerts.onEvent(key, kind, showing(manager, key.tag))
@@ -195,7 +212,6 @@ object AgentNotifications {
         val note = Note(key, kind, node, agent, title, body, now)
         notes[key.tag] = note
         publish(context, manager, note, lock, silent = alert == Alert.Silent, force = true)
-        HerdrEcho.echoBefore(key, now, posted)?.let { cancel(manager, it) }
     }
 
     /**

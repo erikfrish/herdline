@@ -1,0 +1,7 @@
+Herdline 0.6.77 (experimental) — compact OMP refusal details
+
+- When the Herdline extension is present but OMP lacks its required hooks, the persistent composer warning is now a short refusal with a Details action. The full explanation and missing-hook list remain available in a scrollable dialog, including at large font sizes.
+- Closing Details or pressing Back leaves the draft and Send availability unchanged. No request is sent, no text is typed into the pane and no delivery guard is changed by the disclosure. Exact-candidate QA subsequently found Send incorrectly enabled with a draft on an Unsupported endpoint; the admission repair is in 0.6.78.
+- Includes the updater lifecycle, Settings control consistency, notification-switch echo suppression, window-owned keep-awake and header accessibility repairs from 0.6.69–0.6.76.
+
+The oversized warning was observed on the font-2.0 QA surface. Exact-candidate normal-font, large-font and localized disclosure checks are recorded separately. This is an experimental local candidate; no publication or phone installation is implied.

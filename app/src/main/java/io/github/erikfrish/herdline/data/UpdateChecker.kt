@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -83,7 +85,17 @@ class UpdateChecker(private val context: Context) {
     private val _justUpdated = MutableStateFlow<String?>(null)
     val justUpdated: StateFlow<String?> = _justUpdated
 
+    /** The download, or a handoff of its file; one at a time, so two taps never open two installers. */
     private var job: Job? = null
+
+    /** The page sent the user to Install unknown apps in this process; see [openingInstallSources]. */
+    private var sentToSettings = false
+
+    /** The download's open connection, which Cancel closes so a stalled connect or read ends at once. */
+    private val live = DownloadConnection()
+
+    /** Held while check clears the files and while a download makes room for its own, so neither deletes the other's. */
+    private val files = Mutex()
 
     init {
         val seen = prefs.getLong("seen", 0)
@@ -92,6 +104,7 @@ class UpdateChecker(private val context: Context) {
         }
         if (seen != installed) prefs.edit().putLong("seen", installed).apply()
         publishDot()
+        restorePending()
     }
 
     fun installedVersion(): Long = installed
@@ -122,8 +135,9 @@ class UpdateChecker(private val context: Context) {
     suspend fun check(force: Boolean) {
         if (!channel) return
         if (force && _check.value != ReleaseCheck.Checking) _install.value = _install.value.afterCheck()
-        // Only while nothing is downloading or waiting on the installer, so its verified file stays.
-        if (_install.value == ReleaseInstall.None) withContext(Dispatchers.IO) { clearFiles() }
+        // Only while nothing is downloading or waiting on the installer, so its verified file stays;
+        // read under the lock, so a download starting meanwhile keeps its file.
+        files.withLock { if (_install.value == ReleaseInstall.None) withContext(Dispatchers.IO) { clearFiles() } }
         if (!force && !ReleaseChannel.due(prefs.getLong("last_check", 0), System.currentTimeMillis())) return
         if (_check.value == ReleaseCheck.Checking) return
         val previous = _check.value
@@ -136,6 +150,10 @@ class UpdateChecker(private val context: Context) {
             }
         } catch (e: IOException) {
             if (offline(e)) ReleaseCheck.Offline else ReleaseCheck.Failed
+        } catch (e: Throwable) {
+            // Cancelled or failed midway: never left on Checking, which would disable Check now for good.
+            _check.value = previous
+            throw e
         }
         // A failed background check keeps whatever was known before.
         _check.value = if (force || next is ReleaseCheck.Checked) next else previous
@@ -144,30 +162,30 @@ class UpdateChecker(private val context: Context) {
 
     /** Downloads [release] in [scope], verifies it and hands it on; nothing for a release that isn't installable. */
     fun download(release: Release, scope: CoroutineScope) {
-        // Until the last download has settled its state and files, even while it is being cancelled.
+        // Until the last download or handoff has settled its state and files, even while it is being cancelled.
         if (!channel || job?.isCompleted == false || !release.installable(installed, sdk, _refused.value)) return
         val total = release.size ?: return
         job = scope.launch {
             _install.value = ReleaseInstall.Downloading(release, 0, total)
+            prefs.edit().remove(PENDING).apply()
             val dir = File(context.cacheDir, ReleaseChannel.CACHE_DIR)
             val part = File(dir, "${release.versionCode}.apk.part")
             val apk = File(dir, "${release.versionCode}.apk")
             try {
-                val sha = withContext(Dispatchers.IO) {
-                    clearFiles()
-                    dir.mkdirs()
-                    fetchApk(release, total, part)
+                files.withLock {
+                    withContext(Dispatchers.IO) {
+                        clearFiles()
+                        dir.mkdirs()
+                    }
                 }
+                val sha = withContext(Dispatchers.IO) { fetchApk(release, total, part) }
                 _install.value = ReleaseInstall.Verifying(release)
                 val mismatch = withContext(Dispatchers.IO) {
                     if (!part.renameTo(apk)) throw IOException("rename")
                     ReleaseChannel.verify(release, context.packageName, installed, installedSigners, apk.length(), sha, archiveFacts(apk))
                 }
                 if (mismatch != null) {
-                    settleAfter(Dispatchers.IO, { apk.delete() }) {
-                        if (mismatch == Mismatch.Signer) refuse(release)
-                        _install.value = ReleaseInstall.Mismatched(release, mismatch)
-                    }
+                    reject(release, apk, mismatch)
                     return@launch
                 }
                 handOffOrAsk(release)
@@ -187,40 +205,72 @@ class UpdateChecker(private val context: Context) {
     }
 
     fun cancel() {
-        job?.cancel()
+        val download = job ?: return
+        download.cancel()
+        // After the cancel, so a connection opened meanwhile sees it and ends itself.
+        live.close()
+    }
+
+    /**
+     * The page is sending the user to Install unknown apps for a waiting
+     * file. Only the return from that trip hands on: never the page's first
+     * show, also after a restart left the file waiting.
+     */
+    fun openingInstallSources() {
+        sentToSettings = true
     }
 
     /** Back from the install-sources settings: hands on if allowed, else stays asking. */
     fun permissionReturned(scope: CoroutineScope) {
         val state = _install.value as? ReleaseInstall.NeedsPermission ?: return
-        if (context.packageManager.canRequestPackageInstalls()) scope.launch { handOff(state.release) }
+        if (job?.isCompleted == false || !sentToSettings || !context.packageManager.canRequestPackageInstalls()) return
+        sentToSettings = false
+        // Set before the launch, so no tap or download gets in while the file is verified again.
+        _install.value = ReleaseInstall.Verifying(state.release)
+        job = scope.launch { handOff(state.release) }
     }
 
-    /** Opens Android's installer again for the verified file, re-hashed first. */
+    /** Opens Android's installer again for the verified file, verified again first. */
     fun installAgain(scope: CoroutineScope) {
+        if (job?.isCompleted == false) return
         val release = when (val state = _install.value) {
             is ReleaseInstall.Handed -> state.release
             is ReleaseInstall.NotInstalled -> state.release
             else -> return
         }
-        scope.launch { handOffOrAsk(release) }
+        // Set before the launch, so no second tap or download gets in while the file is verified again.
+        _install.value = ReleaseInstall.Verifying(release)
+        job = scope.launch { handOffOrAsk(release) }
     }
 
     private suspend fun handOffOrAsk(release: Release) {
         if (!context.packageManager.canRequestPackageInstalls()) {
+            // Kept across a restart: Android 11 ends the app when Install unknown apps is allowed.
+            prefs.edit().putLong(PENDING, release.versionCode).apply()
             _install.value = ReleaseInstall.NeedsPermission(release)
             return
         }
         handOff(release)
     }
 
-    /** The verified file, re-hashed just before the handoff, opened in Android's installer. */
+    /**
+     * The file, verified again in full just before the handoff (it waited in
+     * the cache, maybe across a restart, since the download verified it),
+     * opened in Android's installer.
+     */
     private suspend fun handOff(release: Release) {
-        val apk = File(File(context.cacheDir, ReleaseChannel.CACHE_DIR), "${release.versionCode}.apk")
-        val sha = withContext(Dispatchers.IO) { if (apk.isFile) hashFile(apk) else null }
-        if (sha == null || sha != release.sha256) {
-            withContext(Dispatchers.IO) { apk.delete() }
-            _install.value = ReleaseInstall.Mismatched(release, Mismatch.Checksum)
+        val apk = apkFile(release)
+        val mismatch = withContext(Dispatchers.IO) {
+            if (!apk.isFile) {
+                Mismatch.Checksum
+            } else {
+                ReleaseChannel.verify(release, context.packageName, installed, installedSigners, apk.length(), hashFile(apk), archiveFacts(apk))
+            }
+        }
+        // Only now: a restart during the verify still finds the file waiting on the permission.
+        prefs.edit().remove(PENDING).apply()
+        if (mismatch != null) {
+            reject(release, apk, mismatch)
             return
         }
         _install.value = try {
@@ -235,6 +285,34 @@ class UpdateChecker(private val context: Context) {
         } catch (e: IllegalArgumentException) {
             // No FileProvider for the updates directory in this build.
             ReleaseInstall.NotInstalled(release)
+        }
+    }
+
+    /** [apk] must not reach the installer: deleted, and a refused signer never offered again. */
+    private suspend fun reject(release: Release, apk: File, mismatch: Mismatch) {
+        settleAfter(Dispatchers.IO, { apk.delete() }) {
+            if (mismatch == Mismatch.Signer) refuse(release)
+            _install.value = ReleaseInstall.Mismatched(release, mismatch)
+        }
+    }
+
+    private fun apkFile(release: Release) = File(File(context.cacheDir, ReleaseChannel.CACHE_DIR), "${release.versionCode}.apk")
+
+    /**
+     * A verified file still waiting on Install unknown apps when the last
+     * process ended (Android 11 ends the app when that is allowed): it asks
+     * again, and so keeps the file from check's cleanup. Nothing downloads or
+     * installs here; the handoff verifies the file in full first.
+     */
+    private fun restorePending() {
+        val code = prefs.getLong(PENDING, 0)
+        if (code <= 0) return
+        val manifest = (_check.value as? ReleaseCheck.Checked)?.manifest
+        val release = listOfNotNull(manifest?.stable, manifest?.candidate).firstOrNull { it.versionCode == code }
+        if (release != null && release.installable(installed, sdk, _refused.value) && apkFile(release).isFile) {
+            _install.value = ReleaseInstall.NeedsPermission(release)
+        } else {
+            prefs.edit().remove(PENDING).apply()
         }
     }
 
@@ -311,19 +389,21 @@ class UpdateChecker(private val context: Context) {
      * [ReleaseChannel.MAX_REDIRECTS] redirects, each only where
      * [ReleaseChannel.redirect] allows. One more redirect is a failure.
      */
-    private fun connectApk(release: Release): HttpsURLConnection {
+    private suspend fun connectApk(release: Release): HttpsURLConnection {
         var uri = URI(release.url ?: throw ServerError())
         var redirects = 0
         while (true) {
             val connection = open(uri)
             val next = try {
+                live.attach(connection)
                 when (connection.responseCode) {
                     HttpURLConnection.HTTP_OK -> return connection
                     HttpURLConnection.HTTP_MOVED_PERM, HttpURLConnection.HTTP_MOVED_TEMP, HttpURLConnection.HTTP_SEE_OTHER, 307, 308 ->
                         ReleaseChannel.redirect(release, uri, connection.getHeaderField("Location"))
                     else -> null
                 }
-            } catch (e: IOException) {
+            } catch (e: Exception) {
+                // Also a cancel: the connection never outlives the download.
                 connection.disconnect()
                 throw e
             }
@@ -362,6 +442,7 @@ class UpdateChecker(private val context: Context) {
             }
             return digest.digest().joinToString("") { "%02x".format(it) }
         } finally {
+            live.detach()
             connection.disconnect()
         }
     }
@@ -391,3 +472,6 @@ class UpdateChecker(private val context: Context) {
 
     private class TooLarge : IOException("larger than the manifest says")
 }
+
+/** The versionCode whose verified file waits on Install unknown apps, kept across a restart. */
+private const val PENDING = "permission_pending"

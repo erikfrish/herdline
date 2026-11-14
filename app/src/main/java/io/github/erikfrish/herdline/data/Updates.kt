@@ -8,13 +8,17 @@ package io.github.erikfrish.herdline.data
 
 import android.content.pm.SigningInfo
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
+import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 
 /*
  * Herdline's update channel. The list is one fixed file in the public
@@ -327,6 +331,37 @@ internal suspend fun settleAfter(io: CoroutineContext, cleanup: () -> Unit, sett
     withContext(NonCancellable) {
         withContext(io) { cleanup() }
         settle()
+    }
+}
+
+/**
+ * The connection a download has open, for Cancel to close. A connect or
+ * read blocks until its timeout (10 s, 20 s, per redirect), and a cancelled
+ * coroutine waits for it: without closing it, Cancel left the page on
+ * Downloading, and Try again ignored, for that long.
+ */
+internal class DownloadConnection {
+    @Volatile
+    private var open: HttpURLConnection? = null
+
+    /**
+     * [connection] is the download's now. Throws when the download was
+     * cancelled already: [close] ran before it was set, so the caller
+     * disconnects it.
+     */
+    suspend fun attach(connection: HttpURLConnection) {
+        open = connection
+        coroutineContext.ensureActive()
+    }
+
+    fun detach() {
+        open = null
+    }
+
+    /** Disconnects the open connection on a thread of its own: closing a TLS socket may write, never on the main thread. */
+    fun close() {
+        val connection = open ?: return
+        thread(isDaemon = true, name = "update-cancel") { connection.disconnect() }
     }
 }
 

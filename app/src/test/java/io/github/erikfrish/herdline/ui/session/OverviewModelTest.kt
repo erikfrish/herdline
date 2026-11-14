@@ -188,4 +188,23 @@ class OverviewModelTest {
         assertEquals(1, rails[2].tabs)
         assertTrue(rails[2].cards.isEmpty())
     }
+
+    @Test
+    fun hiddenShellTabsLeaveTheCardsUntilRevealedAndAShownTabKeepsItsShellPane() {
+        // t3 gains a shell pane: hidden as a List row, but its tab keeps its card, both panes, and is not counted.
+        val split = view.copy(panes = view.panes + Pane("p10", "w2", "t3", null, "/tmp", false))
+        val all = topology(split)
+        val hiding = all.hiddenRows(hideShells = true, hideIdleDone = false)
+        val hidden = overviewHiding(all, hiding, revealed = false)
+        val cards = overviewSections(all, hidden.listed, narrowing = false, split).cards()
+        assertEquals(listOf("t1", "t3", "t5"), cards.map { it.tab.id })
+        assertEquals(2, cards.first { it.tab.id == "t3" }.panes.size)
+        assertEquals(2, hidden.count)
+        assertTrue(hidden.marked.isEmpty())
+        // Revealed, every card is back in Herdr's order and the hidden tabs are marked.
+        val revealed = overviewHiding(all, hiding, revealed = true)
+        assertEquals(listOf("t1", "t2", "t4", "t3", "t5"), overviewSections(all, revealed.listed, narrowing = false, split).cards().map { it.tab.id })
+        assertEquals(setOf("t:t2", "t:t4"), revealed.marked)
+        assertEquals(0, revealed.count)
+    }
 }

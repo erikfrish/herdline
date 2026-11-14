@@ -1,0 +1,8 @@
+Herdline 0.6.72 (experimental) — hide preferences in every Tabs view
+
+- Hide shell tabs and Hide idle and done now apply to Two columns and Workspace rails as well as List. They use the same hiding policy: an agent that needs you and its tab are never hidden.
+- A hidden-count row with Show restores hidden tabs for the current sheet visit. Search and status filters also reveal matching hidden tabs, marked hidden. Reopening the sheet applies the saved preferences again.
+- A visible split-tab card keeps all of its panes, and a rail with all its tabs hidden keeps its New tab tile. Status counts, pins, selected pane and desktop focus are unchanged.
+- Includes the updater lifecycle, single-flight installer, truthful reset-privacy wording and header accessibility repairs from 0.6.69–0.6.71.
+
+Focused model tests and exact-candidate runtime evidence are recorded separately. No publication or phone installation is performed automatically.

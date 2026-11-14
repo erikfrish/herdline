@@ -93,6 +93,8 @@ data class Settings(
     val composerMenu: List<String> = ComposerMenu.DEFAULT,
     /** Shown Tabs sheet and sidebar sections; their order is fixed. */
     val sheetSections: List<String> = SheetSections.DEFAULT,
+    /** Swipes on the session's title row: left/right switch tabs, down opens Tabs, up hides the keyboard. */
+    val headerGestures: Boolean = true,
     /** Keyboard suggestions while typing straight into the terminal. */
     val terminalSuggestions: Boolean = false,
     val notifyAttention: Boolean = true,
@@ -141,6 +143,7 @@ data class Settings(
                 hideIdleDone = d.hideIdleDone,
                 composerMenu = d.composerMenu,
                 sheetSections = d.sheetSections,
+                headerGestures = d.headerGestures,
             )
             ResetScope.Notifications -> copy(
                 notifyAttention = d.notifyAttention,
@@ -233,6 +236,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             hideIdleDone = prefs.getBoolean("hide_idle_done", d.hideIdleDone),
             composerMenu = ComposerMenu.repaired(savedControls(ids("composer_menu"), ids("composer_menu_known"), ComposerMenu.DEFAULT)),
             sheetSections = savedControls(ids("sheet_sections"), ids("sheet_sections_known"), SheetSections.DEFAULT),
+            headerGestures = prefs.getBoolean("header_gestures", d.headerGestures),
             terminalSuggestions = prefs.getBoolean("terminal_suggestions", d.terminalSuggestions),
             notifyAttention = prefs.getBoolean("notify_attention", d.notifyAttention),
             notifyDone = prefs.getBoolean("notify_done", d.notifyDone),
@@ -276,6 +280,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putString("sheet_sections", next.sheetSections.joinToString(","))
             .putString("sheet_sections_known", SheetSections.DEFAULT.joinToString(","))
             .putBoolean("terminal_suggestions", next.terminalSuggestions)
+            .putBoolean("header_gestures", next.headerGestures)
             .putBoolean("notify_attention", next.notifyAttention)
             .putBoolean("notify_done", next.notifyDone)
             .putBoolean("notify_connection", next.notifyConnection)

@@ -1,0 +1,9 @@
+Herdline 0.6.70 (experimental) — one installer handoff at a time
+
+- Reopening Android's installer reserves the updater's in-flight operation and shows Verifying before the file is rechecked. Another Install or permission-return action cannot start a concurrent handoff, and a new download cannot delete the APK while it is being verified. A deliberate Install again after the previous handoff finishes remains available.
+- The pending permission record is removed only after verification completes, so process death during re-verification does not discard a waiting verified file.
+- Includes 0.6.69's responsive update cancellation, check/download cleanup serialization, permission-wait restart recovery, hidden status-filter reset, truthful Settings reset descriptions and session-header accessibility stacking repair.
+
+Package, signer pinning, fixed HTTPS manifest and release URLs, permitted redirect hosts and full APK verification remain unchanged. Startup and opening the update page do not automatically download or install anything.
+
+Verification and device limits are recorded against exact candidate APK hashes in the accompanying local proof. Android 11 automatic permission-toggle process death and physical-phone behavior are not claimed from the API 37 emulator.

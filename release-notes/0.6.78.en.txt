@@ -1,0 +1,7 @@
+Herdline 0.6.78 (experimental) — Send follows endpoint admission
+
+- Chat now disables Send when its bound endpoint is Unsupported or Unusable, even if the pane check allows typing. This fixes the enabled Send observed beside the compact refusal in 0.6.77; no successful unsafe delivery was observed.
+- Live endpoints, absent-endpoint pane fallback, Terminal Send and Insert keep their existing routes. The compact Unsupported panel remains the explanation, without a duplicate warning or a Checking notice.
+- Details and its full scrollable hook diagnostic are unchanged. Closing it or pressing Back preserves the draft.
+
+Experimental local candidate only; no publication or phone installation is implied. Exact-candidate verification is recorded separately.

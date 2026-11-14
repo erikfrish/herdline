@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent.parent
 PROFILES = {
     "header": (["HeaderFitTest", "NewTabTargetTest"], ["ui.session.TabsHeaderTest"]),
+    "gestures": (["SettingsResetTest", "SettingsStoreTest"], ["ui.session.HeaderGesturesTest"]),
     "pin": (["DoneCardsTest", "LiveCardTest"], ["service.AgentMonitorPersistenceTest", "e2e.PinSheetTest"]),
     "notifications": (["LiveFieldsTest", "DoneCardsTest"], []),
     "receipts": (["HandedReceiptTest", "SteerFlowTest", "ChatModelTest"], []),

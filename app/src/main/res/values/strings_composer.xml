@@ -186,6 +186,9 @@
     <string name="ingress_withdraw_editor">Not withdrawn: clear the editor first, so the request can come back into it. It stays queued.</string>
     <string name="ingress_withdraw_text_unknown">Withdrawn, but this phone has no record of the text it sent, so its text was not put back. Any files it kept are back.</string>
     <string name="ingress_unsupported">The Herdline extension runs here, but this OMP lacks the hooks it needs (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
+    <string name="ingress_unsupported_summary">Send refused; nothing typed.</string>
+    <string name="ingress_details">Details</string>
+    <string name="ingress_details_title">Why Chat cannot send</string>
     <string name="ingress_unusable">Chat\'s line to the agent is there but unusable (%1$s). Chat\'s Send is refused, never typed into the pane.</string>
     <string name="ingress_needs_server">This session\'s agent server isn\'t running, so Chat can\'t send to it. Nothing is typed into the pane.</string>
     <string name="ingress_server_discovery">Chat can\'t trust which server belongs to this session (a custom data root, two servers, or loose file permissions), so it refuses rather than guess. Nothing is typed into the pane.</string>

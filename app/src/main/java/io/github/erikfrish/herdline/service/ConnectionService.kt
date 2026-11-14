@@ -170,6 +170,8 @@ class ConnectionService : Service() {
         connection.events.collect { event ->
             if (event is Connection.Event.Notification) {
                 val settings = app.settings.settings.value
+                // Before any switch: a pane notification nothing shows still makes its pane-less copy an echo.
+                AgentNotifications.received(this, connection.node.id, event.pane)
                 // Unless this host's session screen is resumed and unlocked, whose banner shows it
                 // instead: also on Hosts, Settings or another host, where nothing showed it (BN-1 §2).
                 val route = routeNote(

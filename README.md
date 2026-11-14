@@ -41,6 +41,12 @@ Neither updater installs silently; Android asks you to confirm the update.
 Updates must use the same signing key. A self-built or debug-signed APK
 cannot replace the published app without uninstalling it and losing app data.
 
+In App updates, Cancel closes an in-flight connection rather than waiting for
+its network timeout. A verified file waiting for permission to install is
+kept across an app-process restart; reopening the page never starts an
+installation by itself. Choose Open settings and return to continue. The
+cached APK is checked again in full before every installer handoff.
+
 ### Obtainium (one-click add)
 
 <p align="center">
@@ -288,17 +294,18 @@ The feed update no longer carries a skip-CI marker; GitHub's own rule that
 
 ### Fast changed-feature checks
 
-Use `just check header` (or `pin`, `notifications`, `receipts`, `forms`, `terminal`)
+Use `just check header` (or `gestures`, `pin`, `notifications`, `receipts`, `forms`, `terminal`)
 for the changed area only. The runner executes selected test owners, fails
 on failures or skipped owners, and writes timing plus logs under
 `app/build/reports/fast-check/`. Its check deadline is 120 seconds; a timeout
 is a failure, not a reduced test set. `just test` remains an explicit full
 check, not the default after every change.
 
-For rendered header or pin tests on an assigned emulator:
+For rendered header, gesture, pin or terminal tests on an assigned emulator:
 
 ```sh
 just check-ui header emulator-5558
+just check-ui gestures emulator-5558
 just check-ui pin emulator-5558
 just check-ui terminal emulator-5558
 # For an isolated ADB server, pass its exact transport and your own wrapper:
@@ -322,7 +329,10 @@ Pin storage recreation is in-process; this does not claim a cold process or
 live SSH end-to-end check. `terminal --ui` passed on the warm API 36 emulator
 in 25.8 s (13 unit tests plus 8 real IME gesture tests). Its emulator-only
 hardware-keyboard setting is enabled temporarily and restored in `finally`.
-Only these three UI profiles have measured timings.
+`gestures --ui` passed in 16.9 s on the warm QA1 API 36 emulator (11 settings
+unit tests plus 4 real header-touch tests). That initial run exposed a gap
+in the disabled-drag assertion; the strengthened regression and its exact
+candidate result are recorded with the subsequent gesture-fix evidence.
 
 QA agents inspect only fresh functionality or a changed path after its fix.
 Previously covered behavior runs through the selected automated check;

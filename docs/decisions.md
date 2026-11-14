@@ -13,6 +13,19 @@ they start with `native/`.
 - Updates come only from Herdline's own fixed manifest on GitHub (see the
   README). It has a stable and a candidate release, and a candidate is marked
   *not tested*.
+- Update cancellation closes the current network connection off the main
+  thread. Manifest-check cleanup and new-download preparation share one file
+  lock, so a concurrent check cannot delete an active download.
+- A verified APK awaiting install-source permission can survive process
+  death. Only a still-installable entry from the cached pinned manifest with
+  its own cache file restores the waiting state. Startup and opening the
+  page never install or download automatically. Every handoff rechecks size,
+  checksum, package, version and signer before granting Android read access.
+- Installer retries and permission returns reserve the same in-flight job as
+  downloads and enter Verifying before dispatch. A second action cannot
+  reopen the installer concurrently or remove a file being reverified.
+  Finishing a handoff still permits an explicit Install again; no cooldown
+  or automatic retry is introduced.
 
 ## Composer
 
@@ -79,6 +92,23 @@ they start with `native/`.
   session is resumed and unlocked. It follows Android's touch-feedback
   setting and requires device haptic hardware. It is not a background alarm
   and does not request independent vibration permission.
+- **Header accessibility bounds stay above scrolled content.** The session
+  header is stacked above the content viewport. Compose's clickable touch
+  bounds can ignore ancestor drawing clips; without that precedence a partly
+  scrolled Chat action claimed part of the header's accessibility rectangle.
+  Header targets retain their full bounds; Chat actions remain reachable in
+  the visible content without hiding them or shrinking their touch targets.
+  - With the pinned Compose 1.12 dependency the header also declares a
+    non-merging accessibility container, so its full rectangle occludes the
+    gaps between targets. `isTraversalGroup` alone is not important to the
+    uncovered-bounds pass. The locally suppressed deprecated `isContainer`
+    API adds no label or action; verify platform accessibility bounds again
+    on a Compose upgrade, including a partly scrolled action and the header.
+- **Hidden status filters mean All.** Opening Tabs with its status chips
+  hidden resets any earlier chip selection to All in List, Two columns and
+  Workspace rails. Hiding the controls never leaves an invisible filter
+  narrowing the tabs; the saved start-filter preference is retained for
+  when those controls are shown again.
 - **Landscape keeps the rule.** A phone held sideways with the keyboard up is
   for reading, and for Insert where its own checks pass. A refused Send names
   the reason and the pane's actual rows. Zoom (shared) is offered, never
@@ -320,8 +350,23 @@ Switcher:
   - Backward scroll is unchanged.
   - Panes whose program reads the mouse or uses the alternate screen get
     every step, as do shells and an open popup.
-- **Swipe between tabs** is not offered: the tab row scrolls sideways, and
-  tabs are switched by tapping them or with ‹ ›.
+- **Header swipes.** Only the workspace/tab title button recognises these
+  optional, default-on shortcuts; Settings › Layout › Gestures disables them.
+  Left selects the next tab and right the previous one in the current
+  workspace, stopping at either end. Down opens Tabs on a phone or reveals
+  the sidebar on a wide layout; up hides the keyboard without clearing focus
+  or the draft. The direction is physical, not reversed by the locale.
+  Tab changes use the existing button actions: Chat-to-Chat reading stays
+  local, while opening Terminal can change Herdr's shared focus.
+  The content and sideways-scrolling tab strip never acquire navigation
+  gestures; text selection, terminal pinch and Android's edge Back remain
+  unchanged. Tap still opens Tabs and long press opens Rename / Close.
+  No gesture sends, inserts, stops an agent or closes a tab. A swipe acts
+  once on release, after at least 24 dp (and touch slop) on a clearly
+  dominant axis. A diagonal, second finger, cancellation or destination
+  change cancels it. Layout reset restores the header-swipes switch.
+  With the switch off, a drag is still not a tap: it neither navigates nor
+  opens Tabs. Ordinary tap and long press remain available.
 - **Lock-screen words** (`service/NotificationContent.kt`):
   - There is one pure choice per notification (attached card, connection
     lost, agent note, group summary), made from the privacy setting and the
@@ -470,7 +515,9 @@ Switcher:
   **Upstream prerequisite.** The extension's control endpoint
   (`host/omp/herdline-ingress.ts`, with `host/omp/live-subagents.ts`) needs
   OMP control hooks that no public OMP release offers (checked up to
-  v18.20.0): `ctx.getQueuedMessages` with request-id entries,
+  [v18.20.2](https://github.com/can1357/oh-my-pi/releases/tag/v18.20.2),
+  commit `7c49c11aa5bbaf3f418406583096168ad5b8c6dc`):
+  `ctx.getQueuedMessages` with request-id entries,
   `ctx.withdrawQueuedMessage`, `ctx.ui.hasOpenDialog`,
   `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog` and `ctx.isCollabSession`
   (asked per request: without it each request is refused as
@@ -625,6 +672,11 @@ User, assistant and tool-result images are read through the existing
   "Steering message"; with `liveSteered: true`, "Steered into active
   response". Neither means it is still queued: the queue is the ingress
   panel's, below.
+- **Unsupported endpoint diagnostics stay compact.** The composer's persistent
+  summary says Send is refused and nothing was typed; Details opens the full
+  missing-hook explanation in a scrollable dialog. Closing it or going Back
+  preserves the draft and the refusal. The raw hook list never consumes the
+  conversation viewport, and presentation never changes the delivery gates.
 
 ### Chat Send through the OMP endpoint
 
@@ -637,6 +689,11 @@ the extension alone does not add those hooks to OMP.
 - **Route.** With a Live endpoint for exactly the draft's instance, Send and
   steer go through it and the PTY box checks do not gate them; `auto`
   steers a working agent and starts an idle one's turn. Insert stays on PTY.
+- **Availability follows the route.** In Chat, an `unsupported` or `unusable`
+  endpoint disables Send even if the pane's send check passes. A Live endpoint
+  still takes precedence over the pane check; absence keeps the pane fallback.
+  Insert remains governed by its own PTY check. The compact Unsupported panel
+  explains the disabled button without a duplicate warning or a Checking notice.
 - **Fallback.** Only `{"endpoint":"absent"}` (this instance publishes no
   endpoint, known before anything was sent) lets Send type into the pane.
   `unsupported` (extension installed, OMP lacks hooks; the sidecar lists

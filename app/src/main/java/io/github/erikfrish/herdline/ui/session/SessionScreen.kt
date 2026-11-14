@@ -8,6 +8,8 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import android.view.Window
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
@@ -115,12 +117,15 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.isContainer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -180,6 +185,8 @@ import io.github.erikfrish.herdline.data.PaneModes
 import io.github.erikfrish.herdline.data.showsChat
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.service.AgentNotifications
+import io.github.erikfrish.herdline.service.AlertKey
+import io.github.erikfrish.herdline.service.HerdrEcho
 import io.github.erikfrish.herdline.service.MonitorKey
 import io.github.erikfrish.herdline.service.LockGate
 import io.github.erikfrish.herdline.service.NoteSurface
@@ -316,6 +323,8 @@ fun SessionScreen(
     // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
+    // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
+    val bareBanners = remember { HashMap<Long, Long>() }
     var latched by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var prompt by remember { mutableStateOf<Prompt?>(null) }
@@ -383,6 +392,7 @@ fun SessionScreen(
     val modes = remember { PaneModes.get(context) }
     val modeChoices by modes.choices.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
+    val keyboard = LocalSoftwareKeyboardController.current
     // Once the keyboard has opened here, the user knows the way in; the hint never comes back (D3-2).
     var typedOnce by remember { mutableStateOf(false) }
     LaunchedEffect(imeVisible) { if (imeVisible) typedOnce = true }
@@ -440,7 +450,7 @@ fun SessionScreen(
     LaunchedEffect(scheme, state) { connection.setTheme(scheme.toJson().toString()) }
     LaunchedEffect(typefaces, terminal) { typefaces?.let { terminal?.setTypefaces(it) } }
     LaunchedEffect(settings.fontSize, terminal) { terminal?.fontSizeSp = settings.fontSize }
-    LaunchedEffect(settings.keepScreenOn, terminal) { terminal?.keepScreenOn = settings.keepScreenOn }
+    KeepScreenOn(settings.keepScreenOn)
     LaunchedEffect(settings.terminalSuggestions, terminal) { terminal?.keyboardSuggestions = settings.terminalSuggestions }
     // While the composer's field has the keyboard, the daemon's pane keeps its size so Send stays allowed;
     // the Tabs sheet holds it too, for its whole life, so hiding the keyboard under it never grows the pane.
@@ -462,13 +472,23 @@ fun SessionScreen(
                 is Connection.Event.Problem -> banners = banners.add(AgentNote(event.message, null, NoteKind.Problem, null, ++noteCount))
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
+                    val key = AlertKey(node.id, event.pane)
+                    val now = System.currentTimeMillis()
+                    // Before any switch: a pane notification nothing shows still makes its pane-less copy an echo.
+                    AgentNotifications.echoes.received(key, now)
+                    if (event.pane != null) {
+                        // Every pane-less banner before now is either this one's echo or past its window.
+                        bareBanners.forEach { (id, at) -> if (HerdrEcho.follows(at, now)) banners = banners.dismiss(id) }
+                        bareBanners.clear()
+                    }
                     val route = routeNote(
                         viewing = app.viewingSession == node.id,
                         locked = LockGate.isDeviceLocked(context),
                         enabled = if (event.attention) settings.notifyAttention else settings.notifyDone,
                     )
-                    if (route == NoteSurface.Banner) {
+                    if (route == NoteSurface.Banner && !AgentNotifications.echoes.isEcho(key, now)) {
                         val shown = connection.view.value
+                        val id = ++noteCount
                         banners = banners.add(
                             AgentNote(
                                 // The system notification's words: Herdr's title, and where the pane is.
@@ -476,9 +496,10 @@ fun SessionScreen(
                                 location = event.pane?.let { pane -> shown?.let { notificationBody(it, pane) } } ?: event.body,
                                 kind = if (event.attention) NoteKind.Attention else NoteKind.Finished,
                                 pane = event.pane,
-                                id = ++noteCount,
+                                id = id,
                             ),
                         )
+                        if (event.pane == null) bareBanners[id] = now
                     }
                 }
             }
@@ -805,8 +826,8 @@ fun SessionScreen(
     }
 
     fun openSwitcher() {
-        // The phone sheet starts each open on the saved filter, once, so Grid ⇄ List keeps a chip tap (TB1 §4).
-        if (SheetSections.shows(settings.sheetSections, SheetSection.Filters)) filter = settings.startFilter.switcherFilter
+        // Each open starts on the saved filter; hidden chips always mean All, not a stale chip selection.
+        filter = if (SheetSections.shows(settings.sheetSections, SheetSection.Filters)) settings.startFilter.switcherFilter else SwitcherFilter.All
         switcherOpen = true
         // Held before the keyboard starts to go, not on the next effect pass.
         terminal?.holdGrid = true
@@ -912,7 +933,10 @@ fun SessionScreen(
                 SessionColumn(sideComposer, Modifier.fillMaxSize().background(chromeColor).imePadding(), onRoom = { terminal?.chatRoomPx = it }) {
                     // A flat wash of the node's colour behind the header, lent to the glass controls on it.
                     val headerColor = accent.copy(alpha = if (dark) 0.14f else 0.1f).compositeOver(chromeColor)
-                    Box {
+                    // Compose 1.12 needs an important, non-merging header boundary to occlude its gaps too.
+                    // isTraversalGroup does not participate in that pass; this adds no label, action or focus stop.
+                    @Suppress("DEPRECATION")
+                    Box(Modifier.zIndex(1f).semantics { isContainer = true }) {
                         Box(
                             Modifier
                                 .matchParentSize()
@@ -1082,6 +1106,32 @@ fun SessionScreen(
                                 ).joinToString(", ").ifEmpty { null }
                                 // The desktop's tab name alone: the monitor glyph beside it says "desktop".
                                 val desktopText = desktopOther?.let { view?.paneTabTitle(it) }
+                                // A changed destination or mode cancels a finger already down; never retarget its release.
+                                val gestureTarget = remember(node.id, node.session, view?.boot, workspace?.id, tab?.id, focusedPane, chatMode) { Any() }
+                                val headerGestures = Modifier.headerSwipes(
+                                    enabled = settings.headerGestures && state is Connection.State.Connected && !closed && pendingTab == null && terminalOpening == null,
+                                    target = gestureTarget,
+                                ) { swipe ->
+                                    when (swipe) {
+                                        HeaderSwipe.Left, HeaderSwipe.Right -> {
+                                            val current = tab?.id
+                                            val shown = connection.view.value
+                                            if (shown != null && shown.boot == view?.boot && current != null) {
+                                                val available = workspace?.id?.let(shown::tabsOf).orEmpty()
+                                                val index = available.indexOfFirst { it.id == current }
+                                                val step = if (swipe == HeaderSwipe.Left) 1 else -1
+                                                if (index >= 0) available.getOrNull(index + step)?.let { chooseTab(it.id) }
+                                            }
+                                        }
+                                        HeaderSwipe.Down -> if (wide) {
+                                            app.settings.update { it.copy(sidebarOpen = true) }
+                                        } else openSwitcher()
+                                        HeaderSwipe.Up -> {
+                                            keyboard?.hide()
+                                            terminal?.hideKeyboard()
+                                        }
+                                    }
+                                }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
@@ -1098,7 +1148,7 @@ fun SessionScreen(
                                         onClick = if (wide) ::toggleSidebar else ::openSwitcher,
                                         onRename = tab?.let { t -> { prompt = Prompt.RenameTab(t.id, t.label) } },
                                         onClose = tab?.let { t -> { prompt = Prompt.CloseTab(t.id, t.label) } },
-                                        modifier = modifier,
+                                        modifier = modifier.then(headerGestures),
                                     )
                                 }
                                 if (typingShort) {
@@ -1666,6 +1716,8 @@ fun SessionScreen(
                             filter = filter,
                             onFilter = { filter = it },
                             filtersShown = SheetSections.shows(settings.sheetSections, SheetSection.Filters),
+                            hideShells = settings.hideShells,
+                            hideIdleDone = settings.hideIdleDone,
                             scope = tabsScope,
                             onScope = { tabsScope = it },
                             actions = actions,
@@ -2432,4 +2484,41 @@ private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = n
             .clearAndSetSemantics { contentDescription = spoken }
             .testTag("chat:readonly"),
     )
+}
+
+/** The windows a session on screen holds awake, and by how many sessions: two overlap while one cross-fades into the next. */
+private val awakeHolds = java.util.WeakHashMap<Window, Int>()
+
+/**
+ * Keep screen on, while this session is composed: the activity window's own FLAG_KEEP_SCREEN_ON, set and cleared
+ * here alone. A view's keepScreenOn only adds a derived flag to the window's layout params; once those were applied
+ * again as the client's own flags, ViewRootImpl kept the window awake after the view cleared it.
+ * Released when it turns off or the session leaves for Nodes or Settings.
+ */
+@Composable
+private fun KeepScreenOn(on: Boolean) {
+    val host = LocalView.current
+    DisposableEffect(on, host) {
+        val window = if (on) {
+            generateSequence(host.context) { (it as? ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()?.window
+        } else {
+            null
+        }
+        if (window != null) {
+            awakeHolds[window] = (awakeHolds[window] ?: 0) + 1
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            if (window != null) {
+                val left = (awakeHolds[window] ?: 1) - 1
+                if (left > 0) {
+                    awakeHolds[window] = left
+                } else {
+                    awakeHolds.remove(window)
+                    // Window.setFlags always dispatches its attributes, so this also replaces a stale client flag.
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
+    }
 }

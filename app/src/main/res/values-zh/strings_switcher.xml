@@ -42,7 +42,7 @@
     <string name="order_label">排序</string>
     <string name="order_workspace">工作区</string>
     <string name="order_last_activity">最近活动</string>
-    <string name="order_help">“最近活动”按 Herdr 在各主机上最后一次状态变化排列标签页。时间只显示 Herdline 自己看到的变化。</string>
+    <string name="order_help">仅适用于列表视图和侧边栏。双列和工作区横排保持 Herdr 的顺序。“最近活动”按 Herdr 在各主机上最后一次状态变化排列标签页。时间只显示 Herdline 自己看到的变化。</string>
     <string name="order_limit">按 Herdr 最后一次状态变化排序。时间只显示 Herdline 自己看到的变化。</string>
     <string name="order_limit_short">按 Herdr 最后状态变化排序。时间：仅 Herdline 看到的变化。</string>
     <string name="order_unranked">尚无状态变化 · Herdr 顺序</string>

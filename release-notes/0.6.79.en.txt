@@ -1,0 +1,9 @@
+Herdline 0.6.79 (experimental) — header navigation gestures
+
+- Swipe on the workspace/tab title: left selects the next tab, right the previous tab, down opens Tabs (or reveals the sidebar on wide layouts), and up hides the keyboard. Tab navigation stops at the current workspace's ends.
+- Settings > Layout > Gestures controls the default-on Header swipes switch. The choice persists; Restore Layout returns it to on.
+- Gestures use existing navigation actions. Chat-to-Chat reading stays local; opening Terminal can change host focus. Drafts and delivery holds remain bound to their original pane.
+- Tap and long-press actions remain. Chat/Terminal content, the scrolling tab strip, text selection, terminal pinch and Android edge Back are not gesture-navigation surfaces. No gesture sends text, inserts, stops an agent or closes a tab.
+- Also clarifies English/Chinese help: Tab order applies to List and the sidebar; Two columns and Workspace rails keep Herdr's order.
+
+Verification and its limits are recorded separately. Experimental local candidate only; no publication or phone installation is implied.

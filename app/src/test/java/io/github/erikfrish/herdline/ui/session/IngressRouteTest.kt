@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.ComposerCheck
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
@@ -84,15 +85,21 @@ class IngressRouteTest {
     }
 
     @Test
-    fun aRefusedSendOnAPaneWithoutItsServerGivesTheServersReason() {
-        // opencode --standalone: the box check refuses the PTY route; the endpoint says why Chat can't send.
-        assertEquals("needs_server", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("needs_server")))
-        assertEquals("server_discovery", sendPrecheckCode("not_visible", IngressProbe.Unusable("server_discovery")))
-        // Any other probe leaves the box check's own code; a Send the gate allows stays allowed.
-        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", IngressProbe.Unusable("stale")))
-        assertEquals("unsupported_program", sendPrecheckCode("unsupported_program", null))
-        assertEquals("agent_working", sendPrecheckCode("agent_working", IngressProbe.Absent))
-        assertNull(sendPrecheckCode(null, IngressProbe.Unusable("needs_server")))
+    fun aKnownEndpointRefusalOverridesThePaneButAbsenceKeepsItsSafeFallback() {
+        val allowed = ComposerCheck.Gate(true, null)
+        val refused = ComposerCheck.Gate(false, "agent_working")
+        val unsupported = IngressProbe.Unsupported(listOf("getOpenDialogs"))
+        assertEquals(ComposerCheck.Gate(false, REASON_UNSUPPORTED), composerSendGate(true, unsupported, allowed))
+        assertEquals(ComposerCheck.Gate(false, REASON_UNSUPPORTED), composerSendGate(true, unsupported, null))
+        for (reason in listOf("needs_server", "server_discovery", "stale")) {
+            val code = if (reason == "stale") REASON_UNUSABLE else reason
+            assertEquals(ComposerCheck.Gate(false, code), composerSendGate(true, IngressProbe.Unusable(reason), allowed))
+        }
+        assertEquals(ComposerCheck.Gate(true, null), composerSendGate(true, IngressProbe.Live(IngressState(true, emptyList())), refused))
+        assertEquals(allowed, composerSendGate(true, IngressProbe.Absent, allowed))
+        assertEquals(refused, composerSendGate(true, IngressProbe.Absent, refused))
+        assertNull(composerSendGate(true, null, null))
+        assertEquals(allowed, composerSendGate(false, unsupported, allowed))
     }
 
     /**
@@ -132,7 +139,7 @@ class IngressRouteTest {
         // OpenCode --standalone: the box check refuses the PTY route before any Send, and the precheck names the server.
         for (cause in listOf("needs_server", "server_discovery")) {
             val probe = IngressProbe.Unusable(cause)
-            val precheck = sendPrecheckCode("unsupported_program", probe)
+            val precheck = composerSendGate(true, IngressProbe.Unusable(cause), ComposerCheck.Gate(false, "unsupported_program"))?.reason
             assertEquals(cause, listOf(reasonRes(cause)), shown(probe, precheck = precheck))
         }
     }
