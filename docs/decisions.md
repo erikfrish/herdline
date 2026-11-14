@@ -655,6 +655,11 @@ User, assistant and tool-result images are read through the existing
   "Steering message"; with `liveSteered: true`, "Steered into active
   response". Neither means it is still queued: the queue is the ingress
   panel's, below.
+- **Unsupported endpoint diagnostics stay compact.** The composer's persistent
+  summary says Send is refused and nothing was typed; Details opens the full
+  missing-hook explanation in a scrollable dialog. Closing it or going Back
+  preserves the draft and the refusal. The raw hook list never consumes the
+  conversation viewport, and presentation never changes the delivery gates.
 
 ### Chat Send through the OMP endpoint
 

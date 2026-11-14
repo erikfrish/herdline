@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.session
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -27,6 +33,7 @@ import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.data.Draft
 import io.github.erikfrish.herdline.data.SentRecord
 import io.github.erikfrish.herdline.data.SentState
+import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 
 /*
  * Chat's Send through the OMP endpoint (core/Ingress.kt): the pure rules the
@@ -257,12 +264,7 @@ internal fun IngressQueuePanel(
     }
     when (panel) {
         QueuePanel.Hidden -> Column(modifier) { noteText() }
-        is QueuePanel.Unsupported -> Text(
-            stringResource(R.string.ingress_unsupported, panel.missing),
-            style = MaterialTheme.typography.bodySmall,
-            color = error,
-            modifier = modifier.padding(bottom = 4.dp).testTag("ingress:unsupported"),
-        )
+        is QueuePanel.Unsupported -> UnsupportedEndpoint(panel.missing, modifier)
         is QueuePanel.Unusable -> Text(
             stringResource(unusableRes(panel.reason), panel.reason),
             style = MaterialTheme.typography.bodySmall,
@@ -308,5 +310,46 @@ internal fun IngressQueuePanel(
             }
             noteText()
         }
+    }
+}
+
+/** The refusal stays visible; the unbounded host diagnostic belongs in a scrollable dialog. */
+@Composable
+private fun UnsupportedEndpoint(missing: String, modifier: Modifier) {
+    var details by remember(missing) { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().padding(bottom = 4.dp).testTag("ingress:unsupported"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.ingress_unsupported_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = { details = true },
+            modifier = Modifier.heightIn(min = 48.dp).testTag("ingress:details"),
+        ) { Text(stringResource(R.string.ingress_details)) }
+    }
+    if (details) {
+        GlassAlertDialog(
+            onDismissRequest = { details = false },
+            title = { Text(stringResource(R.string.ingress_details_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.ingress_unsupported, missing),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.verticalScroll(rememberScrollState()).testTag("ingress:diagnostic"),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { details = false }, modifier = Modifier.testTag("ingress:details_close")) {
+                    Text(stringResource(R.string.close))
+                }
+            },
+        )
     }
 }

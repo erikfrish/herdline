@@ -84,4 +84,7 @@
     <string name="reason_agent_restarted">此窗格中的代理已重启。未发送任何内容。</string>
     <string name="reason_instance_unknown">无法确认代理会话。未发送任何内容。</string>
     <string name="reason_write_ahead_failed">无法先保存草稿。未发送任何内容。</string>
+    <string name="ingress_unsupported_summary">发送被拒绝，不会输入窗格。</string>
+    <string name="ingress_details">详情</string>
+    <string name="ingress_details_title">聊天为何无法发送</string>
 </resources>
