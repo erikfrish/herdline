@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10118,
-    "versionName": "0.6.80",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.80/herdline-0.6.80.apk",
-    "sha256": "438663da8bb5efe2205e8a08670b6e40eeade748e049bf370deba699bcb41621",
-    "size": 25051275,
+    "versionCode": 10122,
+    "versionName": "0.6.83",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.83/herdline-0.6.83.apk",
+    "sha256": "062c955635ec4a236d6566fbc41ec3f144ee70a95bc127230798ddfa1271a95a",
+    "size": 25127107,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused QA passed; signed APK upgrade/cold-launch smoke passed. Connected gestures: QA variant only; not full QA."
+      "reason": "Experimental prerelease. Focused emulator verification is not full all-harness QA or physical-phone verification. Publication and phone installation are separate actions."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.80 (Experimental)\n\nChanges since 0.6.68:\n- Header gestures: swipe left/right on the workspace/tab title for next/previous tab, down for Tabs, up to hide the keyboard. Tabs stop at workspace ends. Settings > Layout > Gestures disables swipes without turning drags into taps. Buttons, tap/long-press, drafts and delivery holds remain.\n- App updates: responsive cancellation, recovery of a verified APK waiting for install permission after process death, and one installer handoff at a time. Every handoff rechecks the APK; startup never downloads or installs automatically.\n- Hide preferences now work in List, Two columns and Workspace rails. Hidden filters no longer retain an invisible selection. English/Chinese help explains Tab order and reset/privacy scope accurately.\n- Keep screen on releases after navigation or disabling the setting. Notification switches also suppress matching Herdr echoes. Header accessibility bounds exclude scrolled Chat actions.\n- Unsupported OMP endpoints show a compact refusal with scrollable Details. Send is disabled when the endpoint refuses, without changing Insert or the absent-endpoint fallback.\n\nVerification: focused QA-variant checks cover these changes; the gesture regression fails before the fix and passes afterward. The signed APK passed an isolated upgrade/cold-launch smoke, preserving the saved host, settings and trust; its gesture switch persisted. Connected gestures were tested on the QA variant, not the signed APK. Updater checks used a real published APK and Android installer. This is not a full-device QA pass.\n\nLimits: phones, wide-sidebar gestures, Android 11 permission-toggle process death, and some updater timing/localization cases remain unverified. Full harness support and stock Samsung Now Bar placement are not claimed. Public OMP through 18.20.2 lacks required control APIs; image Steer, Chat questionnaire replies and acknowledged Steer remain unavailable. No patched OMP was deployed.\n"
+      "en": "Fresh OMP conversations from Chat\n\n- Fresh OMP sessions show empty Chat before the lazily written transcript appears, then display the first real messages without switching modes.\n- Stock OMP with an Unsupported companion offers an explicit Use checked pane input choice. Ordinary Send then uses the existing native editor, dialog, process/session and delivery checks for that exact pane. The choice resets on reconnect or instance replacement; no silent fallback, automatic retry or patched OMP is introduced.\n- Every New tab entry, including Workspace rails, opens the exact newly created tab/root pane. The dialog defaults to Shell or starts an explicitly chosen installed harness once in that fresh pane through the guarded Herdr CLI over the existing SSH channel, without sending a prompt, installing a harness or resuming a session.\n- Uncertain delivery keeps the draft held and is never resent automatically. Native safety refusals remain effective. Queue management, direct remote questionnaires and endpoint image-Steer still require upstream OMP APIs; this release does not emulate them.\n\nExperimental prerelease. Focused emulator verification is not full all-harness QA or physical-phone verification. Publication and phone installation are separate actions."
     }
   }
 }
