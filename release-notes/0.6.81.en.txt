@@ -1,0 +1,7 @@
+Herdline 0.6.81 (experimental) — fresh OMP Chat and create-and-open tabs
+
+- A fresh OMP session whose exact allocated transcript file has not been written yet opens as empty Chat and keeps reading until its first messages appear. It is not treated as unsupported. The reported instance and pre-send history boundary are preserved; unsafe or unverified paths are never read as empty history.
+- Every New tab entry, including Workspace rails, now creates with focus and opens the exact new tab and root pane returned by Herdr on the creating client. Browsing and filtering still do not move focus; nonempty drafts remain bound to their original pane.
+- The New tab dialog offers Shell by default or an installed host harness. A selected harness starts once in that exact fresh pane through Herdr's guarded agent.start, without sending a prompt, installing an integration, or resuming another session. Failed startup keeps the tab and reports the error; uncertain creation/startup is never automatically retried.
+
+Focused native/JVM checks and exact-candidate runtime results are recorded separately. Existing delivery, instance and modal guards and the upstream-only OMP policy are unchanged. No publication or phone installation is implied.

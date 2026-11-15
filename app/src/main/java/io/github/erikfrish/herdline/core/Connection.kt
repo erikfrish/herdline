@@ -2,6 +2,8 @@
 package io.github.erikfrish.herdline.core
 
 import io.github.erikfrish.herdline.data.Node
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -119,6 +121,13 @@ class Connection(val node: Node) {
         data class Uncertain(override val receipt: String) : DeliveryUpdate
     }
 
+    /** Exactly the IDs `tab.create` answered with, for one fresh tab. */
+    data class CreatedTab(val boot: String, val tab: String, val pane: String, val terminal: String) {
+        val isEmpty: Boolean get() = boot.isEmpty() || tab.isEmpty() || pane.isEmpty() || terminal.isEmpty()
+
+        fun toJson(): JSONObject = JSONObject().put("boot", boot).put("tab", tab).put("pane", pane).put("terminal", terminal)
+    }
+
     private val _state = MutableStateFlow<State>(State.Connecting)
     val state: StateFlow<State> = _state
     private val _view = MutableStateFlow<ShellView?>(null)
@@ -134,6 +143,9 @@ class Connection(val node: Node) {
     private val receipts = Any()
     private val pending = mutableSetOf<String>()
     private val early = LinkedHashMap<String, Boolean>()
+
+    // Replies one `awaitRequest` waits for.
+    private val replies = PendingReplies()
 
     @Volatile
     private var id = 0L
@@ -199,11 +211,20 @@ class Connection(val node: Node) {
                 )
                 "clipboard" -> _events.tryEmit(Event.Clipboard(event.optString("text")))
                 "bell" -> _events.tryEmit(Event.Bell)
-                "response" -> settle(event.optString("request_id"), confirmed = true, reason = null)
+                "response" -> {
+                    val requestId = event.optString("request_id")
+                    val envelope = event.optJSONObject("response")
+                    val replied = if (envelope != null) RequestReply.Answered(envelope) else null
+                    if (!answer(requestId, replied)) {
+                        settle(requestId, confirmed = true, reason = null)
+                    }
+                }
                 "rejected" -> if (event.isNull("request_id")) {
                     _events.tryEmit(Event.Problem(event.optString("reason")))
                 } else {
-                    settle(event.optString("request_id"), confirmed = false, reason = event.optString("reason"))
+                    val requestId = event.optString("request_id")
+                    answer(requestId, RequestReply.Refused(event.optString("reason")))
+                    settle(requestId, confirmed = false, reason = event.optString("reason"))
                 }
                 "version_mismatch" -> _state.value = State.Incompatible.parse(event)
                 "herdr_missing" -> {
@@ -248,6 +269,7 @@ class Connection(val node: Node) {
     private fun settleUncertain() {
         val left = synchronized(receipts) { pending.toList().also { pending.clear(); early.clear() } }
         left.forEach { _deliveries.tryEmit(DeliveryUpdate.Uncertain(it)) }
+        replies.failAll(RequestReply.Uncertain)
     }
 
     /**
@@ -268,6 +290,42 @@ class Connection(val node: Node) {
             waiting && confirmed -> _deliveries.tryEmit(DeliveryUpdate.Confirmed(requestId))
             waiting -> _deliveries.tryEmit(DeliveryUpdate.Uncertain(requestId))
             reason != null -> _events.tryEmit(Event.Problem(reason))
+        }
+    }
+
+    /** Hands the reply to its waiter when there is one; false when nobody awaits it. */
+    private fun answer(requestId: String, reply: RequestReply?): Boolean =
+        reply != null && replies.settle(requestId, reply)
+
+    /**
+     * Awaits the one answer to [method] as sent on this link, at most for
+     * [timeoutMs]. Registers after the send and checks first for the reply
+     * that raced ahead of it: one request, one answer, never resent, never
+     * replayed. Cancellation removes the waiter and rethrows. A dying link
+     * settles its waiters as refused instead of letting a timeout lie.
+     */
+    internal suspend fun awaitRequest(
+        method: String,
+        params: JSONObject,
+        timeoutMs: Long,
+    ): RequestReply {
+        val session = live()
+        if (session == 0L) return RequestReply.Refused("not_connected")
+        val requestId = try {
+            Native.request(session, method, params.toString())
+        } catch (e: IOException) {
+            // The call threw at the write: nothing is known to have left.
+            return RequestReply.Refused(e.message ?: "${method}_failed")
+        }
+        val waiter = CompletableDeferred<RequestReply>()
+        val raced = replies.register(requestId, waiter)
+        if (live() != session) waiter.complete(RequestReply.Uncertain)
+        try {
+            return raced ?: withTimeoutOrNull(timeoutMs) { waiter.await() } ?: RequestReply.Uncertain
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } finally {
+            replies.remove(requestId)
         }
     }
 
@@ -664,13 +722,6 @@ class Connection(val node: Node) {
     fun focusWorkspace(id: String) = request("workspace.focus", JSONObject().put("workspace_id", id))
     fun focusTab(id: String) = request("tab.focus", JSONObject().put("tab_id", id))
     fun focusPane(id: String) = request("pane.focus", JSONObject().put("pane_id", id))
-    /** A blank [label] leaves the name to Herdr, which numbers the tab; [focus] false keeps Herdr's focus where it is. */
-    fun newTab(workspace: String, label: String = "", focus: Boolean = true) = request(
-        "tab.create",
-        JSONObject().put("workspace_id", workspace).put("focus", focus).apply {
-            label.trim().takeIf { it.isNotEmpty() }?.let { put("label", it) }
-        },
-    )
     fun closeTab(id: String) = request("tab.close", JSONObject().put("tab_id", id))
     fun renameTab(id: String, label: String) = request("tab.rename", JSONObject().put("tab_id", id).put("label", label))
     fun split(pane: String, direction: String) =
@@ -752,3 +803,42 @@ private const val UNCONFIRMED = "unconfirmed"
 
 /** Answers kept for deliveries that have not registered yet; each comes within milliseconds. */
 private const val EARLY_ANSWERS = 32
+
+/** Replies kept for an `awaitRequest` that has not registered yet; same bound. */
+private const val EARLY_REPLIES = 32
+
+internal sealed interface RequestReply {
+    data class Answered(val envelope: JSONObject) : RequestReply
+    data class Refused(val reason: String) : RequestReply
+    data object Uncertain : RequestReply
+}
+
+/** Answers can race Native.request returning its id; the bounded early cache closes that gap. */
+internal class PendingReplies {
+    private val waiting = HashMap<String, CompletableDeferred<RequestReply>>()
+    private val early = LinkedHashMap<String, RequestReply>()
+
+    @Synchronized
+    fun register(id: String, waiter: CompletableDeferred<RequestReply>): RequestReply? =
+        early.remove(id) ?: null.also { waiting[id] = waiter }
+
+    @Synchronized
+    fun settle(id: String, reply: RequestReply): Boolean {
+        val waiter = waiting.remove(id)
+        if (waiter != null) waiter.complete(reply) else {
+            early[id] = reply
+            if (early.size > EARLY_REPLIES) early.remove(early.keys.first())
+        }
+        return waiter != null
+    }
+
+    @Synchronized
+    fun remove(id: String) { waiting.remove(id); early.remove(id) }
+
+    @Synchronized
+    fun failAll(reply: RequestReply) {
+        waiting.values.forEach { it.complete(reply) }
+        waiting.clear()
+        early.clear()
+    }
+}

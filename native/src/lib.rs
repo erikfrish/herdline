@@ -18,6 +18,7 @@ mod ingress;
 pub mod input;
 mod jni_api;
 pub mod keys;
+mod launchers;
 pub mod render;
 mod screen;
 pub mod scroll;

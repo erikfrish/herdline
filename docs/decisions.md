@@ -419,6 +419,22 @@ Switcher:
   no import or resume, no second OMP. Prompts go through the composer to the
   same pane, under the same Insert/Send rules. Dialogs are answered in the
   terminal, from a card that opens it.
+- **Fresh OMP sessions.** OMP allocates a session path before writing its
+  first assistant turn. An exact Herdr-reported OMP path below an authorized
+  existing session directory, with a foreground OMP PID, reads as zero bytes
+  until that file appears. Chat shows No messages yet and keeps polling;
+  the real identity and pre-send history boundary remain intact. A recognized
+  foreground OMP that has not reported any reference instead yields a
+  transient pending state with no invented identity. Unsafe paths, missing
+  process proof and real transport errors never become empty history.
+  Existing draft, instance, dialog and delivery gates are unchanged.
+- **Create and open.** New tab offers Shell by default and the fixed Herdr
+  harness kinds found by a bounded read-only executable probe on that host.
+  Creating is one `tab.create` with focus enabled, including Workspace rails;
+  the app follows its exact returned tab/root-pane IDs, never a topology guess.
+  Only an explicitly chosen harness invokes `agent.start` in that fresh pane.
+  There is no automatic prompt, install or resume, and no automatic retry
+  after an unknown result. Starting fails visibly without deleting the tab.
 - **Identity from Herdr's CLI.** The client endpoint the app speaks has no
   `pane.get` or process info. So each read runs `herdr --session S pane get P`
   and `pane process-info --pane P` on the host, over an exec channel of the
@@ -515,16 +531,18 @@ Switcher:
   **Upstream prerequisite.** The extension's control endpoint
   (`host/omp/herdline-ingress.ts`, with `host/omp/live-subagents.ts`) needs
   OMP control hooks that no public OMP release offers (checked up to
-  v18.20.0): `ctx.getQueuedMessages` with request-id entries,
+  v18.20.2): `ctx.getQueuedMessages` with request-id entries,
   `ctx.withdrawQueuedMessage`, `ctx.ui.hasOpenDialog`,
   `ctx.ui.getOpenDialogs`, `ctx.ui.submitDialog` and `ctx.isCollabSession`
   (asked per request: without it each request is refused as
   `collab_state_unknown`). On stock
-  OMP the extension reports Unsupported with the missing hook names, and
-  Chat refuses through it, never typing into the pane instead. Image Steer, Chat
-  questionnaire answers and acknowledged Steer stay unavailable until
-  upstream OMP offers these hooks; without an endpoint, text Send and Steer
-  keep the pane route with its own checks, Check and Unlock.
+  OMP the extension reports Unsupported with the missing hook names.
+  Direct endpoint delivery stays refused. The user may explicitly select
+  checked pane input for that exact connection/boot/instance; ordinary Send
+  then uses the existing native editor/dialog/instance checks and history
+  receipt. This is not automatic fallback after an error. Reconnection or
+  instance replacement resets it. Endpoint image Steer, queue management and
+  Chat questionnaire replies still require upstream hooks.
   A task tool never claims Done while one of its children runs, and such a
   run keeps its steps visible instead of folding away.
 - **Reading width.** Prose (paragraphs, headings, lists, quotes, rules and
@@ -687,17 +705,17 @@ prerequisite above).
 - **Route.** With a Live endpoint for exactly the draft's instance, Send and
   steer go through it and the PTY box checks do not gate them; `auto`
   steers a working agent and starts an idle one's turn. Insert stays on PTY.
-- **Availability follows the route.** In Chat, an `unsupported` or `unusable`
-  endpoint disables Send even if the pane's send check passes. A Live endpoint
-  still takes precedence over the pane check; absence keeps the pane fallback.
-  Insert remains governed by its own PTY check. The compact Unsupported panel
-  explains the disabled button without a duplicate warning or a Checking notice.
-- **Fallback.** Only `{"endpoint":"absent"}` (this instance publishes no
-  endpoint, known before anything was sent) lets Send type into the pane.
-  `unsupported` (extension installed, OMP lacks hooks; the sidecar lists
-  them), `unusable` (discovery failed, stale, unreachable, permissions) and
-  every refusal show an explicit error; nothing is typed. Once a request may
-  have reached the socket, doubt is `uncertain`, and nothing is resent.
+- **Availability follows the selected route.** By default an unsupported or
+  unusable endpoint disables Send even if the pane check passes. Only an
+  explicit choice on Unsupported stock OMP selects checked pane input; that
+  choice never overrides a failed native pane gate. Unusable and uncertain
+  endpoint requests never fall back. A Live endpoint keeps its existing
+  direct route; Insert keeps its own PTY checks.
+- **Fallback and consent.** An absent endpoint may use the validated pane
+  route automatically. A known Unsupported OMP endpoint requires explicit
+  checked-pane consent before any attempt, tied to the current connection,
+  daemon boot and exact real instance. Nothing is resent automatically, and
+  once a request may have reached a socket its uncertain outcome stands.
 - **Discovery.** Over the link's exec: the pane report gives the OMP pid;
   `<runtime>/herdline-ingress/<sessionId>-<pid>.json`, where `<runtime>` is
   the exec shell's own `$XDG_RUNTIME_DIR`, else `/run/user/<uid>`; no other

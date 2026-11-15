@@ -180,6 +180,7 @@ pub enum Answer {
     Page(Response),
     Media { media: MediaAnswer },
     Refused { refused: Refused },
+    Pending { pending: Pending },
 }
 
 /// Why Chat will never read this session, as opposed to an error that may
@@ -198,6 +199,13 @@ pub enum Refused {
         found: Option<u32>,
         supported: u32,
     },
+}
+
+/// A recognized foreground OMP has not reported its session reference yet.
+/// No identity or path is invented; Chat keeps polling until one is reported.
+#[derive(Debug, Serialize)]
+pub struct Pending {
+    pub agent: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -432,6 +440,7 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
     }
     match page(exec, session, request) {
         Ok(page) => Ok(Answer::Page(page)),
+        Err(Error::TranscriptPending) => Ok(Answer::Pending { pending: Pending { agent: "omp" } }),
         Err(Error::UnsupportedFormat(format)) => Ok(Answer::Refused {
             refused: Refused::UnsupportedFormat { format },
         }),
@@ -891,7 +900,7 @@ pub(crate) fn parse_instance(exit_status: Option<u32>, bytes: &[u8]) -> Result<O
     let reply = parse_reply(exit_status, bytes)?;
     match identity(&reply.pane, &reply.process) {
         Ok((identity, _)) => Ok(Some(identity)),
-        Err(Error::NoTranscript) => Ok(None),
+        Err(Error::NoTranscript | Error::TranscriptPending) => Ok(None),
         Err(error) => Err(error),
     }
 }
@@ -989,7 +998,7 @@ printf '@@pane\n'
 real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
 {resolver}
 HERDLINE_RESOLVE
-) || {{ status=$?; [ "$status" -eq {EXIT_OUTSIDE_HOME} ] && exit {EXIT_OUTSIDE_HOME}; exit {EXIT_UNCONFINED}; }}
+) || {{ status=$?; if [ "$status" -eq 12 ]; then printf '\n@@file 0 0\n@@data\n'; exit 0; fi; [ "$status" -eq {EXIT_OUTSIDE_HOME} ] && exit {EXIT_OUTSIDE_HOME}; exit {EXIT_UNCONFINED}; }}
 [ -f "$real" ] || exit {EXIT_NO_FILE}
 size=$(wc -c < "$real") || exit {EXIT_NO_FILE}
 size=$((size))
@@ -1119,6 +1128,14 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
     }
     let pane = &pane["result"]["pane"];
     let session = &pane["agent_session"];
+    if pane["agent"] == "omp" && session.is_null() {
+        let processes = &process["result"]["process_info"]["foreground_processes"];
+        if processes.as_array().is_some_and(|items| {
+            items.len() == 1 && items[0]["name"] == "omp" && items[0]["pid"].as_u64().is_some_and(|pid| pid > 0)
+        }) {
+            return Err(Error::TranscriptPending);
+        }
+    }
     let agent = session["agent"]
         .as_str()
         .filter(|agent| {

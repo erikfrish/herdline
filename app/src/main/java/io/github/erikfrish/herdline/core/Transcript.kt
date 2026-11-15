@@ -308,6 +308,7 @@ data class TranscriptPage(
         /** Fails with [TranscriptRefused] when the core refuses the session by type. */
         fun parse(text: String): TranscriptPage {
             val json = JSONObject(text)
+            if (json.optJSONObject("pending")?.optString("agent") == "omp") throw TranscriptPending()
             json.optJSONObject("refused")?.let { refused -> TranscriptRefusal.parse(refused)?.let { throw TranscriptRefused(it) } }
             return TranscriptPage(
                 identity = TranscriptIdentity.parse(json.getJSONObject("identity")),
@@ -355,6 +356,9 @@ sealed interface TranscriptRefusal {
 
 /** A read the core refused by type; Chat says [refusal] in its own words, not the message. */
 class TranscriptRefused(val refusal: TranscriptRefusal) : java.io.IOException("chat cannot read this session: $refusal")
+
+/** A verified foreground OMP has not published a transcript reference yet. */
+class TranscriptPending : java.io.IOException("OMP session is not recorded yet")
 
 /** The most image bytes one media read decodes (native `MAX_IMAGE`). */
 const val MAX_IMAGE_BYTES = 20L * 1024 * 1024

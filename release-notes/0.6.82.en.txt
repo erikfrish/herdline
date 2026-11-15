@@ -1,0 +1,8 @@
+Herdline 0.6.82 (experimental) — launch a selected harness through the host CLI
+
+- Includes the fresh empty OMP transcript handling and create-and-open behavior from 0.6.81.
+- Starts an explicitly selected installed harness through Herdr's public CLI over the existing SSH exec channel. Herdr 0.9.5 does not advertise agent.start on the mobile client endpoint; the previous candidate failed closed there without starting a process.
+- Startup names the exact freshly created tab, pane and terminal, checks that the pane still has no agent, and delegates shell/readiness admission to Herdr. It never sends a prompt, changes global integrations, retries automatically or deletes the new tab on failure.
+- Shell remains the default. New tabs open immediately on the creating client, including Workspace rails. Existing draft/delivery guards and the upstream-only OMP policy stay unchanged.
+
+Verification is recorded by exact candidate hash. Empty transcript and tab-focus evidence belongs to the 10119 QA candidate; explicit harness startup has a separate corrected-candidate check. Stock OMP with an Unsupported companion still cannot accept direct Chat Send; this is not claimed fixed by the empty-history change. No publication or phone installation is implied.

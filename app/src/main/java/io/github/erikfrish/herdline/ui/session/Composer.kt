@@ -126,6 +126,7 @@ import io.github.erikfrish.herdline.data.SentState
 import io.github.erikfrish.herdline.data.InstanceRead
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.ui.components.ConfirmDialog
+import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 import io.github.erikfrish.herdline.ui.chat.ChatColors
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
@@ -1193,6 +1194,11 @@ private fun Editor(
         }
     }
     val probe = probeFor(probeRead, draft.instance)
+    // An explicit choice for exactly this connection, daemon run and OMP instance.
+    // A replacement or reconnect never inherits permission to type into its pane.
+    var checkedPaneChosen by remember(connection, boot, draft.instance) { mutableStateOf(false) }
+    var chooseCheckedPane by remember(connection, boot, draft.instance) { mutableStateOf(false) }
+    val checkedPane = checkedPaneChosen && draft.agent.equals("omp", ignoreCase = true) && probe is IngressProbe.Unsupported
     // Kilo lists no waiting steer: its own steers leave the record once the
     // server reads the session idle, the only answer that says so. A send
     // whose withdraw got no answer comes back into the editor once its chip
@@ -1499,7 +1505,7 @@ private fun Editor(
     fun deliver(submit: Boolean) {
         if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
-        if (endpointRoute(reading, draft.instance, submit)) {
+        if (endpointRoute(reading, draft.instance, submit, checkedPane)) {
             // The verb the button showed: Queue while a queueing runtime works.
             endpointSend(if (queueVerb) "queue" else "auto") { typeIn(submit) }
         } else {
@@ -1558,7 +1564,7 @@ private fun Editor(
      */
     fun steerStart() {
         if (draftBusy || !draft.mayDeliver(binding) || (holdsDraft && viewed != null && viewed != key.pane)) return
-        if (endpointRoute(reading, draft.instance, submit = true)) {
+        if (endpointRoute(reading, draft.instance, submit = true, checkedPane = checkedPane)) {
             if (attachState != AttachmentsState.None && attachState != AttachmentsState.Ready) return
             if (draft.attachments.isNotEmpty() && !endpointSteer) return
             endpointSend("steer", ::pasteSteer)
@@ -1686,7 +1692,7 @@ private fun Editor(
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
     // Match the route delivery actually uses; only an absent endpoint permits the pane fallback.
-    val sendGate = composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send)
+    val sendGate = composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send, checkedPane)
     val precheck = sendGate?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
@@ -1762,7 +1768,7 @@ private fun Editor(
         ),
     )
 
-    val panel = if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
+    val panel = if (checkedPane) QueuePanel.Hidden else if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
     // Which single notice the slot shows, highest priority first.
     val notice = when {
         // Held while offline: the unconfirmed delivery stays said (R8).
@@ -1992,6 +1998,33 @@ private fun Editor(
             withdrawNote,
             ::withdraw,
             onPromote = if (agentNamed(draft.agent, Harness.queueAgents)) ::promote else null,
+        )
+        if (draft.agent.equals("omp", ignoreCase = true) && probe is IngressProbe.Unsupported) {
+            if (checkedPane) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.omp_checked_pane_active), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).testTag("composer:checked_pane"))
+                    TextButton(onClick = { checkedPaneChosen = false }, modifier = Modifier.testTag("composer:direct_route")) {
+                        Text(stringResource(R.string.omp_direct_route))
+                    }
+                }
+            } else {
+                TextButton(onClick = { chooseCheckedPane = true }, modifier = Modifier.testTag("composer:choose_checked_pane")) {
+                    Text(stringResource(R.string.omp_checked_pane_choose))
+                }
+            }
+        }
+    }
+    if (chooseCheckedPane) {
+        GlassAlertDialog(
+            onDismissRequest = { chooseCheckedPane = false },
+            title = { Text(stringResource(R.string.omp_checked_pane_choose)) },
+            text = { Text(stringResource(R.string.omp_checked_pane_explain)) },
+            confirmButton = {
+                TextButton(onClick = { checkedPaneChosen = true; chooseCheckedPane = false; refusal = null }, modifier = Modifier.testTag("composer:confirm_checked_pane")) {
+                    Text(stringResource(R.string.omp_checked_pane_confirm))
+                }
+            },
+            dismissButton = { TextButton(onClick = { chooseCheckedPane = false }) { Text(stringResource(android.R.string.cancel)) } },
         )
     }
 

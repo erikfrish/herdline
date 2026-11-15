@@ -1,0 +1,8 @@
+Herdline 0.6.83 (experimental) — start a fresh OMP conversation from Chat
+
+- Fresh OMP sessions show empty Chat before the lazily written transcript appears, then display the first real messages without switching modes.
+- Stock OMP with an Unsupported companion offers an explicit Use checked pane input choice. Ordinary Send then uses the existing native editor, dialog, process/session and delivery checks for that exact pane. The choice resets on reconnect or instance replacement; no silent fallback, automatic retry or patched OMP is introduced.
+- Every New tab entry, including Workspace rails, opens the exact newly created tab/root pane. The dialog defaults to Shell or starts an explicitly chosen installed harness once in that fresh pane through the guarded Herdr CLI over the existing SSH channel, without a prompt, install or resume.
+- Uncertain delivery keeps the draft held and is never resent automatically. Native safety refusals remain effective. Queue management, direct remote questionnaires and endpoint image-Steer still require upstream OMP APIs; this release does not emulate them.
+
+Exact-candidate verification is recorded separately. Publication and phone installation are separate actions.

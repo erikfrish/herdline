@@ -238,6 +238,12 @@ def resolve():
             raise ValueError('unconfined')
         if os.path.isfile(canonical) and canonical.endswith('.jsonl'):
             valid.append(canonical)
+        elif (agent == 'omp' and kind == 'path' and isinstance(pid, int) and pid > 0
+              and canonical.endswith('.jsonl') and not os.path.lexists(candidate)
+              and os.path.isdir(os.path.dirname(canonical))
+              and any(os.path.isdir(root) and os.path.commonpath([root, canonical]) == root for root in roots)):
+            # OMP allocates its exact path before lazily writing the first assistant turn.
+            sys.exit(12)
     if len(valid) != 1:
         raise ValueError('ambiguous or missing')
     return valid[0]

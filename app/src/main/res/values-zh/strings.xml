@@ -123,6 +123,14 @@
     <string name="tab_name">名称</string>
     <string name="tab_name_hint">留空则自动编号</string>
     <string name="create">创建</string>
+    <string name="new_tab_program">在新标签页中启动</string>
+    <string name="new_tab_shell">Shell</string>
+    <string name="new_tab_program_help">仅列出此主机上找到的程序。创建后立即打开新标签页。选择的工具在其中启动，不会发送提示；Shell 不启动代理。</string>
+    <string name="new_tab_discovering">正在检查已安装的工具…</string>
+    <string name="new_tab_discovery_failed">无法检查已安装的工具：%1$s。仍可选择 Shell。</string>
+    <string name="new_tab_creating">正在创建标签页…</string>
+    <string name="new_tab_create_failed">未确认创建结果：%1$s。再次创建前请检查标签页面板；不会自动重试。</string>
+    <string name="new_tab_start_failed">标签页已创建，但未确认工具启动结果：%1$s。请检查其终端；不会重试。</string>
     <string name="status_working">工作中</string>
     <string name="status_blocked">需要输入</string>
     <string name="status_done">已完成</string>

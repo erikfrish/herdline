@@ -118,6 +118,14 @@
     <string name="tab_name">Name</string>
     <string name="tab_name_hint">Leave blank to number it</string>
     <string name="create">Create</string>
+    <string name="new_tab_program">Start in the new tab</string>
+    <string name="new_tab_shell">Shell</string>
+    <string name="new_tab_program_help">Only programs found on this host are listed. Create opens the new tab immediately. A chosen harness starts there with no prompt sent; Shell starts no agent.</string>
+    <string name="new_tab_discovering">Checking installed harnesses…</string>
+    <string name="new_tab_discovery_failed">Could not check installed harnesses: %1$s. Shell is still available.</string>
+    <string name="new_tab_creating">Creating tab…</string>
+    <string name="new_tab_create_failed">Creation was not confirmed: %1$s. Check Tabs before creating another; nothing is retried automatically.</string>
+    <string name="new_tab_start_failed">The tab was created, but harness startup was not confirmed: %1$s. Check its terminal; nothing is retried.</string>
     <string name="status_working">Working</string>
     <string name="status_blocked">Needs input</string>
     <string name="status_done">Done</string>

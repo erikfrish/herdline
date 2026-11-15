@@ -1310,3 +1310,39 @@ fn an_agent_dir_derived_from_the_environment_profile_is_dropped_under_profile_de
         Err(Error::TranscriptUnconfined)
     ));
 }
+
+#[test]
+fn allocated_omp_history_is_empty_until_first_write_without_losing_identity() {
+    let host = Host::new("unused");
+    let path = host.sessions().join("fresh.jsonl");
+    fs::write(host.home.path().join("pane.json"), pane_json(path.to_str().unwrap())).unwrap();
+    let (status, bytes) = host.run(tail(path.to_str().unwrap()));
+    let reply = parse_reply(status, &bytes).unwrap();
+    let (before, _) = identity(&reply.pane, &reply.process).unwrap();
+    let empty = reply.file.unwrap();
+    assert_eq!((empty.size, empty.start, empty.data), (0, 0, b"".as_slice()));
+    assert_eq!(before.pid, Some(42));
+    fs::write(&path, "{\"type\":\"session\",\"id\":\"new\"}\n").unwrap();
+    let (status, bytes) = host.run(tail(path.to_str().unwrap()));
+    let reply = parse_reply(status, &bytes).unwrap();
+    assert_eq!(identity(&reply.pane, &reply.process).unwrap().0, before);
+    assert!(!reply.file.unwrap().data.is_empty());
+    fs::remove_file(&path).unwrap();
+    fs::write(host.home.path().join("proc.json"), "{}").unwrap();
+    let (status, bytes) = host.run(tail(path.to_str().unwrap()));
+    assert!(matches!(parse_reply(status, &bytes), Err(Error::TranscriptUnconfined)));
+    std::os::unix::fs::symlink(host.home.path().join("missing.jsonl"), &path).unwrap();
+    let (status, bytes) = host.run(tail(path.to_str().unwrap()));
+    assert!(matches!(parse_reply(status, &bytes), Err(Error::TranscriptUnconfined)));
+}
+
+#[test]
+fn only_a_verified_foreground_omp_without_a_reference_is_pending() {
+    let mut pane: Value = serde_json::from_str(&pane_json("unused")).unwrap();
+    pane["result"]["pane"]["agent_session"] = Value::Null;
+    let process: Value = serde_json::from_str(PROCESS).unwrap();
+    assert!(matches!(identity(&pane, &process), Err(Error::TranscriptPending)));
+    assert!(matches!(identity(&pane, &Value::Null), Err(Error::NoTranscript)));
+    pane["result"]["pane"]["agent"] = "zsh".into();
+    assert!(matches!(identity(&pane, &process), Err(Error::NoTranscript)));
+}

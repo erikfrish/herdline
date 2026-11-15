@@ -442,6 +442,30 @@ pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_request<'lo
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_agentLaunchers<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let launchers = session(id)?.agent_launchers()?;
+        Ok(env.new_string(launchers)?)
+    })
+    .resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_startAgent<'local>(
+    mut env: EnvUnowned<'local>, _class: JClass<'local>, id: jlong, request: JString<'local>,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<_> {
+        let request = string(env, &request)?;
+        let answer = session(id)?.start_agent(&request)?;
+        Ok(env.new_string(answer)?)
+    }).resolve::<ThrowIo>()
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_erikfrish_herdline_core_Native_composerCheck<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,

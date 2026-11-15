@@ -87,4 +87,9 @@
     <string name="ingress_unsupported_summary">发送被拒绝，不会输入窗格。</string>
     <string name="ingress_details">详情</string>
     <string name="ingress_details_title">聊天为何无法发送</string>
+    <string name="omp_checked_pane_choose">使用经过检查的窗格输入</string>
+    <string name="omp_checked_pane_explain">此 OMP 没有直接控制 API。发送可改为输入到此会话的确切窗格，但仅在原生检查确认代理、空编辑器且没有对话框时允许。不明确的状态仍被阻止。历史记录确认投递；不确定的消息不会自动重发。重新连接或更换会话会重置此选择。队列管理和聊天问卷回复仍不可用。</string>
+    <string name="omp_checked_pane_confirm">使用窗格输入</string>
+    <string name="omp_checked_pane_active">已检查的窗格输入 · 保留原生安全检查</string>
+    <string name="omp_direct_route">使用直接 API</string>
 </resources>

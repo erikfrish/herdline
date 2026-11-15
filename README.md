@@ -113,8 +113,12 @@ you write a Chat draft.
   refuses approvals, a remote draft or an unverifiable destination.
 - In Chat, a compatible optional `herdline-ingress` endpoint sends directly
   into the same OMP, including steering while Working, without Fit or Enter.
-  Only an absent endpoint allows terminal fallback; unsupported or uncertain
-  endpoints never silently resend by another route.
+  Only an absent endpoint allows automatic terminal fallback. On stock OMP
+  with an Unsupported companion, **Use checked pane input** explicitly
+  selects the existing native-guarded pane route for this connection and
+  exact instance. It is not selected after a failed or uncertain send.
+  Reconnect or session replacement resets the choice. Queue management and
+  remote questionnaires still require the upstream control API.
 - A failed or unconfirmed send preserves its draft and is never resent
   automatically. Check asks for its status; Unlock is an explicit user action.
 
