@@ -264,7 +264,7 @@ internal suspend fun awaitPtyTurn(
         }
         sleep(PTY_TURN_POLL_MS)
         val now = clock()
-        until = ptyWatchDeadline(sent, until, working(), now, PTY_TURN_WATCH_MS)
+        until = ptyWatchDeadline(until, working(), now, PTY_TURN_WATCH_MS)
     } while (now < until)
     return false
 }
@@ -1134,7 +1134,7 @@ private fun Editor(
     // again (once, past the deadline). Nothing is ever typed again.
     val inPane = draft.sent?.takeIf { it.state == SentState.InPane }
     var inPaneWatched by remember(key, inPane) { mutableStateOf(false) }
-    // An entered steer waits for OMP's next step: watched while the agent works.
+    // OMP may persist even a first Send only after the working turn finishes.
     val paneWorking by rememberUpdatedState(view?.agentIn(key.pane)?.status == AgentStatus.Working)
     LaunchedEffect(key, inPane, connection) {
         val sent = inPane ?: return@LaunchedEffect

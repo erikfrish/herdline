@@ -571,7 +571,10 @@ Switcher:
   The watch advances a separate read cursor to each page's end without
   changing that pre-send boundary. Native readers may overlap their previous
   row; their reset flag marks rewrites or gaps. A reset, reversed range or
-  changed instance ends the watch unconfirmed; the existing deadline applies.
+  changed instance ends the watch unconfirmed. While the bound agent works,
+  any PTY Send or Steer keeps its read deadline 20 seconds ahead: stock OMP
+  may create the entire first-session file only after the assistant replies.
+  Once idle, that remaining window expires without confirming or resending.
   OMP steers use the same comparison. Runtime-dependent rewrites (emoticon
   expansion, extensions or prompt templates) are not guessed: if they change
   the stored text, confirmation remains held rather than accepting another

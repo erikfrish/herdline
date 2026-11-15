@@ -247,17 +247,15 @@ class SteerFlowTest {
         assertEquals(SentState.InPane, sent.state)
         assertEquals(R.string.composer_steer_entered, inPaneNotice(sent))
 
-        // OMP takes it at its next step, past the typed-send window: still watched while it works.
+        // OMP takes it at its next step: still watched while it works.
         val window = 20_000L
         var until = sent.at + window
-        until = ptyWatchDeadline(sent, until, working = true, now = 90_000, window = window)
+        until = ptyWatchDeadline(until, working = true, now = 90_000, window = window)
         assertTrue(90_000 < until)
         val landed = TranscriptEntry("u", null, 4096, 4130, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("Steer two", false)), steer = TranscriptSteer.Steering)
         assertTrue(ptyTurnLanded(TranscriptPage(omp, false, 4130, 4096, 4130, listOf(landed)), omp, from!!, sent.text))
-        // Idle again, the window runs out; a typed send never gets more than its window.
-        assertEquals(until, ptyWatchDeadline(sent, until, working = false, now = 95_000, window = window))
-        val typed = SentRecord("Steer two", "R", true, SentState.InPane, 1_000, historyFrom = 4096)
-        assertEquals(21_000L, ptyWatchDeadline(typed, 21_000, working = true, now = 90_000, window = window))
+        // Idle again, the remaining window runs out without resending.
+        assertEquals(until, ptyWatchDeadline(until, working = false, now = 95_000, window = window))
     }
 
     @Test
