@@ -92,6 +92,13 @@ pane picker; overview hidden counts count tabs, not hidden pane rows. A
 workspace rail emptied by the toggles retains its New tab tile. These choices
 never move the selected pane or the desktop focus.
 
+Creating a tab is an explicit navigation action, unlike browsing the list.
+Every New tab entry, including a Workspace rail tile, focuses and opens the
+exact tab/root pane returned by Herdr. The dialog defaults to Shell and can
+start a chosen harness discovered on the host. A launch starts in that fresh
+pane only, with no prompt, install or resume; a failed launch keeps the tab
+and reports the error. Unknown creation outcomes are never retried automatically.
+
 Two columns is at most two; large accessibility fonts fall back to one,
 where two would make a title illegible. A stored
 "Grid" (`tabs_view`) is the removed tile overview and is migrated to List

@@ -180,6 +180,24 @@ class HandedReceiptTest {
         assertEquals(answeredAt + 20_000, now)
     }
 
+    @Test
+    fun aFirstSendWaitsForTheWorkingAgentToCreateItsHistory() = runBlocking {
+        val instance = TranscriptIdentity("p1", "term1", 42, "/h/.omp/agent/sessions/x/fresh.jsonl")
+        val sent = SentRecord("first turn", "r1", true, SentState.InPane, answeredAt, historyFrom = 0)
+        val turn = TranscriptEntry("u1", null, 100, 180, TranscriptKind.Message, "user", listOf(TranscriptBlock.Text("first turn", false)))
+        var now = answeredAt
+        val finishedAt = answeredAt + 30_000
+        val landed = awaitPtyTurn(
+            sent, instance,
+            read = {
+                if (now <= finishedAt) TranscriptPage(instance, false, 0, 0, 0, emptyList())
+                else TranscriptPage(instance, false, 180, 0, 180, listOf(turn))
+            },
+            working = { now < finishedAt }, clock = { now }, sleep = { now += it },
+        )
+        assertTrue("a slow first assistant turn must not leave a delivered Send locked", landed)
+    }
+
     private companion object {
         const val HANDED_WINDOW = 60_000L
     }

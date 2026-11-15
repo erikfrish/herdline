@@ -33,6 +33,7 @@ class IngressRouteTest {
         assertFalse(endpointRoute(reading = true, instance = instance, submit = false))
         assertFalse(endpointRoute(reading = false, instance = instance, submit = true))
         assertFalse(endpointRoute(reading = true, instance = null, submit = true))
+        assertFalse(endpointRoute(reading = true, instance = instance, submit = true, checkedPane = true))
     }
 
     @Test
@@ -91,6 +92,11 @@ class IngressRouteTest {
         val unsupported = IngressProbe.Unsupported(listOf("getOpenDialogs"))
         assertEquals(ComposerCheck.Gate(false, REASON_UNSUPPORTED), composerSendGate(true, unsupported, allowed))
         assertEquals(ComposerCheck.Gate(false, REASON_UNSUPPORTED), composerSendGate(true, unsupported, null))
+        // An explicitly selected alternative uses the same native pane refusal, never permission alone.
+        assertEquals(allowed, composerSendGate(true, unsupported, allowed, checkedPane = true))
+        assertEquals(refused, composerSendGate(true, unsupported, refused, checkedPane = true))
+        assertNull(composerSendGate(true, unsupported, null, checkedPane = true))
+        assertEquals(ComposerCheck.Gate(false, REASON_UNUSABLE), composerSendGate(true, IngressProbe.Unusable("stale"), allowed, checkedPane = true))
         for (reason in listOf("needs_server", "server_discovery", "stale")) {
             val code = if (reason == "stale") REASON_UNUSABLE else reason
             assertEquals(ComposerCheck.Gate(false, code), composerSendGate(true, IngressProbe.Unusable(reason), allowed))

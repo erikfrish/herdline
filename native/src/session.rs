@@ -10,6 +10,7 @@ use crate::{
     composer::{self, Refusal, Registry},
     control, delivery, hold, ingress,
     input::{self, Modifiers, Touch},
+    launchers,
     render::RenderFrame,
     screen::Screen,
     scroll,
@@ -72,6 +73,7 @@ pub enum UiEvent {
     Frame,
     Response {
         request_id: String,
+        /// The wire envelope `{"id", "result"|"error"}` of the method's answer.
         response: Value,
     },
     Rejected {
@@ -992,6 +994,39 @@ impl Session {
         Ok(self
             .handle
             .request(&self.boot()?, parse_method(method)?, params)?)
+    }
+
+    /// The agent launchers installed where the exec shell runs them, as JSON
+    /// `{"launchers": [{kind, label}]}`: one read-only `command -v` per
+    /// canonical kind, so a listing says only what that shell's PATH finds,
+    /// never what the daemon's own PATH can run. Blocks on the host: call it
+    /// from a thread.
+    pub fn agent_launchers(&self) -> Result<String> {
+        let exec = lock(&self.shared.exec).clone().ok_or(Error::NotReady)?;
+        launchers::catalogue(&exec)
+    }
+
+    pub fn start_agent(&self, request: &str) -> Result<String> {
+        let value: Value = serde_json::from_str(request)?;
+        if value["boot"].as_str() != Some(self.boot()?.as_str()) {
+            return Err(Error::BadReply);
+        }
+        let text = |key: &str| {
+            value[key]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .ok_or(Error::BadReply)
+        };
+        let exec = lock(&self.shared.exec).clone().ok_or(Error::NotReady)?;
+        launchers::start(
+            &exec,
+            &self.shared.session,
+            text("pane")?,
+            text("tab")?,
+            text("terminal")?,
+            text("kind")?,
+            text("name")?,
+        )
     }
 
     /// Have the host prove the link alive within a few seconds, as after the

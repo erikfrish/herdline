@@ -58,8 +58,8 @@ internal fun ingressId(sent: SentRecord?): String? =
  * draft bound to a known OMP instance. Insert puts text in the box without
  * Enter, which only the pane can do, and Terminal keeps typing.
  */
-internal fun endpointRoute(reading: Boolean, instance: TranscriptIdentity?, submit: Boolean): Boolean =
-    reading && submit && instance != null
+internal fun endpointRoute(reading: Boolean, instance: TranscriptIdentity?, submit: Boolean, checkedPane: Boolean = false): Boolean =
+    reading && submit && instance != null && !checkedPane
 
 /**
  * Whether the pane's program [agent] goes by one of [names]. Herdr names
@@ -108,9 +108,9 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
-/** The route Send will actually use: a known endpoint refusal cannot fall back to a successful pane check. */
-internal fun composerSendGate(reading: Boolean, probe: IngressProbe?, pane: ComposerCheck.Gate?): ComposerCheck.Gate? {
-    if (!reading) return pane
+/** A pane route is selected explicitly for this stock OMP instance, never as a send-error fallback. */
+internal fun composerSendGate(reading: Boolean, probe: IngressProbe?, pane: ComposerCheck.Gate?, checkedPane: Boolean = false): ComposerCheck.Gate? {
+    if (!reading || checkedPane && probe is IngressProbe.Unsupported) return pane
     return when (probe) {
         is IngressProbe.Live -> ENDPOINT_READY
         is IngressProbe.Unsupported -> ENDPOINT_UNSUPPORTED

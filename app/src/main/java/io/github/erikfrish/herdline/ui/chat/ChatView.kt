@@ -138,6 +138,7 @@ import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.core.TranscriptPage
+import io.github.erikfrish.herdline.core.TranscriptPending
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
@@ -311,8 +312,14 @@ internal class ChatKept {
             // Merged into whatever is current now: a load of older entries may have finished meanwhile.
             history = history?.merge(read, appended = true) ?: ChatHistory.of(read)
             this.read.succeeded()
-        }.onFailure { read.failed(it) }
-        page.isSuccess
+        }.onFailure { error ->
+            if (error is TranscriptPending) {
+                history = null
+                expanded.clear()
+            }
+            read.failed(error)
+        }
+        page.isSuccess || read.pending
     }
 
     /**
@@ -338,16 +345,19 @@ internal class ChatReadState {
     var problem by mutableStateOf<String?>(null)
     /** Set with [problem] when the core refused the session by type; it never clears by itself. */
     var refusal by mutableStateOf<TranscriptRefusal?>(null)
+    var pending by mutableStateOf(false)
     /** The failed refresh the cached history shows under. */
     val outage = mutableStateOf(Outage())
 
     fun succeeded() {
         problem = null
         refusal = null
+        pending = false
     }
 
     fun failed(error: Throwable) {
-        problem = error.message ?: error.javaClass.simpleName
+        pending = error is TranscriptPending
+        problem = if (pending) null else error.message ?: error.javaClass.simpleName
         refusal = lastingRefusal(error)
     }
 }
@@ -735,6 +745,12 @@ private fun ChatContent(
         moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
+                kept.read.pending -> Text(
+                    stringResource(R.string.chat_empty),
+                    style = ChatType.body.copy(color = colors.muted),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp).testTag("chat:empty"),
+                )
                 unavailable -> Column(
                     Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

@@ -2,6 +2,7 @@ package io.github.erikfrish.herdline.ui.chat
 
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.core.TranscriptPage
+import io.github.erikfrish.herdline.core.TranscriptPending
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -112,6 +113,20 @@ class ChatKeptTest {
         assertFalse(chatUnavailable(loaded = false, failed = kept.read.problem != null, readHere = false))
         // Its own read fails too: now it says so.
         assertTrue(chatUnavailable(loaded = false, failed = kept.read.problem != null, readHere = true))
+    }
+
+    @Test
+    fun freshOmpPendingDropsPreviousHistoryThenReadsItsFirstPage() = runBlocking {
+        val kept = ChatKept()
+        assertTrue(kept.readNext({ Result.success(page) }, "w1:p2"))
+        assertTrue(kept.readNext({ Result.failure(TranscriptPending()) }, "w1:p2"))
+        assertNull(kept.history)
+        assertTrue(kept.read.pending)
+        assertNull(kept.read.problem)
+        val fresh = page.copy(identity = claude.copy(agent = "omp", path = "/h/.omp/agent/sessions/fresh.jsonl"), end = 0, size = 0)
+        assertTrue(kept.readNext({ Result.success(fresh) }, "w1:p2"))
+        assertEquals(fresh.identity, kept.history?.identity)
+        assertFalse(kept.read.pending)
     }
 
     private companion object {

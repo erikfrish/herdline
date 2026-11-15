@@ -66,6 +66,16 @@ object Native {
     external fun request(id: Long, method: String, paramsJson: String): String
 
     /**
+     * The host's installed agent launchers, as JSON `{"launchers": [{kind,label}]}`;
+     * one read-only `command -v` probe over an SSH exec. Blocks: never call it
+     * on the main thread.
+     */
+    external fun agentLaunchers(id: Long): String
+
+    /** One explicit Herdr CLI start in a fenced fresh pane; blocks on the host. */
+    external fun startAgent(id: Long, requestJson: String): String
+
+    /**
      * The composer's checks for one pane, as JSON (see `composer.rs`), against
      * [viewportJson] (`viewportJson` in Viewport.kt), null when the view drew no frame.
      */

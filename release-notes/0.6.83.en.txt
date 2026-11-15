@@ -1,0 +1,8 @@
+Fresh OMP conversations from Chat
+
+- Fresh OMP sessions show empty Chat before the lazily written transcript appears, then display the first real messages without switching modes.
+- Stock OMP with an Unsupported companion offers an explicit Use checked pane input choice. Ordinary Send then uses the existing native editor, dialog, process/session and delivery checks for that exact pane. The choice resets on reconnect or instance replacement; no silent fallback, automatic retry or patched OMP is introduced.
+- Every New tab entry, including Workspace rails, opens the exact newly created tab/root pane. The dialog defaults to Shell or starts an explicitly chosen installed harness once in that fresh pane through the guarded Herdr CLI over the existing SSH channel, without sending a prompt, installing a harness or resuming a session.
+- Uncertain delivery keeps the draft held and is never resent automatically. Native safety refusals remain effective. Queue management, direct remote questionnaires and endpoint image-Steer still require upstream OMP APIs; this release does not emulate them.
+
+Experimental prerelease. Focused emulator verification is not full all-harness QA or physical-phone verification. Publication and phone installation are separate actions.

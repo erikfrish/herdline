@@ -160,7 +160,7 @@ fun TabsOverview(
     reading: Boolean = false,
     /** Rails (F2): the workspace rails in place of the rows, scrolled by this hoisted state; null for the rows. */
     rails: RailsScroll? = null,
-    /** A rail's New tab tile: that rail's workspace only, never moving Herdr's focus. */
+    /** A rail's New tab tile: create in this workspace and open the new tab. */
     onRailNewTab: (Workspace) -> Unit = actions.newTab,
 ) {
     val groups = remember(view) { view?.let(::topology).orEmpty() }

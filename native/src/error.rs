@@ -61,6 +61,8 @@ pub enum Error {
     SshKey(#[from] russh::keys::Error),
     #[error("timed out connecting")]
     Timeout,
+    #[error("OMP has not reported its session yet")]
+    TranscriptPending,
     #[error("the session file is outside OMP's session folder")]
     TranscriptUnconfined,
     #[error("unknown endpoint method `{0}`")]

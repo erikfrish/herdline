@@ -152,6 +152,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.startAgent
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.Pane
@@ -277,8 +278,7 @@ internal fun headerFit(width: Dp, modeWords: Dp, chip: Dp?): HeaderFit {
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
-    /** [focus] false (a Rails New tab tile) creates the tab without moving Herdr's focus. */
-    data class NewTab(val workspaceId: String, val focus: Boolean = true) : Prompt
+    data class NewTab(val workspaceId: String) : Prompt
     data class RenameTab(val id: String, val label: String) : Prompt
     data class RenameWorkspace(val id: String, val label: String) : Prompt
     data class CloseTab(val id: String, val label: String) : Prompt
@@ -355,6 +355,8 @@ fun SessionScreen(
     val lastRead = remember { mutableStateMapOf<String, String>() }
     // A Terminal tab or workspace choice: the tab whose pane Herdr focuses next becomes the one read here.
     var pendingTab by remember { mutableStateOf<String?>(null) }
+    var createdTab by remember(connection) { mutableStateOf<Connection.CreatedTab?>(null) }
+    var createdAtChoice by remember(connection) { mutableIntStateOf(0) }
     // An explicit Terminal from Chat on a pane the desktop isn't on (TerminalOpen.kt): Chat stays on that pane until
     // Herdr's focus lands there. [terminalLate]: the one whose wait ran out; [terminalTitle]: its tab's name as the header says it,
     // while it opens and if it couldn't; [terminalFailed]: the pane it couldn't open, said once with Try again.
@@ -695,6 +697,19 @@ fun SessionScreen(
         val landed = desktopPane?.takeIf { p -> view?.panes?.firstOrNull { it.id == p }?.tab == wanted } ?: return@LaunchedEffect
         pendingTab = null
         readHere(landed)
+    }
+    // Creation is an explicit navigation choice, including from Chat and every Rails tile.
+    // The reply names the destination; a later snapshot makes it available without guessing.
+    LaunchedEffect(createdTab, view, choices) {
+        val created = createdTab ?: return@LaunchedEffect
+        val shown = view ?: return@LaunchedEffect
+        if (shown.boot != created.boot || choices != createdAtChoice) {
+            createdTab = null
+        } else if (shown.panes.any { it.id == created.pane && it.tab == created.tab }) {
+            readHere(created.pane)
+            app.targets.visited(node.id, "t:${created.tab}")
+            createdTab = null
+        }
     }
     // A notification, deep link or Agents row: that pane, read here in Chat; only Terminal focuses it on the desktop.
     // It arrives rather than being chosen from the screen shown, so only the pane's own mode decides.
@@ -1729,7 +1744,7 @@ fun SessionScreen(
                             unseen = unseenTabs,
                             onClose = closeSwitcher,
                             rails = railsScroll.takeIf { settings.tabsView == TabsView.Rails },
-                            onRailNewTab = { prompt = Prompt.NewTab(it.id, focus = false) },
+                            onRailNewTab = { prompt = Prompt.NewTab(it.id) },
                         )
                         TabsView.List -> Switcher(
                             node = node,
@@ -1763,7 +1778,23 @@ fun SessionScreen(
     }
 
     prompt?.let { current ->
-        PromptDialog(current, connection, onDisconnect = { app.disconnect(node.id); onLeave() }) { prompt = null }
+        PromptDialog(
+            current, connection,
+            onDisconnect = { app.disconnect(node.id); onLeave() },
+            onCreated = { created, kind ->
+                choices++
+                terminalOpening = null
+                switcherOpen = false
+                createdTab = created
+                createdAtChoice = choices
+                if (kind != null) scope.launch {
+                    connection.startAgent(created, kind).onFailure { error ->
+                        snackbar.showSnackbar(context.getString(R.string.new_tab_start_failed, error.message.orEmpty()), duration = SnackbarDuration.Long)
+                    }
+                }
+            },
+            onDone = { prompt = null },
+        )
     }
     pinFor?.let { pane ->
         PinSheet(
