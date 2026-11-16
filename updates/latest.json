@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10131,
-    "versionName": "0.6.86",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.86/herdline-0.6.86.apk",
-    "sha256": "abf5478703b572560f32b40277ca6d54f90d89db946b516717fdc99e285b0f58",
-    "size": 26034759,
+    "versionCode": 10133,
+    "versionName": "0.6.87",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.87/herdline-0.6.87.apk",
+    "sha256": "abd00f32c908e8d3a36061a19f00409d98e3ad7f403c572580cf28c1fe2d456c",
+    "size": 26033959,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused herdr-core 0.1.21 QA carried across candidates 10126-10131. Not a full single-APK/all-platform/physical-phone pass; signed release runtime not separately tested."
+      "reason": "Focused emulator QA (Android 17 / API 37) on QA candidates: 10132 image-send cleanup PASS; 10133 fresh-install Mono notification PASS, no large icon, independent of Dusk launcher choice. Upgrade may retain old icon; cause unconfirmed. No full or physical-phone QA; Samsung and Done untested; signed release runtime not separately tested."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.86 (Experimental)\n\n- Add a herdr-core backend for the spaces, tabs, terminals and agents shared with herdr-app. Existing nodes keep the classic Herdr backend. Select herdr-core in the SSH host editor; hc session defaults to default.\n- Phone focus and zoom are independent of the desktop. Observe without resizing; explicitly enter interactive control when typing or pasting, which lets the core use the phone's terminal size. Paste and Insert do not add Enter.\n- Create, rename, split and close shared structures using versioned documents while preserving unknown fields. An uncertain write or send is never retried automatically.\n- The opt-in host/omp/herdline-core.ts hook reports exact OMP session identity. Chat supports fresh unwritten history, the title-slot preamble and continued reading after a completed turn. Guarded Insert and staged Steer support the default OMP band editor, including its working spinner.\n- Missing hooks, stale process identity and desktop JavaScript mod panels are identified explicitly, not guessed or rendered as fake terminals. Desktop mods are not supported on the phone.\n\nVerification: focused checks on isolated herdr-core 0.1.21 cover SSH trust, topology, observation and interactive control, paste without Enter, shared document operations, private focus/zoom, reconnect, OMP Chat, Insert, actual Steer and identity refusals. Evidence is carried by unchanged source across candidates 10126-10131; this is not a full single-APK, all-platform or physical-phone QA pass. N1 proves mismatched/stale PID refusal, not a confirmed-to-stale transition. Reconnect used manual Retry. Signed release runtime is not separately tested."
+      "en": "Herdline 0.6.87 (Experimental)\n\n- Sending an image from the composer now clears the draft once OMP has received it. Previously, OMP's leading [Image #N, WxH] marker made Herdline treat the turn as not landed and keep the draft.\n- Notifications use one fixed neutral Mono app identity on every launcher icon choice. Notifications no longer carry a large icon. Your launcher icon choice is unchanged. Status glyphs and privacy are unchanged.\n\nKnown issue: after upgrading from an earlier version, the notification card may keep showing the previous app icon. The cause is not yet confirmed; it is under investigation. A fresh install shows the Mono icon.\n\nVerification: focused emulator QA (Android 17, API 37):\n- the 0.6.87 (10132) image-send cleanup passed;\n- on 10133, a fresh-install notification shows the Mono icon, with no large icon on any notification;\n- the notification icon does not change with the selected launcher icon (Dusk checked).\nThis is not a full or physical-phone QA pass. Samsung devices and the Done notification were not tested. The signed release runtime was not separately tested."
     }
   }
 }
