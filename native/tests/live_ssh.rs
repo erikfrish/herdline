@@ -54,6 +54,7 @@ fn config(pinned: Option<String>, jump_pinned: Option<String>) -> Config {
         pinned,
     });
     Config {
+        backend: session::Backend::Herdr,
         route: Route {
             hops,
             session: env::var("HERDLINE_LIVE_SESSION").unwrap_or_else(|_| "default".into()),

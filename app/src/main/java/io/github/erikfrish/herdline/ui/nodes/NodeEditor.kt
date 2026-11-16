@@ -46,6 +46,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.data.Node
+import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.ui.components.ColorPicker
 import io.github.erikfrish.herdline.ui.components.Group
 import io.github.erikfrish.herdline.ui.components.NodeAvatar

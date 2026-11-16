@@ -892,6 +892,7 @@ pub fn instance(exec: &Exec, session: &str, pane: &str) -> Result<Option<Identit
 /// steps after it in the same command; they run only once the pane is read.
 pub(crate) fn instance_script(session: &str, pane: &str) -> String {
     script(session, pane, None)
+    report_script(BackendSource::Herdr(session), pane)
 }
 
 /// The instance an [`instance_script`] report names; `bytes` ends where the
@@ -1038,6 +1039,7 @@ head -c "$bytes" "$blob"
 /// so a session root and the store follow the same profile rules.
 const RESOLVER: &str = include_str!("transcript/resolve_session.py");
 
+const CORE_GET: &str = include_str!("transcript/core_get.py");
 /// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
 /// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
 /// session roots, with its arguments from Herdr's process-info for `pane`

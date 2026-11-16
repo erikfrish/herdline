@@ -12,6 +12,23 @@ pub(crate) fn rows(screen: &str) -> Vec<String> {
         .map(|line| line.trim_end().to_owned())
         .collect()
 }
+#[test]
+fn default_omp_band_reads_empty_hint_and_exact_staged_text() {
+    let status = " π-qa-core > 📁 …work ▶─4%───────────────────┃───200K─";
+    let empty = vec![status.to_owned(), "╰─                        ⇧⇥ to change thinking effort".to_owned()];
+    assert_eq!(omp_editor(&empty), Ok(Editor::Empty));
+    assert_eq!(omp_box_text(&empty), Some(String::new()));
+    let draft = vec![status.to_owned(), "╰─ first staged line".to_owned(), "   second line".to_owned()];
+    assert_eq!(omp_editor(&draft), Ok(Editor::Draft));
+    assert_eq!(omp_box_text(&draft), Some("first staged line second line".to_owned()));
+    let working = draft.iter().map(|line| line.replace('π', "⠙")).collect::<Vec<_>>();
+    assert_eq!(omp_editor(&working), Ok(Editor::Draft));
+    assert_eq!(omp_box_text(&working), Some("first staged line second line".to_owned()));
+    let covered = vec![status.to_owned(), "╰─".to_owned(), "╭─ Question ─╮".to_owned()];
+    assert!(omp_editor(&covered).is_err());
+    assert!(omp_editor(&["unrelated output".to_owned(), "╰─".to_owned()]).is_err());
+}
+
 
 // Rows read from OMP 18.18.3 in an isolated Herdr session.
 pub(crate) const EMPTY: &str = "\

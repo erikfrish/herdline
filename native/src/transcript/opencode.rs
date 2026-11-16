@@ -575,7 +575,7 @@ conn.commit()
             ]);
             super::super::page(
                 &exec,
-                "lab",
+                super::super::BackendSource::Herdr("lab"),
                 &super::super::Request {
                     pane: "w1:p1".into(),
                     expect: Some(expect.clone()),

@@ -483,8 +483,12 @@ fn editor_span(
 ) -> Option<std::ops::RangeInclusive<u16>> {
     let (top, last) = match program {
         Program::Omp => {
-            let (top, last, _) = omp_box(rows).ok()?;
-            (top, last)
+            if let Some((top, last)) = omp_band(rows) {
+                (top, last)
+            } else {
+                let (top, last, _) = omp_box(rows).ok()?;
+                (top, last)
+            }
         }
         Program::Pi | Program::Claude => program.rule_box(rows)?,
         Program::Terminal | Program::OtherAgent => return None,
@@ -905,6 +909,9 @@ impl Unseen {
 /// The box counts as empty only in its exact empty shapes, with nothing
 /// below it; anything else is a draft or unseen, never empty.
 pub fn omp_editor(rows: &[String]) -> Result<Editor, Unseen> {
+    if let Some((top, last)) = omp_band(rows) {
+        return Ok(if band_text(rows, top, last).is_empty() { Editor::Empty } else { Editor::Draft });
+    }
     let (top, last, bottom) = omp_box(rows)?;
     if top + 1 < last {
         return Ok(if ime_empty(rows, top, last, bottom) {
@@ -935,6 +942,9 @@ fn ime_empty(rows: &[String], top: usize, last: usize, bottom: &str) -> bool {
 /// The words OMP's input box shows, one space apart: wrapping and line
 /// breaks read alike. Empty for the empty box; `None` without the box.
 pub fn omp_box_text(rows: &[String]) -> Option<String> {
+    if let Some((top, last)) = omp_band(rows) {
+        return Some(band_text(rows, top, last));
+    }
     let (top, last, bottom) = omp_box(rows).ok()?;
     let inner = rows[top + 1..last].iter().map(|row| {
         let row = row.strip_prefix('│').unwrap_or(row);
@@ -945,6 +955,34 @@ pub fn omp_box_text(rows: &[String]) -> Option<String> {
         .flat_map(str::split_whitespace)
         .collect();
     Some(words.join(" "))
+}
+
+/// Pinned OMP band: a populated status/gauge row then the prompt gutter.
+/// Unidentifiable startup bands and framed overlays remain refused.
+fn omp_band(rows: &[String]) -> Option<(usize, usize)> {
+    let last = rows.iter().rposition(|row| !row.trim().is_empty())?;
+    for prompt in (1..=last).rev() {
+        if !rows[prompt].starts_with("╰─ ") && rows[prompt] != "╰─" { continue; }
+        let top = prompt - 1;
+        let status = rows[top].trim_start();
+        let branded = status.chars().next().is_some_and(|ch| ch == 'π' || ('\u{2800}'..='\u{28ff}').contains(&ch));
+        if !branded || !status.contains(" > ") ||
+            !status.contains('%') || !status.contains('─') || !status.contains('┃') { continue; }
+        if rows[prompt + 1..].iter().any(|row| {
+            !row.trim().is_empty() && (!row.starts_with("   ") || row.trim_start().starts_with(['╭', '╰', '│', '├', '└', '┌']))
+        }) { return None; }
+        if (0..top).any(|i| dialog_ending_at(rows, i)) { return None; }
+        return Some((top, last));
+    }
+    None
+}
+
+fn band_text(rows: &[String], top: usize, last: usize) -> String {
+    let prompt = rows[top + 1].strip_prefix("╰─").unwrap_or_default();
+    let first = if last == top + 1 { box_tail(&rows[top], prompt) } else { prompt };
+    let rest = rows.get(top + 2..=last).unwrap_or_default();
+    std::iter::once(first).chain(rest.iter().map(String::as_str))
+        .flat_map(str::split_whitespace).collect::<Vec<_>>().join(" ")
 }
 
 /// OMP's box at the bottom of the rows: its top border row, its last row,

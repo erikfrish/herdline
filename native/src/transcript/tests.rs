@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 
 fn pane_json(path: &str) -> String {
@@ -69,7 +70,7 @@ impl Host {
         }
         let output = command
             .arg("-c")
-            .arg(script("lab", "w1:p1", fetch))
+            .arg(script(BackendSource::Herdr("lab"), "w1:p1", fetch))
             .envs(self.env.borrow().iter().cloned())
             .env("HOME", self.home.path())
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))

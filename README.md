@@ -172,6 +172,25 @@ harness support.
 - Verification and limitations are recorded per version in the release notes;
   a build or phone installation alone is not full QA acceptance.
 
+### herdr-app / herdr-core
+
+Choose **herdr-core (herdr-app)** when adding the SSH host, and set its hc
+session (normally `default`). The desktop app and phone share the core's
+spaces, tabs and terminals, but keep their own focus and zoom. Desktop
+JavaScript mod panels are not terminals and cannot be rendered on the phone.
+Observing must not resize the host; entering interactive control explicitly
+lets the core use the phone's terminal size.
+
+For OMP Chat identity, explicitly load `host/omp/herdline-core.ts` inside an
+hc terminal, for example `omp -e /absolute/path/to/herdline-core.ts`. The hook
+publishes only its own agent/session/path/pid labels, updates them on session
+switches and clears them on shutdown. It sends no prompt. Herdline validates
+the foreground process and confined session file before using those labels.
+The hook is never installed globally or loaded into a running agent by itself.
+Without valid identity, the phone explains why Chat is unavailable instead
+of guessing a session from a terminal title or command line.
+
+
 ### Notifications
 
 - While Herdline is open, Herdr's own "needs input" and "finished"

@@ -1,0 +1,9 @@
+Herdline 0.6.86 (Experimental)
+
+- Add a herdr-core backend for the spaces, tabs, terminals and agents shared with herdr-app. Existing nodes keep the classic Herdr backend. Select herdr-core in the SSH host editor; hc session defaults to default.
+- Phone focus and zoom are independent of the desktop. Observe without resizing; explicitly enter interactive control when typing or pasting, which lets the core use the phone's terminal size. Paste and Insert do not add Enter.
+- Create, rename, split and close shared structures using versioned documents while preserving unknown fields. An uncertain write or send is never retried automatically.
+- The opt-in host/omp/herdline-core.ts hook reports exact OMP session identity. Chat supports fresh unwritten history, the title-slot preamble and continued reading after a completed turn. Guarded Insert and staged Steer support the default OMP band editor, including its working spinner.
+- Missing hooks, stale process identity and desktop JavaScript mod panels are identified explicitly, not guessed or rendered as fake terminals. Desktop mods are not supported on the phone.
+
+Verification: focused checks on isolated herdr-core 0.1.21 cover SSH trust, topology, observation and interactive control, paste without Enter, shared document operations, private focus/zoom, reconnect, OMP Chat, Insert, actual Steer and identity refusals. Evidence is carried by unchanged source across candidates 10126-10131; this is not a full single-APK, all-platform or physical-phone QA pass. N1 proves mismatched/stale PID refusal, not a confirmed-to-stale transition. Reconnect used manual Retry. Signed release runtime is not separately tested.
