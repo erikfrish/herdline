@@ -6,10 +6,10 @@ import io.github.erikfrish.herdline.core.readableTitle
 
 /**
  * CT-1: the pane this phone reads ("Reading here"), kept apart from Herdr's
- * shared focus ("On desktop"). Only a choice made on the phone sets it: a
- * tab, a pane, a switcher row, an Agents row, a banner, a notification, or a
- * tap in the terminal. A desktop focus change never moves it, and choosing it
- * in Chat never asks Herdr to focus, zoom or resize anything.
+ * shared focus ("On desktop"). Explicit pane, tab and workspace choices on
+ * the phone also focus that target on Herdr. Incoming notifications may be
+ * read locally. Desktop focus changes never pull the phone away from its
+ * chosen conversation, and navigation never sends input.
  *
  * It holds for one daemon run ([boot]): pane ids are only unique within one,
  * so a new run drops it. A new agent instance in the same pane keeps it; the
@@ -120,11 +120,3 @@ fun desktopSpoken(readTab: SpokenTab, desktopTab: SpokenTab, sameWorkspace: Bool
     else -> DesktopSpoken.InWorkspace(desktopTab.title, desktopTab.workspace)
 }
 
-/**
- * Whether a tab, pane or workspace chosen on this phone also moves Herdr's
- * shared focus. From Terminal ([chatShown] false) always: Terminal shows the
- * desktop's pane, so a choice there goes there even when the chosen pane
- * would read in Chat. From Chat only when the chosen pane shows Terminal
- * ([chosenShowsChat] false); a choice read in Chat never asks Herdr to focus.
- */
-fun choiceMovesDesktop(chatShown: Boolean, chosenShowsChat: Boolean): Boolean = !chatShown || !chosenShowsChat

@@ -1,0 +1,8 @@
+Herdline 0.6.84 (Experimental)
+
+- Tabs and previous/next buttons are visible in portrait Chat.
+- Swipe left or right on Chat content to switch tabs. Vertical scrolling and long-press text selection keep their normal behavior.
+- Choosing a tab, pane or workspace focuses that destination on Herdr in the same action; no separate Show tap is needed. Navigation never sends a prompt.
+- Desktop focus changes do not pull the phone away from its chosen Chat or discard its draft. Incoming notifications may still be read locally.
+
+Verification: focused emulator checks passed for tab taps, Chat swipes in both directions, host focus following without Show, vertical scrolling, text selection and draft preservation. Five gesture UI tests and 28 focused JVM tests passed. This is not full all-harness or physical-phone verification.

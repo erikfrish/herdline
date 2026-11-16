@@ -7,7 +7,7 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.83](https://github.com/erikfrish/herdline/releases/tag/v0.6.83), experimental prerelease.**
+> **Latest public release: [0.6.84](https://github.com/erikfrish/herdline/releases/tag/v0.6.84), experimental prerelease.**
 > Focused emulator QA and automated checks passed with documented limits.
 > Physical phones and locale behavior below Android 13 were not verified.
 > Support for every agent harness and Samsung Now Bar placement remain unverified.
@@ -137,13 +137,13 @@ legacy journals, Hermes and Mastra Code add read-only history, with differing
 version and integration requirements. Reading history alone is not full
 harness support.
 
-- Chat follows the pane **read here**, chosen on the phone (a tab, pane,
-  switcher row, Agents row, banner or notification). It is kept apart from
-  Herdr's shared focus, which the desktop and Terminal show: reading a pane in
-  Chat never moves the desktop. When the desktop is elsewhere, Chat says so.
-- Terminal shows the desktop's pane as it is. Moving the desktop takes an
-  explicit action labelled as such, for example **Show ‹pane› (moves the
-  desktop)**.
+- Chat keeps the conversation chosen on the phone when desktop focus changes.
+  Explicit tab, pane and workspace choices also focus that destination on Herdr,
+  so navigation does not require a second **Show** tap before pane input works.
+  Incoming notifications can still be read without moving host focus.
+- A visible tab strip provides previous/next buttons and direct tab selection
+  in portrait too. Swipe left/right in Chat or on the title to change tabs;
+  vertical Chat scrolling and text selection keep their ordinary behavior.
 - Transcript reading uses the exact session reference Herdr reports for the
   pane, within the reader's confined session root or bounded read-only store.
 - OMP sends through its compatible ingress endpoint; Pi/Claude use a validated
@@ -173,7 +173,7 @@ harness support.
 
 - While Herdline is open, Herdr's own "needs input" and "finished"
   notifications appear as a banner at the top of the screen. **Open** goes to
-  the pane: in Chat it reads it here, in Terminal it focuses it.
+  the pane and focuses it on Herdr.
 - In the background they become Android notifications, with separate
   channels for attention and completions.
 

@@ -4,7 +4,11 @@ package io.github.erikfrish.herdline.ui.session
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -180,5 +185,43 @@ class HeaderGesturesTest {
         compose.waitForIdle()
         assertTrue(swipes.isEmpty())
         assertTrue(presses.isEmpty())
+    }
+    @Test
+    fun chatHorizontalSwipesNavigateWhileVerticalDragsStillScroll() {
+        var scroll: androidx.compose.foundation.ScrollState? = null
+        var detector by mutableStateOf(false)
+        compose.setContent {
+            val state = rememberScrollState()
+            scroll = state
+            Box(
+                Modifier.size(300.dp, 400.dp)
+                    .then(if (detector) Modifier.headerSwipes(true, target, horizontalOnly = true) { swipes += it } else Modifier)
+                    .testTag("chat"),
+            ) {
+                Text(
+                    (1..200).joinToString("\n") { "Message $it" },
+                    Modifier.fillMaxSize().verticalScroll(state).testTag("chat:scroll"),
+                )
+            }
+        }
+        val parentBounds = compose.onNodeWithTag("chat").fetchSemanticsNode().boundsInRoot
+        val scrollBounds = compose.onNodeWithTag("chat:scroll").fetchSemanticsNode().boundsInRoot
+        assertEquals(parentBounds.width, scrollBounds.width, 1f)
+        assertEquals(parentBounds.height, scrollBounds.height, 1f)
+        compose.onNodeWithTag("chat:scroll").performTouchInput { swipeUp() }
+        compose.runOnIdle { assertTrue("The fixture itself must scroll", scroll!!.value > 0) }
+        compose.runOnIdle { detector = true }
+        compose.onNodeWithTag("chat").performTouchInput {
+            down(center)
+            moveTo(center + Offset(-120.dp.toPx(), 0f), 100)
+            up()
+        }
+        compose.runOnIdle { assertEquals(listOf(HeaderSwipe.Left), swipes.toList()) }
+        val before = compose.runOnIdle { scroll!!.value }
+        compose.onNodeWithTag("chat:scroll").performTouchInput { swipeUp() }
+        compose.runOnIdle {
+            assertTrue("Chat must retain vertical scrolling", scroll!!.value > before)
+            assertEquals(listOf(HeaderSwipe.Left), swipes.toList())
+        }
     }
 }

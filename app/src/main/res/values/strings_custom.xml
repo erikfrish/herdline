@@ -32,8 +32,8 @@
     <string name="layout_help">Auto keeps Herdr\'s sidebar beside the terminal when the window is at least 840 dp wide and 480 dp tall. Its ‹ button folds it to a rail of workspaces.</string>
 
     <string name="section_gestures">Gestures</string>
-    <string name="header_gestures">Header swipes</string>
-    <string name="header_gestures_help">Swipe on the workspace/tab title, not the tab strip or buttons. Left: next tab. Right: previous tab. Down: Tabs (opens the sidebar on wide layouts). Up: hide keyboard. Tabs stop at the workspace ends. Switching follows the tab buttons: Chat-to-Chat stays local; opening Terminal can change host focus. Tap and long-press actions stay unchanged.</string>
+    <string name="header_gestures">Navigation swipes</string>
+    <string name="header_gestures_help">Swipe left or right in Chat or on the workspace/tab title to change tabs. The tab strip also has previous/next buttons. A tab choice moves host focus with it; no separate Show is needed. On the title, swipe down for Tabs (the sidebar on wide layouts), or up to hide the keyboard. Tabs stop at workspace ends. Chat vertical scrolling and text selection stay unchanged.</string>
 
     <string name="section_tabs_list">Tabs list</string>
     <string name="start_filter">Start with filter</string>

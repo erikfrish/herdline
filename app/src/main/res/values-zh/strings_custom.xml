@@ -44,8 +44,8 @@
     <string name="layout_help">窗口至少 840 dp 宽、480 dp 高时，“自动”会把 Herdr 的侧边栏放在终端旁边。它的 ‹ 按钮可将其折叠为工作区栏。</string>
 
     <string name="section_gestures">手势</string>
-    <string name="header_gestures">页眉滑动</string>
-    <string name="header_gestures_help">在工作区/标签页标题上滑动，标签页栏和按钮不响应。左滑：下一个标签页。右滑：上一个。下滑：标签页面板（宽布局下展开侧边栏）。上滑：收起键盘。到工作区两端即止。切换遵循标签页按钮的规则：聊天之间切换只影响本机；打开终端可能改变主机焦点。轻点和长按操作保持不变。</string>
+    <string name="header_gestures">导航滑动</string>
+    <string name="header_gestures_help">在聊天内容或工作区/标签页标题上左右滑动即可切换标签页。标签页栏也有上一页/下一页按钮。选择标签页会同时移动主机焦点，无需再点“显示”。在标题上下滑打开标签页面板（宽布局下为侧边栏），上滑收起键盘。到工作区两端即止。聊天的纵向滚动和文字选择保持不变。</string>
 
     <string name="hide_help">只有标签页面板和侧边栏会隐藏行，列表下方一行会显示隐藏了多少，并带有“显示”。搜索仍能找到它们。需要你的标签页从不隐藏。手机标签页栏、标签页 n/N、代理和通知始终计入每个标签页。</string>
     <string name="terminal_suggestions">终端中的键盘建议</string>
