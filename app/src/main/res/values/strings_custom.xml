@@ -99,7 +99,7 @@
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">Mono</string>
     <string name="icon_contrast">Contrast</string>
-    <string name="icon_help">The selected colourway is used on the home screen, in Recents and for the in-app logo. The notification app badge and Android App info show the installed icon instead: Android and the phone maker draw it, and no app can change it. Status icons remain monochrome. Some launchers take a moment and may move a home-screen shortcut.</string>
+    <string name="icon_help">The selected colourway is used on the home screen, in Recents, for the in-app logo and inside notification cards. Existing cards update when you change it. The small notification app badge and Android App info still use the installed icon; status-bar icons stay monochrome. Some launchers take a moment and may move a home-screen shortcut.</string>
     <string name="icon_installed">Notification app badge and App info: %1$s, the installed icon.</string>
     <string name="icon_installed_unknown">Notification app badge and App info: the installed icon.</string>
 

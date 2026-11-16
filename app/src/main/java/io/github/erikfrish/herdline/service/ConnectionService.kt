@@ -26,6 +26,8 @@ import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.AppLanguages
 import io.github.erikfrish.herdline.data.LockDetail
 import io.github.erikfrish.herdline.data.Settings
+import io.github.erikfrish.herdline.data.IconVariant
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.ui.MainActivity
 import io.github.erikfrish.herdline.ui.session.notificationBody
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,6 +36,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -73,6 +77,7 @@ class ConnectionService : Service() {
         val needYou: Int = 0,
         val connection: AttachedState = AttachedState.Connecting,
         val minute: Long = 0,
+        val iconVariant: IconVariant = IconVariant.Default,
     )
 
     /** Nodes whose connection-lost note is posted, to re-post it when the privacy setting changes. */
@@ -143,7 +148,7 @@ class ConnectionService : Service() {
         }
         val live = liveLevel(app.settings.liveLockDetail.value, settings.lockDetail)
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
-            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }))
+            .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }), iconVariant = settings.iconVariant)
         shown = state
         ServiceCompat.startForeground(
             this,
@@ -236,6 +241,7 @@ class ConnectionService : Service() {
         }
         // Below Android 13 an in-app language change reaches no configuration callback.
         launch { AppLanguages.changes.drop(1).collect { relocalize() } }
+        launch { app.settings.settings.map { it.iconVariant }.distinctUntilChanged().drop(1).collect { repostLost(app.settings.settings.value.lockDetail) } }
         val choices = combine(app.monitor.monitored, app.settings.settings, app.settings.liveLockDetail) { monitored, settings, live ->
             Triple(monitored, settings, liveLevel(live, settings.lockDetail))
         }
@@ -301,6 +307,7 @@ class ConnectionService : Service() {
                     needYou = snapshots.sumOf { snapshot -> snapshot.view?.agents?.count { it.status == AgentStatus.Blocked } ?: 0 },
                     connection = attachedState(list.map { it.second }),
                     minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
+                    iconVariant = settings.iconVariant,
                 )
                 AgentNotifications.card = cardPromotion(live?.let(::liveState))
                 if (next != shown && next.count > 0) {
@@ -377,6 +384,7 @@ class ConnectionService : Service() {
         val words = lostContent(ResourceTexts(AppLanguages.localized(this)), connection.node.title, lock)
         val notification = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_CONNECTION)
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(IconVariants.currentIcon(this))
             .setContentTitle(words.main.title)
             .setContentText(words.main.text)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -419,6 +427,7 @@ class ConnectionService : Service() {
         )
         val builder = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_LIVE)
             .setOngoing(true)
+            .setLargeIcon(IconVariants.icon(this, shown.iconVariant))
             .setOnlyAlertOnce(true)
             .setContentIntent(content)
             .setDeleteIntent(dismiss)

@@ -105,6 +105,18 @@ class TerminalViewImeTest {
     }
 
     @Test
+    fun horizontalNavigationContinuesAcrossTerminalWithoutTakingVerticalScroll() {
+        val tabs = mutableListOf<Int>()
+        compose.runOnIdle { view.onTabSwipe = { tabs += it } }
+        drag(at(0.75f, 0.3f), dx = -view.width * 0.4f, dy = 0f)
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf(1), tabs.toList()) }
+        drag(at(0.25f, 0.3f), dx = view.width * 0.4f, dy = 0f)
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf(1, -1), tabs.toList()) }
+        drag(at(0.5f, 0.35f), dx = 0f, dy = -6 * slop)
+        compose.runOnIdle { org.junit.Assert.assertEquals(listOf(1, -1), tabs.toList()) }
+    }
+
+    @Test
     fun aSingleTapOpensTheKeyboard() {
         compose.runOnIdle { view.hideKeyboard() }
         compose.waitUntil(TIMEOUT) { !keyboardShown() }

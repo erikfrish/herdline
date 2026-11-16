@@ -7,7 +7,7 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.84](https://github.com/erikfrish/herdline/releases/tag/v0.6.84), experimental prerelease.**
+> **Latest public release: [0.6.85](https://github.com/erikfrish/herdline/releases/tag/v0.6.85), experimental prerelease.**
 > Focused emulator QA and automated checks passed with documented limits.
 > Physical phones and locale behavior below Android 13 were not verified.
 > Support for every agent harness and Samsung Now Bar placement remain unverified.
@@ -142,8 +142,8 @@ harness support.
   so navigation does not require a second **Show** tap before pane input works.
   Incoming notifications can still be read without moving host focus.
 - A visible tab strip provides previous/next buttons and direct tab selection
-  in portrait too. Swipe left/right in Chat or on the title to change tabs;
-  vertical Chat scrolling and text selection keep their ordinary behavior.
+  in portrait too. Swipe left/right in Chat, Terminal or on the title to change
+  tabs; vertical scrolling, text selection and terminal pinch retain their actions.
 - Transcript reading uses the exact session reference Herdr reports for the
   pane, within the reader's confined session root or bounded read-only store.
 - OMP sends through its compatible ingress endpoint; Pi/Claude use a validated

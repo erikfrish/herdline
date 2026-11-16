@@ -109,6 +109,7 @@ class HerdlineApp : Application() {
         scope.launch {
             settings.settings.map { it.iconVariant }.distinctUntilChanged().collect { variant ->
                 withContext(Dispatchers.IO) { IconVariants.apply(this@HerdlineApp, variant) }
+                AgentNotifications.republish(this@HerdlineApp, settings.settings.value.lockDetail, force = true)
             }
         }
         // The privacy setting re-words the agent notes even with no service

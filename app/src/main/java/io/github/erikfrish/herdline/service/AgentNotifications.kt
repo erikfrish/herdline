@@ -25,6 +25,7 @@ import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.data.AppLanguages
 import io.github.erikfrish.herdline.data.LockDetail
+import io.github.erikfrish.herdline.data.IconVariants
 import io.github.erikfrish.herdline.ui.MainActivity
 
 /** What the live card is doing, as far as the platform reports it. */
@@ -301,11 +302,11 @@ object AgentNotifications {
      * full content must return without a second sound. A re-post of
      * unchanged words is skipped.
      */
-    fun republish(context: Context, lock: LockDetail) {
+    fun republish(context: Context, lock: LockDetail, force: Boolean = false) {
         if (!canNotify(context)) return
         val manager = context.getSystemService(NotificationManager::class.java)
         for (note in notes.values.filter { showing(manager, it.key.tag) }.sortedBy { it.at }) {
-            publish(context, manager, note, lock, silent = true, force = false)
+            publish(context, manager, note, lock, silent = true, force = force)
         }
         scheduleReassert(lock)
     }
@@ -394,6 +395,7 @@ object AgentNotifications {
     internal fun publicOf(context: Context, channel: String, content: NoteContent, icon: Int = R.drawable.ic_notification): NotificationCompat.Builder =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(icon)
+            .setLargeIcon(IconVariants.currentIcon(context))
             .setContentTitle(content.title)
             .setContentText(content.text)
             .setSubText(content.subText)
@@ -456,6 +458,7 @@ object AgentNotifications {
         if (children.put(note.key.tag, ChildPost(words, lock, note.at)) || force) {
             val child = NotificationCompat.Builder(context, channel)
                 .setSmallIcon(icon)
+                .setLargeIcon(IconVariants.currentIcon(context))
                 .setWhen(note.at)
                 .setShowWhen(true)
                 .setCategory(if (attention) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
@@ -479,6 +482,7 @@ object AgentNotifications {
         if (summaries.put(summaryTag(nodeId), SummaryPost(sum, lock)) || force) {
             val summary = NotificationCompat.Builder(context, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_notification)
+                .setLargeIcon(IconVariants.currentIcon(context))
                 .setGroup(group(nodeId))
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)

@@ -1311,6 +1311,7 @@ fun SessionScreen(
                                 },
                                 update = { view ->
                                     view.latchedMeta = latched
+                                    view.onTabSwipe = if (terminalShown && navigationEnabled) { step -> stepTab(step) } else null
                                     view.windowKey = windowKey
                                     // Terminal on screen owns Herdr's grid; under Chat one grid goes per visit, Chat's settled one.
                                     view.sharesGrid = terminalShown
