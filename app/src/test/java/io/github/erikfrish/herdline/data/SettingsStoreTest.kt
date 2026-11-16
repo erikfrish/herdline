@@ -97,6 +97,20 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun countsOnlyDashboardConsentSurvivesRestartButNotificationResetRevokesIt() {
+        val prefs = MemoryPrefs()
+        val store = SettingsStore(prefs)
+        store.chooseLiveLockDetail(LockDetail.Hidden)
+        store.update { it.copy(liveSummary = true) }
+        val reloaded = SettingsStore(prefs)
+        assertEquals(true, reloaded.settings.value.liveSummary)
+        assertEquals(LockDetail.Hidden, reloaded.liveLockDetail.value)
+        reloaded.restore(ResetScope.Notifications)
+        assertEquals(false, SettingsStore(prefs).settings.value.liveSummary)
+        assertEquals(LockDetail.Hidden, reloaded.liveLockDetail.value)
+    }
+
+    @Test
     fun headerSwipesStayOffAfterARestartUntilTheLayoutIsRestored() {
         val prefs = MemoryPrefs()
         val store = SettingsStore(prefs)

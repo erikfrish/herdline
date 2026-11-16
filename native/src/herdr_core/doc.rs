@@ -55,6 +55,8 @@ impl Axis {
 pub enum Edit {
     CreateSpace {
         space: String,
+        /// The workspace label as asked, verbatim; empty when none was.
+        name: String,
         folder: String,
         tab: String,
         pane: String,
@@ -290,6 +292,7 @@ pub fn apply(doc: &mut Value, edit: &Edit) -> std::result::Result<Vec<String>, R
     match edit {
         Edit::CreateSpace {
             space,
+            name,
             folder,
             tab,
             pane,
@@ -297,7 +300,7 @@ pub fn apply(doc: &mut Value, edit: &Edit) -> std::result::Result<Vec<String>, R
         } => {
             spaces_mut(doc)?.push(json!({
                 "id": space,
-                "name": "",
+                "name": name,
                 "folder": folder,
                 "tabs": [new_tab(tab, "", pane, terminal)],
             }));

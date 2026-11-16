@@ -35,17 +35,20 @@ fn core_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'-' | b'_' | b'.'))
 }
 
-/// What Kotlin's `parseCreated` reads from a create's answer.
-fn created_reply(edit: &Edit) -> Value {
+/// What Kotlin's `parseCreated` / `parseCreatedWorkspace` read from a
+/// create's answer. A workspace also answers its stored label and whether
+/// it was focused, as Herdr's `WorkspaceInfo` does.
+fn created_reply(edit: &Edit, focus: bool) -> Value {
     match edit {
         Edit::CreateSpace {
             space,
+            name,
             tab,
             pane,
             terminal,
             ..
         } => json!({
-            "workspace": {"workspace_id": space},
+            "workspace": {"workspace_id": space, "label": name, "focused": focus},
             "tab": {"tab_id": tab},
             "root_pane": {"pane_id": pane, "terminal_id": terminal},
         }),
@@ -63,6 +66,90 @@ fn created_reply(edit: &Edit) -> Value {
         }
         _ => json!({}),
     }
+}
+
+/// What `workspace.create` asks beyond fresh IDs.
+#[derive(Debug, PartialEq)]
+struct SpaceAsk {
+    name: String,
+    folder: String,
+    env: Vec<(String, String)>,
+}
+
+/// Reads `workspace.create` as Herdr 0.9.5 does (`app/api/workspaces.rs:44-67`):
+/// a `cwd` wins and the source is then not even looked up; otherwise a named
+/// source must exist; then the env is checked. `folder_of` answers a space's
+/// folder. No source and no `cwd` leaves the folder to the new terminal.
+/// An error is a definite refusal, `(kind, message)`, before any terminal.
+fn space_ask(
+    params: &Value,
+    folder_of: impl Fn(&str) -> Option<String>,
+) -> std::result::Result<SpaceAsk, (String, String)> {
+    let folder = match (params["cwd"].as_str(), params["source_workspace_id"].as_str()) {
+        (Some(cwd), _) => cwd.to_owned(),
+        (None, Some(source)) => folder_of(source).ok_or_else(|| {
+            ("workspace_not_found".to_owned(), format!("workspace {source} not found"))
+        })?,
+        (None, None) => String::new(),
+    };
+    Ok(SpaceAsk {
+        name: word(params, "label"),
+        folder,
+        env: launch_env(&params["env"])?,
+    })
+}
+
+/// The launch env as Herdr's `normalize_launch_env` takes it
+/// (`app/api/env.rs:3-33`): same rejections, codes and messages, sorted by key.
+fn launch_env(env: &Value) -> std::result::Result<Vec<(String, String)>, (String, String)> {
+    let invalid = |message: String| Err(("invalid_env".to_owned(), message));
+    if env.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(map) = env.as_object() else {
+        return Err(("invalid".to_owned(), "invalid_params".to_owned()));
+    };
+    let mut normalized = Vec::with_capacity(map.len());
+    for (key, value) in map {
+        let Some(value) = value.as_str() else {
+            return Err(("invalid".to_owned(), "invalid_params".to_owned()));
+        };
+        if key.is_empty() {
+            return invalid("env key must not be empty".to_owned());
+        }
+        if key.contains('=') {
+            return invalid(format!("env key {key} must not contain '='"));
+        }
+        if key.contains('\0') {
+            return invalid("env key must not contain NUL bytes".to_owned());
+        }
+        if value.contains('\0') {
+            return invalid(format!("env value for {key} must not contain NUL bytes"));
+        }
+        normalized.push((key.clone(), value.to_owned()));
+    }
+    normalized.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(normalized)
+}
+
+/// A create's `terminal.run`. The launch env goes on over the base env, so
+/// it wins on a shared key, as in Herdr 0.9.5, whose pane spawn applies its
+/// terminal env and then the launch env (`pane.rs:2393-2394`, `:105-107`,
+/// `:199-201`).
+fn run_params(space: &str, tab: &str, cwd: Option<&str>, env: &[(String, String)]) -> Value {
+    let mut params = json!({
+        "argv": [],
+        "keep": true,
+        "env": {"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "herdr"},
+        "labels": {"herdr.space": space, "herdr.tab": tab, "herdr.seen": "0"},
+    });
+    for (key, value) in env {
+        params["env"][key] = json!(value);
+    }
+    if let Some(cwd) = cwd {
+        params["cwd"] = json!(cwd);
+    }
+    params
 }
 
 impl Pump {
@@ -255,11 +342,16 @@ impl Pump {
                 return self.start(id, edit, params["focus"].as_bool().unwrap_or(true));
             }
             "workspace.create" => {
-                let folder = params["source_workspace_id"]
-                    .as_str()
-                    .and_then(|source| self.find_space(source))
-                    .map(|space| doc::text(space, "folder").to_owned())
-                    .unwrap_or_default();
+                let ask = match space_ask(params, |source| {
+                    self.find_space(source)
+                        .map(|space| doc::text(space, "folder").to_owned())
+                }) {
+                    Ok(ask) => ask,
+                    Err((kind, message)) => {
+                        self.refuse(&id, &kind, &message);
+                        return Ok(());
+                    }
+                };
                 let (Some(space), Some(tab), Some(pane)) = (fresh("s"), fresh("t"), fresh("p"))
                 else {
                     self.refuse(&id, "error", "random_unavailable");
@@ -267,12 +359,14 @@ impl Pump {
                 };
                 let edit = Edit::CreateSpace {
                     space,
-                    folder,
+                    name: ask.name,
+                    folder: ask.folder,
                     tab,
                     pane,
                     terminal: String::new(),
                 };
-                return self.start(id, edit, params["focus"].as_bool().unwrap_or(true));
+                let focus = params["focus"].as_bool().unwrap_or(true);
+                return self.start_with_env(id, edit, focus, &ask.env);
             }
             "agent.start" => return self.launch(id, params),
             _ => self.refuse(&id, "unknown", "unknown_method"),
@@ -282,6 +376,17 @@ impl Pump {
 
     /// Begin an edit: a create first gets its terminal from the core.
     fn start(&mut self, ui: String, edit: Edit, focus: bool) -> Result<()> {
+        self.start_with_env(ui, edit, focus, &[])
+    }
+
+    /// [`Self::start`], with `env` over a created terminal's base env.
+    fn start_with_env(
+        &mut self,
+        ui: String,
+        edit: Edit,
+        focus: bool,
+        env: &[(String, String)],
+    ) -> Result<()> {
         let (space, tab, cwd) = match &edit {
             Edit::CreateSpace {
                 space, tab, folder, ..
@@ -325,15 +430,7 @@ impl Pump {
                 });
             }
         };
-        let mut params = json!({
-            "argv": [],
-            "keep": true,
-            "env": {"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "herdr"},
-            "labels": {"herdr.space": space, "herdr.tab": tab, "herdr.seen": "0"},
-        });
-        if let Some(cwd) = cwd {
-            params["cwd"] = json!(cwd);
-        }
+        let params = run_params(&space, &tab, cwd.as_deref(), env);
         let flow = Flow {
             ui,
             edit,
@@ -506,7 +603,7 @@ impl Pump {
                 self.doc = value;
                 self.version = result["version"].as_u64().unwrap_or(self.version + 1);
                 self.document_changed();
-                self.answer(&flow.ui, created_reply(&flow.edit));
+                self.answer(&flow.ui, created_reply(&flow.edit, flow.focus));
                 for terminal in removed {
                     if !self.pane_of.contains_key(&terminal) {
                         self.kill(&terminal)?;
@@ -738,3 +835,7 @@ impl Pump {
         self.dirty_frame = true;
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests;

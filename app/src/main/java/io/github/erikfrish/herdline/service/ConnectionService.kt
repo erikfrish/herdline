@@ -31,6 +31,7 @@ import io.github.erikfrish.herdline.ui.session.notificationBody
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -54,6 +55,9 @@ class ConnectionService : Service() {
     private var watcher: Job? = null
     private var card: Job? = null
 
+    /** One trailing current-state post, including after immediate dashboard transitions. */
+    private val summaryUpdates = Channel<Unit>(Channel.CONFLATED)
+
     /** What the foreground notification shows now, rebuilt only when it changes. */
     private var shown: Shown? = null
 
@@ -73,6 +77,7 @@ class ConnectionService : Service() {
         val needYou: Int = 0,
         val connection: AttachedState = AttachedState.Connecting,
         val minute: Long = 0,
+        val summary: AgentSummary? = null,
     )
 
     /** Nodes whose connection-lost note is posted, to re-post it when the privacy setting changes. */
@@ -110,7 +115,11 @@ class ConnectionService : Service() {
      */
     private fun relocalize() {
         if (!AgentNotifications.canNotify(this)) return
-        shown?.let { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, build(it)) }
+        shown?.let {
+            NotificationPostTime.mark()
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, build(it))
+            if (it.summary != null) summaryUpdates.trySend(Unit)
+        }
         repostLost((application as HerdlineApp).settings.settings.value.lockDetail)
     }
 
@@ -127,6 +136,10 @@ class ConnectionService : Service() {
         if (count == 0) {
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_HIDE_SUMMARY || (intent?.action == ACTION_CARD_DISMISSED && shown?.summary != null)) {
+            app.settings.update { it.copy(liveSummary = false) }
+            return START_STICKY
         }
         if (intent?.action == ACTION_CARD_DISMISSED || intent?.action == ACTION_UNPIN) {
             // Swipe and Unpin both unpin what the live update showed, never
@@ -145,6 +158,7 @@ class ConnectionService : Service() {
         val state = (shown ?: Shown(count, null, null, settings.lockDetail, live, settings.liveActivity))
             .copy(count = count, title = app.connections.value.values.firstOrNull()?.node?.title, fields = settings.notificationFields, connection = attachedState(app.connections.value.values.map { it.state.value }))
         shown = state
+        NotificationPostTime.mark()
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
@@ -155,6 +169,7 @@ class ConnectionService : Service() {
                 0
             },
         )
+        if (state.summary != null) summaryUpdates.trySend(Unit)
         if (watcher == null) {
             watcher = app.scope.launch {
                 app.connections.collectLatest { connections ->
@@ -208,6 +223,20 @@ class ConnectionService : Service() {
         val done = DoneCards()
         val expiryTick = MutableStateFlow(0L)
         var expiry: Job? = null
+        // Android may discard an update above its per-package enqueue rate.
+        // Keep one trailing dashboard update, rather than posting every agent event.
+        launch {
+            for (ignored in summaryUpdates) {
+                delay(1_000)
+                NotificationPostTime.awaitQuiet()
+                while (summaryUpdates.tryReceive().isSuccess) { /* Keep only the latest snapshot. */ }
+                val latest = shown ?: continue
+                if (AgentNotifications.canNotify(this@ConnectionService)) {
+                    NotificationPostTime.mark()
+                    NotificationManagerCompat.from(this@ConnectionService).notify(NOTIFICATION_ID, build(latest))
+                }
+            }
+        }
         /** Pinned agents whose current Blocked episode was handed to an attention notification. */
         val handedOff = HashSet<MonitorKey>()
         val minutes = flow {
@@ -230,7 +259,9 @@ class ConnectionService : Service() {
         LockGate.onLockChange = {
             shown?.let { latest ->
                 if (AgentNotifications.canNotify(service)) {
+                    NotificationPostTime.mark()
                     NotificationManagerCompat.from(service).notify(NOTIFICATION_ID, build(latest))
+                    if (latest.summary != null) summaryUpdates.trySend(Unit)
                 }
             }
         }
@@ -300,12 +331,28 @@ class ConnectionService : Service() {
                     agents = snapshots.sumOf { it.view?.agents?.size ?: 0 },
                     needYou = snapshots.sumOf { snapshot -> snapshot.view?.agents?.count { it.status == AgentStatus.Blocked } ?: 0 },
                     connection = attachedState(list.map { it.second }),
-                    minute = if (live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
+                    minute = if (!settings.liveSummary && live?.rows?.any { it.since != null || it.worked != null } == true) minute else 0,
+                    summary = if (settings.liveSummary) agentSummary(snapshots) else null,
                 )
-                AgentNotifications.card = cardPromotion(live?.let(::liveState))
+                AgentNotifications.card = next.summary?.let {
+                    when {
+                        !it.available -> Promotion.Stale
+                        it.active -> Promotion.Requested
+                        else -> Promotion.NoCard
+                    }
+                } ?: cardPromotion(live?.let(::liveState))
                 if (next != shown && next.count > 0) {
+                    val previous = shown
                     shown = next
-                    if (AgentNotifications.canNotify(context)) NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, build(next))
+                    // Mode/privacy and connection-loss transitions are never delayed.
+                    if (next.summary != null && previous?.summary != null &&
+                        next.summary.unavailable == previous.summary.unavailable && next.summary.available == previous.summary.available) {
+                        summaryUpdates.trySend(Unit)
+                    } else if (AgentNotifications.canNotify(context)) {
+                        NotificationPostTime.mark()
+                        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, build(next))
+                        if (next.summary != null || previous?.summary != null) summaryUpdates.trySend(Unit)
+                    }
                 }
             }
     }
@@ -386,6 +433,7 @@ class ConnectionService : Service() {
             .setContentIntent(AgentNotifications.open(this, connection.node.id, null, tag))
             .setVisibility(AgentNotifications.visibility(lock))
             .setPublicVersion(AgentNotifications.publicOf(this, AgentNotifications.CHANNEL_CONNECTION, words.public).build())
+        NotificationPostTime.mark()
         NotificationManagerCompat.from(this).notify(tag, LOST_ID, notification.build())
     }
 
@@ -403,6 +451,7 @@ class ConnectionService : Service() {
         val locked = LockGate.isDeviceLocked(this)
         val local = AppLanguages.localized(this)
         val time = DateFormat.getTimeFormat(local)
+        shown.summary?.let { return buildSummary(it, local) }
         val fields = liveFields(ResourceLiveTexts(local), shown.card, shown.live, locked, System.currentTimeMillis(), shown.fields) { time.format(it) }
         val requestPromotion = shown.promote && fields?.promote == true
         AgentNotifications.promotionRequested = requestPromotion
@@ -466,6 +515,65 @@ class ConnectionService : Service() {
         return builder.build()
     }
 
+    /** Explicit dashboard opt-in permits counts, never names, on both notification faces. */
+    private fun buildSummary(summary: AgentSummary, local: Context): Notification {
+        val working = local.getString(R.string.live_summary_working)
+        val waiting = local.getString(R.string.live_summary_waiting)
+        val idle = local.getString(R.string.live_summary_idle)
+        val counts = local.getString(R.string.live_summary_counts, summary.working, summary.waiting, summary.idle)
+        val scope = buildList {
+            if (summary.unavailable > 0) add(local.resources.getQuantityString(R.plurals.live_summary_unavailable, summary.unavailable, summary.unavailable))
+            add(local.getString(when {
+                !summary.available -> R.string.live_summary_scope_offline
+                summary.partial -> R.string.live_summary_scope_partial
+                else -> R.string.live_summary_scope
+            }))
+            if (summary.done > 0) add(local.getString(R.string.live_summary_done, summary.done))
+            if (summary.unknown > 0) add(local.getString(R.string.live_summary_unknown, summary.unknown))
+        }.joinToString(" · ")
+        val title = local.getString(when {
+            !summary.available -> R.string.live_summary_offline
+            summary.partial -> R.string.live_summary_partial
+            else -> R.string.live_summary_title
+        })
+        val detail = if (summary.available) "$counts\n$scope" else scope
+        val chip = when {
+            !summary.available -> ""
+            summary.partial -> local.getString(R.string.live_summary_chip_partial)
+            summary.waiting > 0 -> local.getString(R.string.live_summary_chip_waiting, summary.waiting)
+            summary.working > 0 -> local.getString(R.string.live_summary_chip_working, summary.working)
+            else -> local.getString(R.string.live_summary_chip_idle, summary.idle)
+        }
+        val spoken = "$title, $detail"
+        val glyph = when {
+            !summary.available -> LiveGlyph.Disconnected
+            summary.waiting > 0 -> LiveGlyph.NeedsInput
+            summary.working > 0 -> LiveGlyph.Working
+            else -> LiveGlyph.Done
+        }
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val hide = PendingIntent.getService(this, 4, Intent(this, ConnectionService::class.java).setAction(ACTION_HIDE_SUMMARY), PendingIntent.FLAG_IMMUTABLE)
+        val promote = summary.available && summary.active
+        AgentNotifications.promotionRequested = promote
+        // The pinned-agent preview must not pretend this aggregate is its pinned face.
+        preview.value = null
+        fun face() = NotificationCompat.Builder(this, AgentNotifications.CHANNEL_LIVE)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSmallIcon(glyphIcon(glyph))
+            .setContentIntent(open)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setShowWhen(false)
+            .setRequestPromotedOngoing(promote)
+        fun render(builder: NotificationCompat.Builder) = AgentSummaryNotification.build(
+            this, builder, summary, title, scope, working, waiting, idle, detail, chip, spoken,
+        )
+        val public = render(face())
+        return render(face().setPublicVersion(public).setDeleteIntent(hide)
+            .addAction(0, local.getString(R.string.live_summary_stop), hide))
+    }
+
     /**
      * This face's time: the status-bar chip text where the system shows one
      * (Android 16; null lets the chronometer show, "" the icon alone), and a
@@ -483,6 +591,7 @@ class ConnectionService : Service() {
         watcher = null
         card?.cancel()
         card = null
+        summaryUpdates.close()
         shown = null
         preview.value = null
         LockGate.onLockChange = null
@@ -502,6 +611,7 @@ class ConnectionService : Service() {
         private const val ACTION_DISCONNECT_ALL = "io.github.erikfrish.herdline.DISCONNECT_ALL"
         private const val ACTION_CARD_DISMISSED = "io.github.erikfrish.herdline.CARD_DISMISSED"
         private const val ACTION_UNPIN = "io.github.erikfrish.herdline.UNPIN"
+        private const val ACTION_HIDE_SUMMARY = "io.github.erikfrish.herdline.HIDE_SUMMARY"
 
 
         internal val preview = MutableStateFlow<NotificationCardPreview?>(null)

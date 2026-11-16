@@ -98,6 +98,7 @@ fn a_space_is_created_in_an_unwritten_document() {
     let mut value = Value::Null;
     let edit = Edit::CreateSpace {
         space: "sp2".into(),
+        name: " qa ".into(),
         folder: "/w".into(),
         tab: "tb2".into(),
         pane: "p9".into(),
@@ -105,6 +106,8 @@ fn a_space_is_created_in_an_unwritten_document() {
     };
     apply(&mut value, &edit).unwrap();
     assert_eq!(value["spaces"][0]["tabs"][0]["root"]["id"], "tb2");
+    assert_eq!(value["spaces"][0]["name"], " qa ");
+    assert_eq!(value["spaces"][0]["folder"], "/w");
     assert_eq!(terminals(&value["spaces"][0]["tabs"][0]["root"]), vec!["t9".to_owned()]);
 }
 

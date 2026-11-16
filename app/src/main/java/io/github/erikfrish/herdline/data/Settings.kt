@@ -101,6 +101,8 @@ data class Settings(
     val notifyDone: Boolean = true,
     val notifyConnection: Boolean = true,
     val liveActivity: Boolean = true,
+    /** Explicit opt-in: connected-agent state counts on every surface, including the lock screen; never names. */
+    val liveSummary: Boolean = false,
     /** Visible notification fields, in the user's order; privacy still caps them. */
     val notificationFields: List<String> = NotificationFields.DEFAULT,
     val lockDetail: LockDetail = LockDetail.Hidden,
@@ -150,6 +152,7 @@ data class Settings(
                 notifyDone = d.notifyDone,
                 notifyConnection = d.notifyConnection,
                 liveActivity = d.liveActivity,
+                liveSummary = d.liveSummary,
                 notificationFields = d.notificationFields,
                 lockDetail = d.lockDetail,
             )
@@ -242,6 +245,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             notifyDone = prefs.getBoolean("notify_done", d.notifyDone),
             notifyConnection = prefs.getBoolean("notify_connection", d.notifyConnection),
             liveActivity = prefs.getBoolean("live_activity", d.liveActivity),
+            liveSummary = prefs.getBoolean("live_summary", d.liveSummary),
             notificationFields = ids("notification_fields")?.let(NotificationFields::normalized) ?: d.notificationFields,
             lockDetail = enumOf("lock_detail", d.lockDetail),
             iconVariant = enumOf("icon_variant", d.iconVariant),
@@ -285,6 +289,7 @@ class SettingsStore internal constructor(private val prefs: SharedPreferences) {
             .putBoolean("notify_done", next.notifyDone)
             .putBoolean("notify_connection", next.notifyConnection)
             .putBoolean("live_activity", next.liveActivity)
+            .putBoolean("live_summary", next.liveSummary)
             .putString("notification_fields", next.notificationFields.joinToString(","))
             .putString("lock_detail", next.lockDetail.name)
             .putString("icon_variant", next.iconVariant.name)

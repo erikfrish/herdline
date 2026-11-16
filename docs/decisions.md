@@ -878,6 +878,30 @@ Inline bitmap form pictures are sampled and bounded. External pictures and
 SVG receive an explicit media notice; no arbitrary file or network fetch
 and no script-enabled HTML surface is opened by a form.
 
+## Creating workspaces from mobile
+
+New workspace is available from the Tabs headers, sidebar and session menu,
+including when workspaces already exist or a search/filter is active. Opening
+the form makes no request. Create sends one acknowledged `workspace.create`
+with an optional name, folder, source workspace and environment, plus an
+explicit focus choice. Nonblank names, paths and environment values are sent
+verbatim. A folder overrides the source; Daemon default leaves both absent.
+Classic Herdr then follows its configured creation policy; herdr-core uses
+its terminal default directory when no folder/source is supplied.
+
+Both backends apply the supplied fields; herdr-core no longer drops name,
+folder or environment. An unknown source is refused before terminal creation.
+User environment overrides terminal defaults, but classic Herdr still owns
+its integration identity variables. Duplicate environment names must be
+resolved in the form instead of silently overwriting one value.
+
+A definite refusal keeps the form editable with the server's error. A lost
+answer or malformed success leaves creation unknown: the form offers Close,
+not another Create. Nothing retries automatically. A successful focused
+create opens the exact returned root tab; with focus off, only an explicit
+Open navigates there. Runtime acceptance is recorded per candidate rather
+than inferred from compilation or these decisions.
+
 ## Verified against
 
 These were checked against OMP 18.18.3 in a test Herdr session:

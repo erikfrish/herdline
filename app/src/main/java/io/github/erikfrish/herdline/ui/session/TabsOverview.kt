@@ -228,7 +228,7 @@ fun TabsOverview(
                 } else {
                     TabsViewToggle(RailsIcon, stringResource(R.string.overview_as_rails), "overview:as-rails", onShowRails)
                 }
-                TabsHeader(host, view, state, chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "overview")
+                TabsHeader(host, view, state, chosen, scoped.gone, actions.newTab, actions.newWorkspace, toggle, onClose, tag = "overview")
             }
             Box(Modifier.padding(horizontal = TABS_SHEET_INSET)) {
                 SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = tabsSearchMinHeight())

@@ -60,6 +60,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -280,6 +281,8 @@ internal fun headerFit(width: Dp, modeWords: Dp, chip: Dp?): HeaderFit {
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
     data class NewTab(val workspaceId: String) : Prompt
+    /** `current` is the workspace on screen, the form's Current workspace source. */
+    data class NewWorkspace(val current: String?) : Prompt
     data class RenameTab(val id: String, val label: String) : Prompt
     data class RenameWorkspace(val id: String, val label: String) : Prompt
     data class CloseTab(val id: String, val label: String) : Prompt
@@ -799,7 +802,7 @@ fun SessionScreen(
         if (shown.boot != created.boot || choices != createdAtChoice) {
             createdTab = null
         } else if (shown.panes.any { it.id == created.pane && it.tab == created.tab }) {
-            readHere(created.pane)
+            choosePane(created.pane)
             app.targets.visited(node.id, "t:${created.tab}")
             createdTab = null
         }
@@ -965,7 +968,7 @@ fun SessionScreen(
         workspace = { chooseWorkspace(it.id); switcherOpen = false },
         pin = { app.targets.togglePin(node.id, it) },
         monitor = pinOrUnpin,
-        newWorkspace = { connection.newWorkspace(workspace?.id); switcherOpen = false },
+        newWorkspace = { prompt = Prompt.NewWorkspace(workspace?.id) },
         newTab = { prompt = Prompt.NewTab(it.id) },
         renameWorkspace = { prompt = Prompt.RenameWorkspace(it.id, it.label) },
         closeWorkspace = { prompt = Prompt.CloseWorkspace(it.id, it.label) },
@@ -2105,6 +2108,7 @@ private fun SessionMenu(
             divider()
         }
         item(R.string.new_tab, Icons.Default.Add, workspaceId != null, tag = "session:menu:new_tab") { workspaceId?.let { onPrompt(Prompt.NewTab(it)) } }
+        item(R.string.new_workspace, Icons.Default.AddCircle, tag = "session:menu:new_workspace") { onPrompt(Prompt.NewWorkspace(workspaceId)) }
         item(R.string.rename_tab, Icons.Default.Edit, tabId != null) { tabId?.let { onPrompt(Prompt.RenameTab(it, tabLabel.orEmpty())) } }
         item(R.string.session_close_tab, Icons.Default.Close, tabId != null, destructive = true) { tabId?.let { onPrompt(Prompt.CloseTab(it, tabLabel.orEmpty())) } }
         if (pinned != null) {

@@ -828,10 +828,6 @@ class Connection(val node: Node) {
         request("pane.split", JSONObject().put("target_pane_id", pane).put("direction", direction).put("focus", true))
     fun closePane(id: String) = request("pane.close", JSONObject().put("pane_id", id))
     fun toggleZoom(id: String) = request("pane.zoom", JSONObject().put("pane_id", id).put("mode", "toggle"))
-    fun newWorkspace(source: String?) = request(
-        "workspace.create",
-        JSONObject().put("focus", true).apply { source?.let { put("source_workspace_id", it) } },
-    )
     fun renameWorkspace(id: String, label: String) =
         request("workspace.rename", JSONObject().put("workspace_id", id).put("label", label))
     fun closeWorkspace(id: String) = request("workspace.close", JSONObject().put("workspace_id", id))

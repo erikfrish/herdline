@@ -94,6 +94,10 @@ internal fun LazyListScope.notificationContentSettings(store: SettingsStore, set
 @Composable
 private fun NotificationPreview(settings: Settings, active: NotificationCardPreview?, level: io.github.erikfrish.herdline.data.LockDetail) {
     val context = LocalContext.current
+    if (settings.liveSummary) {
+        Text(stringResource(R.string.live_summary_help), style = MaterialTheme.typography.bodySmall)
+        return
+    }
     val now = System.currentTimeMillis()
     val sample = remember {
         // Labelled generic sample only; never personal data or a pretend live agent.

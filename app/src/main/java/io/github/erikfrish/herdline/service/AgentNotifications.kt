@@ -472,6 +472,7 @@ object AgentNotifications {
                 .setVisibility(visibility(lock))
                 .setPublicVersion(publicOf(context, channel, words.public, icon).setWhen(note.at).setShowWhen(true).build())
             words.main.big?.let { child.setStyle(NotificationCompat.BigTextStyle().bigText(it)) }
+            NotificationPostTime.mark()
             manager.notify(note.key.tag, AGENT_ID, child.build())
         }
 
@@ -487,6 +488,7 @@ object AgentNotifications {
                 .setContentTitle(sum.main.title)
                 .setVisibility(visibility(lock))
                 .setPublicVersion(publicOf(context, CHANNEL_DONE, sum.public).build())
+            NotificationPostTime.mark()
             manager.notify(summaryTag(nodeId), SUMMARY_ID, summary.build())
         }
     }

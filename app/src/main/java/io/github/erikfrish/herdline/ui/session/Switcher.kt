@@ -286,11 +286,12 @@ fun Switcher(
             val header: @Composable () -> Unit = {
                 if (onClose != null && onShowGrid != null) {
                     val toggle = TabsViewToggle(GridIcon, stringResource(R.string.overview_as_columns), "switcher:as-columns", onShowGrid)
-                    TabsHeader(host, view, state, scoped.chosen, scoped.gone, actions.newTab, toggle, onClose, tag = "switcher")
+                    TabsHeader(host, view, state, scoped.chosen, scoped.gone, actions.newTab, actions.newWorkspace, toggle, onClose, tag = "switcher")
                 } else BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val listWidth = maxWidth
                     val live = state is Connection.State.Connected
-                    val icons = (if (onShowGrid != null) 58.dp else 0.dp) + (if (onClose != null) 58.dp else 0.dp)
+                    // New workspace's icon is always in the host line, whatever fits beside it.
+                    val icons = 58.dp + (if (onShowGrid != null) 58.dp else 0.dp) + (if (onClose != null) 58.dp else 0.dp)
                     // Avatar and gaps, the host text's least room, then the button and the icons.
                     val inline = listWidth >= 28.dp + 10.dp + HEADER_TITLE_MIN + 10.dp + newTabButtonWidth() + icons
                     val newTab: @Composable () -> Unit = {
@@ -299,6 +300,7 @@ fun Switcher(
                     Column {
                         HostLine(node, view, state) {
                             if (inline) newTab()
+                            NewWorkspaceButton(actions.newWorkspace, tag = "switcher:new-workspace")
                             if (onShowGrid != null) {
                                 IconButton(onClick = onShowGrid, modifier = Modifier.testTag("switcher:as-columns")) {
                                     Icon(GridIcon, stringResource(R.string.overview_as_columns), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -413,16 +415,14 @@ fun Switcher(
             if (browsing && !revealed && hiding.count > 0) {
                 item(key = "hidden") { HiddenFooter(hiding.count) { showHidden = true } }
             }
-            // A host with no workspace offers New workspace even while a search or filter is on.
-            if (browsing || (view != null && view.workspaces.isEmpty())) {
-                item(key = "new") {
-                    GlassButton(
-                        stringResource(R.string.new_workspace),
-                        onClick = actions.newWorkspace,
-                        icon = Icons.Default.Add,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                    )
-                }
+            // New workspace is there whatever the list, search or filter; the header has it too.
+            item(key = "new") {
+                GlassButton(
+                    stringResource(R.string.new_workspace),
+                    onClick = actions.newWorkspace,
+                    icon = Icons.Default.Add,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).heightIn(min = 48.dp).testTag("switcher:new-workspace:end"),
+                )
             }
             // Room for the Update order pill, so it never covers the last row.
             item(key = "end") { Spacer(Modifier.height(if (flat && changed > 0) 72.dp else 24.dp)) }

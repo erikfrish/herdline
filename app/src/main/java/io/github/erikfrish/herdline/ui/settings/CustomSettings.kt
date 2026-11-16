@@ -405,7 +405,11 @@ internal fun LazyListScope.notificationSettings(store: SettingsStore, settings: 
             Toggle(stringResource(R.string.live_activity), stringResource(R.string.live_activity_help), settings.liveActivity, Icons.Default.Star, Color(0xFF4C8DF6)) { on ->
                 store.update { it.copy(liveActivity = on) }
             }
-            if (settings.liveActivity) {
+            GlassDivider()
+            Toggle(stringResource(R.string.live_summary), stringResource(R.string.live_summary_help), settings.liveSummary, Icons.Default.Star, Color(0xFF4C8DF6)) { on ->
+                store.update { it.copy(liveSummary = on) }
+            }
+            if (settings.liveActivity || settings.liveSummary) {
                 GlassDivider()
                 PromotionRows()
             }

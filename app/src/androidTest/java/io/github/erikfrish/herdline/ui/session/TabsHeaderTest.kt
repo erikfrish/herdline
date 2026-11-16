@@ -55,9 +55,10 @@ import java.util.Locale
  * The phone Tabs header at font 2.0 on 308 and 320 dp screens, in English and
  * Chinese, with 10 and 100 tabs: the host keeps at least a third of the line
  * less its 8 dp gap, the counts stay within two thirds and two lines and show
- * whole, every action is a 48 dp target with its full label, and New tab
- * opens for this host's chosen workspace only. Two headers (two hosts) share
- * the screen so a tap on one is seen not to reach the other.
+ * whole, every action is a 48 dp target with its full label, New tab
+ * opens for this host's chosen workspace only, and New workspace is there
+ * and reaches only its own host. Two headers (two hosts) share the screen
+ * so a tap on one is seen not to reach the other.
  */
 class TabsHeaderTest {
     @get:Rule
@@ -84,6 +85,8 @@ class TabsHeaderTest {
         val openedB = mutableListOf<Workspace>()
         var toggled = 0
         var closed = 0
+        var workspacesAsked = 0
+        var otherWorkspacesAsked = 0
         compose.setContent {
             val config = remember(locale) {
                 Configuration(base.resources.configuration).apply {
@@ -106,12 +109,14 @@ class TabsHeaderTest {
                             TabsHeader(
                                 host = hostA, view = viewA(tabCount), state = LIVE, chosen = "a2", gone = false,
                                 newTab = { openedA += it },
+                                newWorkspace = { workspacesAsked++ },
                                 toggle = TabsViewToggle(Icons.Default.Add, toggleLabel, "a:toggle") { toggled++ },
                                 onClose = { closed++ }, tag = "a",
                             )
                             TabsHeader(
                                 host = hostB, view = viewB(), state = LIVE, chosen = null, gone = false,
                                 newTab = { openedB += it },
+                                newWorkspace = { otherWorkspacesAsked++ },
                                 toggle = TabsViewToggle(Icons.Default.Add, toggleLabel, "b:toggle") { toggled++ },
                                 onClose = { closed++ }, tag = "b",
                             )
@@ -162,6 +167,7 @@ class TabsHeaderTest {
                     val actions = listOf(
                         "a:new-tab" to newTabLabel,
                         "a:toggle" to res.getString(R.string.overview_as_list),
+                        "a:new-workspace" to res.getString(R.string.new_workspace),
                         "a:close" to res.getString(R.string.close),
                     )
                     for ((tag, label) in actions) {
@@ -183,6 +189,14 @@ class TabsHeaderTest {
                     assertTrue("$case: other host reached", openedB.isEmpty())
                     assertEquals("$case: toggle reached", 0, toggled)
                     assertEquals("$case: close reached", 0, closed)
+                    assertEquals("$case: New workspace reached", 0, workspacesAsked)
+
+                    // New workspace: this host's header only, once per tap.
+                    compose.onNodeWithTag("a:new-workspace").performClick()
+                    compose.waitForIdle()
+                    assertEquals("$case: New workspace calls", 1, workspacesAsked)
+                    assertEquals("$case: other host asked", 0, otherWorkspacesAsked)
+                    workspacesAsked = 0
                 }
             }
         }

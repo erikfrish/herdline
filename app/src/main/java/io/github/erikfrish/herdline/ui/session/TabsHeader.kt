@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +45,8 @@ internal fun tabsSearchMinHeight(): Dp = maxOf(48f, 16f * LocalDensity.current.f
 /**
  * One compact phone header in every Tabs view: title and actions on the
  * first line, host and totals on the second. New tab remains explicit and
- * workspace-bound; only its dialog's Create reaches Herdr.
+ * workspace-bound, New workspace opens its form; only a dialog's Create
+ * reaches Herdr.
  */
 @Composable
 internal fun TabsHeader(
@@ -53,6 +56,7 @@ internal fun TabsHeader(
     chosen: String?,
     gone: Boolean,
     newTab: (Workspace) -> Unit,
+    newWorkspace: () -> Unit,
     toggle: TabsViewToggle,
     onClose: () -> Unit,
     tag: String,
@@ -86,8 +90,10 @@ internal fun TabsHeader(
                 )
                 NewTabButton(
                     view, live, chosen, gone, newTab, menuWidth = width, tag = "$tag:new-tab",
-                    compact = true, showLabel = width >= 320.dp && LocalDensity.current.fontScale <= 1.3f,
+                    // New workspace's icon takes 48 dp more than before it was in this row.
+                    compact = true, showLabel = width >= 368.dp && LocalDensity.current.fontScale <= 1.3f,
                 )
+                NewWorkspaceButton(newWorkspace, tag = "$tag:new-workspace")
                 IconButton(onClick = toggle.onClick, modifier = Modifier.testTag(toggle.tag)) {
                     Icon(toggle.icon, toggle.label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -112,5 +118,17 @@ internal fun TabsHeader(
                 )
             }
         }
+    }
+}
+
+/**
+ * New workspace in a header: shown however many workspaces there are and
+ * whatever the search or filter, a 48 dp target. It only opens the form,
+ * which says why a create cannot be sent.
+ */
+@Composable
+internal fun NewWorkspaceButton(onClick: () -> Unit, tag: String) {
+    IconButton(onClick = onClick, modifier = Modifier.testTag(tag)) {
+        Icon(Icons.Default.AddCircle, stringResource(R.string.new_workspace), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

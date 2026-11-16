@@ -139,6 +139,49 @@ fields; `ConnectionService.build` posts them).
   promotion returns only after a new pin. A swiped notification is not
   raised again; Android may keep it out of the shade until its next update.
 
+### All-agent status dashboard
+
+Settings › Notifications › All-agent status dashboard is a separate,
+explicit opt-in to state counts on every surface, including the lock screen.
+It replaces the pinned card in the same foreground notification; it never
+contains names, paths, tasks or messages. Turning it off or Hide dashboard
+keeps existing pins and restores their original privacy rules. It defaults
+off, and resetting Notifications revokes this counts-only opt-in.
+
+Working, Need input (Blocked), and Idle are counted from live views of all
+connected sessions, once per daemon boot and pane. Done and Unknown are
+reported separately, never counted as Idle. Disconnected or not-yet-read
+sessions contribute no agents; a mandatory Partial agent status title and
+Partial chip identify an incomplete total, with the unavailable session count
+first in the subtext. With no available session the card
+states that status is unavailable. Only active Working/Blocked monitoring
+requests promotion; an idle-only dashboard is an ordinary notification.
+
+Dashboard status bursts are coalesced into at most one update per second,
+with the latest snapshot posted after one second of package-wide notification
+quiet (agent, group and lost-link cards included). Android can silently shed
+faster updates; a discarded final update must not leave an old total
+indefinitely. This finite quiet window is event-driven, not periodic polling
+or a retry loop. Mode, lock/privacy and connection-loss transitions post
+immediately and also schedule one trailing CURRENT-state post after quiet.
+This includes leaving the dashboard: the trailing post uses the current
+pinned/Attached privacy projection, never a queued copy of the old counts.
+
+Android 17 uses three native MetricStyle values with Info, Caution and Safe
+semantics. Earlier versions show the same counts as standard notification
+text. Labels accompany every value; color is supplementary. Samsung owns
+the capsule layout, colors and transition animations. Herdline does not
+pump animation frames, invent progress percentages or use custom RemoteViews.
+
+On SM-S928U1 / One UI 9 / Android 17, signed build 10135 showed all three
+live counters in the real expanded Now Bar on both lock screen and AOD.
+Android and Samsung both reported promotion. Samsung still drew the values
+in its normal text color rather than the supplied per-metric semantic colors;
+the working-state blue card accent was visible while awake. Values changed
+with live agent state. Arbitrary per-number colors and custom animations are
+not exposed by this template, and AOD may render monochrome.
+
+
 ## Promotion reporting
 
 Herdline asks for promotion (`setRequestPromotedOngoing`) only while a pinned
@@ -283,6 +326,15 @@ agent status; that appearance alone does not prove a stale state.
   promotion is not a Samsung placement claim. Check Samsung's normal
   Lock screen and AOD › Now bar › Live notifications settings; no test flag
   or undocumented Samsung payload is used.
+- On SM-S928U1 / One UI 9 / Android 17, build 10133 again received Android
+  promotion but had no Samsung capsule with the stock test flag at `0`.
+  During an explicitly approved temporary diagnostic, setting
+  `enable_notification_nowbar_test=1` admitted the same card: Samsung's
+  controller reported `promoted=true`, and the actual locked/AOD surface
+  showed Working without agent names or chat content at State only privacy.
+  The flag was restored to its original `0` and verified. This is conditional
+  device evidence, not stock-setting support or an app-side workaround;
+  Herdline does not change that global setting.
 - The promotion state in Settings is read when Settings resumes, not live.
 
 ---
