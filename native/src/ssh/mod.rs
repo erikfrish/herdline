@@ -202,7 +202,19 @@ pub fn open(route: Route, stop: &AtomicBool) -> Result<(Stream, Exec)> {
         return Err(Error::EmptyRoute);
     }
     let command = remote_bridge_command(&route.session)?;
-    let (mut ours, theirs) = UnixStream::pair()?;
+    let (mut ours, exec) = open_command(route, command, stop)?;
+    answer_remote_bridge(&mut ours, stop)?;
+    Ok((ours, exec))
+}
+
+/// Run `command` on the route's last host as a long-lived channel pumped
+/// through a Unix socket, like [`open`] but with nothing answered on it:
+/// what the command speaks is the caller's. Blocks; `stop` cancels.
+pub fn open_command(route: Route, command: String, stop: &AtomicBool) -> Result<(Stream, Exec)> {
+    if route.hops.is_empty() {
+        return Err(Error::EmptyRoute);
+    }
+    let (ours, theirs) = UnixStream::pair()?;
     let (ready, outcome) = mpsc::sync_channel(1);
     let (jobs, queue) = tokio::sync::mpsc::channel(4);
     thread::Builder::new()
@@ -234,7 +246,6 @@ pub fn open(route: Route, stop: &AtomicBool) -> Result<(Stream, Exec)> {
     }
     ours.set_read_timeout(Some(POLL))?;
     ours.set_write_timeout(Some(Duration::from_secs(1)))?;
-    answer_remote_bridge(&mut ours, stop)?;
     Ok((ours, Exec { jobs }))
 }
 

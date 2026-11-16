@@ -123,6 +123,33 @@ pub enum Read {
     Before { offset: u64 },
 }
 
+/// Where a pane's agent instance is read: Herdr's CLI in a Herdr session,
+/// or the verified hook labels of a herdr-core terminal.
+#[derive(Debug, Clone, Copy)]
+pub enum BackendSource<'a> {
+    Herdr(&'a str),
+    Core(&'a Core),
+}
+
+/// A herdr-core terminal's hook claim, already checked against its
+/// foreground pid and confirmed on the host. Each read asks the core in
+/// `session` for the terminal again in the same command, and reports it as
+/// Herdr's pane and process reports would only while the live record still
+/// makes exactly this claim; then the host's confinement and header check
+/// run again before any byte is read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Core {
+    pub identity: Identity,
+    /// The id the file's header must carry.
+    pub session_id: String,
+    /// The foreground argv, which picks OMP's profile and so its roots.
+    pub argv: Vec<String>,
+    /// The core's root status word, as Herdr's `agent_status` would be.
+    pub status: String,
+    /// The `HC_SESSION` of the core the claim was read from.
+    pub session: String,
+}
+
 /// Which agent the transcript belongs to; any change starts over.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
@@ -423,10 +450,10 @@ pub enum Source {
 
 /// Read the pane's transcript, or with [`Request::media`] one image of it.
 /// Blocks on the host for at most a few reads.
-pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
+pub fn fetch(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Result<Answer> {
     if let Some(media) = &request.media {
         let outcome = match &request.expect {
-            Some(expect) => image(exec, session, &request.pane, expect, media)?,
+            Some(expect) => image(exec, source, &request.pane, expect, media)?,
             None => MediaOutcome::Refused {
                 error: Refusal::InstanceChanged,
             },
@@ -438,7 +465,7 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
             },
         });
     }
-    match page(exec, session, request) {
+    match page(exec, source, request) {
         Ok(page) => Ok(Answer::Page(page)),
         Err(Error::TranscriptPending) => Ok(Answer::Pending { pending: Pending { agent: "omp" } }),
         Err(Error::UnsupportedFormat(format)) => Ok(Answer::Refused {
@@ -458,7 +485,7 @@ pub fn fetch(exec: &Exec, session: &str, request: &Request) -> Result<Answer> {
     }
 }
 
-fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
+fn page(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Result<Response> {
     let mut expect = request.expect.clone();
     let mut read = request.read;
     let mut window = FIRST_WINDOW;
@@ -488,6 +515,11 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                         | "letta"
                 ) =>
             {
+                // Core identities are OMP or Pi alone: these engines are
+                // read through Herdr's own reports only.
+                let BackendSource::Herdr(session) = source else {
+                    return Err(Error::NoTranscript);
+                };
                 let page = match identity.agent.as_str() {
                     "qwen" => qwen::page(exec, session, &request.pane, identity, read, reset),
                     "hermes" => hermes::page(exec, session, &request.pane, identity, read, reset),
@@ -523,7 +555,7 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
             }
             Some(identity) => (
                 script(
-                    session,
+                    source,
                     &request.pane,
                     Some(Fetch::Lines(Target {
                         path: &identity.path,
@@ -534,7 +566,7 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
                 usize::try_from(window).unwrap_or(usize::MAX) + 1 + HEADER_ROOM,
             ),
             // Nothing is known yet: only the pane report runs.
-            None => (script(session, &request.pane, None), HEADER_ROOM),
+            None => (script(source, &request.pane, None), HEADER_ROOM),
         };
         let output = exec.run(
             format!("/bin/sh -c {}", shell_quote(&script)),
@@ -601,7 +633,7 @@ fn page(exec: &Exec, session: &str, request: &Request) -> Result<Response> {
 /// and after the read, all in one exec on the host.
 fn image(
     exec: &Exec,
-    session: &str,
+    source: BackendSource<'_>,
     pane: &str,
     expect: &Identity,
     media: &Media,
@@ -613,6 +645,9 @@ fn image(
     // OpenCode's rows are a keyed sequence, not byte ranges: its own module
     // fetches by `seq` and rechecks the instance before and after.
     if expect.agent == "opencode" {
+        let BackendSource::Herdr(session) = source else {
+            return refused(Refusal::Unsupported);
+        };
         return opencode::image(exec, session, pane, expect, media);
     }
     // Qwen's images are shown as references only, and Hermes, Kilo, Grok,
@@ -658,7 +693,7 @@ fn image(
     let output = exec.run(
         format!(
             "/bin/sh -c {}",
-            shell_quote(&script(session, pane, Some(fetch)))
+            shell_quote(&script(source, pane, Some(fetch)))
         ),
         read_timeout(bytes),
         usize::try_from(bytes).unwrap_or(usize::MAX) + 1 + 2 * HEADER_ROOM,
@@ -891,8 +926,13 @@ pub fn instance(exec: &Exec, session: &str, pane: &str) -> Result<Option<Identit
 /// The pane report [`instance`] runs, for a caller that appends its own
 /// steps after it in the same command; they run only once the pane is read.
 pub(crate) fn instance_script(session: &str, pane: &str) -> String {
-    script(session, pane, None)
     report_script(BackendSource::Herdr(session), pane)
+}
+
+/// [`instance_script`] for either backend: a herdr-core claim is reported
+/// as Herdr would report it, so the same instance parse applies.
+pub(crate) fn report_script(source: BackendSource<'_>, pane: &str) -> String {
+    script(source, pane, None)
 }
 
 /// The instance an [`instance_script`] report names; `bytes` ends where the
@@ -946,17 +986,19 @@ const EXIT_OUTSIDE_HOME: u32 = 11;
 /// An image read adds the blob its line names, once it resolves inside OMP's
 /// blob store, and reports the pane again after it. Errors are silenced so
 /// they never mix with the data.
-fn script(session: &str, pane: &str, fetch: Option<Fetch>) -> String {
-    let session = shell_quote(session);
+fn script(source: BackendSource<'_>, pane: &str, fetch: Option<Fetch>) -> String {
     let pane = shell_quote(pane);
-    let report = format!(
-        r#""$herdr" --session {session} pane get {pane} </dev/null || exit {EXIT_NO_PANE}
+    let (report, mut script) = match source {
+        BackendSource::Herdr(session) => {
+            let session = shell_quote(session);
+            let report = format!(
+                r#""$herdr" --session {session} pane get {pane} </dev/null || exit {EXIT_NO_PANE}
 printf '\n@@proc\n'
 "$herdr" --session {session} pane process-info --pane {pane} </dev/null || printf '{{}}'
 "#
-    );
-    let mut script = format!(
-        r#"exec 2>/dev/null
+            );
+            let script = format!(
+                r#"exec 2>/dev/null
 herdr=
 {HERDR_CANDIDATES}
     if [ -n "$path" ] && [ -x "$path" ]; then herdr=$path; break; fi
@@ -964,7 +1006,36 @@ done
 [ -n "$herdr" ] || exit {EXIT_NO_HERDR}
 printf '@@pane\n'
 {report}"#
-    );
+            );
+            (report, script)
+        }
+        // The terminal as the core in that very session reports it now; the
+        // checker prints Herdr-shaped reports from that live record only
+        // while it makes exactly this claim, and otherwise stops the command
+        // before it reads anything.
+        BackendSource::Core(core) => {
+            let identity = &core.identity;
+            let address = shell_quote(&identity.terminal_id);
+            let report = format!(
+                r#"record=$(python3 -c {get} {session} {address} </dev/null) || exit {EXIT_NO_PANE}
+printf '%s' "$record" | python3 -c {checker} {pane} {address} {agent} {path} {id} {pid} || exit {EXIT_NO_PANE}
+"#,
+                checker = shell_quote(CORE_REPORT),
+                get = shell_quote(CORE_GET),
+                session = shell_quote(&core.session),
+                agent = shell_quote(&identity.agent),
+                path = shell_quote(&identity.path),
+                id = shell_quote(&core.session_id),
+                pid = shell_quote(&identity.pid.map(|pid| pid.to_string()).unwrap_or_default()),
+            );
+            let script = format!(
+                r#"exec 2>/dev/null
+printf '@@pane\n'
+{report}"#
+            );
+            (report, script)
+        }
+    };
     let (path, range, blob) = match fetch {
         None => return script,
         Some(Fetch::Image {
@@ -994,9 +1065,23 @@ printf '@@pane\n'
             None,
         ),
     };
+    let resolve = match source {
+        BackendSource::Herdr(session) => format!(
+            r#"python3 - "$herdr" {session} {pane} {path} "$home""#,
+            session = shell_quote(session),
+            path = shell_quote(path),
+        ),
+        BackendSource::Core(core) => format!(
+            r#"python3 - --core-verify {agent} {path} {id} {argv} "$home""#,
+            agent = shell_quote(&core.identity.agent),
+            path = shell_quote(path),
+            id = shell_quote(&core.session_id),
+            argv = shell_quote(&Value::from(core.argv.clone()).to_string()),
+        ),
+    };
     script.push_str(&format!(
         r#"home=$(realpath -- "$HOME") || exit {EXIT_UNCONFINED}
-real=$(python3 - "$herdr" {session} {pane} {path} "$home" <<'HERDLINE_RESOLVE'
+real=$({resolve} <<'HERDLINE_RESOLVE'
 {resolver}
 HERDLINE_RESOLVE
 ) || {{ status=$?; if [ "$status" -eq 12 ]; then printf '\n@@file 0 0\n@@data\n'; exit 0; fi; [ "$status" -eq {EXIT_OUTSIDE_HOME} ] && exit {EXIT_OUTSIDE_HOME}; exit {EXIT_UNCONFINED}; }}
@@ -1007,7 +1092,6 @@ size=$((size))
 printf '\n@@file %s %s\n@@data\n' "$size" "$start"
 tail -c +$((start + 1)) "$real" | head -c "$len"
 "#,
-        path = shell_quote(path),
         resolver = RESOLVER,
     ));
     let Some(blob) = blob else {
@@ -1027,7 +1111,7 @@ bytes=$((bytes))
 printf '\n@@blob %s\n@@data\n' "$bytes"
 head -c "$bytes" "$blob"
 "#,
-            store = blob_store(&session, &pane, pid),
+            store = blob_store(source, &pane, pid),
         ));
     }
     script.push_str("printf '\\n@@after\\n'\n");
@@ -1037,18 +1121,33 @@ head -c "$bytes" "$blob"
 
 /// The session resolver, run on the host. It also resolves the blob store,
 /// so a session root and the store follow the same profile rules.
-const RESOLVER: &str = include_str!("transcript/resolve_session.py");
+pub(crate) const RESOLVER: &str = include_str!("transcript/resolve_session.py");
 
+/// Checks a live herdr-core terminal record against a confirmed claim on
+/// the host, and only then reports it as Herdr would.
+const CORE_REPORT: &str = include_str!("transcript/core_report.py");
 const CORE_GET: &str = include_str!("transcript/core_get.py");
+
 /// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
 /// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
 /// session roots, with its arguments from Herdr's process-info for `pane`
 /// (both already shell-quoted). Exit 3 is a store outside `$HOME`; any other
 /// failure, python missing or nothing printed included, is an unknown store,
 /// never a guessed one.
-fn blob_store(session: &str, pane: &str, pid: u32) -> String {
+fn blob_store(source: BackendSource<'_>, pane: &str, pid: u32) -> String {
+    let resolve = match source {
+        BackendSource::Herdr(session) => format!(
+            r#"python3 - --blob-store "$herdr" {session} {pane} {pid} "$home""#,
+            session = shell_quote(session),
+        ),
+        // Native checked `pid` is the terminal's foreground leader.
+        BackendSource::Core(core) => format!(
+            r#"python3 - --core-blob-store {argv} "$home""#,
+            argv = shell_quote(&Value::from(core.argv.clone()).to_string()),
+        ),
+    };
     format!(
-        r#"store=$(python3 - --blob-store "$herdr" {session} {pane} {pid} "$home" <<'HERDLINE_RESOLVE'
+        r#"store=$({resolve} <<'HERDLINE_RESOLVE'
 {RESOLVER}
 HERDLINE_RESOLVE
 ) || {{ status=$?; [ "$status" -eq {EXIT_UNCONFINED} ] && exit {EXIT_UNCONFINED}; exit {EXIT_NO_STORE}; }}
@@ -1219,7 +1318,7 @@ fn agent_status(pane: &Value) -> String {
 
 /// A session id (`[A-Za-z0-9._-]+`, no `/`, `..`, leading `.`) exactly as
 /// Herdr records it; anything else is not an id any engine can resolve.
-fn session_id(value: &str) -> bool {
+pub(crate) fn session_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 512
         && !value.starts_with('.')
@@ -1241,7 +1340,7 @@ fn foreground_pid(process: &Value, name: &str) -> Option<u32> {
 
 /// Syntax admission only: the host resolves the actual process-configured
 /// session root and checks canonical containment before reading any bytes.
-fn confined(agent: &str, path: &str) -> bool {
+pub(crate) fn confined(agent: &str, path: &str) -> bool {
     if !matches!(agent, "omp" | "pi") {
         return false;
     }

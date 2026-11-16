@@ -17,6 +17,16 @@ pub enum Error {
     CommandTimeout,
     #[error("{0} is not an ARGB colour")]
     Colour(String),
+    #[error("herdr-core answered: {kind}: {message}")]
+    CoreError { kind: String, message: String },
+    #[error("herdr-core speaks protocol generation {0}, this app speaks 1")]
+    CoreGeneration(u64),
+    #[error("herdr-core lacks the method {0}")]
+    CoreLacks(String),
+    #[error("herdr-core is not installed on the host")]
+    CoreMissing,
+    #[error("herdr-core broke its protocol: {0}")]
+    CoreProtocol(&'static str),
     #[error("the route has no hosts")]
     EmptyRoute,
     #[error("a transcript entry is larger than chat can load")]

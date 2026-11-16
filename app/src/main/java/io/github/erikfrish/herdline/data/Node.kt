@@ -7,6 +7,26 @@ import java.util.UUID
 enum class AuthMethod { Key, Password }
 
 /**
+ * Which server a node's SSH route ends at: the classic Herdr daemon, or
+ * herdr-core shared with herdr-app. [key] is the frozen string saved with the
+ * node and passed to the native config.
+ */
+enum class Backend(val key: String) {
+    Herdr("herdr"),
+    HerdrCore("herdr_core"),
+    ;
+
+    companion object {
+        /**
+         * The backend saved or reported as [key]; null for a key this app does
+         * not know, which is never taken for another backend. Only a missing or
+         * null key, from before the choice existed, means Herdr: see [Node.fromJson].
+         */
+        fun fromKey(key: String): Backend? = entries.firstOrNull { it.key == key }
+    }
+}
+
+/**
  * A saved SSH server: a machine whose Herdr daemon Herdline attaches to, or a
  * jump host on the way to one. A node reached through another names it in
  * [jumpId]; chains are resolved by [NodeStore.route].
@@ -27,7 +47,11 @@ data class Node(
     /** SSH keepalive in seconds; 0 turns it off. */
     val keepAlive: Int = 15,
     val lastUsed: Long = 0,
+    /** The saved [Backend.key], kept as saved even when this app does not know it. */
+    val backendKey: String = Backend.Herdr.key,
 ) {
+    /** The server this node attaches to; null for an unknown [backendKey], which is never connected. */
+    val backend: Backend? get() = Backend.fromKey(backendKey)
     val title: String get() = name.ifBlank { address }
     val destination: String get() = if (port == 22) "$user@$address" else "$user@$address:$port"
 
@@ -48,6 +72,7 @@ data class Node(
         .put("color", color)
         .put("keepalive", keepAlive)
         .put("last_used", lastUsed)
+        .put("backend", backendKey)
 
     companion object {
         fun fromJson(o: JSONObject) = Node(
@@ -64,7 +89,20 @@ data class Node(
             color = o.optInt("color"),
             keepAlive = o.optInt("keepalive", 15),
             lastUsed = o.optLong("last_used"),
+            backendKey = if (o.isNull("backend")) Backend.Herdr.key else o.optString("backend"),
         )
+
+        /**
+         * hc session names, as herdr-core accepts them: blank means its default
+         * session; `.`, `..`, control characters and the characters core's own
+         * path rule refuses are rejected. Native shell-quotes the rest.
+         */
+        fun validCoreSession(name: String) = name.trim().let { s ->
+            s != "." && s != ".." && s.none { it.isISOControl() || it in "/\\:*?\"<>|" }
+        }
+
+        fun validSession(backend: Backend?, name: String) =
+            if (backend == Backend.HerdrCore) validCoreSession(name) else validSession(name)
 
         /** Herdr session names are plain path components. */
         fun validSession(name: String) =

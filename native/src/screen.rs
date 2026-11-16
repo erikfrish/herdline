@@ -21,9 +21,7 @@ use libghostty_vt::{
 
 pub struct Screen {
     terminal: Terminal<'static, 'static>,
-    state: RenderState<'static>,
-    rows: RowIterator<'static>,
-    cells: CellIterator<'static>,
+    reader: Reader,
     /// The grid last written, popup included, which the next frame is
     /// diffed against.
     shown: Option<FrameData>,
@@ -43,9 +41,7 @@ impl Screen {
         terminal.vt_write(vt::SETUP);
         Ok(Self {
             terminal,
-            state: RenderState::new()?,
-            rows: RowIterator::new()?,
-            cells: CellIterator::new()?,
+            reader: Reader::new()?,
             shown: None,
             vt: Vec::new(),
             theme,
@@ -103,7 +99,30 @@ impl Screen {
 
     /// Read the whole grid back from libghostty's render state as style runs.
     fn read(&mut self) -> Result<RenderFrame> {
-        let snapshot = self.state.update(&self.terminal)?;
+        self.reader.read(&self.terminal)
+    }
+}
+
+/// libghostty's render state and its iterators, reused across reads of any
+/// terminal on this thread.
+pub struct Reader {
+    state: RenderState<'static>,
+    rows: RowIterator<'static>,
+    cells: CellIterator<'static>,
+}
+
+impl Reader {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            state: RenderState::new()?,
+            rows: RowIterator::new()?,
+            cells: CellIterator::new()?,
+        })
+    }
+
+    /// `terminal`'s viewport as style runs, with no pane geometry.
+    pub fn read(&mut self, terminal: &Terminal<'static, 'static>) -> Result<RenderFrame> {
+        let snapshot = self.state.update(terminal)?;
         let colors = snapshot.colors()?;
         let mut frame = RenderFrame {
             cols: snapshot.cols()?,

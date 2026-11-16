@@ -58,7 +58,30 @@ data class Pane(
     val label: String?,
     val cwd: String?,
     val focused: Boolean,
-)
+    /** A desktop mod panel on herdr-core is never a terminal: nothing is attached or drawn for it. */
+    val kind: PaneKind = PaneKind.Terminal,
+    /** Why Chat cannot read this pane (a [ReasonCode]); null where it can. Herdr panes never carry one. */
+    val chat: String? = null,
+    /** Why the pane shows no terminal at all (`mod_panel`, `terminal_lost`); null for a live terminal. */
+    val unsupported: String? = null,
+    /**
+     * herdr-core only: true while this phone holds an interactive stream, so it
+     * owns the core's size and its input goes in. Herdr panes omit it (null):
+     * they always take input.
+     */
+    val interactive: Boolean? = null,
+) {
+    /** Whether typing and paste may go to this pane now. */
+    val takesInput: Boolean get() = interactive != false && unsupported == null
+}
+
+enum class PaneKind {
+    Terminal, Mod;
+
+    companion object {
+        fun parse(value: String?) = if (value == "mod") Mod else Terminal
+    }
+}
 
 data class Agent(
     val pane: String,
@@ -152,6 +175,10 @@ data class ShellView(
                         label = str("label"),
                         cwd = str("cwd"),
                         focused = optBoolean("focused"),
+                        kind = PaneKind.parse(str("kind")),
+                        chat = str("chat"),
+                        unsupported = str("unsupported"),
+                        interactive = if (has("interactive") && !isNull("interactive")) optBoolean("interactive") else null,
                     )
                 },
                 agents = o.list("agents") {

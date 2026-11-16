@@ -1347,3 +1347,125 @@ fn only_a_verified_foreground_omp_without_a_reference_is_pending() {
     pane["result"]["pane"]["agent"] = "zsh".into();
     assert!(matches!(identity(&pane, &process), Err(Error::NoTranscript)));
 }
+
+/// A confirmed core claim on terminal `t7` of session `lab`, OMP pid 42.
+fn core_claim() -> Core {
+    Core {
+        identity: Identity {
+            pane_id: "w1:p1".into(),
+            terminal_id: "t7".into(),
+            pid: Some(42),
+            path: "/home/u/.omp/agent/sessions/-work/s.jsonl".into(),
+            agent: "omp".into(),
+            source: "herdline-core:omp".into(),
+            kind: "path".into(),
+        },
+        session_id: "s1".into(),
+        argv: vec!["omp".into()],
+        status: "working".into(),
+        session: "lab".into(),
+    }
+}
+
+/// The live record the core holds for `t7` while it makes [`core_claim`].
+fn core_record() -> Value {
+    serde_json::json!({
+        "address": "t7",
+        "state": "live",
+        "pid": 40,
+        "status": {"state": "working"},
+        "foreground": {"pid": 42, "argv": ["omp"]},
+        "labels": {
+            "herdline.agent": "omp",
+            "herdline.session_file": "/home/u/.omp/agent/sessions/-work/s.jsonl",
+            "herdline.session_id": "s1",
+            "herdline.pid": "42",
+        },
+    })
+}
+
+/// An existing core socket answers the real wire request; no CLI is executed.
+fn core_report(record: Option<&Value>) -> (Result<Option<Identity>>, String) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+    let home = tempfile::tempdir().unwrap();
+    let socket = home.path().join("core.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let record = record.cloned();
+    let server = std::thread::spawn(move || {
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    let mut line = String::new();
+                    BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+                    let request: Value = serde_json::from_str(&line).unwrap();
+                    let reply = match record {
+                        Some(record) => json!({"jsonrpc":"2.0","id":request["id"],"result":record}),
+                        None => json!({"jsonrpc":"2.0","id":request["id"],"error":{"code":-32000,"message":"not found"}}),
+                    };
+                    writeln!(stream, "{reply}").unwrap();
+                    return request.to_string();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && std::time::Instant::now() < until => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("core report did not connect: {error}"),
+            }
+        }
+    });
+    let core = core_claim();
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(report_script(BackendSource::Core(&core), "w1:p1"))
+        .env_remove("HC_SESSION")
+        .env("HOME", home.path())
+        .env("HC_SOCKET", &socket)
+        .output()
+        .unwrap();
+    let status = output.status.code().and_then(|code| u32::try_from(code).ok());
+    let asked = server.join().unwrap();
+    (parse_instance(status, &output.stdout), asked)
+}
+
+#[test]
+fn core_report_reads_the_live_terminal_of_the_exact_session() {
+    let (instance, asked) = core_report(Some(&core_record()));
+    assert_eq!(instance.unwrap(), Some(core_claim().identity));
+    let request: Value = serde_json::from_str(&asked).unwrap();
+    assert_eq!(request["method"], "terminal.get");
+    assert_eq!(request["params"]["terminal"], "t7");
+}
+
+#[test]
+fn core_report_rejects_the_old_claim_once_the_terminal_is_replaced() {
+    let replaced: [(&str, Value); 6] = [
+        // Another agent process took the foreground (a restart).
+        ("/foreground/pid", 43.into()),
+        ("/labels/herdline.pid", "43".into()),
+        // The agent moved to another session.
+        ("/labels/herdline.session_file", "/home/u/.omp/agent/sessions/-work/t.jsonl".into()),
+        ("/labels/herdline.session_id", "s2".into()),
+        // The terminal ended, or the address now names another one.
+        ("/state", "finished".into()),
+        ("/address", "t8".into()),
+    ];
+    for (pointer, value) in replaced {
+        let mut record = core_record();
+        *record.pointer_mut(pointer).unwrap() = value;
+        let (instance, _) = core_report(Some(&record));
+        // The command stops before any read: the old claim never holds.
+        assert!(
+            matches!(instance, Err(Error::PaneGone)),
+            "{pointer} changed yet the old claim held: {instance:?}"
+        );
+    }
+}
+
+#[test]
+fn core_report_of_a_terminal_the_core_no_longer_has_is_pane_gone() {
+    let (instance, _) = core_report(None);
+    assert!(matches!(instance, Err(Error::PaneGone)));
+}

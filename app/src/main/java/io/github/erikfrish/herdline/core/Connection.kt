@@ -1,9 +1,11 @@
 /* Part of Bellterm, Copyright (c) 2026 Terry Wang, Apache-2.0. Modified for Herdline, 2026: Herdline identity and app changes. */
 package io.github.erikfrish.herdline.core
 
+import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,12 +24,26 @@ import java.util.UUID
 class Connection(val node: Node) {
     sealed interface State {
         data object Connecting : State
-        data class Connected(val serverVersion: String) : State
+        /**
+         * [backend] is the one the native core attached to; [capabilities]
+         * say which actions it performs, and why not the others.
+         */
+        data class Connected(
+            val serverVersion: String,
+            val backend: Backend = Backend.Herdr,
+            val capabilities: Capabilities = Capabilities.HERDR,
+        ) : State
         /** [byUser]: the user disconnected ([close]), so this is no loss; [reason] is free native or server text. */
         data class Disconnected(val reason: String, val byUser: Boolean = false) : State {
             companion object {
                 /** The [reason] when nothing named one: it says no more than the state itself. */
                 const val UNNAMED = "Disconnected"
+
+                /** herdr-core refuses the node's hc session name. */
+                const val INVALID_SESSION = "invalid_session"
+
+                /** herdr-core restarted behind the link: its terminal ids may name other terminals now. */
+                const val CORE_RESTARTED = "core_restarted"
             }
         }
         /** [host] is `address:port` of the hop whose key is not trusted, [hop] its place in the route. */
@@ -38,6 +54,8 @@ class Connection(val node: Node) {
         data class Failed(val reason: String) : State
         /** The host closed the bridge before any Herdr answered: none is installed, or none works. */
         data object HerdrMissing : State
+        /** No herdr-core answered on the host. The user installs it there; the app never does. */
+        data object CoreMissing : State
         /** Herdr is being installed or updated on the host, at the user's request. */
         data object SettingUp : State
         /** Installing or updating Herdr failed; [output] is the end of what the host printed. */
@@ -64,6 +82,8 @@ class Connection(val node: Node) {
         data class Clipboard(val text: String) : Event
         data class Problem(val message: String) : Event
         data object Bell : Event
+        /** herdr-core restarted: phone-local focus and reading state name terminals that may be gone. */
+        data object CoreRestarted : Event
     }
 
     /** A composer destination: exactly one pane of one Herdr boot on this node. */
@@ -164,6 +184,11 @@ class Connection(val node: Node) {
 
     /** [configJson] is the route document; it holds secrets and is not kept. */
     fun start(configJson: String) {
+        // A saved backend this app does not know is never attached as another one.
+        if (node.backend == null) {
+            _state.value = State.Disconnected(ReasonCode.UNSUPPORTED_BACKEND)
+            return
+        }
         _state.value = State.Connecting
         closed = false
         val session = try {
@@ -200,7 +225,20 @@ class Connection(val node: Node) {
                     // A resize before the first snapshot had no boot to carry.
                     if (first) grid?.let { g -> Native.resize(session, g[0], g[1], g[2], g[3]) }
                 }
-                "connected" -> _state.value = State.Connected(event.optString("server_version"))
+                "connected" -> {
+                    val backend = if (event.isNull("backend")) Backend.Herdr else Backend.fromKey(event.optString("backend"))
+                    if (backend == null) {
+                        _state.value = State.Disconnected(ReasonCode.UNSUPPORTED_BACKEND)
+                        finish(session)
+                        return
+                    }
+                    _state.value = State.Connected(
+                        event.optString("server_version"),
+                        backend,
+                        Capabilities.parse(event.optJSONObject("capabilities"), backend),
+                    )
+                }
+                "core_restarted" -> _events.tryEmit(Event.CoreRestarted)
                 "notification" -> _events.tryEmit(
                     Event.Notification(
                         event.optString("title"),
@@ -214,9 +252,12 @@ class Connection(val node: Node) {
                 "response" -> {
                     val requestId = event.optString("request_id")
                     val envelope = event.optJSONObject("response")
-                    val replied = if (envelope != null) RequestReply.Answered(envelope) else null
+                    // No readable answer is neither a refusal nor a success: its waiter learns the outcome is unknown.
+                    val replied = if (envelope != null) RequestReply.Answered(envelope) else RequestReply.Uncertain
                     if (!answer(requestId, replied)) {
-                        settle(requestId, confirmed = true, reason = null)
+                        // Nobody awaits it: a refused or failed action must still be seen, never taken for done.
+                        val refused = if (envelope != null) refusal(envelope) else BAD_REPLY
+                        settle(requestId, confirmed = refused == null, reason = refused)
                     }
                 }
                 "rejected" -> if (event.isNull("request_id")) {
@@ -229,6 +270,11 @@ class Connection(val node: Node) {
                 "version_mismatch" -> _state.value = State.Incompatible.parse(event)
                 "herdr_missing" -> {
                     _state.value = State.HerdrMissing
+                    finish(session)
+                    return
+                }
+                "core_missing" -> {
+                    _state.value = State.CoreMissing
                     finish(session)
                     return
                 }
@@ -248,9 +294,11 @@ class Connection(val node: Node) {
                     return
                 }
                 "disconnected", "closed" -> {
+                    val reason = event.optString("reason")
+                    if (reason == State.Disconnected.CORE_RESTARTED) _events.tryEmit(Event.CoreRestarted)
                     if (_state.value !is State.Incompatible) {
                         // The daemon's own "closed" can follow a close(); it stays the user's disconnect.
-                        _state.value = State.Disconnected(event.optString("reason").ifBlank { State.Disconnected.UNNAMED }, byUser = closed)
+                        _state.value = State.Disconnected(reason.ifBlank { State.Disconnected.UNNAMED }, byUser = closed)
                     }
                     finish(session)
                     return
@@ -311,6 +359,7 @@ class Connection(val node: Node) {
     ): RequestReply {
         val session = live()
         if (session == 0L) return RequestReply.Refused("not_connected")
+        off(method)?.let { return RequestReply.Refused(it) }
         val requestId = try {
             Native.request(session, method, params.toString())
         } catch (e: IOException) {
@@ -346,19 +395,62 @@ class Connection(val node: Node) {
         }
     }
 
+    /**
+     * Whether input may go to [pane] (null: the focused one) now. A herdr-core
+     * pane takes it only while this phone holds interactive control, and with
+     * no view or no such pane nothing is sent (fails closed); Herdr, as ever,
+     * leaves that to the daemon. The native core refuses stale input as well.
+     */
+    private fun takesInput(pane: String?): Boolean {
+        val open = node.backend == Backend.Herdr
+        val view = _view.value ?: return open
+        val id = pane ?: view.focusedPane ?: return open
+        return view.panes.firstOrNull { it.id == id }?.takesInput ?: open
+    }
+
     fun key(pane: String?, keyCode: Int, metaState: Int, unicode: Int, repeat: Boolean): Boolean =
-        live().let { it != 0L && Native.key(it, pane, keyCode, metaState, unicode, repeat) }
+        takesInput(pane) && live().let { it != 0L && Native.key(it, pane, keyCode, metaState, unicode, repeat) }
 
     fun chord(pane: String?, codepoint: Int, metaState: Int) {
+        if (!takesInput(pane)) return
         live().takeIf { it != 0L }?.let { Native.chord(it, pane, codepoint, metaState) }
     }
 
     fun text(pane: String?, text: String) {
+        if (!takesInput(pane)) return
         live().takeIf { it != 0L }?.let { Native.text(it, pane, text) }
     }
 
-    fun paste(pane: String?, text: String) {
-        live().takeIf { it != 0L }?.let { Native.paste(it, pane, text) }
+    /** One bracketed paste of [text], no Enter; only while [pane] takes input. False when it was not sent. */
+    fun paste(pane: String?, text: String): Boolean {
+        if (!takesInput(pane)) return false
+        val session = live().takeIf { it != 0L } ?: return false
+        Native.paste(session, pane, text)
+        return true
+    }
+
+    /**
+     * Asks herdr-core to make this phone [pane]'s interactive viewer ([on]),
+     * and so the core's size owner, or to go back to observing. The user
+     * agreed to it first; never asked on their behalf. Null only when the
+     * core acknowledged it with a result and, for [on], a snapshot taken after
+     * that shows the pane interactive; else why not (a [ReasonCode], the
+     * core's failure text, [BAD_REPLY] or [UNCONFIRMED]).
+     */
+    suspend fun interact(pane: String, on: Boolean): String? {
+        val before = _view.value
+        val reason = when (val reply = awaitRequest("terminal.interact", JSONObject().put("pane", pane).put("on", on), INTERACT_TIMEOUT_MS)) {
+            is RequestReply.Answered -> refusal(reply.envelope)
+                ?: BAD_REPLY.takeUnless { reply.envelope.has("result") && !reply.envelope.isNull("result") }
+            is RequestReply.Refused -> reply.reason
+            RequestReply.Uncertain -> UNCONFIRMED
+        }
+        if (reason != null || !on) return reason
+        // Control is the phone's only once a fresh snapshot says so, never on the ack alone.
+        val held = withTimeoutOrNull(INTERACT_TIMEOUT_MS) {
+            _view.first { view -> view !== before && view?.panes?.firstOrNull { it.id == pane }?.interactive == true }
+        }
+        return if (held == null) UNCONFIRMED else null
     }
 
     fun touch(pane: String, kind: Int, column: Int, row: Int, lines: Int = 1) {
@@ -377,16 +469,24 @@ class Connection(val node: Node) {
     fun selectionText(startColumn: Int, startRow: Int, endColumn: Int, endRow: Int): String =
         live().takeIf { it != 0L }?.let { Native.selectionText(it, startColumn, startRow, endColumn, endRow) } ?: ""
 
-    /** Invokes a Herdr endpoint method; failures surface as [Event.Problem]. */
+    /** Invokes a Herdr endpoint method; failures and refusals surface as [Event.Problem]. */
     fun request(method: String, params: JSONObject) {
         val session = live()
         if (session == 0L) return
+        off(method)?.let {
+            _events.tryEmit(Event.Problem(it))
+            return
+        }
         try {
             Native.request(session, method, params.toString())
         } catch (e: IOException) {
             _events.tryEmit(Event.Problem(e.message ?: "$method failed"))
         }
     }
+
+    /** Why the connected backend does not perform request [method], or null: never sent just to be refused. */
+    private fun off(method: String): String? =
+        (_state.value as? State.Connected)?.capabilities?.takeIf { method in Action.REQUESTS }?.reason(method)
 
     /**
      * What the daemon allows the composer to do with [pane] now, against the
@@ -797,6 +897,44 @@ private fun nativeReply(call: () -> String): JSONObject? = try {
 } catch (e: JSONException) {
     null
 }
+
+/**
+ * Why an answered [envelope] is not a success, or null when it carries no
+ * error. herdr-core's refusals (`{"error":{"kind":"unsupported","reason":code}}`,
+ * kind `conflict` / `uncertain`) give the [ReasonCode] or the kind; any other
+ * error, Herdr's JSON-RPC ones included, is a failure carrying its message,
+ * kind and code as sent, or [REQUEST_FAILED] when it says nothing.
+ */
+internal fun refusal(envelope: JSONObject): String? {
+    if (!envelope.has("error") || envelope.isNull("error")) return null
+    val error = envelope.optJSONObject("error") ?: return envelope.optString("error").ifBlank { REQUEST_FAILED }
+    return when (val kind = error.optString("kind")) {
+        "unsupported" -> error.optString("reason").ifEmpty { ReasonCode.UNSUPPORTED_BACKEND }
+        "conflict", "uncertain" -> kind
+        else -> {
+            val tags = listOfNotNull(
+                kind.takeIf { it.isNotEmpty() }?.let { "kind=$it" },
+                error.takeUnless { it.isNull("code") }?.opt("code")?.let { "code=$it" },
+            ).joinToString(", ")
+            val message = error.optString("message").takeIf { it.isNotBlank() }
+            when {
+                message != null && tags.isNotEmpty() -> "$message ($tags)"
+                message != null -> message
+                tags.isNotEmpty() -> "$REQUEST_FAILED ($tags)"
+                else -> REQUEST_FAILED
+            }
+        }
+    }
+}
+
+/** An error that names nothing of its own. */
+internal const val REQUEST_FAILED = "request_failed"
+
+/** An answer with neither a readable error nor a result: never taken for a success. */
+internal const val BAD_REPLY = "bad_reply"
+
+/** How long Enter interactive control waits for herdr-core's answer. */
+private const val INTERACT_TIMEOUT_MS = 10_000L
 
 /** The reason of a delivery whose fate the app cannot know, as the native core names it. */
 private const val UNCONFIRMED = "unconfirmed"

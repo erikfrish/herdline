@@ -188,7 +188,7 @@ impl Host {
     fn discover(&self, expected: &Identity) -> Discovery {
         let run_user = self.run_user();
         let (status, bytes) = self.sh(&discovery_script(
-            "lab",
+            transcript::BackendSource::Herdr("lab"),
             "w1:p1",
             PID,
             run_user

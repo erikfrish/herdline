@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hc_reason_takes_size">在此输入需要交互控制：请先进入交互控制。</string>
+    <string name="hc_reason_core_managed">herdr-core 由你在主机上安装和更新，Herdline 从不代劳。</string>
+    <string name="hc_reason_identity_unknown">herdr-core 不知道此窗格中运行的是哪个代理会话，因此聊天无法读取或发送。终端仍可使用。</string>
+    <string name="hc_reason_mod_panel">此窗格是桌面模组面板，只有桌面上的 herdr-app 能显示它；它没有可供手机使用的终端。</string>
+    <string name="hc_reason_terminal_lost">此窗格的终端已在主机上丢失。请关闭窗格，或等待 herdr-core 重启其程序。</string>
+    <string name="hc_reason_unsupported_backend">此节点的服务端类型不支持，因此未执行任何操作。</string>
+    <string name="hc_reason_invalid_session">herdr-core 拒绝此节点的 hc 会话名称。请编辑节点换一个名称，或留空以使用默认会话。</string>
+    <string name="hc_reason_core_restarted">herdr-core 已在主机上重启。窗格已重新读取，手机上选择的窗格已清除。</string>
+    <string name="hc_reason_conflict">主机上的工作区同时发生了变化，因此此更改未执行。请重试。</string>
+    <string name="hc_reason_uncertain">herdr-core 回复前连接已断开：此更改可能已执行，也可能没有。重试前请先检查。</string>
+    <string name="hc_reason_unconfirmed">主机未及时确认：此操作可能已发生，也可能没有。重试前请先检查。</string>
+    <string name="hc_reason_request_failed">主机回复此请求失败，因此未执行。</string>
+    <string name="hc_reason_bad_reply">无法读取主机的回复，因此不算已完成。重试前请先检查。</string>
+
+    <string name="host_state_no_core">未找到 herdr-core</string>
+    <string name="hc_missing_title">主机上没有 herdr-core</string>
+    <string name="hc_missing_text">此主机上没有 herdr-core 为此节点的 hc 会话应答。\n\n请自行在主机上安装 herdr-core，然后点按“重新连接”。Herdline 不会安装它。</string>
+    <string name="hc_incompatible_title">请在主机上更新 herdr-core</string>
+    <string name="hc_incompatible_text">此主机上的 herdr-core 为 %1$s，Herdline 无法使用。\n\n请自行在主机上更新 herdr-core，然后点按“重新连接”。Herdline 不会更新它。</string>
+
+    <string name="hc_mod_panel_title">桌面模组面板</string>
+    <string name="hc_terminal_lost_title">终端已丢失</string>
+
+    <string name="hc_observing">仅观看。输入和调整大小已关闭。</string>
+    <string name="hc_interactive_lost">交互控制已被收回。输入已关闭。</string>
+    <string name="hc_interactive_on">交互中：此手机决定窗格大小。</string>
+    <string name="hc_interactive_enter">进入交互控制</string>
+    <string name="hc_interactive_leave">退出控制</string>
+    <string name="hc_interactive_dialog_title">获取交互控制？</string>
+    <string name="hc_interactive_dialog_text">输入需要此手机成为 herdr-core 中该终端的尺寸所有者。之后桌面上的窗格会调整为适合此手机的大小，直到你退出控制或其他屏幕接管。</string>
+    <string name="hc_interactive_failed">未获得交互控制：%1$s</string>
+
+    <string name="hc_identity_title">聊天需要 Herdline 钩子</string>
+    <string name="hc_chat_off_title">此窗格的聊天已关闭</string>
+    <string name="hc_identity_setup">只有代理自己通过主机上 OMP 或 Pi 的可选 Herdline 钩子向 herdr-core 报告其会话后，聊天才会开启。在你于主机上设置之前，不会安装或重新加载任何内容；设置后请在此窗格中重新启动代理。钩子为：</string>
+    <string name="hc_identity_close">关闭</string>
+    <string name="hc_identity_terminal">打开终端</string>
+</resources>
