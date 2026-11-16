@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10140,
-    "versionName": "0.6.88",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.88/herdline-0.6.88.apk",
-    "sha256": "8ab062d4373840067456868e5d6a7772c9d42e9b72e69015d6c6b7a357ef50c3",
-    "size": 26116291,
+    "versionCode": 10141,
+    "versionName": "0.6.89",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.89/herdline-0.6.89.apk",
+    "sha256": "8fa30258d11e60bde6396890e7f4730eb619fcf41fe5f79d385a1d058b332a5f",
+    "size": 26138879,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused isolated classic/core workspace acceptance and QA 10140 dashboard burst, disconnect and Hide regressions passed. Samsung normal counts observed on 10135 only. Final signed 10140 runtime not separately tested on Samsung; no full physical-device QA."
+      "reason": "Focused native/Kotlin checks, isolated Android 17 visual fixtures, exact code Copy, Details and real OMP resumed-history footer passed. Dense placement checked in fixture only; final signed runtime and Samsung rendering not separately tested."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.88 (Experimental, 10140)\n\n- Create workspaces from mobile even when workspaces already exist, with name, working directory, source workspace, environment and focus options. Creation waits for a definite reply; unknown outcomes are not retried. Explicit Open now opens the created destination on classic Herdr and herdr-core.\n- Optional All-agent status dashboard shows Working, Need input and Idle counts across connected sessions, including on the lock screen, without names or messages. Done and Unknown remain separate. Duplicate core connections count agents once; unavailable sessions are excluded and clearly marked Partial or Status unavailable.\n- Android 17 uses native three-metric notifications. Samsung normal counts were observed on the lock screen and AOD. One UI may render all values white; a state accent is supported, but custom digit animations are not provided. Samsung's Live notifications for all apps developer setting was required on the tested device.\n- Dashboard updates preserve the latest state through large bursts, mixed Done/attention notifications and connection-loss storms. Hide preserves existing pins and does not restore old counts.\n\nVerification: isolated classic Herdr and herdr-core workspace acceptance, focused Rust/Kotlin checks, Android 17 native renderer tests, and QA 10140 burst/disconnect/Hide regressions passed. Samsung normal dashboard surface was observed on build 10135; final 10140 signed runtime and partial/offline surfaces were not separately tested on Samsung. No full physical-device QA claim. Reconnecting a lost session still requires tapping Connection lost."
+      "en": "Herdline 0.6.89 (Experimental, 10141)\n\n- Chat now has a compact footer with the last recorded assistant reply's model/provider, the pane's last reported directory, and its per-reply USD cost estimate where available. Tap for full values, token counts and provenance. Missing metadata is omitted rather than borrowed from an earlier reply. Costs are not presented as session totals.\n- Inline code has a distinct theme-aware tint and subtle chip outline. Explicitly labelled code fences now have syntax colors for shell, JSON, Python, JavaScript/TypeScript, Kotlin/Java, Rust, YAML, TOML and diff. Unknown or unlabelled languages remain plain. Copy preserves the original code.\n- Optional recorded model/provider fields are read from OMP, Pi and Claude assistant messages without extra host reads. Other transcript readers omit unavailable metadata.\n\nVerification: 184 native transcript tests, focused Kotlin footer/syntax/contrast/layout checks and the metadata regression passed. On an isolated Android 17 emulator, light/dark, narrow 320dp and font-scale fixtures were viewed; exact code Copy, missing-data hiding and Details passed. Real Chat with stock OMP resumed sample transcripts verified the footer and that older metadata is not reused. The portrait keyboard-up row was not dense mode; dense placement was checked in the visual fixture only. No LLM calls in runtime verification. Final signed APK runtime and Samsung rendering were not separately tested."
     }
   }
 }
