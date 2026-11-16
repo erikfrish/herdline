@@ -212,13 +212,18 @@ showing. A new notification while locked still alerts.
 
 ## App icon on notifications
 
-Herdline keeps the required small state icon (a monochrome mask) and
-Android's system-owned app badge, which is the installed application icon:
-Wood (`IconVariant.Default`, `@mipmap/ic_launcher`), whatever launcher
-variant is selected. No app can change it at runtime. Herdline adds no large
-icon or custom artwork to attached, lost, agent, summary or pinned live
-notifications. The selected variant reaches the launcher, Recents and the
-in-app logo only, and the icon picker says so.
+Every notification carries one app identity: the installed application icon,
+a fixed neutral Mono (`<application android:icon/roundIcon>` =
+`@mipmap/ic_launcher_mono`), whatever launcher variant is selected. Android
+and phone makers draw it from the installed package, in place of or beside
+the small icon (AOSP SystemUI app-icon rows, Samsung "Show app icon in
+notifications"), and no launcher alias changes it. Herdline adds no large icon
+or custom artwork to attached, lost, agent, summary or pinned live
+notifications or their public versions. The required small state icons stay
+monochrome masks: `ic_notification`, `ic_needs_input` and the live glyphs.
+A variant change therefore re-posts no notification. The selected variant
+reaches the launcher, Recents and the in-app logo only, and the icon picker
+says so.
 
 ## Configurable live notification content
 

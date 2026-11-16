@@ -92,9 +92,8 @@
     <string name="icon_default">Herdline</string>
     <string name="icon_mono">单色</string>
     <string name="icon_contrast">高对比度</string>
-    <string name="icon_help">所选配色用于主屏幕、最近任务、应用内标志和通知卡片内的图标。更改后，已有卡片也会更新。通知标题旁的小应用徽标和 Android 应用信息仍使用已安装的图标；状态栏图标保持单色。部分启动器需要一点时间，并可能移动主屏幕快捷方式。</string>
-    <string name="icon_installed">通知应用徽标和应用信息：%1$s，即已安装的图标。</string>
-    <string name="icon_installed_unknown">通知应用徽标和应用信息：已安装的图标。</string>
+    <string name="icon_help">所选配色用于主屏幕、最近任务和应用内标志。部分启动器需要一点时间，并可能移动主屏幕快捷方式。</string>
+    <string name="icon_fixed">无论选择哪种配色，通知和 Android 应用信息始终使用固定的中性单色图标；状态栏图标保持单色。</string>
     <string name="preview_title">预览</string>
     <string name="preview_description">以当前设置预览会话</string>
     <string name="preview_header">work · qa-host</string>

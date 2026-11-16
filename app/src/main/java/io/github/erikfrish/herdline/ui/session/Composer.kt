@@ -161,6 +161,7 @@ import java.util.UUID
 private data class Pending(
     val receipt: String, val text: String, val submit: Boolean, val connection: Connection, val attachments: Set<String> = emptySet(),
     val watched: Boolean = false, val historyFrom: Long? = null, val to: String? = null,
+    val submittedText: String? = null, val submittedImages: Int? = null,
 )
 
 /**
@@ -259,7 +260,7 @@ internal suspend fun awaitPtyTurn(
         val page = read(cursor)
         if (page != null) {
             if (page.reset || page.identity != instance || page.end < page.start) return false
-            if (ptyTurnLanded(page, instance, from, sent.text)) return true
+            if (ptyTurnLanded(page, instance, from, sent.submittedText ?: sent.text, sent.submittedImages ?: 0)) return true
             cursor = maxOf(cursor, page.end)
         }
         sleep(PTY_TURN_POLL_MS)
@@ -267,6 +268,15 @@ internal suspend fun awaitPtyTurn(
         until = ptyWatchDeadline(until, working(), now, PTY_TURN_WATCH_MS)
     } while (now < until)
     return false
+}
+
+/** The native attach::with_files body, before OMP expands image chip markers. */
+internal fun ptySubmittedBody(text: String, files: List<io.github.erikfrish.herdline.core.Attachment>): String = buildString {
+    append(text)
+    files.filter { it.kind == io.github.erikfrish.herdline.core.AttachmentKind.FILE }.forEach { file ->
+        if (isNotEmpty() && !last().isWhitespace()) append(' ')
+        append("@\"").append(file.path).append('"')
+    }
 }
 
 /** Whether the slot shows [sent]'s notice and its Reuse: while its window is [live] and [editor] is empty. */
@@ -1119,8 +1129,9 @@ private fun Editor(
                     draft, value.text, p.text, p.receipt, p.submit, p.watched, p.historyFrom, p.attachments,
                     System.currentTimeMillis(), p.to,
                 )
+                val matched = next.copy(sent = next.sent?.copy(submittedText = p.submittedText, submittedImages = p.submittedImages))
                 if (!p.watched) value = TextFieldValue(next.text, TextRange(next.text.length))
-                save(next)
+                save(matched)
             }
             is Connection.DeliveryUpdate.Uncertain -> save(
                 draft.copy(sent = SentRecord(p.text, p.receipt, p.submit, SentState.Uncertain, System.currentTimeMillis(), to = p.to)),
@@ -1145,8 +1156,14 @@ private fun Editor(
             return@LaunchedEffect
         }
         val via = connection
+        val submitted = if (sent.submittedImages == null && draft.attachments.isNotEmpty()) {
+            sent.copy(
+                submittedText = ptySubmittedBody(sent.text, draft.attachments.mapNotNull { it.staged }),
+                submittedImages = draft.attachments.count { it.kind == io.github.erikfrish.herdline.core.AttachmentKind.IMAGE },
+            )
+        } else sent
         val landed = awaitPtyTurn(
-            sent, instance,
+            submitted, instance,
             read = { offset -> withContext(Dispatchers.IO) { via.transcript(transcriptRequest(key.pane, instance, TranscriptRead.After(offset))) }.getOrNull() },
             working = { paneWorking },
         )
@@ -1486,7 +1503,8 @@ private fun Editor(
             sending = false
             when (outcome) {
                 is Connection.Delivery.Queued -> {
-                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom, to)
+                    val p = Pending(outcome.receipt, text, submit, via, draft.attachments.map { it.id }.toSet(), watched, historyFrom, to,
+                        submittedText = ptySubmittedBody(text, staged), submittedImages = staged.count { it.kind == io.github.erikfrish.herdline.core.AttachmentKind.IMAGE })
                     val answered = early.remove(outcome.receipt)
                     when {
                         answered != null -> settle(p, answered)

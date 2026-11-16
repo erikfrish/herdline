@@ -54,29 +54,27 @@ The app resources live in `app/src/main/res`:
 
 ## Icon identity in the app
 
-The icon a person picks in Settings › Appearance is the app's identity
-everywhere in app code: launcher entry (`IconVariants.apply`), the Recents
-task icon (`MainActivity` supplies the selected resource on Android 13+, or
-the cached bitmap before that), notification large icons and in-app logos.
-`IconVariants.icon`/`currentIcon` draw the adaptive art once and cache it.
+The icon a person picks in Settings › Appearance is the app's identity on
+the launcher entry (`IconVariants.apply`), the Recents task icon
+(`MainActivity` supplies the selected resource on Android 13+, or the cached
+bitmap before that) and in-app logos. `IconVariants.icon`/`currentIcon` draw
+the adaptive art once and cache it.
 Some launchers cache an existing Recents task: close that app card and reopen
 it from its selected launcher entry to refresh the cached icon. Recognition-critical
 semantic glyphs — terminal status glyphs,
 badges, navigation icons, the notification small icon the status bar tints —
 stay the mark's one-colour form or their own symbols, never the variant tile.
 
-One surface cannot follow the pick and never will: the icon in Android
-Settings › App info and other system package views is fixed at install time
-from the manifest (`android:icon`) and activity-alias resources. The platform
-has no API to change it at runtime; only the launcher, Recents and
-notifications' own artwork can carry the selected variant. Samsung's
-notification system header tile draws that same static package icon, so the
-manifest ships the Dusk tile as this build's fixed identity (the pick chosen
-for this release), while the enableable Default launcher alias stays
-explicitly Wood (`@mipmap/ic_launcher`). A pick other than Dusk is then
-consistent everywhere except that one system tile. The Android 12+ splash is
-theme-defined per day/night (`values{,-night}-v31`) and is equally static
-within a theme.
+The installed package icon does not follow the pick: it is fixed at install
+time from the manifest (`<application android:icon/roundIcon>`), and the
+platform has no API to change it at runtime. It is the neutral Mono
+(`@mipmap/ic_launcher_mono`), so Android Settings › App info, other system
+package views and every notification card (the system or Samsung app icon;
+Herdline adds no large icon) show one fixed, neutral identity. Each launcher
+activity-alias, Default (Wood, `@mipmap/ic_launcher`) included, names its own
+icon explicitly, so the launcher choice is independent of the package icon.
+The Android 12+ splash is theme-defined per day/night (`values{,-night}-v31`)
+and is equally static within a theme.
 
 ## Rules
 

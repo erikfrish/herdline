@@ -55,6 +55,9 @@ data class SentRecord(
     val historyFrom: Long? = null,
     val steer: Boolean = false,
     val to: String? = null,
+    /** PTY body after file mentions, and image markers OMP inserts on submission. */
+    val submittedText: String? = null,
+    val submittedImages: Int? = null,
 )
 
 /**
@@ -240,6 +243,8 @@ data class Draft(
                     .put("state", it.state.name).put("at", it.at).put("acknowledged", it.acknowledged)
                     .put("historyFrom", it.historyFrom ?: JSONObject.NULL).put("steer", it.steer)
                     .put("to", it.to ?: JSONObject.NULL)
+                    .put("submittedText", it.submittedText ?: JSONObject.NULL)
+                    .put("submittedImages", it.submittedImages ?: JSONObject.NULL)
             } ?: JSONObject.NULL,
         )
         .put("instance", instance?.toJson() ?: JSONObject.NULL)
@@ -270,6 +275,8 @@ data class Draft(
                     historyFrom = if (it.has("historyFrom") && !it.isNull("historyFrom")) it.getLong("historyFrom") else null,
                     to = if (it.has("to") && !it.isNull("to")) it.getString("to") else null,
                     steer = it.optBoolean("steer"),
+                    submittedText = if (it.isNull("submittedText")) null else it.optString("submittedText"),
+                    submittedImages = if (it.isNull("submittedImages")) null else it.getInt("submittedImages").takeIf { count -> count >= 0 && count <= MAX_ATTACHMENTS },
                 )
             }
             return Draft(

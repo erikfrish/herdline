@@ -75,15 +75,34 @@ internal fun sameSession(a: TranscriptIdentity, b: TranscriptIdentity): Boolean 
  * Other programs keep their exact-text contract. A receipt alone, a reset,
  * a truncated block or an earlier identical message proves nothing.
  */
-internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, before: Long, text: String): Boolean {
-    if (page.reset || page.identity != instance || text.isEmpty()) return false
+internal fun ptyTurnLanded(page: TranscriptPage, instance: TranscriptIdentity, before: Long, text: String, images: Int = 0): Boolean {
+    if (page.reset || page.identity != instance || images < 0 || (text.isEmpty() && images == 0)) return false
     val expected = if (instance.agent == "omp") ompSubmittedText(text) else text
-    if (expected.isEmpty()) return false
+    if (expected.isEmpty() && images == 0) return false
     return page.entries.any { entry ->
         entry.offset >= before && entry.kind == TranscriptKind.Message && entry.role == "user" &&
-            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.let { !it.truncated && it.text == expected } == true
+            entry.blocks.filterIsInstance<TranscriptBlock.Text>().singleOrNull()?.let { block ->
+                if (block.truncated || entry.blocks.filterIsInstance<TranscriptBlock.Image>().size != images) false
+                else if (images == 0 || instance.agent != "omp") block.text == expected
+                else ompImageSubmissionMatches(block.text, expected, images)
+            } == true
     }
 }
+
+/** Images pasted before the PTY body become sequential markers at its start. */
+private fun ompImageSubmissionMatches(recorded: String, expected: String, images: Int): Boolean {
+    var at = 0
+    repeat(images) { index ->
+        val marker = OMP_IMAGE_MARKER.find(recorded, at) ?: return false
+        if (marker.range.first != at || marker.groupValues[1].toIntOrNull() != index + 1) return false
+        at = marker.range.last + 1
+        // OMP's image chip and following text can be adjacent or separated by a space.
+        if (at < recorded.length && recorded[at] == ' ') at++
+    }
+    return recorded.substring(at) == expected
+}
+
+private val OMP_IMAGE_MARKER = Regex("\\[Image #([1-9][0-9]*)(?:, [1-9][0-9]*x[1-9][0-9]*)?\\]")
 
 /** Native composer::clean, then OMP 6e48274 editor.ts:3899-3907 / :3996. */
 private fun ompSubmittedText(text: String): String = Normalizer.normalize(

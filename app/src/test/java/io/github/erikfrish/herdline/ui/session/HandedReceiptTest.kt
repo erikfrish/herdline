@@ -198,6 +198,23 @@ class HandedReceiptTest {
         assertTrue("a slow first assistant turn must not leave a delivered Send locked", landed)
     }
 
+    @Test
+    fun anImageSendReadBackFromDiskCanConfirmWithoutUnlockOrResend() = runBlocking {
+        val instance = TranscriptIdentity("p1", "term1", 42, "/h/.omp/agent/sessions/x/a.jsonl")
+        val original = SentRecord("already sent", "r-image", true, SentState.InPane, answeredAt,
+            historyFrom = 0, submittedText = "already sent", submittedImages = 1)
+        val restored = Draft.fromJson(Draft(text = original.text, sent = original).toJson()).sent!!
+        assertEquals(original, restored)
+        val turn = TranscriptEntry("u-image", null, 100, 200, TranscriptKind.Message, "user", listOf(
+            TranscriptBlock.Text("[Image #1, 1079x310] already sent", false),
+            TranscriptBlock.Image(1, io.github.erikfrish.herdline.core.ImageSource.Blob("b".repeat(64))),
+        ))
+        assertTrue(awaitPtyTurn(restored, instance,
+            read = { TranscriptPage(instance, false, 200, 0, 200, listOf(turn)) },
+            working = { false }, clock = { answeredAt + 60_000 },
+            sleep = { error("an already recorded image turn must settle immediately") }))
+    }
+
     private companion object {
         const val HANDED_WINDOW = 60_000L
     }

@@ -569,6 +569,11 @@ Switcher:
   its pinned paste/submit rules: control filtering, line-end folding, NFC,
   three spaces per tab and ECMAScript edge trimming. The recorded entry is
   compared whole, unchanged and untruncated; other programs remain exact.
+  PTY image sends persist the staged image count and submitted body (including
+  file mentions): OMP's sequential leading `[Image #N, WxH]` markers are matched
+  only with that many recorded image blocks and the exact remaining body.
+  A text-only send never adopts an image turn. Old held image drafts recover
+  these expectations from their still-staged attachments; nothing is resent.
   A missing match keeps the hold. Nothing is resent or unlocked on a timer.
   The watch advances a separate read cursor to each page's end without
   changing that pre-send boundary. Native readers may overlap their previous

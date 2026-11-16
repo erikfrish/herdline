@@ -84,7 +84,6 @@ import io.github.erikfrish.herdline.data.ComposerMenu
 import io.github.erikfrish.herdline.data.Density
 import io.github.erikfrish.herdline.data.IconVariant
 import io.github.erikfrish.herdline.data.drawableRes
-import io.github.erikfrish.herdline.data.installedOf
 import io.github.erikfrish.herdline.data.labelRes
 import io.github.erikfrish.herdline.data.LayoutMode
 import io.github.erikfrish.herdline.data.LockDetail
@@ -465,9 +464,7 @@ internal fun LazyListScope.iconSettings(store: SettingsStore, settings: Settings
                 }
                 Help(stringResource(R.string.icon_closes_help))
                 Help(stringResource(R.string.icon_help))
-                // The badge is the installed application icon, whatever is selected.
-                val installed = installedOf(LocalContext.current.applicationInfo.icon)
-                Help(installed?.let { stringResource(R.string.icon_installed, stringResource(it.labelRes)) } ?: stringResource(R.string.icon_installed_unknown))
+                Help(stringResource(R.string.icon_fixed))
             }
         }
         pending?.let { variant ->

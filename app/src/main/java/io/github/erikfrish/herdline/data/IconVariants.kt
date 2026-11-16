@@ -10,12 +10,12 @@ import io.github.erikfrish.herdline.R
 import java.util.EnumMap
 
 /**
- * The app's icon identity outside the launcher. [apply] switches the launcher
- * entry; [icon] gives the same variant as one bitmap for Recents task icons,
- * in-app logos and the large icon inside notification cards. Android still
- * owns the small application badge beside the notification header; changing
- * a launcher alias does not change that installed-package badge. Status-bar
- * icons remain monochrome.
+ * The selectable icon identity of the launcher, Recents and in-app logos.
+ * [apply] switches the launcher entry; [icon] gives the same variant as one
+ * bitmap for Recents task icons and in-app logos. Notifications carry no
+ * variant art: their only app icon is the installed `<application
+ * android:icon>`, a fixed neutral Mono that Android and App info draw and
+ * that no launcher alias changes. Status-bar glyphs remain monochrome.
  */
 
 object IconVariants {
@@ -56,7 +56,7 @@ object IconVariants {
         bitmap
     }
 
-    /** [icon] of the selected setting: the current identity of every surface. */
+    /** [icon] of the selected setting, for the Recents task icon before Android 13. */
     fun currentIcon(context: Context): Bitmap =
         icon(context, (context.applicationContext as HerdlineApp).settings.settings.value.iconVariant)
 
@@ -88,6 +88,3 @@ val IconVariant.labelRes: Int
         IconVariant.Meadow -> R.string.icon_label_meadow
         IconVariant.Dusk -> R.string.icon_label_dusk
     }
-
-/** The variant whose launcher icon is [icon], the installed application icon; null when none matches. */
-internal fun installedOf(icon: Int): IconVariant? = IconVariant.entries.firstOrNull { it.drawableRes == icon }

@@ -262,4 +262,21 @@ class ChatModelTest {
         val pi = agent.copy(agent = "pi", source = "herdr:pi")
         assertFalse("no unpinned trim for other programs", ptyTurnLanded(page(text("u9", null, 100, "user", "text"), identity = pi), pi, 100, " text "))
     }
+    @Test
+    fun anImageTurnConfirmsOnlyItsExpectedMarkersImagesAndExactBody() {
+        val body = "Это ты считаешь исправил?"
+        val landed = text("u9", null, 100, "user", "[Image #1, 1079x310] $body").copy(
+            blocks = listOf(TranscriptBlock.Text("[Image #1, 1079x310] $body", false), TranscriptBlock.Image(1, ImageSource.Blob("a".repeat(64)))),
+        )
+        val read = page(landed, start = 100, end = 200)
+        assertTrue(ptyTurnLanded(read, agent, 100, body, images = 1))
+        assertFalse("text-only send cannot adopt another image turn", ptyTurnLanded(read, agent, 100, body))
+        assertFalse("older identical message", ptyTurnLanded(read, agent, 101, body, images = 1))
+        assertFalse("missing image", ptyTurnLanded(read.copy(entries = listOf(landed.copy(blocks = landed.blocks.take(1)))), agent, 100, body, images = 1))
+        assertFalse("wrong image count", ptyTurnLanded(read, agent, 100, body, images = 2))
+        assertFalse("body is still exact", ptyTurnLanded(read, agent, 100, "другой текст", images = 1))
+        val second = landed.copy(blocks = listOf(TranscriptBlock.Text("[Image #2, 1079x310] $body", false), landed.blocks[1]))
+        assertFalse("marker numbering cannot be guessed", ptyTurnLanded(read.copy(entries = listOf(second)), agent, 100, body, images = 1))
+        assertFalse("another process", ptyTurnLanded(read.copy(identity = agent.copy(pid = 43)), agent, 100, body, images = 1))
+    }
 }
