@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10124,
-    "versionName": "0.6.84",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.84/herdline-0.6.84.apk",
-    "sha256": "da764ddb8f76315dd26695e0761a575ec5647bc880eab83a16be9787b4714ddb",
-    "size": 25110735,
+    "versionCode": 10125,
+    "versionName": "0.6.85",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.85/herdline-0.6.85.apk",
+    "sha256": "b799dbdb247a15fa2dcf4e60349b421e683272650626ecc4b28c7fb63e30aa05",
+    "size": 25127139,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused navigation QA passed on the QA variant. Signed release APK verified for identity and signature; its runtime was not separately tested. Not full all-harness or physical-phone QA."
+      "reason": "Focused QA variant passed mixed Chat/Terminal navigation, terminal scrolling/selection and live notification card icon changes. Signed APK identity/signature verified; signed runtime and physical phones not separately tested."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.84 (Experimental)\n\n- Tabs and previous/next buttons are visible in portrait Chat.\n- Swipe left or right on Chat content to switch tabs. Vertical scrolling and long-press text selection keep their normal behavior.\n- Choosing a tab, pane or workspace focuses that destination on Herdr in the same action; no separate Show tap is needed. Navigation never sends a prompt.\n- Desktop focus changes do not pull the phone away from its chosen Chat or discard its draft. Incoming notifications may still be read locally.\n\nVerification: focused emulator checks passed for tab taps, Chat swipes in both directions, host focus following without Show, vertical scrolling, text selection and draft preservation. Five gesture UI tests and 28 focused JVM tests passed. This is not full all-harness or physical-phone verification."
+      "en": "Herdline 0.6.85 (Experimental)\n\n- Horizontal tab swipes now continue across Terminal tabs, so Chat → Terminal → Chat no longer stops at the shell. Terminal vertical scrolling and text selection retain their actions; navigation sends no terminal input.\n- Notification cards show the selected app icon as their large colour icon. Changing the icon updates existing cards; the Android-owned header badge and monochrome status-bar glyph remain separate.\n\nVerification: focused QA-variant checks exercised mixed Chat/Terminal tab navigation in both directions, terminal scrollback and selection, and Ember → Meadow on the same existing notification card without reconnecting between icon changes. Actual notification-shade screenshots show the icon change. Full all-harness and physical-phone QA are not claimed; the signed release runtime is not separately tested."
     }
   }
 }
