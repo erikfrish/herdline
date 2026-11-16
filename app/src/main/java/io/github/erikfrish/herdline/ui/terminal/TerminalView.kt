@@ -84,6 +84,13 @@ class TerminalView(context: Context) : View(context) {
             invalidate()
         }
     private var focusedPane: String? = null
+    /** Local tab navigation only; never forwarded as terminal input. */
+    var onTabSwipe: ((Int) -> Unit)? = null
+    private var tabSwipeStartX = 0f
+    private var tabSwipeStartY = 0f
+    private var tabSwipeStarted = 0L
+    private var tabSwipeClaimed = false
+    private var tabSwipeRejected = false
 
     /**
      * Whether the keyboard may offer suggestions and corrections here. Off,
@@ -656,6 +663,33 @@ class TerminalView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            tabSwipeStartX = event.x
+            tabSwipeStartY = event.y
+            tabSwipeStarted = event.eventTime
+            tabSwipeClaimed = false
+            tabSwipeRejected = selection != null || onTabSwipe == null
+        }
+        if (event.pointerCount > 1 || selecting || scaler.isInProgress) tabSwipeRejected = true
+        val dx = event.x - tabSwipeStartX
+        val dy = event.y - tabSwipeStartY
+        if (!tabSwipeRejected && !tabSwipeClaimed) {
+            val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+            if (abs(dy) >= slop && abs(dy) >= abs(dx) ||
+                event.eventTime - tabSwipeStarted >= android.view.ViewConfiguration.getLongPressTimeout()) {
+                tabSwipeRejected = true
+            } else if (abs(dx) >= maxOf(slop.toFloat(), 24 * resources.displayMetrics.density) && abs(dx) >= 2 * abs(dy)) {
+                tabSwipeClaimed = true
+                val cancel = MotionEvent.obtain(event)
+                cancel.action = MotionEvent.ACTION_CANCEL
+                gestures.onTouchEvent(cancel)
+                cancel.recycle()
+            }
+        }
+        if (tabSwipeClaimed) {
+            if (event.actionMasked == MotionEvent.ACTION_UP && !tabSwipeRejected) onTabSwipe?.invoke(if (dx < 0) 1 else -1)
+            return true
+        }
         if (event.actionMasked == MotionEvent.ACTION_DOWN) multiTouchGesture = false
         else if (event.pointerCount > 1) multiTouchGesture = true
         scaler.onTouchEvent(event)

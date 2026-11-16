@@ -11,11 +11,11 @@ import java.util.EnumMap
 
 /**
  * The app's icon identity outside the launcher. [apply] switches the launcher
- * entry; [icon] gives the same variant as one bitmap for Recents task icons
- * and in-app logos. The notification app badge and Android App info show the
- * manifest's static application icon (Wood, [IconVariant.Default]): Android
- * and the phone maker read it from the installed package and no app can
- * change it at runtime. Notifications carry no large icon.
+ * entry; [icon] gives the same variant as one bitmap for Recents task icons,
+ * in-app logos and the large icon inside notification cards. Android still
+ * owns the small application badge beside the notification header; changing
+ * a launcher alias does not change that installed-package badge. Status-bar
+ * icons remain monochrome.
  */
 
 object IconVariants {

@@ -358,8 +358,10 @@ Switcher:
   or the draft. The direction is physical, not reversed by the locale.
   Explicit tab changes focus the chosen pane on Herdr in the same action.
   Chat content claims horizontal swipes only; vertical scrolling, long-press
-  selection and unclaimed multi-touch remain with the content. Terminal
-  content and the sideways-scrolling tab strip keep their own gestures.
+  selection and unclaimed multi-touch remain with the content. Terminal also
+  recognises local horizontal tab swipes, so a shell tab never traps navigation;
+  vertical drags, selection and pinch retain their terminal actions. The tab
+  strip retains its sideways scrolling.
   Title tap still opens Tabs and long press opens Rename / Close.
   No gesture sends, inserts, stops an agent or closes a tab. A swipe acts
   once on release, after at least 24 dp (and touch slop) on a clearly

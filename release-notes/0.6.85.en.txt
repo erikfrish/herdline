@@ -1,0 +1,6 @@
+Herdline 0.6.85 (Experimental)
+
+- Horizontal tab swipes now continue across Terminal tabs, so Chat → Terminal → Chat no longer stops at the shell. Terminal vertical scrolling and text selection retain their actions; navigation sends no terminal input.
+- Notification cards show the selected app icon as their large colour icon. Changing the icon updates existing cards; the Android-owned header badge and monochrome status-bar glyph remain separate.
+
+Verification: focused QA-variant checks exercised mixed Chat/Terminal tab navigation in both directions, terminal scrollback and selection, and Ember → Meadow on the same existing notification card without reconnecting between icon changes. Actual notification-shade screenshots show the icon change. Full all-harness and physical-phone QA are not claimed; the signed release runtime is not separately tested.
