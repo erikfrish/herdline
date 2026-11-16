@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10034,
-    "versionName": "0.5.3",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.5.3/herdline-0.5.3.apk",
-    "sha256": "55f4c1c2b54d0e0591044a01eeee569c91883de4d2238c63aea0520958415833",
-    "size": 23388227,
+    "versionCode": 10133,
+    "versionName": "0.6.87",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.87/herdline-0.6.87.apk",
+    "sha256": "abd00f32c908e8d3a36061a19f00409d98e3ad7f403c572580cf28c1fe2d456c",
+    "size": 26033959,
     "minSdk": 29,
     "qa": {
-      "state": "passed",
-      "reason": "Focused icon surfaces and 24 live-state tests pass; stock Samsung Now Bar not fixed."
+      "state": "not_tested",
+      "reason": "Focused emulator QA (Android 17 / API 37) on QA candidates: 10132 image-send cleanup PASS; 10133 fresh-install Mono notification PASS, no large icon, independent of Dusk launcher choice. Upgrade may retain old icon; cause unconfirmed. No full or physical-phone QA; Samsung and Done untested; signed release runtime not separately tested."
     },
-    "accepted": true,
+    "accepted": false,
     "notes": {
-      "en": "Herdline 0.5.3 \u2014 app-wide icon selection and durable live-update pins\n\nThe selected icon now follows the app into Recents, in-app branding and full-colour notification icons, including redacted lock-screen versions. Existing notifications update silently when the selection changes. Android's package-management screens may still use the static manifest icon; monochrome status glyphs continue to express the agent state.\n\nSamsung may cache the icon of an existing Recents card. Close only Herdline's card and reopen from the launcher to refresh it; connection monitoring remains a foreground service.\n\nA completed task no longer silently removes its agent's live-update pin. The Done card disappears after 10 seconds, while the same pinned agent's next Working task is eligible for a Live Update without pinning again. Explicit Unpin or swipe still removes the pin.\n\nSamsung Now Bar is not fixed on the checked SM-S928U1 / One UI 8.5: Android marks the pinned Working card as promoted with the Samsung test flag off, but the stock Now Bar has no Herdline capsule and its normal Live notifications list does not include Herdline. No test flag, undocumented Samsung payload, media-session impersonation or fake progress is used."
+      "en": "Herdline 0.6.87 (Experimental)\n\n- Sending an image from the composer now clears the draft once OMP has received it. Previously, OMP's leading [Image #N, WxH] marker made Herdline treat the turn as not landed and keep the draft.\n- Notifications use one fixed neutral Mono app identity on every launcher icon choice. Notifications no longer carry a large icon. Your launcher icon choice is unchanged. Status glyphs and privacy are unchanged.\n\nKnown issue: after upgrading from an earlier version, the notification card may keep showing the previous app icon. The cause is not yet confirmed; it is under investigation. A fresh install shows the Mono icon.\n\nVerification: focused emulator QA (Android 17, API 37):\n- the 0.6.87 (10132) image-send cleanup passed;\n- on 10133, a fresh-install notification shows the Mono icon, with no large icon on any notification;\n- the notification icon does not change with the selected launcher icon (Dusk checked).\nThis is not a full or physical-phone QA pass. Samsung devices and the Done notification were not tested. The signed release runtime was not separately tested."
     }
   }
 }
