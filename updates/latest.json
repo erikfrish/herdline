@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10125,
-    "versionName": "0.6.85",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.85/herdline-0.6.85.apk",
-    "sha256": "b799dbdb247a15fa2dcf4e60349b421e683272650626ecc4b28c7fb63e30aa05",
-    "size": 25127139,
+    "versionCode": 10131,
+    "versionName": "0.6.86",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.86/herdline-0.6.86.apk",
+    "sha256": "abf5478703b572560f32b40277ca6d54f90d89db946b516717fdc99e285b0f58",
+    "size": 26034759,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused QA variant passed mixed Chat/Terminal navigation, terminal scrolling/selection and live notification card icon changes. Signed APK identity/signature verified; signed runtime and physical phones not separately tested."
+      "reason": "Focused herdr-core 0.1.21 QA carried across candidates 10126-10131. Not a full single-APK/all-platform/physical-phone pass; signed release runtime not separately tested."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.85 (Experimental)\n\n- Horizontal tab swipes now continue across Terminal tabs, so Chat → Terminal → Chat no longer stops at the shell. Terminal vertical scrolling and text selection retain their actions; navigation sends no terminal input.\n- Notification cards show the selected app icon as their large colour icon. Changing the icon updates existing cards; the Android-owned header badge and monochrome status-bar glyph remain separate.\n\nVerification: focused QA-variant checks exercised mixed Chat/Terminal tab navigation in both directions, terminal scrollback and selection, and Ember → Meadow on the same existing notification card without reconnecting between icon changes. Actual notification-shade screenshots show the icon change. Full all-harness and physical-phone QA are not claimed; the signed release runtime is not separately tested."
+      "en": "Herdline 0.6.86 (Experimental)\n\n- Add a herdr-core backend for the spaces, tabs, terminals and agents shared with herdr-app. Existing nodes keep the classic Herdr backend. Select herdr-core in the SSH host editor; hc session defaults to default.\n- Phone focus and zoom are independent of the desktop. Observe without resizing; explicitly enter interactive control when typing or pasting, which lets the core use the phone's terminal size. Paste and Insert do not add Enter.\n- Create, rename, split and close shared structures using versioned documents while preserving unknown fields. An uncertain write or send is never retried automatically.\n- The opt-in host/omp/herdline-core.ts hook reports exact OMP session identity. Chat supports fresh unwritten history, the title-slot preamble and continued reading after a completed turn. Guarded Insert and staged Steer support the default OMP band editor, including its working spinner.\n- Missing hooks, stale process identity and desktop JavaScript mod panels are identified explicitly, not guessed or rendered as fake terminals. Desktop mods are not supported on the phone.\n\nVerification: focused checks on isolated herdr-core 0.1.21 cover SSH trust, topology, observation and interactive control, paste without Enter, shared document operations, private focus/zoom, reconnect, OMP Chat, Insert, actual Steer and identity refusals. Evidence is carried by unchanged source across candidates 10126-10131; this is not a full single-APK, all-platform or physical-phone QA pass. N1 proves mismatched/stale PID refusal, not a confirmed-to-stale transition. Reconnect used manual Retry. Signed release runtime is not separately tested."
     }
   }
 }
