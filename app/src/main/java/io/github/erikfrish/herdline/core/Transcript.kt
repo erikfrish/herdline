@@ -266,6 +266,9 @@ data class TranscriptEntry(
      * by exact id only.
      */
     val subagentEnds: List<TranscriptSubagentEnd> = emptyList(),
+    /** Recorded on this assistant message, never inferred from the harness name. */
+    val model: String? = null,
+    val provider: String? = null,
 ) {
     companion object {
         fun parse(json: JSONObject) = TranscriptEntry(
@@ -290,6 +293,8 @@ data class TranscriptEntry(
                 else -> null
             },
             subagentEnds = json.optJSONArray("subagent_ends").objects().mapNotNull(TranscriptSubagentEnd.Companion::parse).take(MAX_SUBAGENTS),
+            model = (json.opt("model") as? String)?.takeIf { it.isNotBlank() },
+            provider = (json.opt("provider") as? String)?.takeIf { it.isNotBlank() },
         )
     }
 }

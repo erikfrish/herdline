@@ -218,20 +218,18 @@ fn entry(row: &Value) -> Option<Entry> {
     if row["cut"] == true {
         blocks.push(cut());
     }
-    Some(Entry {
-        id: None,
-        parent_id: None,
-        offset,
-        end: offset.checked_add(1)?,
-        kind: Kind::Message,
-        role: Some(role.to_owned()),
-        blocks,
-        timestamp: row["ts"].as_u64(),
-        usage: None,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: None,
+    parent_id: None,
+    offset,
+    end: offset.checked_add(1)?,
+    kind: Kind::Message,
+    role: Some(role.to_owned()),
+    blocks,
+    timestamp: row["ts"].as_u64(),
+    usage: None,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 fn cut() -> Block {

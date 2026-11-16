@@ -324,6 +324,11 @@ pub struct Entry {
     /// Async subagent runs this entry settles, as the runtime recorded them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub subagent_ends: Vec<subagents::Completion>,
+    /// Model and provider recorded on this exact assistant message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 /// How OMP recorded a user message that reached a running agent:
@@ -1522,26 +1527,33 @@ pub(super) fn entry(value: &Value, offset: u64, end: u64) -> Entry {
     } else {
         None
     };
-    Entry {
-        id,
-        parent_id,
-        offset,
-        end,
-        kind,
-        role,
-        blocks,
-        timestamp: message["timestamp"].as_u64(),
-        usage: usage(&message["usage"]),
-        stop_reason: message["stopReason"]
-            .as_str()
-            .map(|reason| cap(reason, 32).0),
-        steer,
-        subagent_ends: subagents::completions(if value["type"] == "custom_message" {
-            value
-        } else {
-            message
-        }),
+    Entry { id,
+    parent_id,
+    offset,
+    end,
+    kind,
+    role,
+    blocks,
+    timestamp: message["timestamp"].as_u64(),
+    usage: usage(&message["usage"]),
+    stop_reason: message["stopReason"]
+        .as_str()
+        .map(|reason| cap(reason, 32).0),
+    steer,
+    subagent_ends: subagents::completions(if value["type"] == "custom_message" {
+        value
+    } else {
+        message
+    }),
+    model: recorded_metadata(message, "model"),
+    provider: recorded_metadata(message, "provider"),
     }
+}
+
+/// No provider inference or live settings lookup: only an assistant's own recorded field.
+fn recorded_metadata(message: &Value, field: &str) -> Option<String> {
+    if message["role"] != "assistant" { return None; }
+    message[field].as_str().filter(|text| !text.trim().is_empty()).map(|text| cap(text, 256).0)
 }
 
 /// The content parts of a line, where [`content`] and [`tool_result`] read

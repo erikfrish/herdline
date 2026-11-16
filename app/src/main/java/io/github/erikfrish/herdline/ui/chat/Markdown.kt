@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -195,8 +196,8 @@ fun inlineMarkdown(text: String, code: SpanStyle, link: TextLinkStyles? = null):
 private val IDENTIFIER = Regex("^[\\w./:@#-]+$")
 
 /**
- * Text whose [INLINE_CODE] ranges sit on a chip (§16.3): a borderless
- * codeChip fill with 6 dp corners and 4 dp either side, drawn behind the
+ * Text whose [INLINE_CODE] ranges sit on a chip (§16.3): a codeChip fill
+ * with a hairline edge, 6 dp corners and 4 dp either side, drawn behind the
  * glyphs line by line so a wrapped span gets one chip per line.
  */
 @Composable
@@ -211,9 +212,12 @@ private fun InlineText(
     val chips = remember(text) { text.getStringAnnotations(INLINE_CODE, 0, text.length) }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val fill = colors.codeChip
+    val edge = colors.border.copy(alpha = 0.6f)
+    val hair = 1.dp
     val chipped = if (chips.isEmpty()) modifier else modifier.drawBehind {
         val laid = layout?.takeIf { it.layoutInput.text == text } ?: return@drawBehind
         val pad = 4.dp.toPx()
+        val hairPx = hair.toPx()
         val inset = 2.dp.toPx()
         val corner = CornerRadius(6.dp.toPx())
         chips.filter { it.end > it.start }.forEach { chip ->
@@ -227,6 +231,7 @@ private fun InlineText(
                 val origin = Offset(left - pad, top)
                 val box = Size(right - left + 2 * pad, bottom - top)
                 drawRoundRect(fill, origin, box, corner)
+                drawRoundRect(edge, origin, box, corner, style = Stroke(hairPx))
             }
         }
     }
@@ -243,7 +248,8 @@ private val PARAGRAPH_GAP = 12.dp
 @Composable
 fun Markdown(text: String, colors: ChatColors, modifier: Modifier = Modifier, color: Color = colors.text, dense: Boolean = false) {
     val blocks = remember(text) { markdownBlocks(text) }
-    val code = SpanStyle(fontFamily = FontFamily.Monospace, fontSize = ChatType.inlineCode, color = colors.text)
+    val codeStyle = rememberCodeStyle(colors)
+    val code = SpanStyle(fontFamily = FontFamily.Monospace, fontSize = ChatType.inlineCode, color = codeStyle.inline.color)
     val link = TextLinkStyles(SpanStyle(color = colors.accentText, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline))
     val body = ChatType.prose(dense).copy(color = color)
     // The marker box is one prose line tall, so the dot centres on the first line at any font scale.
@@ -313,6 +319,8 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
     var all by rememberSaveable(code) { mutableStateOf(!codeStartsCollapsed(code)) }
     val shown = remember(code, all) { if (all) code.trimEnd('\n') else capLines(code, CODE_COLLAPSED_LINES).first }
     val shape = MaterialTheme.shapes.medium
+    val syntax = rememberCodeStyle(colors)
+    val styled = remember(shown, language, syntax) { highlight(shown, language, syntax.roles) }
     Box(modifier.fillMaxWidth()) {
         Column(
             Modifier
@@ -326,7 +334,7 @@ fun CodeBlock(code: String, colors: ChatColors, language: String = "", modifier:
                 Text(language, style = ChatType.codeBar.copy(color = colors.muted), maxLines = 1, modifier = Modifier.weight(1f))
             }
             Text(
-                shown,
+                styled,
                 style = ChatType.code.copy(color = colors.text),
                 softWrap = false,
                 modifier = Modifier

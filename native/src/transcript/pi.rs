@@ -15,31 +15,32 @@ pub fn normalize(value: &Value, offset: u64, end: u64) -> Entry {
     } else {
         &none
     };
-    Entry {
-        id: value["id"].as_str().map(str::to_owned),
-        parent_id: value["parentId"].as_str().map(str::to_owned),
-        offset,
-        end,
-        kind,
-        role,
-        blocks,
-        timestamp: message["timestamp"].as_u64(),
-        usage: super::usage(&message["usage"]),
-        stop_reason: message["stopReason"]
-            .as_str()
-            .map(|reason| cap(reason, 32).0),
-        steer: if message["role"] == "user" {
-            if message["liveSteered"] == true {
-                Some(Steer::Live)
-            } else if message["steering"] == true {
-                Some(Steer::Steering)
-            } else {
-                None
-            }
+    Entry { id: value["id"].as_str().map(str::to_owned),
+    parent_id: value["parentId"].as_str().map(str::to_owned),
+    offset,
+    end,
+    kind,
+    role,
+    blocks,
+    timestamp: message["timestamp"].as_u64(),
+    usage: super::usage(&message["usage"]),
+    stop_reason: message["stopReason"]
+        .as_str()
+        .map(|reason| cap(reason, 32).0),
+    steer: if message["role"] == "user" {
+        if message["liveSteered"] == true {
+            Some(Steer::Live)
+        } else if message["steering"] == true {
+            Some(Steer::Steering)
         } else {
             None
-        },
-        subagent_ends: Vec::new(),
+        }
+    } else {
+        None
+    },
+    subagent_ends: Vec::new(),
+    model: super::recorded_metadata(message, "model"),
+    provider: super::recorded_metadata(message, "provider"),
     }
 }
 

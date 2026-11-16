@@ -116,20 +116,18 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
 /// turns as this one's. It has no text: Chat draws its own. Offset 0 is never
 /// a message, since `messages.id` is AUTOINCREMENT from 1.
 fn boundary() -> Entry {
-    Entry {
-        id: None,
-        parent_id: None,
-        offset: 0,
-        end: 0,
-        kind: Kind::Boundary,
-        role: None,
-        blocks: Vec::new(),
-        timestamp: None,
-        usage: None,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    }
+    Entry { id: None,
+    parent_id: None,
+    offset: 0,
+    end: 0,
+    kind: Kind::Boundary,
+    role: None,
+    blocks: Vec::new(),
+    timestamp: None,
+    usage: None,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None }
 }
 
 /// One projected `messages` row. Roles Hermes writes map to chat messages and
@@ -208,23 +206,21 @@ fn entry(row: &Value) -> Option<Entry> {
     if row["tool_calls_unreadable"] == true {
         blocks.push(text_block("[unreadable tool calls]", false));
     }
-    Some(Entry {
-        id: None,
-        parent_id: None,
-        offset: id,
-        end: id.checked_add(1)?,
-        kind,
-        role,
-        blocks,
-        timestamp: row["ts"]
-            .as_f64()
-            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
-            .map(|seconds| (seconds * 1000.0) as u64),
-        usage: None,
-        stop_reason: row["finish"].as_str().map(|reason| cap(reason, 32).0),
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: None,
+    parent_id: None,
+    offset: id,
+    end: id.checked_add(1)?,
+    kind,
+    role,
+    blocks,
+    timestamp: row["ts"]
+        .as_f64()
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+        .map(|seconds| (seconds * 1000.0) as u64),
+    usage: None,
+    stop_reason: row["finish"].as_str().map(|reason| cap(reason, 32).0),
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 fn parts_text(parts: &Value) -> String {

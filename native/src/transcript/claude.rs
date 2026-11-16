@@ -12,26 +12,27 @@ use serde_json::Value;
 /// Noise keeps its `id`/`parent_id` so a branch still walks through it.
 pub fn normalize(value: &Value, offset: u64, end: u64) -> Entry {
     let (kind, role, blocks) = record(value);
-    Entry {
-        id: value["uuid"].as_str().map(str::to_owned),
-        parent_id: parent(value),
-        offset,
-        end,
-        kind,
-        role,
-        blocks,
-        timestamp: value["timestamp"].as_str().and_then(super::iso_timestamp),
-        // One message turns up as several lines; usage counts once per turn.
-        usage: if value["message"]["stop_reason"].is_null() {
-            None
-        } else {
-            usage(&value["message"]["usage"])
-        },
-        stop_reason: value["message"]["stop_reason"]
-            .as_str()
-            .map(|reason| cap(reason, 32).0),
-        steer: None,
-        subagent_ends: Vec::new(),
+    Entry { id: value["uuid"].as_str().map(str::to_owned),
+    parent_id: parent(value),
+    offset,
+    end,
+    kind,
+    role,
+    blocks,
+    timestamp: value["timestamp"].as_str().and_then(super::iso_timestamp),
+    // One message turns up as several lines; usage counts once per turn.
+    usage: if value["message"]["stop_reason"].is_null() {
+        None
+    } else {
+        usage(&value["message"]["usage"])
+    },
+    stop_reason: value["message"]["stop_reason"]
+        .as_str()
+        .map(|reason| cap(reason, 32).0),
+    steer: None,
+    subagent_ends: Vec::new(),
+    model: super::recorded_metadata(&value["message"], "model"),
+    provider: super::recorded_metadata(&value["message"], "provider"),
     }
 }
 

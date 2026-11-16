@@ -255,20 +255,18 @@ fn entry(row: &Value) -> Option<Entry> {
                 .filter(|cost| cost.is_finite() && *cost >= 0.0),
         }
     });
-    Some(Entry {
-        id: row["mid"].as_str().map(str::to_owned),
-        parent_id: None,
-        offset,
-        end: offset.checked_add(1)?,
-        kind,
-        role: (kind == Kind::Message).then_some(role).flatten(),
-        blocks,
-        timestamp: row["ts"].as_u64(),
-        usage,
-        stop_reason: info["finish"].as_str().map(|reason| cap(reason, 32).0),
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: row["mid"].as_str().map(str::to_owned),
+    parent_id: None,
+    offset,
+    end: offset.checked_add(1)?,
+    kind,
+    role: (kind == Kind::Message).then_some(role).flatten(),
+    blocks,
+    timestamp: row["ts"].as_u64(),
+    usage,
+    stop_reason: info["finish"].as_str().map(|reason| cap(reason, 32).0),
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 fn file_name(part: &Value) -> String {

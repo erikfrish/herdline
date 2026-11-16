@@ -128,20 +128,18 @@ fn response(reply: &Value, expect: &Identity, reset: bool) -> Result<Response> {
 /// Offset 0 sorts it first; the head's first record, at byte 0, is never an
 /// entry.
 fn boundary() -> Entry {
-    Entry {
-        id: None,
-        parent_id: None,
-        offset: 0,
-        end: 0,
-        kind: Kind::Boundary,
-        role: None,
-        blocks: Vec::new(),
-        timestamp: None,
-        usage: None,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    }
+    Entry { id: None,
+    parent_id: None,
+    offset: 0,
+    end: 0,
+    kind: Kind::Boundary,
+    role: None,
+    blocks: Vec::new(),
+    timestamp: None,
+    usage: None,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None }
 }
 
 /// One event as the host projected it, keyed by its line's byte range and
@@ -258,21 +256,19 @@ fn entry(row: &Value) -> Option<Entry> {
             )
         }
     };
-    Some(Entry {
-        id: row["id"].as_str().map(str::to_owned),
-        // One flat log: Chat walks no branch through it.
-        parent_id: None,
-        offset,
-        end,
-        kind,
-        role: (kind == Kind::Message).then(|| role.to_owned()),
-        blocks,
-        timestamp: row["ts"].as_u64(),
-        usage: None,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: row["id"].as_str().map(str::to_owned),
+    // One flat log: Chat walks no branch through it.
+    parent_id: None,
+    offset,
+    end,
+    kind,
+    role: (kind == Kind::Message).then(|| role.to_owned()),
+    blocks,
+    timestamp: row["ts"].as_u64(),
+    usage: None,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 /// The host side. The store comes from this shell's own HOME and

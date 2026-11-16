@@ -421,8 +421,8 @@ fn entries_keep_the_branch_links_and_cap_untrusted_text() {
 #[test]
 fn messages_keep_their_time_usage_stop_reason_and_exit_code() {
     let lines = [
-        r#"{"type":"message","id":"u","timestamp":"2026-11-09T13:23:53.579Z","message":{"role":"user","content":"hi","timestamp":1794230633466}}"#,
-        r#"{"type":"message","id":"a","message":{"role":"assistant","content":[],"timestamp":1794230634000,"stopReason":"toolUse","usage":{"input":10,"output":5,"cacheRead":0,"totalTokens":15,"cost":{"total":0.25}}}}"#,
+        r#"{"type":"message","id":"u","timestamp":"2026-11-09T13:23:53.579Z","message":{"role":"user","content":"hi","timestamp":1794230633466,"model":"untrusted-user-model","provider":"untrusted-user-provider"}}"#,
+        r#"{"type":"message","id":"a","message":{"role":"assistant","model":"recorded-model","provider":"recorded-provider","content":[],"timestamp":1794230634000,"stopReason":"toolUse","usage":{"input":10,"output":5,"cacheRead":0,"totalTokens":15,"cost":{"total":0.25}}}}"#,
         r#"{"type":"message","id":"r","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[],"details":{"exitCode":-1,"wallTimeMs":3.5}}}"#,
         // Untrusted numbers: a negative count drops the usage, a bad cost only the cost.
         r#"{"type":"message","id":"b","message":{"role":"assistant","content":[],"usage":{"input":-1,"output":0,"totalTokens":0}}}"#,
@@ -438,6 +438,9 @@ fn messages_keep_their_time_usage_stop_reason_and_exit_code() {
         (None, None)
     );
     assert_eq!(entries[1].stop_reason.as_deref(), Some("toolUse"));
+    assert_eq!((entries[0].model.as_deref(), entries[0].provider.as_deref()), (None, None));
+    assert_eq!((entries[1].model.as_deref(), entries[1].provider.as_deref()), (Some("recorded-model"), Some("recorded-provider")));
+    assert_eq!((entries[3].model.as_deref(), entries[3].provider.as_deref()), (None, None));
     assert_eq!(
         entries[1].usage,
         Some(Usage {

@@ -389,20 +389,18 @@ impl Conversation {
         if blocks.is_empty() {
             return None;
         }
-        Some(Entry {
-            id: Some("gemini:running".to_owned()),
-            parent_id: None,
-            offset: 0,
-            end: 0,
-            kind: Kind::Message,
-            role: Some("assistant".to_owned()),
-            blocks,
-            timestamp: started,
-            usage: None,
-            stop_reason: None,
-            steer: None,
-            subagent_ends: Vec::new(),
-        })
+        Some(Entry { id: Some("gemini:running".to_owned()),
+        parent_id: None,
+        offset: 0,
+        end: 0,
+        kind: Kind::Message,
+        role: Some("assistant".to_owned()),
+        blocks,
+        timestamp: started,
+        usage: None,
+        stop_reason: None,
+        steer: None,
+        subagent_ends: Vec::new(), model: None, provider: None })
     }
 }
 
@@ -529,20 +527,18 @@ fn entry(message: &Value) -> Option<Entry> {
         // `checkExhaustive` falls back to a Gemini message.
         _ => "assistant",
     };
-    Some(Entry {
-        id: message_id(message).map(str::to_owned),
-        parent_id: None,
-        offset: 0,
-        end: 0,
-        kind: Kind::Message,
-        role: Some(role.to_owned()),
-        blocks,
-        timestamp: string(message, "timestamp").and_then(iso_timestamp),
-        usage: usage(message.get("tokens").unwrap_or(&Value::Null)),
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: message_id(message).map(str::to_owned),
+    parent_id: None,
+    offset: 0,
+    end: 0,
+    kind: Kind::Message,
+    role: Some(role.to_owned()),
+    blocks,
+    timestamp: string(message, "timestamp").and_then(iso_timestamp),
+    usage: usage(message.get("tokens").unwrap_or(&Value::Null)),
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 /// A recorded tool call, and its result once its status is final. Gemini's

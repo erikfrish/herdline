@@ -1319,21 +1319,19 @@ fn entry(
     timestamp: Option<u64>,
     usage: Option<Usage>,
 ) -> Entry {
-    Entry {
-        id,
-        // The chain is already the branch: no parent for the app to walk.
-        parent_id: None,
-        offset: 0,
-        end: 0,
-        kind,
-        role: role.map(str::to_owned),
-        blocks,
-        timestamp,
-        usage,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    }
+    Entry { id,
+    // The chain is already the branch: no parent for the app to walk.
+    parent_id: None,
+    offset: 0,
+    end: 0,
+    kind,
+    role: role.map(str::to_owned),
+    blocks,
+    timestamp,
+    usage,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None }
 }
 
 /// The host side. The store comes from this shell's own HOME and

@@ -436,6 +436,8 @@ private fun ChatContent(
     val outage by rememberOutage(if (shown == null) null else problem == null, state = kept.read.outage)
     val persistedItems = remember(shown?.entries) { shown?.let { chatItems(it.entries) }.orEmpty() }
     val identity = shown?.identity
+    val footer = remember(shown?.entries) { chatFooterData(shown?.entries.orEmpty()) }
+    val directory = view?.panes?.firstOrNull { it.id == pane }?.cwd
     val images = remember(identity) {
         identity?.let { id -> ChatImages(kept.media, id) { connection.media(mediaRequest(pane, id, it)) } }
     }
@@ -877,6 +879,9 @@ private fun ChatContent(
                         failure != null -> item(key = "error") { LiveGap { ErrorRow(failure, colors, onTerminal) } }
                         else -> Unit
                     }
+                    if (dense) item(key = "footer") {
+                        ChatFooter(footer, directory, !linkLive || outage.shown, colors)
+                    }
                 }
             }
             if (pill) {
@@ -893,6 +898,7 @@ private fun ChatContent(
                 }
             }
         }
+        if (!dense && shown != null) ChatFooter(footer, directory, !linkLive || outage.shown, colors)
     }
 }
 

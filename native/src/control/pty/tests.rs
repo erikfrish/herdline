@@ -70,20 +70,18 @@ const GEMINI_WORKING: &str = "\
 ";
 
 fn entry(role: &str, stop: Option<&str>) -> Entry {
-    Entry {
-        id: None,
-        parent_id: None,
-        offset: 0,
-        end: 1,
-        kind: Kind::Message,
-        role: Some(role.to_owned()),
-        blocks: Vec::new(),
-        timestamp: None,
-        usage: None,
-        stop_reason: stop.map(str::to_owned),
-        steer: None,
-        subagent_ends: Vec::new(),
-    }
+    Entry { id: None,
+    parent_id: None,
+    offset: 0,
+    end: 1,
+    kind: Kind::Message,
+    role: Some(role.to_owned()),
+    blocks: Vec::new(),
+    timestamp: None,
+    usage: None,
+    stop_reason: stop.map(str::to_owned),
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None }
 }
 
 #[test]

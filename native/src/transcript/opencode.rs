@@ -337,20 +337,18 @@ pub(super) fn entry(row: &Value) -> Option<Entry> {
                 .filter(|cost| cost.is_finite() && *cost >= 0.0),
         }
     });
-    Some(Entry {
-        id: row["id"].as_str().map(str::to_owned),
-        parent_id: None,
-        offset: seq,
-        end,
-        kind,
-        role,
-        blocks,
-        timestamp: row["time_created"].as_u64(),
-        usage,
-        stop_reason: data["finish"].as_str().map(|reason| cap(reason, 32).0),
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: row["id"].as_str().map(str::to_owned),
+    parent_id: None,
+    offset: seq,
+    end,
+    kind,
+    role,
+    blocks,
+    timestamp: row["time_created"].as_u64(),
+    usage,
+    stop_reason: data["finish"].as_str().map(|reason| cap(reason, 32).0),
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 const PYTHON: &str = r#"import base64, hashlib, json, os, sqlite3, subprocess, sys, urllib.parse

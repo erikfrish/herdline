@@ -136,21 +136,19 @@ fn record(
     role: Option<String>,
     blocks: Vec<Block>,
 ) -> Entry {
-    Entry {
-        id: message_id(value),
-        // A rollout is one flat run; nothing links records to each other.
-        parent_id: None,
-        offset,
-        end,
-        kind,
-        role,
-        blocks,
-        timestamp,
-        usage: None,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    }
+    Entry { id: message_id(value),
+    // A rollout is one flat run; nothing links records to each other.
+    parent_id: None,
+    offset,
+    end,
+    kind,
+    role,
+    blocks,
+    timestamp,
+    usage: None,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None }
 }
 
 /// Stable across old/new rollout envelopes; a call and its output share

@@ -80,4 +80,14 @@
     <string name="chat_empty">此会话中还没有消息。</string>
     <string name="chat_you">你</string>
     <string name="chat_new_session_divider">此窗格中的新会话</string>
+    <string name="chat_footer_last_reply">最近记录的回复</string>
+    <string name="chat_footer_reply_cost">回复 %1$s</string>
+    <string name="chat_footer_cached">缓存</string>
+    <string name="chat_footer_details">会话详情</string>
+    <string name="chat_footer_provenance">模型和用量来自最近记录的助手消息，并非实时设置或会话总计。目录为窗格最近上报的目录。不可用的值不会显示。</string>
+    <string name="chat_footer_provider">提供方：%1$s</string>
+    <string name="chat_footer_model">模型：%1$s</string>
+    <string name="chat_footer_directory">目录：%1$s</string>
+    <string name="chat_footer_tokens">最近回复的令牌数 — 输入：%1$d · 输出：%2$d · 总计：%3$d</string>
+    <string name="chat_footer_token_total">最近回复：%1$d 个令牌</string>
 </resources>

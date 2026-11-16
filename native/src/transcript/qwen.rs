@@ -228,20 +228,18 @@ fn project(record: &Value) -> Option<Entry> {
     if blocks.is_empty() {
         return None;
     }
-    Some(Entry {
-        id: record["uuid"].as_str().map(str::to_owned),
-        parent_id: None,
-        offset: 0,
-        end: 0,
-        kind: Kind::Message,
-        role: Some(role.to_owned()),
-        blocks,
-        timestamp: record["timestamp"].as_str().and_then(iso_timestamp),
-        usage,
-        stop_reason: None,
-        steer: None,
-        subagent_ends: Vec::new(),
-    })
+    Some(Entry { id: record["uuid"].as_str().map(str::to_owned),
+    parent_id: None,
+    offset: 0,
+    end: 0,
+    kind: Kind::Message,
+    role: Some(role.to_owned()),
+    blocks,
+    timestamp: record["timestamp"].as_str().and_then(iso_timestamp),
+    usage,
+    stop_reason: None,
+    steer: None,
+    subagent_ends: Vec::new(), model: None, provider: None })
 }
 
 /// The text the user typed (`systemPayload.displayText`, without the
