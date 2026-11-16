@@ -651,28 +651,18 @@ fun SessionScreen(
         terminal?.keepRows = composerText && !composerHidden && !(rawKeys && !chatMode)
     }
 
-    /** Whether Chat is on screen as a choice made now finds it: [modes]' current choices, not the last collected ones. */
-    fun chatNow(): Boolean = if (closed) chatShown else chatFor(chatPane, modes.choices.value)
-
-    /** Whether a choice of [pane] made now moves the desktop: [choiceMovesDesktop] on the modes as they stand. */
-    fun movesDesktop(pane: String, fromChat: Boolean = chatNow()): Boolean = choiceMovesDesktop(fromChat, chatFor(pane, modes.choices.value))
-
-    /**
-     * A choice of [pane] on this phone: it is read here. From Terminal it also moves the desktop to it;
-     * from Chat ([fromChat]) only a pane that shows Terminal does ([choiceMovesDesktop]).
-     */
-    fun choosePane(pane: String, fromChat: Boolean = chatNow()) {
+    fun choosePane(pane: String) {
         readHere(pane)
-        if (movesDesktop(pane, fromChat)) connection.focusPane(pane)
+        connection.focusPane(pane)
     }
 
-    /** A choice of [tab]: from Chat, a pane read in Chat is read here only; otherwise Herdr focuses the tab and picks its pane. */
+    /** A tab choice opens and focuses the exact pane remembered on this phone. */
     fun chooseTab(tab: String) {
         choices++
         val shown = view ?: return
         val pane = paneForTab(shown, tab, lastRead)
-        if (pane != null && !movesDesktop(pane)) {
-            readHere(pane)
+        if (pane != null) {
+            choosePane(pane)
         } else {
             pendingTab = tab
             connection.focusTab(tab)
@@ -684,13 +674,34 @@ fun SessionScreen(
         choices++
         val shown = view ?: return
         val pane = paneForWorkspace(shown, workspace, lastRead)
-        if (pane != null && !movesDesktop(pane)) {
-            readHere(pane)
+        if (pane != null) {
+            choosePane(pane)
         } else {
             pendingTab = shown.workspaces.firstOrNull { it.id == workspace }?.activeTab
             connection.focusWorkspace(workspace)
         }
     }
+    fun stepTab(step: Int) {
+        val shown = connection.view.value ?: return
+        if (shown.boot != view?.boot) return
+        val available = workspace?.id?.let(shown::tabsOf).orEmpty()
+        val index = available.indexOfFirst { it.id == tab?.id }
+        if (index >= 0) available.getOrNull(index + step)?.let { chooseTab(it.id) }
+    }
+
+    val navigationTarget = remember(node.id, node.session, view?.boot, workspace?.id, tab?.id, focusedPane, chatMode) { Any() }
+    val navigationEnabled = settings.headerGestures && state is Connection.State.Connected && !closed &&
+        pendingTab == null && terminalOpening == null
+    val chatSwipes = if (navigationEnabled) Modifier.headerSwipes(
+        enabled = true, target = navigationTarget, horizontalOnly = true,
+    ) { swipe ->
+        when (swipe) {
+            HeaderSwipe.Left -> stepTab(1)
+            HeaderSwipe.Right -> stepTab(-1)
+            else -> Unit
+        }
+    } else Modifier
+
     // A Terminal tab or workspace choice lands where Herdr puts the focus: that pane is then the one read here.
     LaunchedEffect(pendingTab, desktopPane) {
         val wanted = pendingTab ?: return@LaunchedEffect
@@ -711,11 +722,10 @@ fun SessionScreen(
             createdTab = null
         }
     }
-    // A notification, deep link or Agents row: that pane, read here in Chat; only Terminal focuses it on the desktop.
-    // It arrives rather than being chosen from the screen shown, so only the pane's own mode decides.
+    // An arriving notification/deep link may be read without moving the host; an explicit in-app choice focuses it.
     val linked = view?.boot?.takeIf { focusPane != null && state is Connection.State.Connected && view?.panes?.any { it.id == focusPane } == true }
     LaunchedEffect(focusPane, linked) {
-        if (linked != null && focusPane != null) choosePane(focusPane, fromChat = true)
+        if (linked != null && focusPane != null) readHere(focusPane)
     }
     fun showChat(on: Boolean, pane: String? = chatPane) {
         pane ?: return
@@ -853,7 +863,7 @@ fun SessionScreen(
         app.settings.update { it.copy(sidebarOpen = !it.sidebarOpen) }
     }
 
-    /** Goes where the user tapped, and remembers it as recent. In Chat that moves only what is read here (CT-1). */
+    /** Goes where the user tapped, focuses it on Herdr, and remembers it as recent. */
     fun go(target: SwitchTarget) {
         when (target) {
             is SwitchTarget.TabRow -> chooseTab(target.tab.id)
@@ -1043,7 +1053,7 @@ fun SessionScreen(
                                 val readingHereLabel = stringResource(R.string.chat_reading_here)
                                 val onDesktopLabel = stringResource(R.string.chat_on_desktop)
                                 val tabTitle: (Tab) -> String = { t -> view?.tabTitle(t.id) ?: readableTitle(t.label) ?: t.number.toString() }
-                                // Only where it has room: a short window's merged row, and the wide layout.
+                                // Every phone orientation keeps direct tab navigation visible.
                                 val tabRow = @Composable {
                                     if (tabs.isNotEmpty()) {
                                         TabRow(
@@ -1121,22 +1131,13 @@ fun SessionScreen(
                                 ).joinToString(", ").ifEmpty { null }
                                 // The desktop's tab name alone: the monitor glyph beside it says "desktop".
                                 val desktopText = desktopOther?.let { view?.paneTabTitle(it) }
-                                // A changed destination or mode cancels a finger already down; never retarget its release.
-                                val gestureTarget = remember(node.id, node.session, view?.boot, workspace?.id, tab?.id, focusedPane, chatMode) { Any() }
                                 val headerGestures = Modifier.headerSwipes(
-                                    enabled = settings.headerGestures && state is Connection.State.Connected && !closed && pendingTab == null && terminalOpening == null,
-                                    target = gestureTarget,
+                                    enabled = navigationEnabled,
+                                    target = navigationTarget,
                                 ) { swipe ->
                                     when (swipe) {
                                         HeaderSwipe.Left, HeaderSwipe.Right -> {
-                                            val current = tab?.id
-                                            val shown = connection.view.value
-                                            if (shown != null && shown.boot == view?.boot && current != null) {
-                                                val available = workspace?.id?.let(shown::tabsOf).orEmpty()
-                                                val index = available.indexOfFirst { it.id == current }
-                                                val step = if (swipe == HeaderSwipe.Left) 1 else -1
-                                                if (index >= 0) available.getOrNull(index + step)?.let { chooseTab(it.id) }
-                                            }
+                                            stepTab(if (swipe == HeaderSwipe.Left) 1 else -1)
                                         }
                                         HeaderSwipe.Down -> if (wide) {
                                             app.settings.update { it.copy(sidebarOpen = true) }
@@ -1224,9 +1225,8 @@ fun SessionScreen(
                                             }
                                         }
                                     }
-                                    // A phone has no strip: the place button and the Tabs sheet are the ways to move.
-                                    // The strip stacks under the header in the Column, outside the measuring Box.
-                                    if (!short && wide) tabRow()
+                                    // Keep the strip below the header on portrait phones too.
+                                    if (!short) tabRow()
                                 }
                                 val shown = view
                                 if (paneBar && shown != null && tab != null) {
@@ -1428,7 +1428,7 @@ fun SessionScreen(
                                             }
                                         }
                                     } else {
-                                        Modifier
+                                        chatSwipes
                                     },
                                     // The tab's readable title (Titles.kt), never a pane ID.
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },

@@ -350,17 +350,17 @@ Switcher:
   - Backward scroll is unchanged.
   - Panes whose program reads the mouse or uses the alternate screen get
     every step, as do shells and an open popup.
-- **Header swipes.** Only the workspace/tab title button recognises these
+- **Navigation swipes.** The workspace/tab title button and Chat content recognise
   optional, default-on shortcuts; Settings › Layout › Gestures disables them.
   Left selects the next tab and right the previous one in the current
-  workspace, stopping at either end. Down opens Tabs on a phone or reveals
-  the sidebar on a wide layout; up hides the keyboard without clearing focus
+  workspace, stopping at either end. On the title only, down opens Tabs or
+  reveals the sidebar on a wide layout; up hides the keyboard without clearing focus
   or the draft. The direction is physical, not reversed by the locale.
-  Tab changes use the existing button actions: Chat-to-Chat reading stays
-  local, while opening Terminal can change Herdr's shared focus.
-  The content and sideways-scrolling tab strip never acquire navigation
-  gestures; text selection, terminal pinch and Android's edge Back remain
-  unchanged. Tap still opens Tabs and long press opens Rename / Close.
+  Explicit tab changes focus the chosen pane on Herdr in the same action.
+  Chat content claims horizontal swipes only; vertical scrolling, long-press
+  selection and unclaimed multi-touch remain with the content. Terminal
+  content and the sideways-scrolling tab strip keep their own gestures.
+  Title tap still opens Tabs and long press opens Rename / Close.
   No gesture sends, inserts, stops an agent or closes a tab. A swipe acts
   once on release, after at least 24 dp (and touch slop) on a clearly
   dominant axis. A diagonal, second finger, cancellation or destination
@@ -608,13 +608,13 @@ Switcher:
 
 Herdr has one shared focus per session: the pane the desktop and the
 Terminal view show. Chat keeps its own target, the pane **read here**
-(`ReadingTarget` in `ui/session/ChatTarget.kt`), so reading on the phone
-never moves the desktop.
+(`ReadingTarget` in `ui/session/ChatTarget.kt`), so later desktop changes do
+not pull the phone away from its conversation.
 
 - **Only a choice on the phone sets it:** a tab, a pane, a switcher row, an
   Agents row, a banner, a notification, or a tap on a pane in the terminal.
-  A desktop focus change never moves it. Choosing a pane in Chat asks Herdr
-  to focus, zoom or resize nothing.
+  A desktop focus change never moves it. Explicit pane, tab and workspace
+  choices also focus that exact destination on Herdr, without a second Show.
 - **Adopted once.** On the first view of a daemon run it takes the pane a
   notification or Agents row opened, else the desktop's pane, read once and
   not followed. A new run drops it, because pane IDs are unique only within
@@ -637,8 +637,8 @@ never moves the desktop.
   Send is refused ("Not sent: Send types into ‹pane›'s terminal, and that
   terminal can't be checked from here right now. Your text is kept."). The
   notice offers Insert without Enter where Insert's own check passes, and
-  **Show ‹pane› (moves the desktop)**, the only action that moves the
-  desktop. Nothing is resent.
+  **Show ‹pane› (moves the desktop)** remains a recovery action when focus
+  changed elsewhere or a notification was read locally. Nothing is resent.
 - **A closed pane.** If the read pane closes, Chat says "‹pane› has closed.
   Your draft is kept." and never falls back to the desktop's pane by itself.
 

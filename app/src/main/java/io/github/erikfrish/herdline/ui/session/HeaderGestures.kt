@@ -34,6 +34,8 @@ private val SwipeTravel = 24.dp
  * / [Right] change tab, [HeaderSwipe.Down] opens Tabs, [HeaderSwipe.Up] hides
  * the keyboard. This sits on the button's modifier before `combinedClickable`,
  * which keeps its tap (Tabs) and long press (Rename / Close) untouched.
+ * With [horizontalOnly], only horizontal swipes are claimed; vertical drags,
+ * long presses and unclaimed multi-touch remain with Chat's own handlers.
  *
  * A swipe fires exactly once, on release, and only then. The click of a
  * claimed swipe is cancelled by consuming movement changes from the claim on,
@@ -55,11 +57,13 @@ private val SwipeTravel = 24.dp
 internal fun Modifier.headerSwipes(
     enabled: Boolean,
     target: Any?,
+    horizontalOnly: Boolean = false,
     onSwipe: (HeaderSwipe) -> Unit,
 ): Modifier = composed {
     val enabledNow by rememberUpdatedState(enabled)
     val targetNow by rememberUpdatedState(target)
     val onSwipeNow by rememberUpdatedState(onSwipe)
+    val horizontalOnlyNow by rememberUpdatedState(horizontalOnly)
     Modifier.pointerInput(Unit) {
         val travel = maxOf(SwipeTravel.toPx(), viewConfiguration.touchSlop)
         val longPressMs = viewConfiguration.longPressTimeoutMillis
@@ -82,7 +86,7 @@ internal fun Modifier.headerSwipes(
             var dead = false
             if (event.changes.size > 1) {
                 dead = true // fingers landing together: multi-touch, no recognition
-                swallow = true
+                swallow = !horizontalOnlyNow
             }
             if (swallow) event.changes.forEach { it.consume() }
 
@@ -91,7 +95,7 @@ internal fun Modifier.headerSwipes(
                 val change = event.changes.firstOrNull { it.id == id }
                 if (event.changes.size > 1) {
                     dead = true // multi-touch ends recognition for good
-                    swallow = true
+                    swallow = swallow || !horizontalOnlyNow
                 }
                 if (change == null || change.isConsumed) dead = true
                 if (armed && (!enabledNow || targetNow !== captured)) {
@@ -101,16 +105,19 @@ internal fun Modifier.headerSwipes(
                 if (!dead && navigate == null && change != null) {
                     val dx = change.position.x - startX
                     val dy = change.position.y - startY
-                    if (maxOf(abs(dx), abs(dy)) >= travel) {
+                    if (horizontalOnlyNow && abs(dy) >= viewConfiguration.touchSlop && abs(dy) >= abs(dx)) {
+                        // Chat's vertical list and text selection keep their gesture untouched.
+                        dead = true
+                    } else if (maxOf(abs(dx), abs(dy)) >= travel) {
                         if (change.uptimeMillis - startTime >= longPressMs) {
-                            swallow = true // the long press's tail belongs to the menu, its end is no swipe
+                            swallow = !horizontalOnlyNow // long press belongs to text selection in Chat
                             dead = true
                         } else {
-                            swallow = true // a failed swipe never clicks either
+                            swallow = !horizontalOnlyNow || (armed && abs(dx) >= 2 * abs(dy))
                             navigate = when {
                                 !armed -> { dead = true; null }
                                 abs(dx) >= 2 * abs(dy) -> if (dx > 0) HeaderSwipe.Right else HeaderSwipe.Left
-                                abs(dy) >= 2 * abs(dx) -> if (dy > 0) HeaderSwipe.Down else HeaderSwipe.Up
+                                !horizontalOnlyNow && abs(dy) >= 2 * abs(dx) -> if (dy > 0) HeaderSwipe.Down else HeaderSwipe.Up
                                 else -> { dead = true; null }
                             }
                         }
