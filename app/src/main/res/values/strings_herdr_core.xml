@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- herdr-core: why an action is off, by its frozen native reason code. -->
+    <string name="hc_reason_takes_size">Typing here needs interactive control: Enter interactive control first.</string>
+    <string name="hc_reason_core_managed">herdr-core is installed and updated on the host by you; Herdline never does it.</string>
+    <string name="hc_reason_identity_unknown">herdr-core does not know which agent session runs in this pane, so Chat cannot read or send to it. Terminal still works.</string>
+    <string name="hc_reason_mod_panel">This pane is a desktop mod panel. Only herdr-app on the desktop can show it; it has no terminal for the phone.</string>
+    <string name="hc_reason_terminal_lost">This pane’s terminal is gone on the host. Close the pane, or wait for herdr-core to restart its program.</string>
+    <string name="hc_reason_unsupported_backend">Not supported by this node’s server type, so nothing was done.</string>
+    <string name="hc_reason_invalid_session">herdr-core refuses this node’s hc session name. Edit the node and choose another, or leave it empty for the default session.</string>
+    <string name="hc_reason_core_restarted">herdr-core restarted on the host. Panes were read afresh; the phone’s own choices of pane were dropped.</string>
+    <string name="hc_reason_conflict">The workspace changed on the host at the same time, so this change was not made. Try again.</string>
+    <string name="hc_reason_uncertain">The link dropped before herdr-core answered: this change may or may not have been made. Check before trying again.</string>
+    <string name="hc_reason_unconfirmed">The host did not confirm this in time: it may or may not have happened. Check before trying again.</string>
+    <string name="hc_reason_request_failed">The host answered that this request failed, so it was not done.</string>
+    <string name="hc_reason_bad_reply">The host’s answer could not be read, so this is not counted as done. Check before trying again.</string>
+
+    <!-- herdr-core connection states. -->
+    <string name="host_state_no_core">herdr-core not found</string>
+    <string name="hc_missing_title">No herdr-core on the host</string>
+    <string name="hc_missing_text">No herdr-core answered on this host for this node’s hc session.\n\nInstall herdr-core on the host yourself, then tap Reconnect. Herdline does not install it.</string>
+    <string name="hc_incompatible_title">Update herdr-core on the host</string>
+    <string name="hc_incompatible_text">herdr-core on this host is %1$s, which Herdline cannot use.\n\nUpdate herdr-core on the host yourself, then tap Reconnect. Herdline does not update it.</string>
+
+    <!-- herdr-core panes with no terminal. -->
+    <string name="hc_mod_panel_title">Desktop mod panel</string>
+    <string name="hc_terminal_lost_title">Terminal lost</string>
+
+    <!-- herdr-core interactive control. -->
+    <string name="hc_observing">Watching. Typing and resizing are off.</string>
+    <string name="hc_interactive_lost">Interactive control was taken back. Typing is off.</string>
+    <string name="hc_interactive_on">Interactive: this phone sets the pane’s size.</string>
+    <string name="hc_interactive_enter">Enter interactive control</string>
+    <string name="hc_interactive_leave">Leave control</string>
+    <string name="hc_interactive_dialog_title">Take interactive control?</string>
+    <string name="hc_interactive_dialog_text">Typing needs this phone to become the terminal’s size owner in herdr-core. The pane on the desktop then resizes to fit this phone until you leave control, or another screen takes it.</string>
+    <string name="hc_interactive_failed">Interactive control was not taken: %1$s</string>
+
+    <!-- herdr-core agent identity and the opt-in Herdline hook. -->
+    <string name="hc_identity_title">Chat needs the Herdline hook</string>
+    <string name="hc_chat_off_title">Chat is off for this pane</string>
+    <string name="hc_identity_setup">Chat turns on once the agent itself reports its session to herdr-core, through the opt-in Herdline hook for OMP or Pi on the host. Nothing is installed or reloaded until you set it up there; then start the agent again in this pane. The hook is:</string>
+    <string name="hc_identity_close">Close</string>
+    <string name="hc_identity_terminal">Open Terminal</string>
+</resources>

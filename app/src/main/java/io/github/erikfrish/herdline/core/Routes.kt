@@ -82,6 +82,8 @@ object Routes {
         }
         return JSONObject()
             .put("session", target.session)
+            // Only the destination's choice matters; jump hops are plain SSH.
+            .put("backend", target.backendKey)
             .put("hops", hops)
             .put("keepalive_secs", target.keepAlive)
             .put("cols", grid[0])

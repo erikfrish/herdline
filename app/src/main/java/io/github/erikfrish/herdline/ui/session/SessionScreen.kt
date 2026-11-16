@@ -184,6 +184,7 @@ import io.github.erikfrish.herdline.data.composerDestination
 import io.github.erikfrish.herdline.data.ModeKey
 import io.github.erikfrish.herdline.data.PaneModes
 import io.github.erikfrish.herdline.data.showsChat
+import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.service.AgentNotifications
 import io.github.erikfrish.herdline.service.AlertKey
@@ -322,6 +323,17 @@ fun SessionScreen(
     var banners by remember { mutableStateOf(BannerQueue()) }
     // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
+    // A herdr-core agent pane Chat cannot read yet (identity_unknown): why, and the hook that turns Chat on.
+    var identityCard by remember { mutableStateOf<String?>(null) }
+    // herdr-core interactive control on this connection: the pane asked about, each pane's last seen
+    // interactive flag (to tell a loss of control from never having had it), the panes that lost it.
+    var interactAsk by remember(connection) { mutableStateOf<String?>(null) }
+    var interactBusy by remember(connection) { mutableStateOf(false) }
+    val interactSeen = remember(connection) { HashMap<String, Boolean?>() }
+    val interactLost = remember(connection) { mutableStateMapOf<String, Boolean>() }
+    // Panes whose disclosure the user agreed to on this connection, and those whose Leave is under way.
+    val interactAgreed = remember(connection) { HashMap<String, Boolean>() }
+    val interactLeaving = remember(connection) { HashMap<String, Boolean>() }
     var noteCount by remember { mutableLongStateOf(0L) }
     // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
     val bareBanners = remember { HashMap<Long, Long>() }
@@ -471,7 +483,24 @@ fun SessionScreen(
                         feedbackView.isAttachedToWindow && feedbackView.hasWindowFocus() && !LockGate.isDeviceLocked(context)
                     if (wanted) feedbackView.performHapticFeedback(BellHaptic)
                 }
-                is Connection.Event.Problem -> banners = banners.add(AgentNote(event.message, null, NoteKind.Problem, null, ++noteCount))
+                is Connection.Event.Problem -> banners = banners.add(AgentNote(coreReasonText(context, event.message), null, NoteKind.Problem, null, ++noteCount))
+                // Terminal ids may name other terminals now: what this phone chose by id goes.
+                is Connection.Event.CoreRestarted -> {
+                    readingPane = null
+                    readingBoot = null
+                    lastRead.clear()
+                    pendingTab = null
+                    terminalOpening = null
+                    terminalLate = null
+                    terminalFailed = null
+                    harnessCard = null
+                    identityCard = null
+                    interactAsk = null
+                    interactSeen.clear()
+                    interactLost.clear()
+                    interactAgreed.clear()
+                    interactLeaving.clear()
+                }
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
                     val key = AlertKey(node.id, event.pane)
@@ -558,9 +587,9 @@ fun SessionScreen(
     fun chatFor(pane: String?, stored: Map<ModeKey, ModeChoice> = modeChoices): Boolean {
         val shown = view ?: return false
         val agent = pane?.let { shown.agentIn(it)?.agent }
-        return pane != null && showsChat(stored, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = isChatAgent(agent))
+        return pane != null && showsChat(stored, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = chatReadable(shown, pane))
     }
-    val chatPane = reading?.pane?.takeIf { isChatAgent(view?.agentIn(it)?.agent) }
+    val chatPane = reading?.pane?.takeIf { chatReadable(view, it) }
     // A choice holds for one daemon run and program: a restarted daemon or a new
     // program in a pane forgets it, so a mode never carries over to a replaced process.
     LaunchedEffect(view) {
@@ -632,6 +661,59 @@ fun SessionScreen(
     val currentProgram = focusedPane?.let { view?.agentIn(it) }?.agent
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
+    }
+    // herdr-core: an agent pane Chat cannot read says why, from each new view, rather than sitting in Terminal
+    // silently; it goes once the view says Chat reads it, on ✕ (for this pane on this connection) or a pane change.
+    val focusedRecord = focusedPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
+    val chatReason = focusedRecord?.chat?.takeIf { isChatAgent(currentProgram) }
+    val identityDismissed = remember(connection) { mutableStateMapOf<String, Boolean>() }
+    LaunchedEffect(focusedPane, chatReason) {
+        identityCard = focusedPane?.takeIf { chatReason != null && identityDismissed[it] != true }
+    }
+    // The pane Terminal shows, as herdr-core reports it: no terminal at all, or watched without control.
+    val desktopRecord = desktopPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
+    val paneUnsupported = desktopRecord?.unsupported.takeIf { !chatMode }
+    // Absent on Herdr panes, which always take input; only herdr-core terminals have the bar.
+    val paneInteractive = desktopRecord?.interactive.takeIf { paneUnsupported == null }
+    // Control lost is only a true that became false without Leave; a reconnect starts new maps, so it is never a loss.
+    LaunchedEffect(view) {
+        view?.panes?.forEach { pane ->
+            if (controlLost(interactSeen[pane.id], pane.interactive)) {
+                if (interactLeaving.remove(pane.id) == null) {
+                    // Taken away: the next Enter discloses again.
+                    interactLost[pane.id] = true
+                    interactAgreed.remove(pane.id)
+                }
+            }
+            if (pane.interactive == true) interactLost.remove(pane.id)
+            interactSeen[pane.id] = pane.interactive
+        }
+    }
+    // Watching takes no typing: the keyboard goes, so nothing typed is silently dropped.
+    LaunchedEffect(paneInteractive, paneUnsupported, terminal) {
+        if (paneInteractive == false || paneUnsupported != null) {
+            terminal?.hideKeyboard()
+            rawKeys = false
+        }
+    }
+
+    /** Asks herdr-core for [pane]'s control, [on] or off; on only after the user agreed, off only on Leave. */
+    fun interact(pane: String, on: Boolean) {
+        interactBusy = true
+        if (on) interactAgreed[pane] = true else interactLeaving[pane] = true
+        scope.launch {
+            val refused = connection.interact(pane, on)
+            interactBusy = false
+            if (refused != null) {
+                if (!on) interactLeaving.remove(pane)
+                snackbar.showSnackbar(context.getString(R.string.hc_interactive_failed, coreReasonText(context, refused)))
+            }
+        }
+    }
+
+    /** Enter interactive control: disclosed once per pane per connection, again only after control was lost. */
+    fun enterInteractive(pane: String) {
+        if (interactAgreed[pane] == true) interact(pane, true) else interactAsk = pane
     }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
@@ -834,13 +916,18 @@ fun SessionScreen(
     /** Chat reads a supported agent; Terminal always types directly in its own editor. */
     fun chooseMode(chat: Boolean) {
         if (chat) choices++
-        val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && isChatAgent(view?.agentIn(it)?.agent) }
+        val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && chatReadable(view, it) }
         when {
             desktopAgent != null -> {
                 readHere(desktopAgent)
                 showChat(true, desktopAgent)
             }
             chat == chatWanted -> Unit
+            // herdr-core names why Chat cannot read this agent: that, and the way to turn it on.
+            chat && chatPane == null && chatReason != null -> focusedPane?.let {
+                identityDismissed.remove(it)
+                identityCard = it
+            }
             chat && chatPane == null -> {
                 // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
                 harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
@@ -1461,7 +1548,7 @@ fun SessionScreen(
                                     stringResource(R.string.outage_reconnecting)
                                 },
                                 detail = if (stripLost != null) {
-                                    stringResource(R.string.outage_not_connected, stripLost.reason)
+                                    stringResource(R.string.outage_not_connected, coreReasonText(stripLost.reason))
                                 } else {
                                     stringResource(R.string.outage_last_live, outageTime(stripSince))
                                 },
@@ -1494,6 +1581,15 @@ fun SessionScreen(
                                 }
                             }
                         }
+                        // herdr-core: a pane with no terminal (a desktop mod panel, a lost terminal) says so, never blank.
+                        paneUnsupported?.let { UnsupportedPaneCard(it, accent) }
+                        // Nothing goes to herdr-core until the user has read what control does and agreed.
+                        interactAsk?.let { pane ->
+                            InteractiveDialog(
+                                onConfirm = { interactAsk = null; interact(pane, true) },
+                                onDismiss = { interactAsk = null },
+                            )
+                        }
                         if (!lostLive) {
                             // A password host signs in with its saved password, which never enters the
                             // attempt's secrets: its rejection is the password's even when none was typed.
@@ -1515,6 +1611,7 @@ fun SessionScreen(
                                     retry()
                                 },
                                 onSetup = ::setupHerdr,
+                                core = node.backend == Backend.HerdrCore,
                                 onLeave = { app.disconnect(node.id); onLeave() },
                             )
                         }
@@ -1538,6 +1635,16 @@ fun SessionScreen(
                                 )
                             }
                         }
+                        identityCard?.takeIf { it == focusedPane }?.let { pane ->
+                            chatReason?.let { reason ->
+                                IdentityCard(
+                                    reason = reason,
+                                    accent = accent,
+                                    onTerminal = { identityDismissed[pane] = true; identityCard = null; openTerminal() },
+                                    onClose = { identityDismissed[pane] = true; identityCard = null },
+                                )
+                            }
+                        }
                         AgentBannerSlot(
                             note,
                             openable = notePane != null && notePane != viewedPane,
@@ -1556,7 +1663,21 @@ fun SessionScreen(
                     if (!chatMode) {
                         // Direct terminal input and autocomplete keys, never a Chat field.
                         Column(Modifier.navigationBarsPadding()) {
-                            if (settings.showExtraKeys) {
+                            // herdr-core: watching or holding this terminal's control, and the explicit way in and out.
+                            if (paneInteractive != null && state is Connection.State.Connected) {
+                                desktopPane?.let { pane ->
+                                    InteractiveBar(
+                                        interactive = paneInteractive,
+                                        lost = interactLost[pane] == true,
+                                        busy = interactBusy,
+                                        accent = accent,
+                                        onEnter = { enterInteractive(pane) },
+                                        onLeave = { interact(pane, false) },
+                                    )
+                                }
+                            }
+                            // Keys only where they go in: never under a watched or terminal-less herdr-core pane.
+                            if (state is Connection.State.Connected && settings.showExtraKeys && paneInteractive != false && paneUnsupported == null) {
                                 ExtraKeysRow(
                                     keys = remember(settings.extraKeys) { extraKeysFrom(settings.extraKeys) },
                                     latched = latched,
@@ -2318,18 +2439,22 @@ private fun StateCard(
     onSignIn: () -> Unit,
     onTrust: (Connection.State.UntrustedHostKey) -> Unit,
     onSetup: () -> Unit,
+    /** The node runs herdr-core: the user installs and updates it on the host; no Install or Update here. */
+    core: Boolean,
     onLeave: () -> Unit,
 ) {
     val (title, body) = when (state) {
         is Connection.State.Connecting, is Connection.State.Connected -> return
-        is Connection.State.Disconnected -> stringResource(R.string.disconnected) to state.reason
+        is Connection.State.Disconnected -> stringResource(R.string.disconnected) to coreReasonText(state.reason)
         is Connection.State.AuthRejected -> stringResource(R.string.sign_in_rejected) to stringResource(
             if (passwordUsed) R.string.password_rejected_text else R.string.key_rejected_text,
             state.host,
         )
         is Connection.State.Incompatible -> {
             val version = state.serverVersion ?: stringResource(R.string.unknown_version)
-            if (state.daemonOutdated) {
+            if (state.daemonOutdated && core) {
+                stringResource(R.string.hc_incompatible_title) to stringResource(R.string.hc_incompatible_text, version)
+            } else if (state.daemonOutdated) {
                 stringResource(R.string.incompatible_daemon_title) to
                     stringResource(R.string.incompatible_daemon_text, version, state.minVersion)
             } else {
@@ -2338,6 +2463,7 @@ private fun StateCard(
         }
         is Connection.State.Failed -> stringResource(R.string.could_not_connect) to state.reason
         is Connection.State.HerdrMissing -> stringResource(R.string.herdr_missing_title) to stringResource(R.string.herdr_missing_text)
+        is Connection.State.CoreMissing -> stringResource(R.string.hc_missing_title) to stringResource(R.string.hc_missing_text)
         is Connection.State.SettingUp -> stringResource(R.string.herdr_setup_running_title) to stringResource(R.string.herdr_setup_running_text)
         is Connection.State.SetupFailed -> stringResource(R.string.herdr_setup_failed_title) to stringResource(
             R.string.herdr_setup_failed_text,
@@ -2355,7 +2481,7 @@ private fun StateCard(
     val (icon, tone) = when (state) {
         is Connection.State.UntrustedHostKey -> Icons.Default.Lock to if (warning) MaterialTheme.colorScheme.error else accent
         is Connection.State.AuthRejected -> Icons.Default.Lock to MaterialTheme.colorScheme.error
-        is Connection.State.Incompatible, is Connection.State.HerdrMissing, is Connection.State.SetupFailed ->
+        is Connection.State.Incompatible, is Connection.State.HerdrMissing, is Connection.State.CoreMissing, is Connection.State.SetupFailed ->
             Icons.Default.Warning to AgentStatus.Blocked.color()
         is Connection.State.SettingUp -> Icons.Default.Refresh to accent
         else -> Icons.Default.Refresh to MaterialTheme.colorScheme.error
@@ -2398,8 +2524,10 @@ private fun StateCard(
                     modifier = Modifier.testTag("session:setup_output"),
                 )
             }
-            // Installing or updating Herdr is offered only where it is the fix, and runs only on this tap.
+            // Installing or updating Herdr is offered only where it is the fix, and runs only on this tap;
+            // never for herdr-core, which the user keeps on the host (capability herdr.setup: core_managed).
             val setupLabel = when {
+                core -> null
                 state is Connection.State.Incompatible && state.daemonOutdated -> R.string.update_herdr
                 state is Connection.State.HerdrMissing -> R.string.install_herdr
                 state is Connection.State.SetupFailed -> R.string.try_again

@@ -52,13 +52,25 @@ const STOP_READS: usize = 3;
 
 /// Numbers each link, so a receipt answered on one never releases a
 /// delivery queued on another that reused its request ID.
-static LINKS: AtomicU64 = AtomicU64::new(1);
+pub(crate) static LINKS: AtomicU64 = AtomicU64::new(1);
+
+/// Which daemon a connection speaks to on the host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// Herdr's own server socket, through `herdr bridge`.
+    Herdr,
+    /// `herdr-core connect`, sharing herdr-app's document.
+    HerdrCore,
+    /// A backend this build does not know: refused at connect.
+    Unsupported,
+}
 
 #[derive(Debug)]
 pub struct Config {
     pub route: Route,
     pub options: ConnectOptions,
     pub theme: Theme,
+    pub backend: Backend,
 }
 
 /// Something the UI should react to, as one JSON object.
@@ -66,6 +78,10 @@ pub struct Config {
 pub enum UiEvent {
     Connected {
         server_version: String,
+        /// `herdr` or `herdr_core`.
+        backend: &'static str,
+        /// What this backend can do: see [`crate::herdr_core::capabilities`].
+        capabilities: Value,
     },
     /// A new shell view is waiting in the mailbox.
     Snapshot,
@@ -110,6 +126,8 @@ pub enum UiEvent {
     /// The host closed the bridge before any Herdr answered: none is
     /// installed where the bridge looks, or none could report its status.
     HerdrMissing,
+    /// The host has no `herdr-core` where the bridge looks.
+    CoreMissing,
     Disconnected {
         reason: String,
     },
@@ -130,7 +148,7 @@ impl From<VersionMismatch> for UiEvent {
 /// `io::Error`, so it is recognised here before being wrapped.
 /// The connector failures the UI answers with its own prompt, not a plain
 /// disconnect: a host key to trust, a sign-in to retry, or Herdr to install.
-fn connector_refusal(error: &Error) -> Option<UiEvent> {
+pub(crate) fn connector_refusal(error: &Error) -> Option<UiEvent> {
     match error {
         Error::UntrustedHostKey {
             hop,
@@ -162,9 +180,14 @@ fn connector_mismatch(error: &Error) -> Option<VersionMismatch> {
 impl UiEvent {
     pub fn to_json(&self) -> String {
         match self {
-            Self::Connected { server_version } => {
-                json!({"type": "connected", "server_version": server_version})
-            }
+            Self::Connected {
+                server_version,
+                backend,
+                capabilities,
+            } => json!({
+                "type": "connected", "server_version": server_version,
+                "backend": backend, "capabilities": capabilities,
+            }),
             Self::Snapshot => json!({"type": "snapshot"}),
             Self::Frame => json!({"type": "frame"}),
             Self::Response {
@@ -209,6 +232,7 @@ impl UiEvent {
                 json!({"type": "auth_rejected", "hop": hop, "host": host})
             }
             Self::HerdrMissing => json!({"type": "herdr_missing"}),
+            Self::CoreMissing => json!({"type": "core_missing"}),
             Self::Disconnected { reason } => json!({"type": "disconnected", "reason": reason}),
         }
         .to_string()
@@ -274,16 +298,16 @@ enum Control {
     Theme(Theme),
 }
 
-pub struct Session {
+struct Herdr {
     handle: ClientHandle,
     shared: Arc<Shared>,
     events: Receiver<UiEvent>,
     control: Sender<Control>,
 }
 
-impl std::fmt::Debug for Session {
+impl std::fmt::Debug for Herdr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Session").finish_non_exhaustive()
+        f.debug_struct("Herdr").finish_non_exhaustive()
     }
 }
 
@@ -295,7 +319,7 @@ impl std::fmt::Debug for Control {
     }
 }
 
-impl Session {
+impl Herdr {
     /// Start connecting. Returns at once; progress and failure arrive as
     /// [`UiEvent`]s.
     pub fn connect(config: Config) -> Result<Self> {
@@ -323,6 +347,7 @@ impl Session {
             route,
             options,
             theme,
+            ..
         } = config;
         let connector_shared = shared.clone();
         // The connector, not the target, decides how to reach the daemon;
@@ -402,7 +427,11 @@ impl Session {
     pub fn transcript(&self, request: &str) -> Result<String> {
         let exec = lock(&self.shared.exec).clone().ok_or(Error::NotReady)?;
         let request = serde_json::from_str(request)?;
-        let response = transcript::fetch(&exec, &self.shared.session, &request)?;
+        let response = transcript::fetch(
+            &exec,
+            transcript::BackendSource::Herdr(&self.shared.session),
+            &request,
+        )?;
         Ok(serde_json::to_string(&response)?)
     }
 
@@ -435,7 +464,7 @@ impl Session {
             return Ok(self.stop_pty(&exec, &request));
         }
         if request.instance.agent == "omp" {
-            ingress::run(&exec, &self.shared.session, request)
+            ingress::run(&exec, transcript::BackendSource::Herdr(&self.shared.session), request)
         } else {
             crate::agent_chat::run(&exec, &self.shared.session, request)
         }
@@ -473,7 +502,7 @@ impl Session {
                 read,
                 media: None,
             };
-            match transcript::fetch(exec, &self.shared.session, &request) {
+            match transcript::fetch(exec, transcript::BackendSource::Herdr(&self.shared.session), &request) {
                 Ok(transcript::Answer::Page(page)) if page.identity == *instance => Some(page),
                 Ok(_) => None,
                 Err(error) => {
@@ -1040,9 +1069,273 @@ impl Session {
     }
 }
 
-impl Drop for Session {
+impl Drop for Herdr {
     fn drop(&mut self) {
         self.handle.disconnect();
+    }
+}
+
+/// One connection as the Kotlin UI sees it, to whichever backend its
+/// config names.
+#[derive(Debug)]
+pub struct Session(Inner);
+
+#[derive(Debug)]
+enum Inner {
+    Herdr(Herdr),
+    Core(crate::herdr_core::Core),
+    /// Refused before connecting: only its queued events remain.
+    Closed(Receiver<UiEvent>),
+}
+
+/// What a connection refused before it started answers every call with.
+fn not_connected() -> Error {
+    Error::NotReady
+}
+
+impl Session {
+    /// Start connecting. Returns at once; progress and failure arrive as
+    /// [`UiEvent`]s.
+    pub fn connect(config: Config) -> Result<Self> {
+        Ok(Self(match config.backend {
+            Backend::Herdr => Inner::Herdr(Herdr::connect(config)?),
+            Backend::HerdrCore => {
+                let link = LINKS.fetch_add(1, Ordering::Relaxed);
+                Inner::Core(crate::herdr_core::Core::connect(config, link)?)
+            }
+            Backend::Unsupported => {
+                let (events, receiver) = bounded(1);
+                let _ = events.try_send(UiEvent::Disconnected {
+                    reason: "unsupported_backend".to_owned(),
+                });
+                Inner::Closed(receiver)
+            }
+        }))
+    }
+
+    pub fn next_event(&self, timeout: Duration) -> Option<UiEvent> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.next_event(timeout),
+            Inner::Core(core) => core.next_event(timeout),
+            Inner::Closed(events) => events.recv_timeout(timeout).ok(),
+        }
+    }
+
+    pub fn take_frame(&self) -> Option<Arc<RenderFrame>> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.take_frame(),
+            Inner::Core(core) => core.take_frame(),
+            Inner::Closed(_) => None,
+        }
+    }
+
+    pub fn take_view(&self) -> Option<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.take_view(),
+            Inner::Core(core) => core.take_view(),
+            Inner::Closed(_) => None,
+        }
+    }
+
+    pub fn text(&self, start: (u16, u16), end: (u16, u16)) -> String {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.text(start, end),
+            Inner::Core(core) => core.text(start, end),
+            Inner::Closed(_) => String::new(),
+        }
+    }
+
+    pub fn transcript(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.transcript(request),
+            Inner::Core(core) => core.transcript(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn ingress(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.ingress(request),
+            Inner::Core(core) => core.ingress(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn composer_instance(&self, pane: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.composer_instance(pane),
+            Inner::Core(core) => core.composer_instance(pane),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn key(
+        &self,
+        pane: Option<&str>,
+        code: i32,
+        meta: i32,
+        unicode: Option<char>,
+        repeat: bool,
+    ) -> Result<bool> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.key(pane, code, meta, unicode, repeat),
+            Inner::Core(core) => core.key(pane, code, meta, unicode, repeat),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn chord(&self, pane: Option<&str>, ch: char, meta: i32) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.chord(pane, ch, meta),
+            Inner::Core(core) => core.chord(pane, ch, meta),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn text_input(&self, pane: Option<&str>, text: &str) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.text_input(pane, text),
+            Inner::Core(core) => core.text_input(pane, text),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn paste(&self, pane: Option<&str>, text: &str) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.paste(pane, text),
+            Inner::Core(core) => core.paste(pane, text),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn composer_check(&self, pane: &str, viewport: Option<&str>) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.composer_check(pane, viewport),
+            Inner::Core(core) => core.composer_check(pane, viewport),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn composer_deliver(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.composer_deliver(request),
+            Inner::Core(core) => core.composer_deliver(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn attachment_begin(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.attachment_begin(request),
+            Inner::Core(core) => core.attachment_begin(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn attachment_discard(&self, attachment: &str) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.attachment_discard(attachment),
+            Inner::Core(core) => core.attachment_discard(attachment),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    /// Hold `target` until the user unlocks it; process-wide, any backend.
+    pub fn composer_hold(target: &str) -> Result<()> {
+        Herdr::composer_hold(target)
+    }
+
+    pub fn composer_unlock(target: &str) -> Result<()> {
+        Herdr::composer_unlock(target)
+    }
+
+    pub fn composer_steer(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.composer_steer(request),
+            Inner::Core(core) => core.composer_steer(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn composer_steer_enter(
+        &self,
+        target: &str,
+        receipt: &str,
+        viewport: Option<&str>,
+    ) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.composer_steer_enter(target, receipt, viewport),
+            Inner::Core(core) => core.composer_steer_enter(target, receipt, viewport),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn composer_steer_cancel(target: &str) -> Result<()> {
+        Herdr::composer_steer_cancel(target)
+    }
+
+    pub fn touch(&self, pane: &str, kind: Touch, column: u16, row: u16, lines: u16) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.touch(pane, kind, column, row, lines),
+            Inner::Core(core) => core.touch(pane, kind, column, row, lines),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn resize(&self, options: ConnectOptions) -> Result<()> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.resize(options),
+            Inner::Core(core) => core.resize(options),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn set_theme(&self, theme: Theme) {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.set_theme(theme),
+            Inner::Core(core) => core.set_theme(theme),
+            Inner::Closed(_) => {}
+        }
+    }
+
+    pub fn request(&self, method: &str, params: Value) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.request(method, params),
+            Inner::Core(core) => core.request(method, params),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn agent_launchers(&self) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.agent_launchers(),
+            Inner::Core(core) => core.agent_launchers(),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn start_agent(&self, request: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.start_agent(request),
+            Inner::Core(core) => core.start_agent(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn check_liveness(&self) {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.check_liveness(),
+            Inner::Core(core) => core.check_liveness(),
+            Inner::Closed(_) => {}
+        }
+    }
+
+    pub fn disconnect(&self) {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.disconnect(),
+            Inner::Core(core) => core.disconnect(),
+            Inner::Closed(_) => {}
+        }
     }
 }
 
@@ -1230,6 +1523,8 @@ impl Pump {
                     .find(|method| method.advertised_in(&welcome.methods));
                 self.shared.emit(UiEvent::Connected {
                     server_version: welcome.server_version.clone(),
+                    backend: "herdr",
+                    capabilities: crate::herdr_core::capabilities(false),
                 });
             }
             ClientEvent::Snapshot(snapshot) => {

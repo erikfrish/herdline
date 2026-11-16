@@ -9,4 +9,12 @@
     <string name="editor_address_port">端口请填在“端口”中。</string>
     <string name="editor_move_port">将 :%1$s 移到“端口”</string>
     <string name="editor_user_invalid">不能包含空格、@ 或 :。</string>
+    <string name="backend_label">服务端</string>
+    <string name="backend_herdr">Herdr</string>
+    <string name="backend_herdr_core">herdr-core</string>
+    <string name="backend_herdr_help">此主机上的经典 Herdr 守护进程。</string>
+    <string name="backend_herdr_core_help">与 herdr-app 共享的 herdr-core：相同的空间、标签页、终端和智能体。手机上的焦点仅在本机生效。不支持桌面模组。</string>
+    <string name="backend_unknown_help">此节点保存的服务端类型（%1$s）本应用无法识别。在你选择 Herdr 或 herdr-core 之前不会连接。</string>
+    <string name="hc_session">hc 会话</string>
+    <string name="hc_session_help">留空即 default。不能是 . 或 ..，不能包含控制字符或 / \\ : * ? \" &lt; &gt; |</string>
 </resources>

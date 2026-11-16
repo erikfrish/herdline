@@ -708,7 +708,7 @@ internal fun insertBlockRes(block: InsertBlock): Int = when (block) {
     InsertBlock.FilesNotReady -> R.string.composer_insert_files_not_ready
     InsertBlock.Unchecked -> R.string.composer_insert_unchecked
     InsertBlock.OffDesktop -> R.string.composer_insert_off_desktop
-    is InsertBlock.Refused -> reasonRes(block.reason ?: "")
+    is InsertBlock.Refused -> if (block.reason == "takes_size") R.string.hc_reason_takes_size else reasonRes(block.reason ?: "")
 }
 
 /**
@@ -1718,7 +1718,11 @@ private fun Editor(
     // Files hold the draft back until each is uploaded for this very target.
     val attachReady = attachState == AttachmentsState.None || attachState == AttachmentsState.Ready
     // Why Insert is off, named in the + menu; the desktop is never moved for it (TC-RCPT-4).
-    val insertBlocked = insertBlock(
+    val coreNeedsControl = connection.node.backend == io.github.erikfrish.herdline.data.Backend.HerdrCore &&
+        view?.panes?.firstOrNull { it.id == key.pane }?.interactive != true
+    val insertBlocked = if (coreNeedsControl && binding == Binding.Bound && !draft.blank && !draft.unsettled) {
+        InsertBlock.Refused("takes_size")
+    } else insertBlock(
         sending = sending || pending != null || steer.active,
         withdrawing = withdrawing != null,
         draft = draft,

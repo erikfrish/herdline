@@ -44,8 +44,9 @@ import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.data.AuthMethod
-import io.github.erikfrish.herdline.data.Keychain
+import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
+import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.ui.components.ColorPicker
 import io.github.erikfrish.herdline.ui.components.Group
 import io.github.erikfrish.herdline.ui.components.NodeAvatar
@@ -71,6 +72,8 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
     var port by rememberSaveable { mutableStateOf((initial?.port ?: 22).toString()) }
     var user by rememberSaveable { mutableStateOf(initial?.user ?: "") }
     var session by rememberSaveable { mutableStateOf(initial?.session ?: "default") }
+    // Null only for a saved key this app does not know: kept as saved until the user picks one.
+    var backend by rememberSaveable { mutableStateOf(if (initial == null) Backend.Herdr else initial.backend) }
     var auth by rememberSaveable { mutableStateOf(initial?.auth ?: AuthMethod.Key) }
     var identityId by rememberSaveable { mutableStateOf(initial?.identityId) }
     var jumpId by rememberSaveable { mutableStateOf(initial?.jumpId) }
@@ -87,13 +90,16 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
     val portValue = port.toIntOrNull()?.takeIf { it in 1..65535 }
     val keepAliveValue = keepAlive.toIntOrNull()?.takeIf { it in 0..3600 }
     val addressIssue = addressProblem(address, saved = initial?.address)
+    val sessionValid = Node.validSession(backend, session)
+    val sessionLabel = stringResource(if (backend == Backend.HerdrCore) R.string.hc_session else R.string.host_session)
     val valid = addressIssue == null && Node.validUser(user) && portValue != null &&
-        Node.validSession(session) && keepAliveValue != null
+        sessionValid && keepAliveValue != null
     val candidates = app.nodes.jumpCandidates(initial)
     // Anything Back would lose: what the fields say against what was opened.
     val dirty = name != (initial?.name ?: "") || address != (initial?.address ?: "") ||
         port != (initial?.port ?: 22).toString() || user != (initial?.user ?: "") ||
-        session != (initial?.session ?: "default") || auth != (initial?.auth ?: AuthMethod.Key) ||
+        session != (initial?.session ?: "default") || backend != (if (initial == null) Backend.Herdr else initial.backend) ||
+        auth != (initial?.auth ?: AuthMethod.Key) ||
         identityId != initial?.identityId || jumpId != initial?.jumpId || group != (initial?.group ?: "") ||
         color != startColor || keepAlive != (initial?.keepAlive ?: 15).toString() ||
         password.isNotEmpty() || forgetPassword
@@ -110,7 +116,7 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
         stringResource(R.string.host_address).takeIf { addressIssue != null },
         stringResource(R.string.host_user).takeUnless { Node.validUser(user) },
         stringResource(R.string.host_port).takeIf { portValue == null },
-        stringResource(R.string.host_session).takeUnless { Node.validSession(session) },
+        sessionLabel.takeUnless { sessionValid },
         stringResource(R.string.keepalive).takeIf { keepAliveValue == null },
     )
     val blockedText = if (blocked.isEmpty()) null else stringResource(R.string.editor_save_needs, blocked.joinToString(", "))
@@ -122,6 +128,7 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
             port = portValue ?: 22,
             user = user.trim(),
             session = session.trim(),
+            backendKey = backend?.key ?: initial?.backendKey ?: Backend.Herdr.key,
             auth = auth,
             identityId = identityId.takeIf { auth == AuthMethod.Key },
             jumpId = jumpId,
@@ -277,12 +284,26 @@ fun NodeEditor(app: HerdlineApp, initial: Node?, onDone: () -> Unit) {
                         modifier = Modifier.weight(1f).testTag("field:port"),
                     )
                 }
+                Text(stringResource(R.string.backend_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                GlassSegmented(
+                    options = Backend.entries.map { stringResource(if (it == Backend.Herdr) R.string.backend_herdr else R.string.backend_herdr_core) },
+                    selected = Backend.entries.indexOf(backend),
+                    onSelect = { backend = Backend.entries[it] },
+                    modifier = Modifier.testTag("field:backend"),
+                )
+                Hint(
+                    when (backend) {
+                        Backend.Herdr -> stringResource(R.string.backend_herdr_help)
+                        Backend.HerdrCore -> stringResource(R.string.backend_herdr_core_help)
+                        null -> stringResource(R.string.backend_unknown_help, initial?.backendKey.orEmpty())
+                    },
+                )
                 GlassField(
                     session, { session = it.trim() },
-                    label = { Text(stringResource(R.string.host_session)) },
-                    supportingText = { Text(stringResource(R.string.host_session_help)) },
+                    label = { Text(sessionLabel) },
+                    supportingText = { Text(stringResource(if (backend == Backend.HerdrCore) R.string.hc_session_help else R.string.host_session_help)) },
                     singleLine = true,
-                    isError = !Node.validSession(session),
+                    isError = !sessionValid,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

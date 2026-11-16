@@ -1,8 +1,10 @@
 """Resolve only the current pane's session within known configured roots;
-with --blob-store, the blob store of an OMP process instead. Roots come from
-this shell's own environment and the arguments Herdr reports for the pane's
-process; no other process's environment, cmdline or cwd is read, so a root
-set only in the agent's environment is not known here and never guessed."""
+with --blob-store, the blob store of an OMP process instead; with
+--core-verify, check a session file a herdr-core terminal's labels name.
+Roots come from this shell's own environment and the arguments Herdr (or
+herdr-core) reports for the pane's process; no other process's environment,
+cmdline or cwd is read, so a root set only in the agent's environment is not
+known here and never guessed."""
 import glob
 import json
 import os
@@ -135,7 +137,11 @@ def blob_store(pid):
     processes = report('pane', 'process-info', '--pane', pane).get('process_info', {}).get('foreground_processes', [])
     if not any(isinstance(process, dict) and process.get('pid') == pid for process in processes):
         raise ValueError('process')
-    env, argv = environment(), arguments(processes, pid)
+    return argv_blob_store(arguments(processes, pid))
+
+def argv_blob_store(argv):
+    """blob_store for an OMP process run as `argv`."""
+    env = environment()
     if env.get('PI_CONFIG_DIR'):
         raise ValueError('config')
     profile, override = omp_agent(env, argv, '.omp')
@@ -165,6 +171,58 @@ def report(*args):
         raise ValueError('report')
     return json.loads(result.stdout)['result']
 
+def absolute(path):
+    # OMP, Claude and Codex never expand `~`: Node's path.resolve reads
+    # `~/x` against the agent's cwd, so it is relative here too.
+    if not os.path.isabs(path):
+        raise ValueError('relative')
+    canonical = os.path.realpath(path)
+    if canonical == home:
+        raise ValueError('home')
+    if os.path.commonpath([home, canonical]) != home:
+        raise OutsideHome()
+    return canonical
+
+def configured(path):
+    # An override that is relative, or lands outside HOME, refuses only
+    # itself: the default root and the other overrides still hold.
+    try:
+        return absolute(path)
+    except ValueError:
+        return None
+
+def path_roots(agent, env, argv):
+    """The session roots of an OMP or Pi process with `env` and `argv`."""
+    roots = []
+    def add(path):
+        canonical = absolute(path)
+        if canonical not in roots:
+            roots.append(canonical)
+    default = os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent')
+    add(os.path.join(default, 'sessions'))
+    if agent == 'omp':
+        config = env.get('PI_CONFIG_DIR') or '.omp'
+        base = configured(os.path.join(home, config.lstrip('/')))
+        profile, override = omp_agent(env, argv, config)
+        if base:
+            config_root = os.path.join(base, 'profiles', profile) if profile else base
+            sessions = configured(os.path.join(config_root, 'agent', 'sessions'))
+            if sessions: add(sessions)
+        xdg = env.get('XDG_DATA_HOME')
+        data = configured(xdg) if xdg and (profile or not override) else None
+        if data:
+            app = os.path.join(data, 'omp')
+            xdg_root = os.path.join(app, 'profiles', profile) if profile else app
+            sessions = configured(os.path.join(xdg_root, 'sessions')) if os.path.isdir(xdg_root) else None
+            if sessions: add(sessions)
+        if not profile and override:
+            sessions = configured(os.path.join(override, 'sessions'))
+            if sessions: add(sessions)
+    elif env.get('PI_CODING_AGENT_DIR'):
+        sessions = configured(os.path.join(env['PI_CODING_AGENT_DIR'], 'sessions'))
+        if sessions: add(sessions)
+    return roots
+
 def resolve():
     info = report('pane', 'get', pane)['pane']
     ref = info['agent_session']
@@ -175,59 +233,14 @@ def resolve():
     pid = next((process.get('pid') for process in processes if process.get('name') == agent), None)
     env = environment()
     argv = arguments(processes, pid) if isinstance(pid, int) and pid > 0 else []
-    def absolute(path):
-        # OMP, Claude and Codex never expand `~`: Node's path.resolve reads
-        # `~/x` against the agent's cwd, so it is relative here too.
-        if not os.path.isabs(path):
-            raise ValueError('relative')
-        canonical = os.path.realpath(path)
-        if canonical == home:
-            raise ValueError('home')
-        if os.path.commonpath([home, canonical]) != home:
-            raise OutsideHome()
-        return canonical
-    roots = []
-    def add(path):
-        canonical = absolute(path)
-        if canonical not in roots:
-            roots.append(canonical)
-    def configured(path):
-        # An override that is relative, or lands outside HOME, refuses only
-        # itself: the default root and the other overrides still hold.
-        try:
-            return absolute(path)
-        except ValueError:
-            return None
     if agent in ('omp', 'pi') and kind == 'path':
-        default = os.path.join(home, '.omp' if agent == 'omp' else '.pi', 'agent')
-        add(os.path.join(default, 'sessions'))
-        if agent == 'omp':
-            config = env.get('PI_CONFIG_DIR') or '.omp'
-            base = configured(os.path.join(home, config.lstrip('/')))
-            profile, override = omp_agent(env, argv, config)
-            if base:
-                config_root = os.path.join(base, 'profiles', profile) if profile else base
-                sessions = configured(os.path.join(config_root, 'agent', 'sessions'))
-                if sessions: add(sessions)
-            xdg = env.get('XDG_DATA_HOME')
-            data = configured(xdg) if xdg and (profile or not override) else None
-            if data:
-                app = os.path.join(data, 'omp')
-                xdg_root = os.path.join(app, 'profiles', profile) if profile else app
-                sessions = configured(os.path.join(xdg_root, 'sessions')) if os.path.isdir(xdg_root) else None
-                if sessions: add(sessions)
-            if not profile and override:
-                sessions = configured(os.path.join(override, 'sessions'))
-                if sessions: add(sessions)
-        elif env.get('PI_CODING_AGENT_DIR'):
-            sessions = configured(os.path.join(env['PI_CODING_AGENT_DIR'], 'sessions'))
-            if sessions: add(sessions)
+        roots = path_roots(agent, env, argv)
         candidates = [value]
     elif agent == 'claude' and kind == 'id':
-        add(os.path.join(absolute(env.get('CLAUDE_CONFIG_DIR') or os.path.join(home, '.claude')), 'projects'))
+        roots = [absolute(os.path.join(absolute(env.get('CLAUDE_CONFIG_DIR') or os.path.join(home, '.claude')), 'projects'))]
         candidates = glob.glob(os.path.join(roots[0], '*', glob.escape(value) + '.jsonl'))
     elif agent == 'codex' and kind == 'id':
-        add(os.path.join(absolute(env.get('CODEX_HOME') or os.path.join(home, '.codex')), 'sessions'))
+        roots = [absolute(os.path.join(absolute(env.get('CODEX_HOME') or os.path.join(home, '.codex')), 'sessions'))]
         candidates = glob.glob(os.path.join(roots[0], '**', 'rollout-*-' + glob.escape(value) + '.jsonl'), recursive=True)
     else:
         raise ValueError('agent')
@@ -248,12 +261,71 @@ def resolve():
         raise ValueError('ambiguous or missing')
     return valid[0]
 
-if sys.argv[1] == '--blob-store':
+def core_verify(agent, path, session_id, argv):
+    """The session file a herdr-core terminal's labels name, confined to the
+    agent's roots, whose header follows at most one OMP v1 title slot.
+    Exits 12 while OMP has not written the file yet, 13 on another id."""
+    if agent not in ('omp', 'pi'):
+        raise ValueError('agent')
+    roots = path_roots(agent, environment(), argv)
+    canonical = absolute(path)
+    if not canonical.endswith('.jsonl') or not any(os.path.commonpath([root, canonical]) == root for root in roots):
+        raise ValueError('unconfined')
+    if not os.path.lexists(path):
+        if (agent == 'omp' and not os.path.islink(path)
+                and os.path.isdir(os.path.dirname(canonical))
+                and any(os.path.isdir(root) for root in roots)):
+            sys.exit(12)
+        raise ValueError('missing')
+    if not os.path.isfile(canonical):
+        raise ValueError('missing')
+    with open(canonical, 'rb') as file:
+        first = file.readline(65536)
+        if not first.endswith(b'\n'):
+            raise ValueError('incomplete session header')
+        header = json.loads(first)
+        if (agent == 'omp' and isinstance(header, dict)
+                and header.get('type') == 'title' and header.get('v') == 1
+                and all(isinstance(header.get(key), str) for key in ('title', 'updatedAt', 'pad'))):
+            second = file.readline(65536)
+            if not second.endswith(b'\n'):
+                raise ValueError('incomplete session header')
+            header = json.loads(second)
+    if not isinstance(header, dict) or header.get('type') != 'session' or header.get('id') != session_id:
+        sys.exit(13)
+    return canonical
+
+if sys.argv[1] == '--core-verify':
+    # Run by native for a herdr-core terminal: 3 unconfined, 11 outside
+    # HOME, 12 not written yet, 13 a header naming another session.
+    agent, path, session_id, argv, home = sys.argv[2:]
+    try:
+        argv = json.loads(argv)
+        if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+            argv = []
+        print(core_verify(agent, path, session_id, argv))
+    except OutsideHome:
+        sys.exit(11)
+    except Exception:
+        sys.exit(3)
+elif sys.argv[1] == '--blob-store':
     # Run by the media read's shell: 3 is unconfined, any other failure an
     # unknown store, never a guessed one.
     herdr, session, pane, pid, home = sys.argv[2:]
     try:
         print(blob_store(int(pid)))
+    except OutsideHome:
+        sys.exit(3)
+    except Exception:
+        sys.exit(9)
+elif sys.argv[1] == '--core-blob-store':
+    # The same for a herdr-core terminal whose foreground native checked.
+    argv, home = sys.argv[2:]
+    try:
+        argv = json.loads(argv)
+        if not isinstance(argv, list) or not all(isinstance(part, str) for part in argv):
+            raise ValueError('argv')
+        print(argv_blob_store(argv))
     except OutsideHome:
         sys.exit(3)
     except Exception:

@@ -166,8 +166,9 @@ enum Exchange {
 
 /// Run one ingress call on the host; JSON for Kotlin. A send never fails:
 /// what may have reached the socket is reported uncertain in the reply.
-/// Blocks on the host: call it from a background thread.
-pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<String> {
+/// `source` reports the pane's instance: Herdr's CLI, or a confirmed
+/// herdr-core claim. Blocks on the host: call it from a background thread.
+pub fn run(exec: &Exec, source: transcript::BackendSource<'_>, mut request: Request) -> Result<String> {
     if !valid_id(&request.id) {
         return Err(Error::BadReply);
     }
@@ -202,12 +203,7 @@ pub fn run(exec: &Exec, herdr_session: &str, mut request: Request) -> Result<Str
         return Ok(absent());
     };
     let discovery = match exec.run(
-        sh(&discovery_script(
-            herdr_session,
-            &request.pane,
-            pid,
-            RUN_USER,
-        )),
+        sh(&discovery_script(source, &request.pane, pid, RUN_USER)),
         DISCOVERY_TIMEOUT,
         DISCOVERY_ROOM,
     ) {
@@ -319,8 +315,13 @@ fn refusal_name(reason: Refusal) -> &'static str {
 /// anything it did not create: the directory and sidecar must be this
 /// user's, private and no links. One status word per outcome; only `absent`
 /// means there is none.
-fn discovery_script(herdr_session: &str, pane: &str, pid: u32, run_user: &str) -> String {
-    let mut script = transcript::instance_script(herdr_session, pane);
+fn discovery_script(
+    source: transcript::BackendSource<'_>,
+    pane: &str,
+    pid: u32,
+    run_user: &str,
+) -> String {
+    let mut script = transcript::report_script(source, pane);
     script.push_str(&format!(
         r#"printf '\n@@ingress\n'
 fail() {{ printf 'error %s\n' "$1"; exit 0; }}

@@ -12,6 +12,7 @@ pub mod config;
 mod control;
 mod delivery;
 mod error;
+pub mod herdr_core;
 pub mod herdr_setup;
 mod hold;
 mod ingress;

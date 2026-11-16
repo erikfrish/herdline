@@ -1,6 +1,7 @@
 package io.github.erikfrish.herdline.ui.nodes
 
 import io.github.erikfrish.herdline.core.Connection.State
+import io.github.erikfrish.herdline.data.Backend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -18,6 +19,7 @@ class HostStateTest {
             State.UntrustedHostKey(1, "h:22", "SHA256:x", changed = false),
             State.Failed("password left unanswered"),
             State.HerdrMissing,
+            State.CoreMissing,
             State.SetupFailed(1, ""),
         )
         val pills = failures.map { hostReason(it)?.text }
@@ -30,6 +32,13 @@ class HostStateTest {
         val herdr = hostReason(State.Incompatible(daemonOutdated = true, serverVersion = "0.1", minVersion = "0.5"))
         val app = hostReason(State.Incompatible(daemonOutdated = false, serverVersion = "9.0", minVersion = "0.5"))
         assertNotEquals(herdr?.text, app?.text)
+    }
+
+    @Test
+    fun anOutdatedHerdrCoreIsNeverOfferedAsAHerdrUpdate() {
+        val outdated = State.Incompatible(daemonOutdated = true, serverVersion = "0.1.0", minVersion = "0.1.21")
+        assertEquals(HostReason.UpdateCore, hostReason(outdated, Backend.HerdrCore))
+        assertEquals(HostReason.UpdateHerdr, hostReason(outdated, Backend.Herdr))
     }
 
     @Test

@@ -7,7 +7,7 @@
 
 [Releases](https://github.com/erikfrish/herdline/releases) · [Install](#install) · [Building](#building) · [Origin and licence](#origin-and-licence)
 
-> **Latest public release: [0.6.85](https://github.com/erikfrish/herdline/releases/tag/v0.6.85), experimental prerelease.**
+> **Latest public release: [0.6.86](https://github.com/erikfrish/herdline/releases/tag/v0.6.86), experimental prerelease.**
 > Focused emulator QA and automated checks passed with documented limits.
 > Physical phones and locale behavior below Android 13 were not verified.
 > Support for every agent harness and Samsung Now Bar placement remain unverified.
@@ -168,6 +168,25 @@ harness support.
   bubbles use the updated spacing; dense Chat keeps its compact line height.
 - Verification and limitations are recorded per version in the release notes;
   a build or phone installation alone is not full QA acceptance.
+
+### herdr-app / herdr-core
+
+Choose **herdr-core (herdr-app)** when adding the SSH host, and set its hc
+session (normally `default`). The desktop app and phone share the core's
+spaces, tabs and terminals, but keep their own focus and zoom. Desktop
+JavaScript mod panels are not terminals and cannot be rendered on the phone.
+Observing must not resize the host; entering interactive control explicitly
+lets the core use the phone's terminal size.
+
+For OMP Chat identity, explicitly load `host/omp/herdline-core.ts` inside an
+hc terminal, for example `omp -e /absolute/path/to/herdline-core.ts`. The hook
+publishes only its own agent/session/path/pid labels, updates them on session
+switches and clears them on shutdown. It sends no prompt. Herdline validates
+the foreground process and confined session file before using those labels.
+The hook is never installed globally or loaded into a running agent by itself.
+Without valid identity, the phone explains why Chat is unavailable instead
+of guessing a session from a terminal title or command line.
+
 
 ### Notifications
 

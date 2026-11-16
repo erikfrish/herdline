@@ -4,7 +4,7 @@
 
 use crate::{
     Result,
-    session::{self, Config},
+    session::{self, Backend, Config},
     ssh::{Credential, Hop, Route},
     theme::Theme,
 };
@@ -15,6 +15,10 @@ use zeroize::Zeroizing;
 #[derive(Deserialize)]
 struct Document {
     session: String,
+    /// `herdr` (also when missing or null) or `herdr_core`; any other value
+    /// is kept so the connect ends as `unsupported_backend`, never another.
+    #[serde(default)]
+    backend: Option<String>,
     hops: Vec<HopDocument>,
     #[serde(default)]
     keepalive_secs: Option<u64>,
@@ -76,6 +80,11 @@ pub fn parse(json: &str) -> Result<Config> {
         })
         .collect();
     Ok(Config {
+        backend: match document.backend.as_deref() {
+            None | Some("herdr") => Backend::Herdr,
+            Some("herdr_core") => Backend::HerdrCore,
+            Some(_) => Backend::Unsupported,
+        },
         route: Route {
             hops,
             session: document.session,

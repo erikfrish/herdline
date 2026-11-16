@@ -11,4 +11,12 @@
     <!-- %1$s: the port found after the colon in the address. -->
     <string name="editor_move_port">Move :%1$s to Port</string>
     <string name="editor_user_invalid">No spaces, @ or :.</string>
+    <string name="backend_label">Server</string>
+    <string name="backend_herdr">Herdr</string>
+    <string name="backend_herdr_core">herdr-core</string>
+    <string name="backend_herdr_help">The classic Herdr daemon on this host.</string>
+    <string name="backend_herdr_core_help">The herdr-core shared with herdr-app: the same spaces, tabs, terminals and agents. Focus on the phone stays private. Desktop mods are not supported.</string>
+    <string name="backend_unknown_help">This node was saved with a server type this app does not know (%1$s). It is not connected until you choose Herdr or herdr-core.</string>
+    <string name="hc_session">hc session</string>
+    <string name="hc_session_help">Empty = default. No . or .., control characters, or / \\ : * ? \" &lt; &gt; |</string>
 </resources>

@@ -90,6 +90,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.data.IconVariants
+import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.AuthMethod
 import io.github.erikfrish.herdline.data.Keychain
 import io.github.erikfrish.herdline.data.Node
@@ -111,6 +112,7 @@ import io.github.erikfrish.herdline.ui.glass.GlassScreen
 import io.github.erikfrish.herdline.ui.glass.GroupShape
 import io.github.erikfrish.herdline.ui.theme.NodeColors
 import io.github.erikfrish.herdline.ui.theme.color
+import io.github.erikfrish.herdline.ui.session.coreReasonRes
 import io.github.erikfrish.herdline.ui.session.paneTitle
 import io.github.erikfrish.herdline.ui.session.paneWhere
 import kotlinx.coroutines.launch
@@ -417,25 +419,34 @@ internal enum class HostReason(val text: Int, val tone: HostTone) {
     KeyChanged(R.string.host_key_changed, HostTone.Error),
     KeyUnknown(R.string.host_state_key_unknown, HostTone.Step),
     NoHerdr(R.string.host_state_no_herdr, HostTone.Step),
+    /** No herdr-core answered: the user installs it on the host, the app offers no install. */
+    NoCore(R.string.host_state_no_core, HostTone.Step),
     SetupFailed(R.string.host_state_setup_failed, HostTone.Error),
     CannotConnect(R.string.host_state_cannot_connect, HostTone.Error),
     UpdateHerdr(R.string.incompatible_daemon_title, HostTone.Step),
+    /** herdr-core is too old or too new: the user updates it on the host; nothing here does. */
+    UpdateCore(R.string.hc_incompatible_title, HostTone.Step),
     UpdateApp(R.string.incompatible_app_title, HostTone.Step),
     Lost(R.string.host_state_lost, HostTone.Warning),
     /** The user disconnected: said plainly, not as a fault, and with no badge. */
     Closed(R.string.disconnected, HostTone.Neutral),
 }
 
-/** The reason [state] names, or null while it is up or on its way there. */
-internal fun hostReason(state: Connection.State): HostReason? = when (state) {
+/** The reason [state] names, or null while it is up or on its way there; [backend] is the node's (null: unknown). */
+internal fun hostReason(state: Connection.State, backend: Backend? = Backend.Herdr): HostReason? = when (state) {
     is Connection.State.Connected, Connection.State.Connecting, Connection.State.SettingUp -> null
     is Connection.State.Disconnected -> if (state.byUser) HostReason.Closed else HostReason.Lost
     is Connection.State.UntrustedHostKey -> if (state.changed) HostReason.KeyChanged else HostReason.KeyUnknown
     is Connection.State.AuthRejected -> HostReason.Rejected
     is Connection.State.Failed -> HostReason.CannotConnect
     Connection.State.HerdrMissing -> HostReason.NoHerdr
+    Connection.State.CoreMissing -> HostReason.NoCore
     is Connection.State.SetupFailed -> HostReason.SetupFailed
-    is Connection.State.Incompatible -> if (state.daemonOutdated) HostReason.UpdateHerdr else HostReason.UpdateApp
+    is Connection.State.Incompatible -> when {
+        !state.daemonOutdated -> HostReason.UpdateApp
+        backend == Backend.HerdrCore -> HostReason.UpdateCore
+        else -> HostReason.UpdateHerdr
+    }
 }
 
 /**
@@ -472,13 +483,14 @@ private fun NodeCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     val state = connection?.state?.collectAsState()?.value
-    val reason = state?.let(::hostReason)
+    val reason = state?.let { hostReason(it, node.backend) }
     // The pill names the reason and is read with the card; this adds what the pill leaves out:
     // "Connected" (its pills are counts), or the state's own words after a failure.
     val spoken = when (state) {
         is Connection.State.Connected -> stringResource(R.string.connection_connected)
         null -> null
-        else -> hostDetail(state)
+        // A frozen native code (invalid_session, …) is said in the user's language, free text as it came.
+        else -> hostDetail(state)?.let { detail -> coreReasonRes(detail)?.let { stringResource(it) } ?: detail }
     }
     val view = connection?.view?.collectAsState()?.value
     val interaction = remember { MutableInteractionSource() }
