@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10141,
-    "versionName": "0.6.89",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.89/herdline-0.6.89.apk",
-    "sha256": "8fa30258d11e60bde6396890e7f4730eb619fcf41fe5f79d385a1d058b332a5f",
+    "versionCode": 10142,
+    "versionName": "0.6.90",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.90/herdline-0.6.90.apk",
+    "sha256": "5bc7f688f7b396822a48cefd18250bfd77e0d49c57fd6f3b3bac2c5d2318283a",
     "size": 26138879,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused native/Kotlin checks, isolated Android 17 visual fixtures, exact code Copy, Details and real OMP resumed-history footer passed. Dense placement checked in fixture only; final signed runtime and Samsung rendering not separately tested."
+      "reason": "Focused footer/composer-fit checks, four isolated Android 17 visual captures and real stock OMP Chat portrait layouts with keyboard hidden/shown passed. Dense/read-only delta and final signed runtime on Samsung were not separately tested."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.89 (Experimental, 10141)\n\n- Chat now has a compact footer with the last recorded assistant reply's model/provider, the pane's last reported directory, and its per-reply USD cost estimate where available. Tap for full values, token counts and provenance. Missing metadata is omitted rather than borrowed from an earlier reply. Costs are not presented as session totals.\n- Inline code has a distinct theme-aware tint and subtle chip outline. Explicitly labelled code fences now have syntax colors for shell, JSON, Python, JavaScript/TypeScript, Kotlin/Java, Rust, YAML, TOML and diff. Unknown or unlabelled languages remain plain. Copy preserves the original code.\n- Optional recorded model/provider fields are read from OMP, Pi and Claude assistant messages without extra host reads. Other transcript readers omit unavailable metadata.\n\nVerification: 184 native transcript tests, focused Kotlin footer/syntax/contrast/layout checks and the metadata regression passed. On an isolated Android 17 emulator, light/dark, narrow 320dp and font-scale fixtures were viewed; exact code Copy, missing-data hiding and Details passed. Real Chat with stock OMP resumed sample transcripts verified the footer and that older metadata is not reused. The portrait keyboard-up row was not dense mode; dense placement was checked in the visual fixture only. No LLM calls in runtime verification. Final signed APK runtime and Samsung rendering were not separately tested."
+      "en": "Herdline 0.6.90 (Experimental, 10142)\n\n- Chat metadata now sits lower, immediately above the editor and below notices, queue controls and attachments.\n- The footer uses two compact 11sp monospace rows: model/provider gets the full first row, with the pane directory and per-reply cost on the second. The separate filled panel and divider are gone. Tap the full footer for unabridged Details; its 48dp interaction target is preserved.\n- Dense landscape/keyboard Chat retains its in-list footer, and read-only Chat keeps its fallback. Metadata still belongs to the latest recorded assistant message; absent model or price is never invented, and no session-total cost is claimed.\n\nVerification: focused footer and composer-fit checks, four light/dark normal/narrow visual captures, Details, and real stock OMP resumed-history Chat in portrait with the keyboard hidden and shown passed on an isolated Android 17 emulator. The real layout had one footer below notices, above the editor, and above the IME with no overlap. Dense/read-only layout was not re-exercised in this delta. No LLM calls or sends during runtime verification. Final signed runtime and Samsung rendering were not separately tested."
     }
   }
 }
