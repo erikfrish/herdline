@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10143,
-    "versionName": "0.6.91",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.91/herdline-0.6.91.apk",
-    "sha256": "1f7b1a101bd97a34023dc66ac57fb691f7eba51344ac92aa2f8cff892b5ab43d",
+    "versionCode": 10145,
+    "versionName": "0.6.92",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.92/herdline-0.6.92.apk",
+    "sha256": "95b5363cf64cdcb63bcf155802d3498c88b150e2d7f026cb829af2a8907e604c",
     "size": 26138879,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused StopOutcome tests and isolated Android 17 actual Chat UI checks with synthetic Working status passed; pending/unconfirmed words remained visible. No real-turn stopping success, narrow/large-font, final signed runtime or Samsung verification claim."
+      "reason": "Focused Stop/Footer/ComposerFit checks and existing scroll-to-end tests passed. Isolated Android 17 actual Chat short/long keyboard-down/up fixtures with real companion and synthetic Working measured 52.2dp content-to-editor gap. Dense/read-only, final signed runtime and Samsung not separately exercised."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.91 (Experimental, 10143)\n\n- Chat's Working indicator is now a compact unframed line instead of a large outlined card: a small spinner, subdued status text and a trailing text-only Stop action.\n- The top gap is reduced from 18dp to 6dp. Stop retains a 48dp touch target. Stop routing, disabled explanations, pending state and failure messages are unchanged.\n\nVerification: focused StopOutcome tests and QA/test/signed builds passed. Actual Chat on an isolated Android 17 emulator was observed with synthetic Working status in an owned OMP fixture, in dark portrait with the keyboard hidden and shown. The row and Stop measured 48dp, without the card border or filled button. One Stop press on the idle fixture showed Stopping and then the fully visible unconfirmed result; this does not prove stopping a real model turn. No LLM calls. Narrow/large-font, final signed runtime and Samsung rendering were not separately exercised."
+      "en": "Herdline 0.6.92 (Experimental, 10145)\n\n- Stacked editable Chat combines Working, Stop and reply metadata into one compact block above the input, removing the separate Working row and its duplicate vertical touch-target budget.\n- Short conversations are bottom-aligned: unused list space is above the conversation, not between its final message and the input. Long history keeps normal message order and scrolling.\n- Removed redundant normal list-bottom and composer-top padding at this boundary. Details and Stop retain separate 48dp targets. Pending and Stop failure explanations remain visible below the merged block; Latest-pill clearance is preserved when needed.\n- Existing Stop routes and transcript reads are unchanged. Dense/read-only Chat keeps its existing in-list fallback.\n\nVerification: focused StopOutcome, ChatFooter and ComposerFit checks, QA/test/signed builds, and unchanged ChatScrollToEndTest (3 tests) passed. Actual Chat on an isolated Android 17 emulator used recorded sample transcripts and a real patched OMP companion without ingress notices, with synthetic Working status and no LLM calls. Short/fitting and long/scrolling histories with keyboard hidden/shown measured 52.2dp from final content text to editor, versus 171dp for the previous unpublished 10144 short fixture. Stop pending/unconfirmed words remained visible; no real-model stop success is claimed. Dense/read-only, final signed runtime and Samsung were not separately exercised."
     }
   }
 }
