@@ -862,7 +862,7 @@ private fun ChatContent(
                             LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem.takeUnless { noControl }, answerReason) }
                         }
                         status == AgentStatus.Working -> item(key = "working") {
-                            LiveGap {
+                            Box(Modifier.padding(top = ChatSpace.tool)) {
                                 WorkingRow(
                                     workingOn(items), colors,
                                     onStop = if (stopTarget != null && linkLive) ({ stop() }) else null,
@@ -1656,27 +1656,27 @@ private fun WorkingRow(
     stopProblem: String? = null,
     stopReason: String? = null,
 ) {
-    StateRow(colors.working, colors.border, Color.Transparent, "chat:working") {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.working)
+    Column(Modifier.fillMaxWidth().testTag("chat:working"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = colors.working)
             Text(
                 if (what != null) stringResource(R.string.chat_working_on, what) else stringResource(R.string.chat_working),
-                style = ChatType.body.copy(color = colors.text),
+                style = ChatType.meta.copy(color = colors.muted),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f),
             )
             if (onStop != null) {
-                FilledTonalButton(onClick = onStop, enabled = !stopping, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop")) {
-                    Text(stringResource(R.string.chat_stop))
+                androidx.compose.material3.TextButton(onClick = onStop, enabled = !stopping, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop")) {
+                    Text(stringResource(R.string.chat_stop), style = ChatType.meta)
                 }
             } else if (stopReason != null) {
-                FilledTonalButton(
+                androidx.compose.material3.TextButton(
                     onClick = {},
                     enabled = false,
                     modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = stopReason }.testTag("chat:stop"),
                 ) {
-                    Text(stringResource(R.string.chat_stop))
+                    Text(stringResource(R.string.chat_stop), style = ChatType.meta)
                 }
             }
         }

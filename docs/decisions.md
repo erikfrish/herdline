@@ -429,6 +429,10 @@ Switcher:
   Tap shows full values, token counts and provenance; missing values are
   omitted. Cached/offline metadata is marked. On a dense keyboard/landscape
   layout it scrolls with the messages rather than taking a fixed row.
+- **Working status.** One unframed 48 dp row with a 12 dp indicator, subdued
+  12 sp status and a trailing text-only Stop action; no filled button, outer
+  card, colored rail or card padding. Stop keeps its 48 dp target and all
+  existing routing, disabled explanations, pending state and failure words.
 - **Same agent, read-only.** Chat is a second view of the OMP agent already
   in the pane. It reads that agent's session file and nothing else: no ACP,
   no import or resume, no second OMP. Prompts go through the composer to the
