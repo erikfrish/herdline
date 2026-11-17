@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +43,12 @@ import java.util.Locale
 /** Recorded metadata of the latest assistant message, never a guessed live model or session total. */
 internal data class ChatFooterData(val model: String?, val provider: String?, val usage: TranscriptUsage?)
 
+/** Presentation only; the callback retains Chat's existing checked Stop route. */
+internal data class WorkingFooterState(
+    val onStop: (() -> Unit)?, val stopping: Boolean,
+    val problem: String?, val reason: String?,
+)
+
 internal fun chatFooterData(entries: List<TranscriptEntry>): ChatFooterData {
     val latest = currentBranch(entries).lastOrNull { it.kind == TranscriptKind.Message && it.role == "assistant" }
     return ChatFooterData(latest?.model, latest?.provider, latest?.usage)
@@ -57,29 +65,34 @@ internal fun replyCost(cost: Double?, locale: Locale = Locale.getDefault()): Str
 
 /** Compact metadata immediately above the editor; the whole strip remains a 48 dp details target. */
 @Composable
-internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, colors: ChatColors) {
+internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, colors: ChatColors, working: WorkingFooterState? = null) {
     val model = listOfNotNull(data.provider?.takeIf { it.isNotBlank() }, data.model?.takeIf { it.isNotBlank() }).joinToString("/")
     val cost = remember(data.usage?.cost) { replyCost(data.usage?.cost) }
     val directory = cwd?.takeIf { it.isNotBlank() }
-    if (model.isEmpty() && directory == null && cost == null && data.usage == null) return
+    if (model.isEmpty() && directory == null && cost == null && data.usage == null && working == null) return
     var details by remember { mutableStateOf(false) }
     val lastReply = stringResource(R.string.chat_footer_last_reply)
     val lastCost = cost?.let { stringResource(R.string.chat_footer_reply_cost, it) }
     val cachedWord = stringResource(R.string.chat_footer_cached)
     val spoken = listOfNotNull(cachedWord.takeIf { cached }, lastReply.takeIf { model.isNotEmpty() }, model.takeIf { it.isNotEmpty() }, directory, lastCost).joinToString(", ")
     val compact = ChatType.meta.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)
+    Column(Modifier.fillMaxWidth().testTag(if (working == null) "chat:metadata" else "chat:working")) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
     Column(
-        Modifier.fillMaxWidth()
+        Modifier.weight(1f)
             .clickable(role = Role.Button) { details = true }
             .semantics { contentDescription = spoken }
-            .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 3.dp).testTag("chat:footer"),
+            .heightIn(min = 48.dp).padding(horizontal = 4.dp, vertical = 2.dp).testTag("chat:footer"),
         verticalArrangement = Arrangement.Center,
     ) {
-        if (model.isNotEmpty() || cached) Row(
+        if (model.isNotEmpty() || cached || working != null) Row(
             Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (working != null) CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = colors.working)
+            if (working != null && model.isNotEmpty()) Text(stringResource(R.string.chat_working), style = compact.copy(color = colors.muted), maxLines = 1)
             if (cached) Text(cachedWord, style = compact.copy(color = colors.blocked), maxLines = 1)
             if (model.isNotEmpty()) Text(model, style = compact.copy(color = colors.accentText), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            else if (working != null) Text(stringResource(R.string.chat_working), style = compact.copy(color = colors.muted), maxLines = 1)
         }
         if (directory != null || lastCost != null || data.usage != null) Row(
             Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -90,6 +103,21 @@ internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, col
             }
             if (lastCost != null) Text(lastCost, style = compact.copy(color = colors.done), maxLines = 1)
         }
+    }
+    if (working != null && (working.onStop != null || working.reason != null)) TextButton(
+        onClick = { working.onStop?.invoke() }, enabled = working.onStop != null && !working.stopping,
+        modifier = Modifier.heightIn(min = 48.dp).testTag("chat:stop"),
+    ) { Text(stringResource(R.string.chat_stop), style = ChatType.meta) }
+    }
+    val note = when {
+        working?.problem == "unconfirmed" -> stringResource(R.string.chat_stop_failed)
+        working?.problem == "none_running" -> stringResource(R.string.chat_stop_none_running)
+        working?.problem != null -> stringResource(stopRefusalRes(working.problem))
+        working?.stopping == true -> stringResource(R.string.chat_stopping)
+        else -> working?.reason
+    }
+    if (note != null) Text(note, style = ChatType.meta.copy(color = colors.muted),
+        modifier = Modifier.padding(horizontal = 4.dp).testTag(if (working?.stopping == true && working.problem == null) "chat:stopping" else "chat:stop:problem"))
     }
     if (details) GlassAlertDialog(
         onDismissRequest = { details = false },
@@ -118,5 +146,5 @@ internal fun ChatSessionFooter(connection: Connection, pane: String, memory: Cha
     val state by connection.state.collectAsState()
     val data = remember(history.entries) { chatFooterData(history.entries) }
     ChatFooter(data, view?.panes?.firstOrNull { it.id == pane }?.cwd,
-        state !is Connection.State.Connected || kept.read.problem != null, colors)
+        state !is Connection.State.Connected || kept.read.problem != null, colors, kept.workingFooter)
 }

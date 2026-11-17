@@ -429,10 +429,16 @@ Switcher:
   Tap shows full values, token counts and provenance; missing values are
   omitted. Cached/offline metadata is marked. On a dense keyboard/landscape
   layout it scrolls with the messages rather than taking a fixed row.
-- **Working status.** One unframed 48 dp row with a 12 dp indicator, subdued
-  12 sp status and a trailing text-only Stop action; no filled button, outer
-  card, colored rail or card padding. Stop keeps its 48 dp target and all
-  existing routing, disabled explanations, pending state and failure words.
+- **Working status.** In stacked editable Chat, Working and Stop share the
+  metadata footer's single 48 dp block, rather than adding another 48 dp
+  list row. The list's normal bottom padding and composer's top outer pad
+  are removed at this boundary; Latest-pill clearance remains when needed.
+  A short transcript is bottom-aligned instead of leaving the unused list
+  height between its final message and the controls; long history keeps its
+  normal order and scrolling.
+  Stop and Details retain separate 48 dp targets. Their existing callbacks
+  and checked routes are unchanged; pending/errors appear below the block.
+  Dense/read-only Chat retains the in-list status fallback.
 - **Same agent, read-only.** Chat is a second view of the OMP agent already
   in the pane. It reads that agent's session file and nothing else: no ACP,
   no import or resume, no second OMP. Prompts go through the composer to the

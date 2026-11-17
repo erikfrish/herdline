@@ -884,7 +884,7 @@ fun Composer(
         modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-            .padding(horizontal = 12.dp, vertical = fit.outer.dp)
+            .padding(start = 12.dp, end = 12.dp, top = if (beforeInput == null) fit.outer.dp else 0.dp, bottom = fit.outer.dp)
             .testTag("composer"),
     ) {
         if (pane == null) {

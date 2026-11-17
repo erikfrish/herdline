@@ -292,6 +292,7 @@ fun rememberHarnessRuntime(connection: Connection, memory: ChatMemory, pane: Str
 
 internal class ChatKept {
     var history by mutableStateOf<ChatHistory?>(null)
+    var workingFooter by mutableStateOf<WorkingFooterState?>(null)
     val read = ChatReadState()
     val expanded = mutableStateMapOf<String, Boolean>()
     var seen by mutableStateOf<String?>(null)
@@ -499,6 +500,17 @@ private fun ChatContent(
                 stopping = false
             }
         }
+    }
+    val latestStop by rememberUpdatedState({ stop() })
+    val footerStop = remember(pane) { { latestStop() } }
+    val footerWorking = if (footerByEditor && !dense && status == AgentStatus.Working) WorkingFooterState(
+        if (stopTarget != null && linkLive) footerStop else null,
+        stopping, stopProblem,
+        if (stopTarget == null) controlReason(identity?.agent, HarnessKey.Stop, R.string.control_stop_unavailable) else null,
+    ) else null
+    androidx.compose.runtime.SideEffect { kept.workingFooter = footerWorking }
+    androidx.compose.runtime.DisposableEffect(kept) {
+        onDispose { kept.workingFooter = null }
     }
     // The endpoint's live children, folded into the task calls that spawned them.
     var liveSubagents by remember(dialogTarget) { mutableStateOf<List<IngressSubagent>>(emptyList()) }
@@ -791,6 +803,7 @@ private fun ChatContent(
                 else -> LazyColumn(
                     state = list,
                     modifier = Modifier.fillMaxSize().testTag("chat:list"),
+                    verticalArrangement = Arrangement.Bottom,
                     // The Latest pill floats over the bottom padding, never over the last item.
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -800,6 +813,7 @@ private fun ChatContent(
                             pill && dense -> CompactPillSize + DensePillGap * 2
                             pill -> 56.dp
                             dense -> 2.dp
+                            footerByEditor -> 0.dp
                             else -> 12.dp
                         },
                     ),
@@ -861,7 +875,7 @@ private fun ChatContent(
                             val answerReason = if (noControl) stringResource(R.string.omp_no_control) else controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
                             LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem.takeUnless { noControl }, answerReason) }
                         }
-                        status == AgentStatus.Working -> item(key = "working") {
+                        status == AgentStatus.Working && !footerByEditor -> item(key = "working") {
                             Box(Modifier.padding(top = ChatSpace.tool)) {
                                 WorkingRow(
                                     workingOn(items), colors,
