@@ -196,6 +196,7 @@ import io.github.erikfrish.herdline.service.NoteSurface
 import io.github.erikfrish.herdline.service.routeNote
 import io.github.erikfrish.herdline.ui.chat.ChatMemories
 import io.github.erikfrish.herdline.ui.chat.ChatView
+import io.github.erikfrish.herdline.ui.chat.ChatSessionFooter
 import io.github.erikfrish.herdline.ui.chat.rememberHarnessRuntime
 import io.github.erikfrish.herdline.ui.chat.ChatType
 import io.github.erikfrish.herdline.ui.chat.chatColors
@@ -1525,6 +1526,7 @@ fun SessionScreen(
                                     tabTitle = tab?.let { t -> view?.tabTitle(t.id) },
                                     dense = typingShort,
                                     memory = chatMemory,
+                                    footerByEditor = !typingShort && !chatReadOnly,
                                 )
                             }
                         }
@@ -1772,6 +1774,9 @@ fun SessionScreen(
                             viewport = drawnViewport,
                             // Read at the tap, right after onDeliveryStart, from the view itself.
                             captureViewport = { terminal?.viewport() },
+                            beforeInput = if (!typingShort && !closed) {
+                                { reading?.pane?.let { ChatSessionFooter(connection, it, chatMemory, chatColors(accent)) } }
+                            } else null,
                         )
                     }
                 }

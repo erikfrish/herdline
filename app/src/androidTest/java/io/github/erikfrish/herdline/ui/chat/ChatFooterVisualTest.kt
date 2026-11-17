@@ -130,20 +130,25 @@ private fun SampleChatSurface(shot: Shot, entries: List<TranscriptEntry>, cwd: S
     /** Captures only: no logic asserts here. One setContent, the shot swapped through state. */
     @Test
     fun capturesTenShots() {
-        var shot by mutableStateOf(SHOTS.first())
+        val wanted = InstrumentationRegistry.getArguments().getString("shots")
+            ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+        val unknown = wanted.orEmpty() - SHOTS.map { it.name }.toSet()
+        require(unknown.isEmpty()) { "Unknown shots: $unknown" }
+        val shots = if (wanted.isNullOrEmpty()) SHOTS else SHOTS.filter { it.name in wanted }
+        var shot by mutableStateOf(shots.first())
         lateinit var layer: GraphicsLayer
         compose.setContent {
             layer = rememberGraphicsLayer()
             SampleChatSurface(shot, SAMPLE_ENTRIES, Sample.CWD, layer)
         }
-        for (s in SHOTS) {
+        for (s in shots) {
             compose.runOnIdle { shot = s }
             compose.waitForIdle()
             val image = runBlocking { layer.toImageBitmap() }
             assertTrue("${s.name}: empty capture", image.width > 0 && image.height > 0)
             save(s.name, image.asAndroidBitmap())
         }
-        File(context.filesDir, "$SHOT_DIR/MANIFEST.txt").writeText(SHOTS.joinToString("\n") { "${it.name}.png dark=${it.dark} narrow=${it.narrow} fontScale=${it.fontScale} dense=${it.dense} cached=${it.cached}" } + "\n")
+        File(context.filesDir, "$SHOT_DIR/MANIFEST.txt").writeText(shots.joinToString("\n") { "${it.name}.png dark=${it.dark} narrow=${it.narrow} fontScale=${it.fontScale} dense=${it.dense} cached=${it.cached}" } + "\n")
     }
 
     /** Assert 1: Copy puts the exact fence body on the clipboard, for every fence. */

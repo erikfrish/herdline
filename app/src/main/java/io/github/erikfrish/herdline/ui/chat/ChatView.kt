@@ -211,12 +211,14 @@ fun ChatView(
     dense: Boolean = false,
     /** The caller's memory for one connection and daemon boot, so each pane read here comes back as it was (CT-1). */
     memory: ChatMemory,
+    /** A stacked editable Chat places metadata next to its editor instead. */
+    footerByEditor: Boolean = false,
 ) {
     // A reconnect is a new Connection and starts over, as a restarted daemon is a new
     // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
     // loaded (ChatHistory.merge).
     key(connection, pane, memory) {
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense)
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense, footerByEditor)
     }
 }
 
@@ -387,6 +389,7 @@ private fun ChatContent(
     modifier: Modifier,
     tabTitle: String?,
     dense: Boolean,
+    footerByEditor: Boolean,
 ) {
     var history by kept::history
     var problem by kept.read::problem
@@ -898,7 +901,7 @@ private fun ChatContent(
                 }
             }
         }
-        if (!dense && shown != null) ChatFooter(footer, directory, !linkLive || outage.shown, colors)
+        if (!dense && !footerByEditor && shown != null) ChatFooter(footer, directory, !linkLive || outage.shown, colors)
     }
 }
 

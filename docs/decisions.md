@@ -421,11 +421,14 @@ Switcher:
   changing the selectable/copied source. Unknown fence languages stay plain.
   A compact footer shows the last recorded assistant message's model/provider
   and per-message USD estimate where present, never a guessed current model
-  or a sum over a partially loaded history. The directory comes from the
-  exact pane's last reported view. Tap shows full values, token counts and
-  provenance; missing values are omitted. Cached/offline metadata is marked.
-  On a dense keyboard/landscape layout the footer scrolls with the messages
-  rather than taking another fixed row from the conversation.
+  or a sum over a partially loaded history. Model/provider gets its own
+  11 sp monospace row; directory and reply cost share the next. The footer
+  has no separate filled panel and sits immediately above the input, below
+  notices, queues and attachments. Its full area remains a 48 dp Details
+  target. The directory comes from the exact pane's last reported view.
+  Tap shows full values, token counts and provenance; missing values are
+  omitted. Cached/offline metadata is marked. On a dense keyboard/landscape
+  layout it scrolls with the messages rather than taking a fixed row.
 - **Same agent, read-only.** Chat is a second view of the OMP agent already
   in the pane. It reads that agent's session file and nothing else: no ACP,
   no import or resume, no second OMP. Prompts go through the composer to the

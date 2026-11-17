@@ -859,6 +859,8 @@ fun Composer(
     onOpenPane: (String) -> Unit = { connection.focusPane(it) },
     /** The one labelled move of Herdr's shared focus to [reading] (CT-1 S6). */
     onShowShared: (String) -> Unit = { connection.focusPane(it) },
+    /** Read-only metadata below notices and attachments, immediately above the input band. */
+    beforeInput: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val store = remember { DraftStore.get(context) }
@@ -921,6 +923,7 @@ fun Composer(
                     viewport = viewport,
                     captureViewport = captureViewport,
                     imeVisible = imeVisible,
+                    beforeInput = beforeInput,
                 )
             }
         }
@@ -958,6 +961,7 @@ private fun Editor(
     viewport: Viewport?,
     captureViewport: () -> Viewport?,
     imeVisible: Boolean,
+    beforeInput: (@Composable () -> Unit)?,
 ) {
     val context = LocalContext.current
     var draft by remember(key) { mutableStateOf(store.get(key) ?: Draft()) }
@@ -2082,6 +2086,7 @@ private fun Editor(
     // Compact and Side have no room for the chip row (J2): the To-line
     // counts the files and the larger editor shows their chips (§2.6).
     if (fit.chips) chips(Modifier)
+    beforeInput?.invoke()
     ComposerBand(
         value = value,
         onValueChange = ::edit,

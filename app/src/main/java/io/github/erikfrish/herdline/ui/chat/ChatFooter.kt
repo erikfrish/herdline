@@ -1,14 +1,11 @@
 package io.github.erikfrish.herdline.ui.chat
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,7 +27,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.TranscriptEntry
 import io.github.erikfrish.herdline.core.TranscriptKind
 import io.github.erikfrish.herdline.core.TranscriptUsage
@@ -55,7 +55,7 @@ internal fun replyCost(cost: Double?, locale: Locale = Locale.getDefault()): Str
     }.format(cost)
 }
 
-/** One quiet strip above the composer. Full values and provenance are one tap away. */
+/** Compact metadata immediately above the editor; the whole strip remains a 48 dp details target. */
 @Composable
 internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, colors: ChatColors) {
     val model = listOfNotNull(data.provider?.takeIf { it.isNotBlank() }, data.model?.takeIf { it.isNotBlank() }).joinToString("/")
@@ -65,23 +65,31 @@ internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, col
     var details by remember { mutableStateOf(false) }
     val lastReply = stringResource(R.string.chat_footer_last_reply)
     val lastCost = cost?.let { stringResource(R.string.chat_footer_reply_cost, it) }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(colors.rule))
     val cachedWord = stringResource(R.string.chat_footer_cached)
     val spoken = listOfNotNull(cachedWord.takeIf { cached }, lastReply.takeIf { model.isNotEmpty() }, model.takeIf { it.isNotEmpty() }, directory, lastCost).joinToString(", ")
-    Row(
-        Modifier.fillMaxWidth().background(colors.surf)
+    val compact = ChatType.meta.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)
+    Column(
+        Modifier.fillMaxWidth()
             .clickable(role = Role.Button) { details = true }
             .semantics { contentDescription = spoken }
-            .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp).testTag("chat:footer"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 3.dp).testTag("chat:footer"),
+        verticalArrangement = Arrangement.Center,
     ) {
-        if (cached) Text(cachedWord, style = ChatType.meta.copy(color = colors.blocked), maxLines = 1)
-        if (model.isNotEmpty()) Text(model, style = ChatType.meta.copy(color = colors.accentText, fontFamily = FontFamily.Monospace), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (directory != null) Text(directory, style = ChatType.meta.copy(color = colors.muted, fontFamily = FontFamily.Monospace), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(if (model.isEmpty()) 1f else 0.7f))
-        if (model.isEmpty() && directory == null && cost == null) data.usage?.let {
-            Text(stringResource(R.string.chat_footer_token_total, it.totalTokens), style = ChatType.meta.copy(color = colors.muted), maxLines = 1)
+        if (model.isNotEmpty() || cached) Row(
+            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (cached) Text(cachedWord, style = compact.copy(color = colors.blocked), maxLines = 1)
+            if (model.isNotEmpty()) Text(model, style = compact.copy(color = colors.accentText), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         }
-        if (lastCost != null) Text(lastCost, style = ChatType.meta.copy(color = colors.done), maxLines = 1)
+        if (directory != null || lastCost != null || data.usage != null) Row(
+            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (directory != null) Text(directory, style = compact.copy(color = colors.muted), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (directory == null && lastCost == null) data.usage?.let {
+                Text(stringResource(R.string.chat_footer_token_total, it.totalTokens), style = compact.copy(color = colors.muted), maxLines = 1, modifier = Modifier.weight(1f))
+            }
+            if (lastCost != null) Text(lastCost, style = compact.copy(color = colors.done), maxLines = 1)
+        }
     }
     if (details) GlassAlertDialog(
         onDismissRequest = { details = false },
@@ -99,4 +107,16 @@ internal fun ChatFooter(data: ChatFooterData, cwd: String?, cached: Boolean, col
         },
         confirmButton = { TextButton(onClick = { details = false }) { Text(stringResource(R.string.close)) } },
     )
+}
+
+/** Reuses Chat's existing pane memory; this composable performs no transcript read or input. */
+@Composable
+internal fun ChatSessionFooter(connection: Connection, pane: String, memory: ChatMemory, colors: ChatColors) {
+    val kept = memory.of(pane)
+    val history = kept.history ?: return
+    val view by connection.view.collectAsState()
+    val state by connection.state.collectAsState()
+    val data = remember(history.entries) { chatFooterData(history.entries) }
+    ChatFooter(data, view?.panes?.firstOrNull { it.id == pane }?.cwd,
+        state !is Connection.State.Connected || kept.read.problem != null, colors)
 }
