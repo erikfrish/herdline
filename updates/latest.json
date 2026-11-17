@@ -4,19 +4,19 @@
   "signerSha256": "016e2d4c697bf40ce13786792318d40866a3cf21de37168a6616dbbada22c794",
   "stable": null,
   "candidate": {
-    "versionCode": 10142,
-    "versionName": "0.6.90",
-    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.90/herdline-0.6.90.apk",
-    "sha256": "5bc7f688f7b396822a48cefd18250bfd77e0d49c57fd6f3b3bac2c5d2318283a",
+    "versionCode": 10143,
+    "versionName": "0.6.91",
+    "url": "https://github.com/erikfrish/herdline/releases/download/v0.6.91/herdline-0.6.91.apk",
+    "sha256": "1f7b1a101bd97a34023dc66ac57fb691f7eba51344ac92aa2f8cff892b5ab43d",
     "size": 26138879,
     "minSdk": 29,
     "qa": {
       "state": "not_tested",
-      "reason": "Focused footer/composer-fit checks, four isolated Android 17 visual captures and real stock OMP Chat portrait layouts with keyboard hidden/shown passed. Dense/read-only delta and final signed runtime on Samsung were not separately tested."
+      "reason": "Focused StopOutcome tests and isolated Android 17 actual Chat UI checks with synthetic Working status passed; pending/unconfirmed words remained visible. No real-turn stopping success, narrow/large-font, final signed runtime or Samsung verification claim."
     },
     "accepted": false,
     "notes": {
-      "en": "Herdline 0.6.90 (Experimental, 10142)\n\n- Chat metadata now sits lower, immediately above the editor and below notices, queue controls and attachments.\n- The footer uses two compact 11sp monospace rows: model/provider gets the full first row, with the pane directory and per-reply cost on the second. The separate filled panel and divider are gone. Tap the full footer for unabridged Details; its 48dp interaction target is preserved.\n- Dense landscape/keyboard Chat retains its in-list footer, and read-only Chat keeps its fallback. Metadata still belongs to the latest recorded assistant message; absent model or price is never invented, and no session-total cost is claimed.\n\nVerification: focused footer and composer-fit checks, four light/dark normal/narrow visual captures, Details, and real stock OMP resumed-history Chat in portrait with the keyboard hidden and shown passed on an isolated Android 17 emulator. The real layout had one footer below notices, above the editor, and above the IME with no overlap. Dense/read-only layout was not re-exercised in this delta. No LLM calls or sends during runtime verification. Final signed runtime and Samsung rendering were not separately tested."
+      "en": "Herdline 0.6.91 (Experimental, 10143)\n\n- Chat's Working indicator is now a compact unframed line instead of a large outlined card: a small spinner, subdued status text and a trailing text-only Stop action.\n- The top gap is reduced from 18dp to 6dp. Stop retains a 48dp touch target. Stop routing, disabled explanations, pending state and failure messages are unchanged.\n\nVerification: focused StopOutcome tests and QA/test/signed builds passed. Actual Chat on an isolated Android 17 emulator was observed with synthetic Working status in an owned OMP fixture, in dark portrait with the keyboard hidden and shown. The row and Stop measured 48dp, without the card border or filled button. One Stop press on the idle fixture showed Stopping and then the fully visible unconfirmed result; this does not prove stopping a real model turn. No LLM calls. Narrow/large-font, final signed runtime and Samsung rendering were not separately exercised."
     }
   }
 }
