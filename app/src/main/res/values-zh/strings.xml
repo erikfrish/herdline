@@ -148,6 +148,8 @@
     <string name="create">创建</string>
     <string name="new_tab_program">在新标签页中启动</string>
     <string name="new_tab_shell">Shell</string>
+    <string name="new_tab_omp_chat">OMP（支持聊天）</string>
+    <string name="new_tab_omp_chat_help">创建时会在此 SSH 主机上安装随应用提供的聊天扩展并启动 OMP。不会发送提示或修改运行中的会话。</string>
     <string name="new_tab_program_help">仅列出此主机上找到的程序。创建后立即打开新标签页。选择的工具在其中启动，不会发送提示；Shell 不启动代理。</string>
     <string name="new_tab_discovering">正在检查已安装的工具…</string>
     <string name="new_tab_discovery_failed">无法检查已安装的工具：%1$s。仍可选择 Shell。</string>
@@ -421,6 +423,7 @@
     <string name="reason_attachment_too_many">OpenCode 一条消息最多接受 10 个文件。请移除一些。未发送任何内容。</string>
     <string name="reason_attachment_too_large">有文件超过 OpenCode 单个文件 20 MiB 的上限。请移除它。未发送任何内容。</string>
     <string name="reason_attachment_unsupported">有图片不是 PNG、JPEG、GIF 或 WebP，OpenCode 无法将其作为图片接收。未发送任何内容。</string>
+    <string name="reason_core_image_needs_ingress">此会话需要兼容的 OMP 聊天控制才能发送图片。草稿已保留，未发送任何内容。</string>
     <string name="reason_dialog_open">OMP 有问题或对话框未关闭。如果聊天中提供了回答控件，请在聊天中回答；否则请在终端中回答。未发送任何内容。</string>
     <string name="reason_collab">OMP 正处于协作会话中，聊天无法发送到其中。未发送任何内容。</string>
     <string name="reason_collab_state_unknown">OMP 无法确定此会话是否处于协作共享中，因此聊天不会发送到其中。未发送任何内容。</string>

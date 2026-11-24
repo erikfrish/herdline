@@ -26,20 +26,10 @@
     <string name="hc_mod_panel_title">Desktop mod panel</string>
     <string name="hc_terminal_lost_title">Terminal lost</string>
 
-    <!-- herdr-core interactive control. -->
-    <string name="hc_observing">Watching. Typing and resizing are off.</string>
-    <string name="hc_interactive_lost">Interactive control was taken back. Typing is off.</string>
-    <string name="hc_interactive_on">Interactive: this phone sets the pane’s size.</string>
-    <string name="hc_interactive_enter">Enter interactive control</string>
-    <string name="hc_interactive_leave">Leave control</string>
-    <string name="hc_interactive_dialog_title">Take interactive control?</string>
-    <string name="hc_interactive_dialog_text">Typing needs this phone to become the terminal’s size owner in herdr-core. The pane on the desktop then resizes to fit this phone until you leave control, or another screen takes it.</string>
-    <string name="hc_interactive_failed">Interactive control was not taken: %1$s</string>
-
     <!-- herdr-core agent identity and the opt-in Herdline hook. -->
     <string name="hc_identity_title">Chat needs the Herdline hook</string>
     <string name="hc_chat_off_title">Chat is off for this pane</string>
-    <string name="hc_identity_setup">Chat turns on once the agent itself reports its session to herdr-core, through the opt-in Herdline hook for OMP or Pi on the host. Nothing is installed or reloaded until you set it up there; then start the agent again in this pane. The hook is:</string>
+    <string name="hc_identity_launch_hint">For automatic Chat setup, choose OMP with Chat when creating a new tab. This running session is not changed.</string>
     <string name="hc_identity_close">Close</string>
     <string name="hc_identity_terminal">Open Terminal</string>
 </resources>

@@ -91,8 +91,8 @@ pub(super) enum Pending {
     Attach {
         terminal: String,
         observe: bool,
-        /// For an interactive attach: the pane and the UI request.
-        ui: Option<(String, String)>,
+        /// Interactive attaches are fenced to the pane and process they asked for.
+        target: Option<(String, u64)>,
     },
     Send { receipt: String },
     /// Composer DATA written before this call: any answer means the core
@@ -152,6 +152,9 @@ pub(super) struct Pump {
     pub focus: Focus,
     /// Interactive terminal by pane.
     pub interactive: HashMap<String, String>,
+    pub visible_terminal: Option<String>,
+    /// One attempt per visible terminal and process. Losing a stream never steals it back in a loop.
+    pub attempted_terminal: Option<(String, u64)>,
     /// The pane each terminal shows, from the document.
     pub pane_of: HashMap<String, String>,
     pub terminal_of: HashMap<String, String>,
@@ -250,6 +253,8 @@ pub(super) fn run(
         liveness: None,
         focus: Focus::default(),
         interactive: HashMap::new(),
+        visible_terminal: None,
+        attempted_terminal: None,
         pane_of: HashMap::new(),
         terminal_of: HashMap::new(),
         claims: Claims::default(),
@@ -381,10 +386,7 @@ impl Pump {
                 Pending::Run(flow) | Pending::Set { flow, .. } | Pending::Doc(Some(flow)) => {
                     flow.ui
                 }
-                Pending::Attach {
-                    ui: Some((_, id)), ..
-                }
-                | Pending::Plain { ui: id } => id,
+                Pending::Plain { ui: id } => id,
                 // A send left unanswered stays held until the user settles it.
                 _ => continue,
             };
@@ -629,14 +631,13 @@ impl Pump {
         Ok(vt)
     }
 
-    /// Attach to `terminal` at `cols`×`rows`: observing, or interactive for
-    /// the UI request `ui` of pane `ui.0`.
+    /// Attach as an observer or for the visible pane's current process.
     pub(super) fn attach(
         &mut self,
         terminal: &str,
         observe: bool,
         (cols, rows): (u16, u16),
-        ui: Option<(String, String)>,
+        target: Option<(String, u64)>,
     ) -> Result<()> {
         self.attaching.insert(terminal.to_owned());
         self.call(
@@ -648,7 +649,7 @@ impl Pump {
             Pending::Attach {
                 terminal: terminal.to_owned(),
                 observe,
-                ui,
+                target,
             },
         )
     }
@@ -657,14 +658,27 @@ impl Pump {
         &mut self,
         terminal: String,
         observe: bool,
-        ui: Option<(String, String)>,
+        target: Option<(String, u64)>,
         reply: std::result::Result<Value, (String, String)>,
     ) -> Result<()> {
         self.attaching.remove(&terminal);
+        self.dirty_sync = true;
+        let current = target.as_ref().is_none_or(|(pane, pid)| {
+            self.visible_terminal.as_ref() == Some(pane)
+                && self.terminal_of.get(pane) == Some(&terminal)
+                && self.records.get(&terminal).and_then(|record| record["pid"].as_u64()) == Some(*pid)
+                && self.placed().iter().any(|part| part.pane == *pane)
+        });
         let result = match reply {
             Ok(result) => result,
             Err((kind, message)) => {
                 tracing::warn!(%kind, %message, "attach refused");
+                if target.is_some() {
+                    if current {
+                        self.emit(UiEvent::Rejected { request_id: None, reason: message });
+                    }
+                    return Ok(());
+                }
                 if let Some(term) = self.terms.get_mut(&terminal) {
                     term.ended = true;
                 } else if let Ok(vt) = self.new_vt(1, 1) {
@@ -683,9 +697,6 @@ impl Pump {
                         },
                     );
                 }
-                if let Some((_, id)) = ui {
-                    self.refuse(&id, &kind, &message);
-                }
                 return Ok(());
             }
         };
@@ -696,6 +707,11 @@ impl Pump {
         else {
             return Err(Error::CoreProtocol("attach answered no channel"));
         };
+        if !current {
+            self.early.remove(&channel);
+            self.closing.insert(channel);
+            return self.link.frame(channel, Kind::Close, &[]);
+        }
         // An observing attach answered after an interactive one took the
         // terminal: the interactive stream stays.
         if observe
@@ -734,10 +750,9 @@ impl Pump {
             },
         );
         self.channels.insert(channel, terminal.clone());
-        if let Some((pane, id)) = ui {
+        if let Some((pane, _)) = target {
             self.interactive.insert(pane.clone(), terminal.clone());
             lock(&self.shared.interactive).insert(pane);
-            self.answer(&id, json!({}));
             self.dirty_view = true;
         }
         if let Some(frames) = self.early.remove(&channel) {
@@ -803,8 +818,8 @@ impl Pump {
             Pending::Attach {
                 terminal,
                 observe,
-                ui,
-            } => self.attached(terminal, observe, ui, reply),
+                target,
+            } => self.attached(terminal, observe, target, reply),
             Pending::Send { receipt } => {
                 crate::hold::holds().answered(self.shared.link, &receipt);
                 match reply {
@@ -1156,7 +1171,7 @@ impl Pump {
 
     fn sync(&mut self) -> Result<()> {
         let placed = self.placed();
-        let mut wanted: HashMap<String, (u16, u16)> = placed
+        let wanted: HashMap<String, (u16, u16)> = placed
             .iter()
             .filter_map(|placed| {
                 placed
@@ -1165,8 +1180,28 @@ impl Pump {
                     .map(|terminal| (terminal, (placed.rect.width, placed.rect.height)))
             })
             .collect();
-        for terminal in self.interactive.values() {
-            wanted.entry(terminal.clone()).or_insert(self.size);
+        let target = placed.iter().find_map(|part| {
+            let pane = self.visible_terminal.as_ref().filter(|pane| pane.as_str() == part.pane)?;
+            let terminal = part.terminal.as_ref()?;
+            let record = self.records.get(terminal)?;
+            let pid = record["pid"].as_u64().filter(|_| record["state"] == "live")?;
+            Some((pane.clone(), terminal.clone(), pid))
+        });
+        let stale = self.interactive.iter().find_map(|(pane, terminal)| {
+            (!target.as_ref().is_some_and(|(p, t, _)| p == pane && t == terminal)).then(|| terminal.clone())
+        });
+        if let Some(terminal) = stale {
+            self.close_term(&terminal)?;
+        }
+        if let Some((pane, terminal, pid)) = target {
+            let attempt = (terminal.clone(), pid);
+            if self.attempted_terminal.as_ref() != Some(&attempt)
+                && !self.attaching.contains(&terminal)
+            {
+                self.attempted_terminal = Some(attempt);
+                let size = wanted[&terminal];
+                self.attach(&terminal, false, size, Some((pane, pid)))?;
+            }
         }
         let unwanted: Vec<String> = self
             .terms

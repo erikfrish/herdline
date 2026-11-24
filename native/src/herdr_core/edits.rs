@@ -3,7 +3,7 @@
 
 use super::{
     doc::{self, Axis, Edit, Refusal},
-    keys, lock,
+    keys,
     pump::{Flow, Pending, Pump},
     wire::Kind,
 };
@@ -269,9 +269,13 @@ impl Pump {
                 self.answer(&id, json!({}));
             }
             "terminal.interact" => {
-                let pane = word(params, "pane");
-                let on = params["on"].as_bool().unwrap_or(false);
-                return self.interact(id, pane, on);
+                let pane = params["pane"].as_str().filter(|pane| !pane.is_empty());
+                if self.visible_terminal.as_deref() != pane {
+                    self.visible_terminal = pane.map(str::to_owned);
+                    self.attempted_terminal = None;
+                    self.dirty_sync = true;
+                }
+                self.answer(&id, json!({}));
             }
             "pane.rename" => self.refuse(&id, "unsupported", "unsupported_backend"),
             "workspace.rename" => {
@@ -494,6 +498,19 @@ impl Pump {
             "env": {"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "herdr"},
             "labels": {"herdr.space": space, "herdr.tab": tab, "herdr.seen": "0"},
         });
+        if kind == "herdline-omp" {
+            let spec = &params["managed_omp"];
+            let path = |key: &str| spec[key].as_str().filter(|path| path.starts_with('/') && !path.contains('\0'));
+            let (Some(exe), Some(entry), Some(ingress)) = (path("exe"), path("entry"), path("ingress")) else {
+                self.refuse(&ui, "invalid", "invalid_params");
+                return Ok(());
+            };
+            // An absolute executable bypasses core templates: their argv tail is a prompt.
+            run["argv"] = json!([exe, "-e", entry, "-e", ingress]);
+            if let Some(runtime) = path("runtime") {
+                run["env"]["XDG_RUNTIME_DIR"] = json!(runtime);
+            }
+        }
         if !name.is_empty() {
             run["name"] = json!(name);
         }
@@ -659,39 +676,6 @@ impl Pump {
         }
     }
 
-    /// Hold `pane`'s terminal interactively at the pane's size, or let it go.
-    fn interact(&mut self, id: String, pane: String, on: bool) -> Result<()> {
-        let Some(terminal) = self.terminal_of.get(&pane).cloned() else {
-            self.refuse(&id, "missing", "missing");
-            return Ok(());
-        };
-        if !on {
-            if self.interactive.remove(&pane).is_some() {
-                lock(&self.shared.interactive).remove(&pane);
-                self.close_term(&terminal)?;
-                self.moved();
-            }
-            self.answer(&id, json!({}));
-            return Ok(());
-        }
-        if self.interactive.get(&pane) == Some(&terminal) {
-            self.answer(&id, json!({}));
-            return Ok(());
-        }
-        let live = self.records.get(&terminal).is_some_and(|record| {
-            record["state"].as_str() == Some("live") && !record["pid"].is_null()
-        });
-        if !live {
-            self.refuse(&id, "missing", "terminal_lost");
-            return Ok(());
-        }
-        let size = self
-            .placed()
-            .into_iter()
-            .find(|placed| placed.pane == pane)
-            .map_or(self.size, |placed| (placed.rect.width, placed.rect.height));
-        self.attach(&terminal, false, size, Some((pane, id)))
-    }
 
     /// The pane input goes to: the one named, else the focused one.
     fn target_pane(&self, pane: Option<String>) -> Option<String> {

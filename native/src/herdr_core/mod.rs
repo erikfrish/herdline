@@ -345,6 +345,31 @@ impl Core {
         lock(&self.shared.exec).clone().ok_or(Error::NotReady)
     }
 
+    /// Stage and verify the exact extensions that the managed launch loads.
+    fn provision_omp(&self) -> Result<Value> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        use herdr_client::shell_quote;
+        let script = include_str!("install_omp_runtime.py");
+        let identity = STANDARD.encode(include_bytes!("../../../host/omp/herdline-core.ts"));
+        let ingress = STANDARD.encode(include_bytes!("../../../host/omp/herdline-ingress.ts"));
+        let subagents = STANDARD.encode(include_bytes!("../../../host/omp/live-subagents.ts"));
+        let output = self.exec()?.run(
+            format!("python3 -c {} '{identity}' '{ingress}' '{subagents}'", shell_quote(script)),
+            READ_WAIT,
+            8192,
+        )?;
+        let text = String::from_utf8_lossy(&output.tail);
+        if output.exit_status != Some(0) {
+            let message = if text.trim().is_empty() {
+                "The host did not confirm hook installation.".to_owned()
+            } else {
+                text.trim().to_owned()
+            };
+            return Err(std::io::Error::other(message).into());
+        }
+        serde_json::from_str(text.lines().last().ok_or(Error::BadReply)?).map_err(Into::into)
+    }
+
     /// The confirmed instance in `pane`, if the host confirmed one.
     fn instance(&self, pane: &str) -> Option<transcript::Core> {
         lock(&self.shared.instances).get(pane).cloned()
@@ -634,6 +659,11 @@ impl Core {
         {
             return Ok(delivery::refused(reason));
         }
+        // terminal.send has one text paste; it cannot send the separate
+        // image pastes OMP needs. Do not submit an incomplete draft.
+        if request.submit && request.attachments.iter().any(|file| file.kind == attach::Kind::Image) {
+            return Ok(refused("core_image_needs_ingress"));
+        }
         if !request.attachments.is_empty() {
             let Ok(exec) = self.exec() else {
                 return Ok(delivery::refused(Refusal::AttachmentMissing));
@@ -906,7 +936,7 @@ impl Core {
                     .to_owned(),
             });
         }
-        let launchers: Vec<Value> = reply["result"]["templates"]
+        let mut launchers: Vec<Value> = reply["result"]["templates"]
             .as_array()
             .map(Vec::as_slice)
             .unwrap_or_default()
@@ -914,13 +944,24 @@ impl Core {
             .filter(|template| template["error"].is_null())
             .filter_map(|template| {
                 let name = template["name"].as_str().filter(|name| !name.is_empty())?;
+                if name == "herdline-omp" {
+                    return None;
+                }
                 Some(json!({
                     "kind": name,
-                    "label": name,
+                    "label": if name == "omp" { "omp (template)" } else { name },
                     "description": template["description"].as_str().unwrap_or_default(),
                 }))
             })
             .collect();
+        let probe = self.exec()?.run(
+            "sh -c 'PATH=$HOME/.bun/bin:$HOME/.local/bin:$PATH; command -v omp'".to_owned(),
+            READ_WAIT,
+            4096,
+        )?;
+        if probe.exit_status == Some(0) {
+            launchers.insert(0, json!({"kind": "herdline-omp", "label": "OMP with Chat"}));
+        }
         Ok(json!({"launchers": launchers}).to_string())
     }
 
@@ -939,13 +980,17 @@ impl Core {
                 .filter(|text| !text.is_empty())
                 .ok_or(Error::BadReply)
         };
-        let params = json!({
+        let kind = text("kind")?;
+        let mut params = json!({
             "pane": text("pane")?,
             "tab": text("tab")?,
             "terminal": text("terminal")?,
-            "kind": text("kind")?,
+            "kind": kind,
             "name": value["name"].as_str().unwrap_or_default(),
         });
+        if kind == "herdline-omp" {
+            params["managed_omp"] = self.provision_omp()?;
+        }
         let id = self.id("a");
         let answer = self.post(
             &id,

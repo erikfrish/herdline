@@ -161,6 +161,7 @@
     <string name="reason_attachment_too_many">OpenCode takes at most 10 files in one message. Remove some. Nothing sent.</string>
     <string name="reason_attachment_too_large">A file is over OpenCode\'s 20 MiB limit for one file. Remove it. Nothing sent.</string>
     <string name="reason_attachment_unsupported">An image isn\'t a PNG, JPEG, GIF or WebP, so OpenCode can\'t take it as an image. Nothing sent.</string>
+    <string name="reason_core_image_needs_ingress">This session needs compatible OMP Chat control to send images. The draft is kept; nothing was sent.</string>
     <!-- Chat's Send through the OMP endpoint (ChatIngress.kt). -->
     <string name="reason_dialog_open">OMP has a question or dialog open. Answer it in Chat if available, or in Terminal. Nothing sent.</string>
     <string name="reason_collab">OMP is in a collab session, which Chat can\'t send into. Nothing sent.</string>

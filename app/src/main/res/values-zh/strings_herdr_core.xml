@@ -23,18 +23,9 @@
     <string name="hc_mod_panel_title">桌面模组面板</string>
     <string name="hc_terminal_lost_title">终端已丢失</string>
 
-    <string name="hc_observing">仅观看。输入和调整大小已关闭。</string>
-    <string name="hc_interactive_lost">交互控制已被收回。输入已关闭。</string>
-    <string name="hc_interactive_on">交互中：此手机决定窗格大小。</string>
-    <string name="hc_interactive_enter">进入交互控制</string>
-    <string name="hc_interactive_leave">退出控制</string>
-    <string name="hc_interactive_dialog_title">获取交互控制？</string>
-    <string name="hc_interactive_dialog_text">输入需要此手机成为 herdr-core 中该终端的尺寸所有者。之后桌面上的窗格会调整为适合此手机的大小，直到你退出控制或其他屏幕接管。</string>
-    <string name="hc_interactive_failed">未获得交互控制：%1$s</string>
-
     <string name="hc_identity_title">聊天需要 Herdline 钩子</string>
     <string name="hc_chat_off_title">此窗格的聊天已关闭</string>
-    <string name="hc_identity_setup">只有代理自己通过主机上 OMP 或 Pi 的可选 Herdline 钩子向 herdr-core 报告其会话后，聊天才会开启。在你于主机上设置之前，不会安装或重新加载任何内容；设置后请在此窗格中重新启动代理。钩子为：</string>
+    <string name="hc_identity_launch_hint">若要自动设置聊天，请在创建新标签页时选择 OMP（支持聊天）。不会修改当前运行的会话。</string>
     <string name="hc_identity_close">关闭</string>
     <string name="hc_identity_terminal">打开终端</string>
 </resources>

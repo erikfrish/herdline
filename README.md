@@ -178,18 +178,24 @@ Choose **herdr-core (herdr-app)** when adding the SSH host, and set its hc
 session (normally `default`). The desktop app and phone share the core's
 spaces, tabs and terminals, but keep their own focus and zoom. Desktop
 JavaScript mod panels are not terminals and cannot be rendered on the phone.
-Observing must not resize the host; entering interactive control explicitly
-lets the core use the phone's terminal size.
+The visible **Terminal** takes input and uses the phone's terminal size
+automatically. Switching away from that pane, opening Chat, or leaving the
+app's foreground releases control. There is no interactive-mode switch.
 
-For OMP Chat identity, explicitly load `host/omp/herdline-core.ts` inside an
-hc terminal, for example `omp -e /absolute/path/to/herdline-core.ts`. The hook
-publishes only its own agent/session/path/pid labels, updates them on session
-switches and clears them on shutdown. It sends no prompt. Herdline validates
-the foreground process and confined session file before using those labels.
-The hook is never installed globally or loaded into a running agent by itself.
-Without valid identity, the phone explains why Chat is unavailable instead
-of guessing a session from a terminal title or command line.
+Choose **OMP with Chat** when creating a tab. Herdline stages its bundled
+Chat extensions under `~/.herdline-chat` on the SSH host and loads them into
+the new OMP process. This requires Python 3 on the host and does not edit
+global OMP configuration or reload an already-running agent. Custom
+herdr-core templates keep their own commands. Direct Send and image delivery
+require an OMP build with compatible ingress APIs and `socat` on the host.
+When the direct route is unavailable, Herdline keeps an image draft instead
+of sending only its caption through the terminal.
 
+The identity hook publishes the active OMP session file and process ID, and
+updates or clears them when the session changes. Herdline checks both the
+foreground process and the session file before using them. Existing agents
+launched outside Herdline still need their own identity hook; this setup is
+for OMP, not Pi.
 
 ### Notifications
 

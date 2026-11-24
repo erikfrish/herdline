@@ -125,6 +125,10 @@ private fun NewTabDialog(
             .onFailure { discoveryError = it.message }
         discovering = false
     }
+    @Composable
+    fun launcherLabel(launcher: AgentLauncher): String = if (launcher.kind == "herdline-omp") {
+        stringResource(R.string.new_tab_omp_chat)
+    } else launcher.label
     val create = {
         if (!attempted) {
             attempted = true
@@ -156,7 +160,7 @@ private fun NewTabDialog(
                 Text(stringResource(R.string.new_tab_program), style = MaterialTheme.typography.labelLarge)
                 Box {
                     TextButton(onClick = { choosing = true }, enabled = !attempted, modifier = Modifier.testTag("new_tab:program")) {
-                        Text(launchers.firstOrNull { it.kind == selected }?.label ?: stringResource(R.string.new_tab_shell))
+                        Text(launchers.firstOrNull { it.kind == selected }?.let { launcherLabel(it) } ?: stringResource(R.string.new_tab_shell))
                     }
                     GlassMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(
@@ -166,14 +170,17 @@ private fun NewTabDialog(
                         )
                         launchers.forEach { launcher ->
                             DropdownMenuItem(
-                                text = { Text(launcher.label) },
+                                text = { Text(launcherLabel(launcher)) },
                                 onClick = { selected = launcher.kind; choosing = false },
                                 modifier = Modifier.testTag("new_tab:kind:${launcher.kind}"),
                             )
                         }
                     }
                 }
-                Text(stringResource(R.string.new_tab_program_help), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(if (selected == "herdline-omp") R.string.new_tab_omp_chat_help else R.string.new_tab_program_help),
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 if (discovering) Text(stringResource(R.string.new_tab_discovering), style = MaterialTheme.typography.bodySmall)
                 discoveryError?.let { Text(stringResource(R.string.new_tab_discovery_failed, it), color = MaterialTheme.colorScheme.error) }
                 if (creating) Text(stringResource(R.string.new_tab_creating), modifier = Modifier.testTag("new_tab:creating"))

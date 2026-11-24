@@ -5,7 +5,6 @@ import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -429,29 +428,9 @@ class Connection(val node: Node) {
         return true
     }
 
-    /**
-     * Asks herdr-core to make this phone [pane]'s interactive viewer ([on]),
-     * and so the core's size owner, or to go back to observing. The user
-     * agreed to it first; never asked on their behalf. Null only when the
-     * core acknowledged it with a result and, for [on], a snapshot taken after
-     * that shows the pane interactive; else why not (a [ReasonCode], the
-     * core's failure text, [BAD_REPLY] or [UNCONFIRMED]).
-     */
-    suspend fun interact(pane: String, on: Boolean): String? {
-        val before = _view.value
-        val reason = when (val reply = awaitRequest("terminal.interact", JSONObject().put("pane", pane).put("on", on), INTERACT_TIMEOUT_MS)) {
-            is RequestReply.Answered -> refusal(reply.envelope)
-                ?: BAD_REPLY.takeUnless { reply.envelope.has("result") && !reply.envelope.isNull("result") }
-            is RequestReply.Refused -> reply.reason
-            RequestReply.Uncertain -> UNCONFIRMED
-        }
-        if (reason != null || !on) return reason
-        // Control is the phone's only once a fresh snapshot says so, never on the ack alone.
-        val held = withTimeoutOrNull(INTERACT_TIMEOUT_MS) {
-            _view.first { view -> view !== before && view?.panes?.firstOrNull { it.id == pane }?.interactive == true }
-        }
-        return if (held == null) UNCONFIRMED else null
-    }
+    /** The visible core terminal, or null when leaving it or the foreground. */
+    internal fun showCoreTerminal(pane: String?) =
+        request("terminal.interact", JSONObject().put("pane", pane ?: JSONObject.NULL))
 
     fun touch(pane: String, kind: Int, column: Int, row: Int, lines: Int = 1) {
         live().takeIf { it != 0L }?.let { Native.touch(it, pane, kind, column, row, lines) }
@@ -928,9 +907,6 @@ internal const val REQUEST_FAILED = "request_failed"
 
 /** An answer with neither a readable error nor a result: never taken for a success. */
 internal const val BAD_REPLY = "bad_reply"
-
-/** How long Enter interactive control waits for herdr-core's answer. */
-private const val INTERACT_TIMEOUT_MS = 10_000L
 
 /** The reason of a delivery whose fate the app cannot know, as the native core names it. */
 private const val UNCONFIRMED = "unconfirmed"

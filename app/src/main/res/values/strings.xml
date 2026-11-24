@@ -143,6 +143,8 @@
     <string name="create">Create</string>
     <string name="new_tab_program">Start in the new tab</string>
     <string name="new_tab_shell">Shell</string>
+    <string name="new_tab_omp_chat">OMP with Chat</string>
+    <string name="new_tab_omp_chat_help">Create installs the bundled Chat extensions on this SSH host and starts OMP. It does not send a prompt or touch running sessions.</string>
     <string name="new_tab_program_help">Only programs found on this host are listed. Create opens the new tab immediately. A chosen harness starts there with no prompt sent; Shell starts no agent.</string>
     <string name="new_tab_discovering">Checking installed harnesses…</string>
     <string name="new_tab_discovery_failed">Could not check installed harnesses: %1$s. Shell is still available.</string>

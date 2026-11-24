@@ -15,14 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,7 +30,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.BAD_REPLY
@@ -41,7 +38,6 @@ import io.github.erikfrish.herdline.core.REQUEST_FAILED
 import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.isChatAgent
-import io.github.erikfrish.herdline.ui.glass.GlassAlertDialog
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GroupShape
 import io.github.erikfrish.herdline.ui.glass.IconBadge
@@ -71,13 +67,6 @@ internal fun coreReasonText(context: Context, code: String): String = coreReason
 /** The composable form of [coreReasonText]. */
 @Composable
 internal fun coreReasonText(code: String): String = coreReasonRes(code)?.let { stringResource(it) } ?: code
-
-/**
- * Whether [pane]'s interactive control was taken away since [before]: it
- * was this phone's and is not any more. Only that asks the user again; a
- * pane first seen observing, or one never held, is not a loss.
- */
-internal fun controlLost(before: Boolean?, now: Boolean?): Boolean = before == true && now == false
 
 /**
  * Whether Chat can read [pane] in [view]: Herdr names a Chat program there,
@@ -114,63 +103,10 @@ internal fun BoxScope.UnsupportedPaneCard(reason: String, accent: Color) {
 }
 
 /**
- * The bar of a herdr-core terminal pane: observing, with the way into
- * interactive control, or holding it, with the way out. [lost]: control
- * was this phone's and was taken away, so it says so.
+ * Why Chat is off for this herdr-core agent pane.
  */
 @Composable
-internal fun InteractiveBar(interactive: Boolean, lost: Boolean, busy: Boolean, accent: Color, onEnter: () -> Unit, onLeave: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .testTag(if (interactive) "session:interactive_on" else "session:interactive_off"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            stringResource(
-                when {
-                    interactive -> R.string.hc_interactive_on
-                    lost -> R.string.hc_interactive_lost
-                    else -> R.string.hc_observing
-                },
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        GlassButton(
-            stringResource(if (interactive) R.string.hc_interactive_leave else R.string.hc_interactive_enter),
-            onClick = if (interactive) onLeave else onEnter,
-            primary = !interactive,
-            enabled = !busy,
-            accent = accent,
-            modifier = Modifier.testTag("session:interactive_toggle"),
-        )
-    }
-}
-
-/** Says what taking interactive control does before it is asked of herdr-core; nothing is sent until confirmed. */
-@Composable
-internal fun InteractiveDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    GlassAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.hc_interactive_dialog_title)) },
-        text = { Text(stringResource(R.string.hc_interactive_dialog_text)) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.hc_interactive_enter)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
-    )
-}
-
-/**
- * Why Chat is off for a herdr-core agent pane ([reason], a [ReasonCode]),
- * and for `identity_unknown` the opt-in hook that turns it on. Over the
- * content like the harness card; it goes on ✕, on Open Terminal, or once
- * the pane's view says Chat can read it.
- */
-@Composable
-internal fun BoxScope.IdentityCard(reason: String, accent: Color, onTerminal: () -> Unit, onClose: () -> Unit) {
+internal fun BoxScope.IdentityCard(reason: String, accent: Color, omp: Boolean, onTerminal: () -> Unit, onClose: () -> Unit) {
     val hook = reason == ReasonCode.IDENTITY_UNKNOWN
     Box(
         Modifier
@@ -184,12 +120,7 @@ internal fun BoxScope.IdentityCard(reason: String, accent: Color, onTerminal: ()
             title = stringResource(if (hook) R.string.hc_identity_title else R.string.hc_chat_off_title),
             body = coreReasonText(reason),
         ) {
-            if (hook) {
-                Text(stringResource(R.string.hc_identity_setup), style = MaterialTheme.typography.bodyMedium)
-                SelectionContainer {
-                    Text(HOOK_FILE, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                }
-            }
+            if (hook && omp) Text(stringResource(R.string.hc_identity_launch_hint), style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassButton(stringResource(R.string.hc_identity_close), onClick = onClose, modifier = Modifier.weight(1f))
                 GlassButton(
@@ -226,5 +157,3 @@ private fun CoreCard(icon: androidx.compose.ui.graphics.vector.ImageVector, tone
     }
 }
 
-/** The opt-in hook's place in the Herdline sources; what it is called, not a command. */
-private const val HOOK_FILE = "host/omp/herdline-core.ts"

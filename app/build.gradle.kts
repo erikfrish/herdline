@@ -81,6 +81,9 @@ val buildRust = tasks.register<Exec>("buildRust") {
     val out = layout.buildDirectory.dir("rustJniLibs")
     workingDir = native.asFile
     inputs.dir(native.dir("src"))
+    inputs.file(rootProject.layout.projectDirectory.file("host/omp/herdline-core.ts"))
+    inputs.file(rootProject.layout.projectDirectory.file("host/omp/herdline-ingress.ts"))
+    inputs.file(rootProject.layout.projectDirectory.file("host/omp/live-subagents.ts"))
     inputs.file(native.file("Cargo.toml"))
     inputs.file(rootProject.layout.projectDirectory.file("Cargo.toml"))
     inputs.file(rootProject.layout.projectDirectory.file("Cargo.lock"))

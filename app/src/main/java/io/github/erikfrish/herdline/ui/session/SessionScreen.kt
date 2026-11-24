@@ -329,15 +329,6 @@ fun SessionScreen(
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
     // A herdr-core agent pane Chat cannot read yet (identity_unknown): why, and the hook that turns Chat on.
     var identityCard by remember { mutableStateOf<String?>(null) }
-    // herdr-core interactive control on this connection: the pane asked about, each pane's last seen
-    // interactive flag (to tell a loss of control from never having had it), the panes that lost it.
-    var interactAsk by remember(connection) { mutableStateOf<String?>(null) }
-    var interactBusy by remember(connection) { mutableStateOf(false) }
-    val interactSeen = remember(connection) { HashMap<String, Boolean?>() }
-    val interactLost = remember(connection) { mutableStateMapOf<String, Boolean>() }
-    // Panes whose disclosure the user agreed to on this connection, and those whose Leave is under way.
-    val interactAgreed = remember(connection) { HashMap<String, Boolean>() }
-    val interactLeaving = remember(connection) { HashMap<String, Boolean>() }
     var noteCount by remember { mutableLongStateOf(0L) }
     // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
     val bareBanners = remember { HashMap<Long, Long>() }
@@ -499,11 +490,6 @@ fun SessionScreen(
                     terminalFailed = null
                     harnessCard = null
                     identityCard = null
-                    interactAsk = null
-                    interactSeen.clear()
-                    interactLost.clear()
-                    interactAgreed.clear()
-                    interactLeaving.clear()
                 }
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
@@ -677,20 +663,15 @@ fun SessionScreen(
     // The pane Terminal shows, as herdr-core reports it: no terminal at all, or watched without control.
     val desktopRecord = desktopPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
     val paneUnsupported = desktopRecord?.unsupported.takeIf { !chatMode }
-    // Absent on Herdr panes, which always take input; only herdr-core terminals have the bar.
+    // Opening a core terminal is the user's request to type and size it.
     val paneInteractive = desktopRecord?.interactive.takeIf { paneUnsupported == null }
-    // Control lost is only a true that became false without Leave; a reconnect starts new maps, so it is never a loss.
-    LaunchedEffect(view) {
-        view?.panes?.forEach { pane ->
-            if (controlLost(interactSeen[pane.id], pane.interactive)) {
-                if (interactLeaving.remove(pane.id) == null) {
-                    // Taken away: the next Enter discloses again.
-                    interactLost[pane.id] = true
-                    interactAgreed.remove(pane.id)
-                }
-            }
-            if (pane.interactive == true) interactLost.remove(pane.id)
-            interactSeen[pane.id] = pane.interactive
+    val controlPane = desktopPane?.takeIf {
+        !chatMode && !closed && paneInteractive != null && state is Connection.State.Connected
+    }
+    if (controlPane != null) {
+        LifecycleResumeEffect(connection, controlPane, view?.boot) {
+            connection.showCoreTerminal(controlPane)
+            onPauseOrDispose { connection.showCoreTerminal(null) }
         }
     }
     // Watching takes no typing: the keyboard goes, so nothing typed is silently dropped.
@@ -701,24 +682,6 @@ fun SessionScreen(
         }
     }
 
-    /** Asks herdr-core for [pane]'s control, [on] or off; on only after the user agreed, off only on Leave. */
-    fun interact(pane: String, on: Boolean) {
-        interactBusy = true
-        if (on) interactAgreed[pane] = true else interactLeaving[pane] = true
-        scope.launch {
-            val refused = connection.interact(pane, on)
-            interactBusy = false
-            if (refused != null) {
-                if (!on) interactLeaving.remove(pane)
-                snackbar.showSnackbar(context.getString(R.string.hc_interactive_failed, coreReasonText(context, refused)))
-            }
-        }
-    }
-
-    /** Enter interactive control: disclosed once per pane per connection, again only after control was lost. */
-    fun enterInteractive(pane: String) {
-        if (interactAgreed[pane] == true) interact(pane, true) else interactAsk = pane
-    }
     val tabs = workspace?.let { view?.tabsOf(it.id) }.orEmpty()
     // S2: where the desktop is, said in Chat only when it isn't the pane read here.
     val desktopOther = desktopElsewhere(focusedPane, desktopPane).takeIf { chatMode }
@@ -1588,13 +1551,6 @@ fun SessionScreen(
                         }
                         // herdr-core: a pane with no terminal (a desktop mod panel, a lost terminal) says so, never blank.
                         paneUnsupported?.let { UnsupportedPaneCard(it, accent) }
-                        // Nothing goes to herdr-core until the user has read what control does and agreed.
-                        interactAsk?.let { pane ->
-                            InteractiveDialog(
-                                onConfirm = { interactAsk = null; interact(pane, true) },
-                                onDismiss = { interactAsk = null },
-                            )
-                        }
                         if (!lostLive) {
                             // A password host signs in with its saved password, which never enters the
                             // attempt's secrets: its rejection is the password's even when none was typed.
@@ -1645,6 +1601,7 @@ fun SessionScreen(
                                 IdentityCard(
                                     reason = reason,
                                     accent = accent,
+                                    omp = currentProgram.equals("omp", ignoreCase = true),
                                     onTerminal = { identityDismissed[pane] = true; identityCard = null; openTerminal() },
                                     onClose = { identityDismissed[pane] = true; identityCard = null },
                                 )
@@ -1668,19 +1625,6 @@ fun SessionScreen(
                     if (!chatMode) {
                         // Direct terminal input and autocomplete keys, never a Chat field.
                         Column(Modifier.navigationBarsPadding()) {
-                            // herdr-core: watching or holding this terminal's control, and the explicit way in and out.
-                            if (paneInteractive != null && state is Connection.State.Connected) {
-                                desktopPane?.let { pane ->
-                                    InteractiveBar(
-                                        interactive = paneInteractive,
-                                        lost = interactLost[pane] == true,
-                                        busy = interactBusy,
-                                        accent = accent,
-                                        onEnter = { enterInteractive(pane) },
-                                        onLeave = { interact(pane, false) },
-                                    )
-                                }
-                            }
                             // Keys only where they go in: never under a watched or terminal-less herdr-core pane.
                             if (state is Connection.State.Connected && settings.showExtraKeys && paneInteractive != false && paneUnsupported == null) {
                                 ExtraKeysRow(

@@ -97,6 +97,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.erikfrish.herdline.HerdlineApp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
+import io.github.erikfrish.herdline.core.AttachmentKind
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.HarnessKey
 import io.github.erikfrish.herdline.core.isChatAgent
@@ -115,6 +116,7 @@ import io.github.erikfrish.herdline.core.transcriptRequest
 import io.github.erikfrish.herdline.core.TranscriptIdentity
 import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.data.AttachConsent
+import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.ComposerAction
 import io.github.erikfrish.herdline.data.ComposerMenu
 import io.github.erikfrish.herdline.data.Binding
@@ -1714,7 +1716,10 @@ private fun Editor(
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
     // Match the route delivery actually uses; only an absent endpoint permits the pane fallback.
-    val sendGate = composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send, checkedPane)
+    val coreImageFallback = connection.node.backend == Backend.HerdrCore &&
+        (probe == IngressProbe.Absent || checkedPane) && draft.attachments.any { it.kind == AttachmentKind.IMAGE }
+    val sendGate = if (coreImageFallback) ComposerCheck.Gate(false, "core_image_needs_ingress") else
+        composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send, checkedPane)
     val precheck = sendGate?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
     val precheckHold = remember(key) { PrecheckHold(PRECHECK_SETTLE_MS) }
     // Re-reads the hold once a code may have settled, with no new frame.
@@ -3026,6 +3031,7 @@ internal fun reasonRes(reason: String): Int =
         "attachment_too_many" -> R.string.reason_attachment_too_many
         "attachment_too_large" -> R.string.reason_attachment_too_large
         "attachment_unsupported" -> R.string.reason_attachment_unsupported
+        "core_image_needs_ingress" -> R.string.reason_core_image_needs_ingress
         "unconfirmed" -> R.string.composer_uncertain
         // Chat's OMP endpoint (ChatIngress.kt, host/omp/herdline-ingress.ts).
         "instance_changed" -> R.string.reason_agent_restarted
