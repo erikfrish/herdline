@@ -330,7 +330,8 @@ fun SessionScreen(
     // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
     // A herdr-core agent pane Chat cannot read yet (identity_unknown): why, and the hook that turns Chat on.
-    var identityCard by remember { mutableStateOf<String?>(null) }
+    // Shown only on a Chat tap; per connection, so a reconnect never brings it back.
+    var identityCard by remember(connection) { mutableStateOf<String?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
     // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
     val bareBanners = remember { HashMap<Long, Long>() }
@@ -655,13 +656,12 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
-    // herdr-core: an agent pane Chat cannot read says why, from each new view, rather than sitting in Terminal
-    // silently; it goes once the view says Chat reads it, on ✕ (for this pane on this connection) or a pane change.
+    // herdr-core: an agent pane Chat cannot read says why on a Chat tap (chooseMode), never by itself; the card
+    // goes on ✕, Open Terminal, a pane change, or once the view says Chat reads it.
     val focusedRecord = focusedPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
     val chatReason = focusedRecord?.chat?.takeIf { isChatAgent(currentProgram) }
-    val identityDismissed = remember(connection) { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(focusedPane, chatReason) {
-        identityCard = focusedPane?.takeIf { chatReason != null && identityDismissed[it] != true }
+        if (identityCard != focusedPane || chatReason == null) identityCard = null
     }
     // The pane Terminal shows, as herdr-core reports it: no terminal at all, or watched without control.
     val desktopRecord = desktopPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
@@ -894,10 +894,7 @@ fun SessionScreen(
             }
             chat == chatWanted -> Unit
             // herdr-core names why Chat cannot read this agent: that, and the way to turn it on.
-            chat && chatPane == null && chatReason != null -> focusedPane?.let {
-                identityDismissed.remove(it)
-                identityCard = it
-            }
+            chat && chatPane == null && chatReason != null -> identityCard = focusedPane
             chat && chatPane == null -> {
                 // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
                 harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
@@ -1616,8 +1613,8 @@ fun SessionScreen(
                                     reason = reason,
                                     accent = accent,
                                     omp = currentProgram.equals("omp", ignoreCase = true),
-                                    onTerminal = { identityDismissed[pane] = true; identityCard = null; openTerminal() },
-                                    onClose = { identityDismissed[pane] = true; identityCard = null },
+                                    onTerminal = { identityCard = null; openTerminal() },
+                                    onClose = { identityCard = null },
                                 )
                             }
                         }
