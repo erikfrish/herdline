@@ -42,6 +42,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.BAD_REPLY
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.REQUEST_FAILED
+import io.github.erikfrish.herdline.core.OmpChatIntegration
 import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.isChatAgent
@@ -141,18 +142,72 @@ internal fun BoxScope.TerminalWaitingPill() {
     )
 }
 
+/** What this host's Chat integration for OMP is, as the Chat hint reads it. */
+internal sealed interface ChatSetup {
+    /** Not asked yet, or the call is unavailable. */
+    data object Unknown : ChatSetup
+    data object Absent : ChatSetup
+    data object Outdated : ChatSetup
+    data object Installing : ChatSetup
+    data object Installed : ChatSetup
+    /** The host's own error, shown as it came. */
+    data class Failed(val message: String) : ChatSetup
+}
+
+/** [result] as the hint reads it: a host it could not reach or read, or an error without words, stays [ChatSetup.Unknown], never absent. */
+internal fun chatSetupOf(result: Result<OmpChatIntegration>): ChatSetup = result.fold(
+    onSuccess = { reply ->
+        when (reply.state) {
+            OmpChatIntegration.State.Absent -> ChatSetup.Absent
+            OmpChatIntegration.State.Outdated -> ChatSetup.Outdated
+            OmpChatIntegration.State.Installed -> ChatSetup.Installed
+            OmpChatIntegration.State.Error -> reply.message?.takeIf { it.isNotBlank() }?.let(ChatSetup::Failed) ?: ChatSetup.Unknown
+        }
+    },
+    onFailure = { ChatSetup.Unknown },
+)
+
 /**
- * Why Chat cannot read this herdr-core agent pane, as one compact row over
- * the terminal's top edge: the reason, and for OMP [onSetup], the way to a
- * Chat session. Text wraps rather than cuts, so a large font only adds a line.
+ * Asks the host through blocking [call]: its status, or with [install], installs. An install that did not reach
+ * the host or got no readable answer asks for the status again, so the hint shows what the host now holds.
+ */
+internal fun askChatSetup(install: Boolean, call: (OmpChatIntegration.Action) -> Result<OmpChatIntegration>): ChatSetup {
+    if (!install) return chatSetupOf(call(OmpChatIntegration.Action.Status))
+    val installed = call(OmpChatIntegration.Action.Install)
+    return if (installed.isSuccess) chatSetupOf(installed) else chatSetupOf(call(OmpChatIntegration.Action.Status))
+}
+
+/** The one way forward a Chat hint offers, if any. */
+internal enum class ChatHintAction { NewTab, Install }
+
+/** A Chat hint's text, as a string resource or the host's literal words, and its action. */
+internal data class ChatHintContent(@StringRes val text: Int?, val literal: String?, val action: ChatHintAction?)
+
+/**
+ * What the hint says for [reason] on an OMP pane ([omp]) or another agent, given [setup]. Only OMP with an
+ * unknown identity has a setup: Install while the host says absent or outdated, the restart step once it is
+ * installed, and New tab whenever the state is unknown or failed, so there is always a way forward.
+ */
+internal fun chatHintContent(reason: String, omp: Boolean, setup: ChatSetup): ChatHintContent = when {
+    reason != ReasonCode.IDENTITY_UNKNOWN -> ChatHintContent(coreReasonRes(reason), reason.takeIf { coreReasonRes(it) == null }, null)
+    !omp -> ChatHintContent(R.string.hc_chat_hint_other, null, null)
+    else -> when (setup) {
+        ChatSetup.Unknown -> ChatHintContent(R.string.hc_chat_hint_omp, null, ChatHintAction.NewTab)
+        ChatSetup.Absent, ChatSetup.Outdated -> ChatHintContent(R.string.hc_chat_hint_omp_install, null, ChatHintAction.Install)
+        ChatSetup.Installing -> ChatHintContent(R.string.hc_chat_hint_installing, null, null)
+        ChatSetup.Installed -> ChatHintContent(R.string.hc_chat_hint_restart, null, null)
+        is ChatSetup.Failed -> ChatHintContent(null, setup.message, ChatHintAction.NewTab)
+    }
+}
+
+/**
+ * Why Chat cannot read this herdr-core agent pane, as a compact row over the
+ * terminal's top edge: [content]'s text, its one action under it, and Close.
+ * Text wraps rather than cuts, so a large font only adds a line.
  */
 @Composable
-internal fun BoxScope.ChatHint(reason: String, omp: Boolean, onSetup: (() -> Unit)?, onClose: () -> Unit) {
-    val text = when {
-        reason != ReasonCode.IDENTITY_UNKNOWN -> coreReasonText(reason)
-        omp -> stringResource(R.string.hc_chat_hint_omp)
-        else -> stringResource(R.string.hc_chat_hint_other)
-    }
+internal fun BoxScope.ChatHint(content: ChatHintContent, onAction: (ChatHintAction) -> Unit, onClose: () -> Unit) {
+    val text = content.text?.let { stringResource(it) } ?: content.literal.orEmpty()
     Row(
         Modifier
             .align(Alignment.TopCenter)
@@ -164,19 +219,29 @@ internal fun BoxScope.ChatHint(reason: String, omp: Boolean, onSetup: (() -> Uni
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, GroupShape)
             .padding(start = 14.dp, end = 2.dp, top = 2.dp, bottom = 2.dp)
             .testTag("session:chat_hint"),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .weight(1f)
-                .padding(vertical = 8.dp)
-                .semantics { liveRegion = LiveRegionMode.Polite },
-        )
-        onSetup?.let {
-            TextButton(onClick = it, modifier = Modifier.testTag("session:chat_hint_setup")) {
-                Text(stringResource(R.string.hc_chat_hint_setup))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .padding(top = 12.dp, bottom = if (content.action == null) 12.dp else 0.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            content.action?.let { action ->
+                TextButton(
+                    onClick = { onAction(action) },
+                    modifier = Modifier.align(Alignment.End).testTag("session:chat_hint_${action.name.lowercase()}"),
+                ) {
+                    Text(
+                        stringResource(
+                            when (action) {
+                                ChatHintAction.NewTab -> R.string.hc_chat_hint_setup
+                                ChatHintAction.Install -> R.string.hc_chat_hint_install
+                            },
+                        ),
+                    )
+                }
             }
         }
         IconButton(onClick = onClose, modifier = Modifier.testTag("session:chat_hint_close")) {

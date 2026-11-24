@@ -202,10 +202,12 @@ foreground process and the session file before using them. An OMP already
 running without these extensions stays Terminal-only: Chat cannot read it, and
 Herdline does not restart it or load extensions into it. Such a pane opens in
 Terminal with no card and keeps your remembered mode for when Chat can read
-it. Tapping **Chat** there shows a compact hint with the reason; for OMP its
-**New tab** button opens the New tab form on **OMP with Chat**, which starts a
-new OMP session and does not resume or change the running one. This setup is
-for OMP, not Pi.
+it. Tapping **Chat** there shows a compact hint with the reason and one way
+forward for OMP: **Install Chat into OMP on this computer** when the host says
+the integration is missing or outdated, the restart step once it is installed,
+and otherwise **New tab**, which opens the New tab form on **OMP with Chat** and
+starts a new OMP session without resuming or changing the running one. This
+setup is for OMP, not Pi.
 
 To use Chat with an OMP you start yourself on the computer, in a herdr-core
 pane, install the integration into OMP once: tap **Install Chat into OMP on

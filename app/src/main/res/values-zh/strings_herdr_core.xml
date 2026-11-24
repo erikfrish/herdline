@@ -29,5 +29,9 @@
 
     <string name="hc_chat_hint_omp">聊天无法读取此 OMP 会话。请在新建标签页中启动 OMP（支持聊天）。</string>
     <string name="hc_chat_hint_other">聊天无法读取此会话。</string>
+    <string name="hc_chat_hint_omp_install">聊天无法读取此 OMP 会话。</string>
+    <string name="hc_chat_hint_install">在这台电脑上为 OMP 安装聊天</string>
+    <string name="hc_chat_hint_installing">正在为 OMP 安装聊天…</string>
+    <string name="hc_chat_hint_restart">请在电脑上重启 OMP，或在此窗格输入 /exit，然后运行 OMP 显示的 omp --resume 命令。</string>
     <string name="hc_chat_hint_close">关闭</string>
 </resources>

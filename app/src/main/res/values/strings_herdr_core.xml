@@ -33,6 +33,10 @@
     <!-- herdr-core: the compact hint on a Chat tap where Chat cannot read the agent. -->
     <string name="hc_chat_hint_omp">Chat can\'t read this OMP session. Start OMP with Chat in a new tab.</string>
     <string name="hc_chat_hint_other">Chat can\'t read this session.</string>
+    <string name="hc_chat_hint_omp_install">Chat can\'t read this OMP session.</string>
+    <string name="hc_chat_hint_install">Install Chat into OMP on this computer</string>
+    <string name="hc_chat_hint_installing">Installing Chat into OMP…</string>
+    <string name="hc_chat_hint_restart">Restart OMP on the computer, or in this pane type /exit, then run the omp --resume command that OMP prints.</string>
     <string name="hc_chat_hint_setup" translatable="false">@string/new_tab</string>
     <string name="hc_chat_hint_close">Close</string>
 </resources>

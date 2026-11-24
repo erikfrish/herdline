@@ -155,6 +155,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.startAgent
 import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.core.ompChatIntegration
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.RenderFrame
@@ -233,6 +234,7 @@ import io.github.erikfrish.herdline.ui.theme.LocalCompact
 import io.github.erikfrish.herdline.ui.theme.sessionAccent
 import io.github.erikfrish.herdline.ui.theme.terminalScheme
 import io.github.erikfrish.herdline.ui.theme.color
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -240,6 +242,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
@@ -670,6 +673,22 @@ fun SessionScreen(
     val chatReason = focusedRecord?.chat?.takeIf { isChatAgent(currentProgram) }
     LaunchedEffect(focusedPane, chatReason) {
         if (chatHint != focusedPane || chatReason == null) chatHint = null
+    }
+    // What the host's Chat integration is, for the OMP pane the hint is on: asked when the hint shows, installed only
+    // on its Install tap. Both live with the hint: a pane change, ✕ or a new connection drops the request and its
+    // Installing line, and the next hint asks the host afresh, so it never shows a stale or stuck state.
+    val setupPane = chatHint?.takeIf {
+        it == focusedPane && chatReason == ReasonCode.IDENTITY_UNKNOWN && currentProgram.equals("omp", ignoreCase = true)
+    }
+    var chatSetup by remember(connection, setupPane) { mutableStateOf<ChatSetup>(ChatSetup.Unknown) }
+    var installAsked by remember(connection, setupPane) { mutableStateOf(false) }
+    LaunchedEffect(connection, setupPane, installAsked) {
+        setupPane ?: return@LaunchedEffect
+        if (installAsked) chatSetup = ChatSetup.Installing
+        chatSetup = withContext(Dispatchers.IO) { askChatSetup(install = installAsked, connection::ompChatIntegration) }
+    }
+    fun installChat() {
+        installAsked = true
     }
     // The pane Terminal shows, as herdr-core reports it: no terminal at all, or watched without control.
     val desktopRecord = desktopPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
@@ -1620,12 +1639,16 @@ fun SessionScreen(
                         }
                         chatHint?.takeIf { it == focusedPane }?.let {
                             chatReason?.let { reason ->
-                                val omp = currentProgram.equals("omp", ignoreCase = true)
-                                val target = workspace?.id?.takeIf { omp && reason == ReasonCode.IDENTITY_UNKNOWN }
+                                val content = chatHintContent(reason, currentProgram.equals("omp", ignoreCase = true), chatSetup)
+                                val target = workspace?.id
                                 ChatHint(
-                                    reason = reason,
-                                    omp = omp,
-                                    onSetup = target?.let { id -> { chatHint = null; prompt = Prompt.NewTab(id, kind = HERDLINE_OMP) } },
+                                    content = content.takeIf { it.action != ChatHintAction.NewTab || target != null } ?: content.copy(action = null),
+                                    onAction = { action ->
+                                        when (action) {
+                                            ChatHintAction.NewTab -> target?.let { id -> chatHint = null; prompt = Prompt.NewTab(id, kind = HERDLINE_OMP) }
+                                            ChatHintAction.Install -> installChat()
+                                        }
+                                    },
                                     onClose = { chatHint = null },
                                 )
                             }
