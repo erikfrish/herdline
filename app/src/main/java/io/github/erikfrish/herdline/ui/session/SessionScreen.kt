@@ -735,13 +735,30 @@ fun SessionScreen(
     val paneUnsupported = desktopRecord?.unsupported.takeIf { !chatMode }
     // Opening a core terminal is the user's request to type and size it.
     val paneInteractive = desktopRecord?.interactive.takeIf { paneUnsupported == null }
-    val controlPane = desktopPane?.takeIf {
-        !chatMode && !closed && paneInteractive != null && state is Connection.State.Connected
-    }
+    // herdr-core sizes a pane only for an interactive viewer. In Chat that is only a Fit tap on the pane read here,
+    // held until anything releases it: Chat or the pane left, a pause, the connection or the pane's terminal gone.
+    val core = node.backend == Backend.HerdrCore
+    var fitPane by remember(connection, view?.boot) { mutableStateOf<String?>(null) }
+    val controlPane = coreControlPane(
+        chatMode = chatMode,
+        closed = closed,
+        connected = state is Connection.State.Connected,
+        desktopPane = desktopPane,
+        desktopInteractive = paneInteractive,
+        core = core,
+        readPane = focusedPane,
+        readInteractive = focusedRecord?.interactive.takeIf { focusedRecord?.unsupported == null },
+        fitPane = fitPane,
+    )
+    LaunchedEffect(fitPane, controlPane, chatMode) { fitPane = keptFit(chatMode, fitPane, controlPane) }
     if (controlPane != null) {
-        LifecycleResumeEffect(connection, controlPane, view?.boot) {
-            connection.showCoreTerminal(controlPane)
-            onPauseOrDispose { connection.showCoreTerminal(null) }
+        LifecycleResumeEffect(connection, controlPane, view?.boot, chatMode) {
+            // A resume takes the pane again only where Terminal shows it: a Fit is cleared on pause, never restored.
+            if (resumeTakes(chatMode, controlPane, fitPane)) connection.showCoreTerminal(controlPane)
+            onPauseOrDispose {
+                connection.showCoreTerminal(null)
+                fitPane = null
+            }
         }
     }
     // Watching takes no typing: the keyboard goes, so nothing typed is silently dropped.
@@ -1835,6 +1852,12 @@ fun SessionScreen(
                                 if (!chatMode) composerPane?.takeIf { it != focusedPane }?.let(connection::focusPane)
                                 openTerminal()
                             },
+                            onFitPane = { p ->
+                                // Herdr sizes the pane for the client that focuses it; herdr-core only for one
+                                // that holds it interactively, which this tap asks for while Chat reads it.
+                                connection.focusPane(p)
+                                fitAfterTap(core, p)?.let { fitPane = it }
+                            },
                             // In Chat the pane read here, also once it has closed (S5): the draft never drifts to the desktop's.
                             reading = reading?.pane?.takeIf { chatMode },
                             onOpenPane = { if (chatMode) choosePane(it) else connection.focusPane(it) },
@@ -2831,3 +2854,38 @@ private fun KeepScreenOn(on: Boolean) {
         }
     }
 }
+
+/**
+ * The pane this phone holds interactively on herdr-core, so the core sizes it here: the one Terminal shows, as
+ * before, or in Chat on herdr-core only the pane read here once a Fit tap named it ([fitPane]). Null releases it.
+ */
+internal fun coreControlPane(
+    chatMode: Boolean,
+    closed: Boolean,
+    connected: Boolean,
+    desktopPane: String?,
+    desktopInteractive: Boolean?,
+    core: Boolean,
+    readPane: String?,
+    readInteractive: Boolean?,
+    fitPane: String?,
+): String? = when {
+    closed || !connected -> null
+    !chatMode -> desktopPane?.takeIf { desktopInteractive != null }
+    core && readInteractive != null && fitPane != null && fitPane == readPane -> fitPane
+    else -> null
+}
+
+/**
+ * A Fit outlives nothing that released it: once Chat is left or [controlPane] is not the fitted pane, the Fit is
+ * gone for good, and only another tap takes the pane again.
+ */
+internal fun keptFit(chatMode: Boolean, fitPane: String?, controlPane: String?): String? =
+    fitPane?.takeIf { chatMode && it == controlPane }
+
+/** What a Fit tap on [pane] holds: herdr-core only; Herdr sizes the pane on the focus alone. */
+internal fun fitAfterTap(core: Boolean, pane: String): String? = pane.takeIf { core }
+
+/** Whether a resume of [controlPane]'s hold asks for it again: always in Terminal, in Chat only while still fitted. */
+internal fun resumeTakes(chatMode: Boolean, controlPane: String, fitPane: String?): Boolean =
+    !chatMode || fitPane == controlPane

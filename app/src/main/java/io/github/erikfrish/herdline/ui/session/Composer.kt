@@ -829,6 +829,8 @@ fun Composer(
     onFieldFocus: (Boolean) -> Unit,
     onTerminalKeyboard: () -> Unit,
     onOpenTerminal: () -> Unit,
+    /** The "Fit to this phone" tap on [String], the pane the draft is for. */
+    onFitPane: (String) -> Unit,
     onZoom: () -> Unit,
     modifier: Modifier = Modifier,
     /** True only where the caller's row estimate says hiding the keyboard gives the pane 12 rows. */
@@ -934,6 +936,7 @@ fun Composer(
                     onFieldFocus = onFieldFocus,
                     onTerminalKeyboard = onTerminalKeyboard,
                     onOpenTerminal = onOpenTerminal,
+                    onFitPane = onFitPane,
                     onZoom = onZoom,
                     onReceiptNotice = onReceiptNotice,
                     onDeliveryStart = onDeliveryStart,
@@ -972,6 +975,7 @@ private fun Editor(
     onFieldFocus: (Boolean) -> Unit,
     onTerminalKeyboard: () -> Unit,
     onOpenTerminal: () -> Unit,
+    onFitPane: (String) -> Unit,
     onZoom: () -> Unit,
     onReceiptNotice: (Boolean) -> Unit,
     onDeliveryStart: () -> Unit,
@@ -2044,7 +2048,7 @@ private fun Editor(
                         stringResource(if (moves) R.string.composer_fit_pane_moves else R.string.composer_fit_pane),
                         tag = "composer:fit_pane",
                         description = stringResource(if (moves) R.string.composer_fit_pane_moves_spoken else R.string.composer_fit_pane_spoken, draftTitle),
-                    ) { connection.focusPane(key.pane) },
+                    ) { onFitPane(key.pane) },
                 )
             }
             "popup_open", "not_visible", "scrolled" -> Notice(
