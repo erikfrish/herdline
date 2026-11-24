@@ -38,10 +38,26 @@ data class SessionKey(val nodeId: String, val session: String) {
 data class ModeChoice(val boot: String, val agent: String, val chat: Boolean)
 
 /**
+ * The daemon run in a view's [boot], which a choice is kept for. herdr-core's
+ * boot is `core-<id>-<pid>-<link>` (native/src/herdr_core/pump.rs): the link
+ * number is new on every reconnect within this process while the core run
+ * and its pane IDs stay, so it is left out. Herdr's own boot is the run.
+ */
+fun modeRun(boot: String?): String? {
+    if (boot == null || !boot.startsWith("core-")) return boot
+    val link = boot.substringAfterLast('-')
+    return if (link.isNotEmpty() && link.all(Char::isDigit)) boot.substringBeforeLast('-') else boot
+}
+
+/**
  * The keys in [stored] for [nodeId]/[session] that no longer describe what
- * runs there: another daemon run, a pane that is gone, or a different program
- * (including none) in the pane. Dropping them keeps a mode from carrying over
- * to a replaced process.
+ * runs there: another daemon run ([modeRun]), or another program seen in the
+ * pane. Dropping them keeps a mode from carrying over to a replaced process.
+ *
+ * Only a confirmed change counts. A view without a [boot], a pane missing
+ * from it, or a pane with no program known yet ([agentOf] null) is what a
+ * reconnect shows before it has loaded, so it drops nothing; pane IDs are
+ * never reused within one run, so a kept choice cannot reach another pane.
  */
 fun staleChoices(
     stored: Map<ModeKey, ModeChoice>,
@@ -49,13 +65,17 @@ fun staleChoices(
     session: String,
     boot: String,
     agentOf: (pane: String) -> String?,
-): List<ModeKey> = stored.filter { (key, choice) ->
-    key.nodeId == nodeId && key.session == session && (choice.boot != boot || agentOf(key.pane) != choice.agent)
-}.keys.toList()
+): List<ModeKey> {
+    if (boot.isBlank()) return emptyList()
+    return stored.filter { (key, choice) ->
+        key.nodeId == nodeId && key.session == session &&
+            (modeRun(choice.boot) != modeRun(boot) || agentOf(key.pane)?.let { it != choice.agent } == true)
+    }.keys.toList()
+}
 
 /**
  * Whether the pane at [key] shows Chat: the pane's own choice while it still
- * matches [boot] and [agent]; else [remembered], the mode last tapped in this
+ * matches [boot]'s run and [agent]; else [remembered], the mode last tapped in this
  * host's session; else Chat. Never Chat where Chat cannot read the agent
  * ([chatAvailable]), and that fallback changes nothing stored, so the choice
  * applies again once Chat can read it.
@@ -69,7 +89,7 @@ fun showsChat(
     remembered: Boolean?,
 ): Boolean {
     if (!chatAvailable) return false
-    stored[key]?.takeIf { it.boot == boot && it.agent == agent }?.let { return it.chat }
+    stored[key]?.takeIf { modeRun(it.boot) == modeRun(boot) && it.agent == agent }?.let { return it.chat }
     return remembered ?: true
 }
 

@@ -27,11 +27,44 @@ class PaneModesTest {
     }
 
     @Test
-    fun aPaneThatLostOrChangedItsProgramForgetsItsChoice() {
-        // A shell in each pane now (OMP exited, or the pane is gone): both forget.
-        assertEquals(setOf(p1, p2), staleChoices(stored, "n1", "main", "boot-1") { null }.toSet())
+    fun anotherProgramSeenInAPaneForgetsItsChoice() {
         // Another program replaced OMP in w1:p1 only.
         assertEquals(listOf(p1), staleChoices(stored, "n1", "main", "boot-1") { pane -> if (pane == "w1:p1") "claude" else "omp" })
+    }
+
+    @Test
+    fun aReconnectsPartialViewKeepsEveryChoice() {
+        // Same run, but no program known yet for either pane, or the panes not listed at all: nothing is dropped.
+        assertEquals(emptyList<ModeKey>(), staleChoices(stored, "n1", "main", "boot-1") { null })
+        // A view before its boot arrived.
+        assertEquals(emptyList<ModeKey>(), staleChoices(stored, "n1", "main", "") { null })
+        assertEquals(emptyList<ModeKey>(), staleChoices(stored, "n1", "main", "") { "claude" })
+    }
+
+    @Test
+    fun aChoiceKeptThroughAReconnectAppliesOnceThePaneLoads() {
+        val modes = PaneModes(MemoryPrefs(), MemoryPrefs())
+        modes.set(p2, ModeChoice("boot-1", "omp", chat = false))
+        modes.prefer(SessionKey("n1", "main"), chat = true)
+        // Reconnect: first an empty view, then the loaded one, on the same run.
+        modes.forget("n1", "main", "boot-1") { null }
+        modes.forget("n1", "main", "boot-1") { "omp" }
+        assertFalse(showsChat(modes.choices.value, p2, "boot-1", "omp", chatAvailable = true, remembered = true))
+        // A real restart of the daemon still forgets it.
+        modes.forget("n1", "main", "boot-2") { null }
+        assertEquals(emptyMap<ModeKey, ModeChoice>(), modes.choices.value)
+    }
+
+    @Test
+    fun aHerdrCoreReconnectKeepsTheChoiceAndACoreRestartForgetsIt() {
+        // herdr-core numbers each link in its boot; the core run is id and pid.
+        val core = mapOf(p1 to ModeChoice("core-abc-42-3", "omp", chat = true))
+        assertEquals(emptyList<ModeKey>(), staleChoices(core, "n1", "main", "core-abc-42-7") { "omp" })
+        assertTrue(showsChat(core, p1, "core-abc-42-7", "omp", chatAvailable = true, remembered = false))
+        // Another pid or core id is a restarted core.
+        assertEquals(listOf(p1), staleChoices(core, "n1", "main", "core-abc-43-7") { "omp" })
+        assertEquals(listOf(p1), staleChoices(core, "n1", "main", "core-xyz-42-3") { "omp" })
+        assertFalse(showsChat(core, p1, "core-abc-43-7", "omp", chatAvailable = true, remembered = false))
     }
 
     @Test
