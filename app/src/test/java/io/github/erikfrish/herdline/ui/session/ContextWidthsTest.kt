@@ -65,4 +65,22 @@ class ContextWidthsTest {
         assertEquals(ContextWidths(0, 0, 37, 0), widths(10))
         assertEquals(ContextWidths(0, 0, 37, 0), widths(37))
     }
+
+    // One px per character: the break is chosen by width only.
+    private fun broken(text: String, width: Int) = hostBreak(text, width) { it.length }
+
+    @Test
+    fun aHostBreaksAfterAHyphenNeverInsideAWord() {
+        // N1-3 zh 1.5: room for 9 characters drew "qa-p1-cor" / "e".
+        assertEquals("qa-p1-\ncore", broken("qa-p1-core", 9))
+        // Both lines must fit: "qa-p1-" is too wide, "qa-" leaves "p1-core" too wide.
+        assertEquals(null, broken("qa-p1-core", 5))
+        assertEquals(null, broken("compik", 4))
+    }
+
+    @Test
+    fun aSharedNameBreaksBeforeItsNumber() {
+        assertEquals("qa-p1-core\n· 2", broken("qa-p1-core · 2", 10))
+        assertEquals("lab-a\n· 1", broken("lab-a · 1", 6))
+    }
 }

@@ -22,6 +22,19 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.IntrinsicMeasurable
+import androidx.compose.ui.layout.IntrinsicMeasureScope
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.unit.isSpecified
 
 /** The px each span of the place line gets; 0 is not drawn. [workspace] is the host's span (W10152). */
 internal data class ContextWidths(val workspace: Int, val position: Int, val icon: Int, val desktop: Int)
@@ -100,7 +113,7 @@ internal fun PlaceLine(
     Layout(
         // Fixed slots, each placed only when its width is not 0.
         content = {
-            Text(workspace.orEmpty(), style = style, color = muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("session:place_host"))
+            HostText(workspace.orEmpty(), style, muted, measurer)
             Text(" · ", style = style, color = muted, maxLines = 1, softWrap = false)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (position != null) Text(position, style = style, color = muted, maxLines = 1, softWrap = false)
@@ -115,13 +128,14 @@ internal fun PlaceLine(
         },
         modifier = modifier,
     ) { measurables, constraints ->
-        val full = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        // Slot 0 (the host) is sized from its text: its layout picks size and line break from the width it gets.
+        val full = measurables.mapIndexed { i, m -> if (i == 0) 0 else m.maxIntrinsicWidth(Constraints.Infinity) }
         val gap = IconGap.roundToPx()
         fun measured(span: String) = measurer.measure(span, style, maxLines = 1, softWrap = false).size.width
         val available = if (constraints.hasBoundedWidth) constraints.maxWidth else full.sum()
         val widths = contextWidths(
             available,
-            workspace = if (workspace != null) full[0] else 0,
+            workspace = if (workspace != null) measured(workspace) else 0,
             workspaceMin = workspace?.let { measured(shortest(it)) } ?: 0,
             position = full[2],
             icon = if (desktopElsewhere) full[4] else 0,
@@ -155,6 +169,72 @@ internal fun PlaceLine(
             }
         }
     }
+}
+
+/**
+ * The host's name in [width] px (W10153): one line at [style]; else one line
+ * a step smaller; else two lines broken only after a hyphen or before " · "
+ * ([hostBreak]), at [style] and then smaller; only a name with no such fit
+ * wraps freely, at most two lines, then "…".
+ */
+private fun hostLayout(text: String, width: Int, style: TextStyle, measurer: TextMeasurer): TextLayoutResult {
+    val small = style.copy(
+        fontSize = style.fontSize * HostStep,
+        lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * HostStep else style.lineHeight,
+    )
+    fun line(s: String, at: TextStyle) = measurer.measure(s, at, maxLines = 2, softWrap = false)
+    for (at in listOf(style, small)) line(text, at).let { if (it.size.width <= width) return it }
+    for (at in listOf(style, small)) {
+        hostBreak(text, width) { line(it, at).size.width }?.let { return line(it, at) }
+    }
+    return measurer.measure(text, style, TextOverflow.Ellipsis, maxLines = 2, constraints = Constraints(maxWidth = width.coerceAtLeast(0)))
+}
+
+/** The one step smaller size a host name may take before it breaks (W10153). */
+private const val HostStep = 0.85f
+
+/**
+ * [text] on two lines broken after a hyphen or before " · " (that line then
+ * starts "· "), each no wider than [width] by [measure]; the longest first
+ * line that fits wins. Null when no such break fits: a word is never cut.
+ */
+internal fun hostBreak(text: String, width: Int, measure: (String) -> Int): String? {
+    val cuts = buildList {
+        for (i in 1 until text.length) if (text[i - 1] == '-') add(i to i)
+        var j = text.indexOf(" · ")
+        while (j > 0) {
+            add(j to j + 1)
+            j = text.indexOf(" · ", j + 1)
+        }
+    }.sortedByDescending { it.first }
+    return cuts.firstNotNullOfOrNull { (end, start) ->
+        val first = text.substring(0, end)
+        val rest = text.substring(start)
+        if (measure(first) <= width && measure(rest) <= width) "$first\n$rest" else null
+    }
+}
+
+/** The host's name, laid out by [hostLayout] for the width its slot gives it. */
+@Composable
+private fun HostText(text: String, style: TextStyle, color: Color, measurer: TextMeasurer) {
+    val drawn = remember { mutableStateOf<TextLayoutResult?>(null) }
+    Layout(
+        modifier = Modifier.testTag("session:place_host").drawBehind { drawn.value?.let { drawText(it, color) } },
+        measurePolicy = object : MeasurePolicy {
+            override fun MeasureScope.measure(measurables: List<Measurable>, constraints: Constraints): MeasureResult {
+                val result = hostLayout(text, constraints.maxWidth, style, measurer)
+                drawn.value = result
+                return layout(result.size.width.coerceAtMost(constraints.maxWidth), result.size.height) {}
+            }
+
+            private fun whole() = measurer.measure(text, style, maxLines = 1, softWrap = false).size
+
+            override fun IntrinsicMeasureScope.maxIntrinsicWidth(measurables: List<IntrinsicMeasurable>, height: Int) = whole().width
+            override fun IntrinsicMeasureScope.minIntrinsicWidth(measurables: List<IntrinsicMeasurable>, height: Int) = whole().width
+            override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) = whole().height
+            override fun IntrinsicMeasureScope.minIntrinsicHeight(measurables: List<IntrinsicMeasurable>, width: Int) = whole().height
+        },
+    )
 }
 
 /** Between the desktop icon and the span drawn before it: a space, not a separator. */

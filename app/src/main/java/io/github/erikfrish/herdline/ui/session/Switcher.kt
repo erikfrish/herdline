@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -136,6 +138,7 @@ class SwitcherActions(
  * reorder under live updates. Every long-press action is also behind a
  * row's visible menu button.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun Switcher(
     node: Node,
@@ -334,13 +337,15 @@ fun Switcher(
             if (filtersRow) {
                 item(key = "filters") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Row(
+                        // W10153: each control takes its whole width; one that does not fit moves to a
+                        // second line rather than cutting the scope's name (en / zh 1.5).
+                        FlowRow(
                             Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (scopeShown && view != null && onScope != null) {
-                                Box(Modifier.weight(1f, fill = false)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) }
+                                ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope)
                             }
                             if (filterShown) {
                                 FilterControl(
@@ -351,7 +356,6 @@ fun Switcher(
                                     order = order.takeIf { store != null },
                                     onOrder = store?.let { s -> { picked: TargetOrder -> s.update { it.copy(targetOrder = picked) } } },
                                     tagPrefix = "switcher",
-                                    modifier = Modifier.weight(1f, fill = false),
                                 )
                             }
                         }
