@@ -154,7 +154,13 @@ internal fun BoxScope.IdentityCard(reason: String, accent: Color, omp: Boolean, 
         CoreCard(
             icon = Icons.Default.Warning,
             tone = accent,
-            title = stringResource(if (hook) R.string.hc_identity_title else R.string.hc_chat_off_title),
+            title = stringResource(
+                when {
+                    !hook -> R.string.hc_chat_off_title
+                    omp -> R.string.hc_identity_title
+                    else -> R.string.hc_identity_title_other
+                },
+            ),
             body = coreReasonText(reason),
         ) {
             if (hook && omp) Text(stringResource(R.string.hc_identity_launch_hint), style = MaterialTheme.typography.bodyMedium)

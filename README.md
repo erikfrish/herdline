@@ -193,8 +193,11 @@ of sending only its caption through the terminal.
 
 The identity hook publishes the active OMP session file and process ID, and
 updates or clears them when the session changes. Herdline checks both the
-foreground process and the session file before using them. Existing agents
-launched outside Herdline still need their own identity hook; this setup is
+foreground process and the session file before using them. An OMP already
+running without these extensions stays Terminal-only: Chat cannot read it, and
+Herdline does not restart it or load extensions into it. To use Chat, open
+**More options**, then **New tab**, and choose **OMP with Chat**; that starts a
+new OMP session and does not resume or change the running one. This setup is
 for OMP, not Pi.
 
 ### Notifications
