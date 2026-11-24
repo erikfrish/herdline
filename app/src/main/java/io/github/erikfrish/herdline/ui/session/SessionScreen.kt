@@ -187,6 +187,7 @@ import io.github.erikfrish.herdline.data.composerDestination
 import io.github.erikfrish.herdline.data.ModeKey
 import io.github.erikfrish.herdline.data.PaneModes
 import io.github.erikfrish.herdline.data.SessionKey
+import io.github.erikfrish.herdline.data.modeRun
 import io.github.erikfrish.herdline.data.showsChat
 import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
@@ -582,6 +583,28 @@ fun SessionScreen(
     // ...and its own loaded transcript, for this connection and daemon boot (C9: a new boot may reuse pane ids).
     val chatMemory = remember(connection) { ChatMemories() }.at(view?.boot)
     val closed = readingClosed(reading, view)
+    // The agent session the host confirmed in each pane read or shown here, with the run it was read in
+    // (ModeChoice.session). Absent: none confirmed now, which keeps a pane's choice (staleChoices).
+    val confirmedSessions = remember(connection) { mutableStateMapOf<String, Pair<String?, String>>() }
+    fun sessionOf(pane: String): String? =
+        confirmedSessions[pane]?.takeIf { it.first == modeRun(view?.boot) }?.second
+    for (pane in setOfNotNull(reading?.pane, desktopPane)) {
+        key(pane) {
+            val run = modeRun(view?.boot)
+            val readable = chatReadable(view, pane)
+            val agentNow = view?.agentIn(pane)
+            // Read again whenever the pane's program, its Chat reason or its agent's state changes.
+            LaunchedEffect(connection, run, readable, agentNow?.agent, agentNow?.stateSeq) {
+                if (!readable) {
+                    confirmedSessions.remove(pane)
+                    return@LaunchedEffect
+                }
+                val path = withContext(Dispatchers.IO) { connection.composerInstance(pane) }
+                    .getOrNull()?.path?.takeIf { it.isNotBlank() }
+                if (path == null) confirmedSessions.remove(pane) else confirmedSessions[pane] = run to path
+            }
+        }
+    }
     /**
      * Whether the selected supported agent's saved mode is Chat, in [stored]. The screen draws from the
      * collected choices; a choice made on it passes [modes]' current ones, so a mode set just before counts.
@@ -592,14 +615,17 @@ fun SessionScreen(
         return pane != null && showsChat(
             stored, ModeKey(node.id, node.session, pane), shown.boot, agent,
             chatAvailable = chatReadable(shown, pane), remembered = sessionModes[sessionKey],
+            session = sessionOf(pane),
         )
     }
     val chatPane = reading?.pane?.takeIf { chatReadable(view, it) }
-    // A choice holds for one daemon run and program: a restarted daemon or a new
-    // program in a pane forgets it, so a mode never carries over to a replaced process.
-    LaunchedEffect(view) {
+    // A choice holds for one daemon run and agent session (or program, where no session is confirmed):
+    // a restarted daemon or another confirmed session in a pane forgets it, so a mode never carries
+    // over to a replaced process. A view still loading or a shell in between changes nothing.
+    val sessionsSeen = confirmedSessions.toMap()
+    LaunchedEffect(view, sessionsSeen) {
         val shown = view ?: return@LaunchedEffect
-        modes.forget(node.id, node.session, shown.boot) { pane -> shown.agentIn(pane)?.agent }
+        modes.forget(node.id, node.session, shown.boot, ::sessionOf) { pane -> shown.agentIn(pane)?.agent }
     }
     val chatWanted = chatFor(chatPane)
     // C9: the pane chosen here shows its saved or default mode, Chat included, whatever its reads say:
@@ -812,7 +838,7 @@ fun SessionScreen(
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
         modes.prefer(sessionKey, on)
-        modes.set(ModeKey(node.id, node.session, pane), ModeChoice(boot, agent, on))
+        modes.set(ModeKey(node.id, node.session, pane), ModeChoice(boot, agent, on, sessionOf(pane)))
     }
 
     /** Terminal on screen for [pane], the desktop's already; with [keyboard], its keyboard too. */

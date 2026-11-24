@@ -124,4 +124,84 @@ class PaneModesTest {
         assertEquals(emptyMap<ModeKey, ModeChoice>(), after.choices.value)
         assertFalse(showsChat(after.choices.value, p1, "boot-2", "omp", chatAvailable = true, remembered = after.sessions.value[SessionKey("n1", "main")]))
     }
+
+    private val run = "core-abc-42-3"
+    private val sessionA = "/home/u/.omp/agent/sessions/x/2026-11-24_01a20cf1.jsonl"
+    private val sessionB = "/home/u/.omp/agent/sessions/x/2026-11-24_01a20d31.jsonl"
+
+    /** p1 chose Chat on [sessionA], the session's mode is Terminal. */
+    private fun chatOnSessionA(): PaneModes = PaneModes(MemoryPrefs(), MemoryPrefs()).apply {
+        prefer(SessionKey("n1", "main"), chat = false)
+        set(p1, ModeChoice(run, "omp", chat = true, session = sessionA))
+    }
+
+    private fun PaneModes.shows(boot: String, agent: String?, session: String?) =
+        showsChat(choices.value, p1, boot, agent, chatAvailable = true, remembered = sessions.value[SessionKey("n1", "main")], session = session)
+
+    @Test
+    fun theSameSessionAfterAReconnectOrAnExitAndResumeKeepsTheChoice() {
+        val modes = chatOnSessionA()
+        // Reconnect: a new link, nothing confirmed yet, then sessionA again.
+        modes.forget("n1", "main", "core-abc-42-4", { null }) { null }
+        assertTrue(modes.shows("core-abc-42-4", "omp", null))
+        modes.forget("n1", "main", "core-abc-42-4", { sessionA }) { "omp" }
+        assertTrue(modes.shows("core-abc-42-4", "omp", sessionA))
+        // /exit, a shell, then OMP resumes sessionA as a new process.
+        modes.forget("n1", "main", run, { null }) { "bash" }
+        modes.forget("n1", "main", run, { sessionA }) { "omp" }
+        assertTrue(modes.shows(run, "omp", sessionA))
+    }
+
+    @Test
+    fun aNewSessionDropsTheChoiceAndShowsTheSessionMode() {
+        val modes = chatOnSessionA()
+        // Before forget runs, the screen already ignores it.
+        assertFalse(modes.shows(run, "omp", sessionB))
+        modes.forget("n1", "main", run, { sessionB }) { "omp" }
+        assertEquals(emptyMap<ModeKey, ModeChoice>(), modes.choices.value)
+        assertFalse(modes.shows(run, "omp", sessionB))
+    }
+
+    @Test
+    fun anUnknownSessionInBetweenKeepsTheChoiceUntilTheNextConfirmedOneDecides() {
+        // M2p: /exit, then a shell and top, then the next OMP.
+        val same = chatOnSessionA()
+        same.forget("n1", "main", run, { null }) { null }
+        same.forget("n1", "main", run, { null }) { "top" }
+        assertEquals(setOf(p1), same.choices.value.keys)
+        same.forget("n1", "main", run, { sessionA }) { "omp" }
+        assertTrue(same.shows(run, "omp", sessionA))
+
+        val other = chatOnSessionA()
+        other.forget("n1", "main", run, { null }) { "top" }
+        assertEquals(setOf(p1), other.choices.value.keys)
+        other.forget("n1", "main", run, { sessionB }) { "omp" }
+        assertEquals(emptyMap<ModeKey, ModeChoice>(), other.choices.value)
+        assertFalse(other.shows(run, "omp", sessionB))
+    }
+
+    @Test
+    fun aCoreRestartForgetsASessionBoundChoice() {
+        val modes = chatOnSessionA()
+        modes.forget("n1", "main", "core-abc-77-1", { sessionA }) { "omp" }
+        assertEquals(emptyMap<ModeKey, ModeChoice>(), modes.choices.value)
+    }
+
+    @Test
+    fun anAgentWithNoSessionFollowsTheRunAndProgramRule() {
+        val modes = PaneModes(MemoryPrefs(), MemoryPrefs())
+        modes.set(p1, ModeChoice(run, "claude", chat = true))
+        // Any session read for it changes nothing; another program does.
+        modes.forget("n1", "main", run, { sessionB }) { "claude" }
+        assertTrue(showsChat(modes.choices.value, p1, run, "claude", chatAvailable = true, remembered = false, session = sessionB))
+        modes.forget("n1", "main", run, { null }) { "codex" }
+        assertEquals(emptyMap<ModeKey, ModeChoice>(), modes.choices.value)
+    }
+
+    @Test
+    fun theConfirmedSessionSurvivesAnAppRestart() {
+        val prefs = MemoryPrefs()
+        PaneModes(prefs, MemoryPrefs()).set(p1, ModeChoice(run, "omp", chat = true, session = sessionA))
+        assertEquals(mapOf(p1 to ModeChoice(run, "omp", chat = true, session = sessionA)), PaneModes(prefs, MemoryPrefs()).choices.value)
+    }
 }
