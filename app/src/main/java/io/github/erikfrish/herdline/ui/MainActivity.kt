@@ -169,14 +169,17 @@ class MainActivity : ComponentActivity() {
 
 private const val START = "hosts"
 
+/** The form routes: the node editor and import. */
+internal fun isForm(route: String): Boolean = route == "import" || route.startsWith("edit:")
+
 /**
- * The form routes (the node editor and import) in [old] that [next] no longer
- * holds. A form that left the stack, by Back, Save, Discard or a jump to
- * another destination, must open empty next time, so its saved state is
- * dropped; every other route keeps its state for when it is shown again.
+ * The form routes in [old] that [next] no longer holds. A form that left the
+ * stack, by Back, Save, Discard or a jump to another destination (a
+ * notification opening a session), must open empty next time, so its saved
+ * state is dropped; every other route keeps its state for when it is shown again.
  */
 internal fun formsLeaving(old: List<String>, next: List<String>): Set<String> =
-    old.filter { (it == "import" || it.startsWith("edit:")) && it !in next }.toSet()
+    old.filter { isForm(it) && it !in next }.toSet()
 
 /**
  * The navigation shell.
@@ -279,11 +282,13 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
 
     val route = stack.last()
     val sessionLevel = route.startsWith("session:")
-    // At wide widths the rail is always visible, also in a session and in
-    // pushed Settings; the phone bar shows on root destinations only and
-    // hides while the IME is up.
-    val railVisible = wide
-    val barVisible = !wide && !sessionLevel && !(route == "session-settings")
+    // At wide widths the rail is visible, also in a session and in pushed
+    // Settings; the phone bar shows on root destinations only and hides while
+    // the IME is up. Neither shows on a form: a form is left by Back or Up,
+    // where the editor asks before it drops unsaved changes.
+    val form = isForm(route)
+    val railVisible = wide && !form
+    val barVisible = !wide && !sessionLevel && !form && !(route == "session-settings")
     val showBar = barVisible && !WindowInsets.isImeVisible
 
     // Levels that do not handle Back themselves pop here. SessionScreen
