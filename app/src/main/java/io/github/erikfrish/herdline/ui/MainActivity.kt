@@ -343,7 +343,11 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
                 }
             }
             // "inbox" stays the route key of Agents, so saved stacks and deep links keep landing here.
-            target == "inbox" -> InboxScreen(app, onOpen = { nodeId, pane -> openSession(nodeId, pane) })
+            target == "inbox" -> InboxScreen(
+                app,
+                onOpen = { nodeId, pane -> openSession(nodeId, pane) },
+                onConnectHost = { switch(START) },
+            )
             else -> NodesScreen(app, navigation)
         }
     }

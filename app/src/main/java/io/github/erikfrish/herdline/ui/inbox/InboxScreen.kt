@@ -1,8 +1,6 @@
 package io.github.erikfrish.herdline.ui.inbox
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,6 +63,7 @@ import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
 import io.github.erikfrish.herdline.ui.components.statusSpoken
+import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassScreen
 import io.github.erikfrish.herdline.ui.glass.GlassMenu
 import io.github.erikfrish.herdline.ui.session.SwitcherFilter
@@ -90,11 +90,13 @@ private val ScopeSaver = listSaver<ScopeKey?, String>(
  * Every agent across the attached hosts, narrowed by one host's workspace and
  * a status. Rows keep Herdr's order within a host; tapping one opens that
  * session with the pane focused, the same path a notification takes. Choosing
- * a workspace only filters: it never focuses, connects or sends.
+ * a workspace only filters: it never focuses, connects or sends. With no host
+ * attached there is nothing to filter: the screen says so and offers
+ * [onConnectHost] instead of the selector and the status chips.
  */
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit) {
+fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit, onConnectHost: () -> Unit) {
     // Each host's live view: a status change on any host recomposes this screen.
     val hostsFlow = remember(app) {
         app.connections.flatMapLatest { connections ->
@@ -126,6 +128,20 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
         title = stringResource(R.string.dest_agents),
     ) { padding ->
         LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("inbox")) {
+            if (hosts.isEmpty()) {
+                item(key = "empty") {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Empty(stringResource(R.string.inbox_no_hosts))
+                        GlassButton(
+                            stringResource(R.string.inbox_connect_host),
+                            onClick = onConnectHost,
+                            primary = true,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("inbox:connect"),
+                        )
+                    }
+                }
+                return@LazyColumn
+            }
             item(key = "filters") {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     ScopeSelector(
@@ -135,7 +151,8 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
                         hosts = hosts.size,
                         onScope = { scope = it },
                     )
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Wraps rather than scrolls, so every chip and its count reads in full.
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null) { filter = SwitcherFilter.All }
                         StatusChip(stringResource(R.string.filter_needs_you, scoped.needsYou()), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked) {
                             filter = SwitcherFilter.NeedsYou
@@ -149,9 +166,7 @@ fun InboxScreen(app: HerdlineApp, onOpen: (nodeId: String, pane: String) -> Unit
                     }
                 }
             }
-            if (hosts.isEmpty()) {
-                item(key = "empty") { Empty(stringResource(R.string.inbox_no_hosts)) }
-            } else if (shown.isEmpty()) {
+            if (shown.isEmpty()) {
                 // Nothing can match before any host has sent its first view.
                 val loading = hosts.all { it.view == null }
                 item(key = "empty") { Empty(stringResource(if (loading) R.string.agents_loading else R.string.agents_none_match)) }

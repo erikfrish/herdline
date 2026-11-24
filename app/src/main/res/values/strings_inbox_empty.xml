@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The one action on Agents while no host is attached: opens Hosts. -->
+    <string name="inbox_connect_host">Connect a host</string>
+</resources>
