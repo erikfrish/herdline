@@ -1,8 +1,10 @@
 package io.github.erikfrish.herdline.ui.session
 
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.ComposerCheck
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,6 +57,22 @@ class SteerSlotTest {
         assertFalse(remoteDraftConfirmed(check(editor = "empty")))
         assertFalse(remoteDraftConfirmed(check(editor = "unrecognized")))
         assertFalse(remoteDraftConfirmed(null))
+    }
+
+    @Test
+    fun `a disabled slot of any face says why, in its own verb`() {
+        val sendWords = setOf(R.string.composer_checking, R.string.composer_checking_resizing)
+        for (face in SlotFace.entries) for (sending in listOf(false, true)) for (unsettled in listOf(false, true)) for (resizing in listOf(false, true)) {
+            val state = "face=$face sending=$sending unsettled=$unsettled resizing=$resizing"
+            val hold = silentSendHold(false, hasText = true, sending, unsettled, resizing)
+            assertNotNull(state, hold)
+            val words = holdRes(hold!!, face)
+            if (face == SlotFace.Send) {
+                assertTrue(state, words in sendWords || words == R.string.reason_unsettled)
+            } else {
+                assertFalse(state, words in sendWords)
+            }
+        }
     }
 
     private fun check(editor: String, steer: ComposerCheck.Gate = ComposerCheck.Gate(true, null)) = ComposerCheck(

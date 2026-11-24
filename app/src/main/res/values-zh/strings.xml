@@ -456,7 +456,6 @@
     <string name="ingress_promote_gone">未引导：它已离开队列。</string>
     <string name="ingress_promote_failed">无法引导：它可能仍作为后续消息在等待。</string>
     <string name="ingress_queue_asking">正在询问代理…</string>
-    <string name="steer_help_queue">代理正在工作：“排队”会在本回合结束后运行你的消息；“引导”会把它放进本回合。</string>
     <string name="dest_agents">代理</string>
     <string name="agents_none_match">没有匹配的代理。</string>
     <string name="inbox_no_hosts">未连接主机。已连接主机上的代理会显示在这里。</string>

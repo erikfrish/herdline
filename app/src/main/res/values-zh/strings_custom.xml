@@ -168,7 +168,6 @@
     <string name="terminal_pane_no_room">此窗格没有可显示的行：Herdr 的边框占满了整个终端</string>
     <string name="terminal_pane_no_room_portrait">%1$s。竖屏时可以显示</string>
     <string name="composer_steer">引导</string>
-    <string name="steer_help">代理正在工作，所以空闲前无法发送。“引导”会粘贴你的文字，然后按一次 Enter；如果回合恰好在此之前结束，这段文字会开始一个新回合。</string>
     <string name="steer_help_endpoint">“引导”会把你的文字和图片排队交给正在运行的代理，与它工作时的“发送”相同。如果回合已经结束，能保留引导的代理会让它们等到下一个回合，你可以撤回；其他代理会拒绝，不会发送任何内容。</string>
     <string name="steer_pending">正在引导：粘贴你的文字，然后按一次 Enter…</string>
     <string name="steer_left">引导在按 Enter 前停止：你的文字在窗格的输入框中</string>

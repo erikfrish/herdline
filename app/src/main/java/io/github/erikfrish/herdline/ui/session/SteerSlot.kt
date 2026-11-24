@@ -1,5 +1,7 @@
 package io.github.erikfrish.herdline.ui.session
 
+import androidx.annotation.StringRes
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.ComposerCheck
 
 /** What the main slot right of the field is: the verb its one tap delivers. */
@@ -38,6 +40,22 @@ internal fun slotFace(steerRoute: Boolean, queueVerb: Boolean, notice: NoticeRol
 /** Queue, where the route offers it, is the slot's face or the shown notice's action. */
 internal fun queueReachable(face: SlotFace, queueVerb: Boolean, notice: NoticeRole): Boolean =
     !queueVerb || face == SlotFace.Queue || notice == NoticeRole.WorkingQueue
+
+/** A [hold]'s words for the slot's [face]: the verb shown is the verb named. */
+@StringRes
+internal fun holdRes(hold: SendHold, face: SlotFace): Int = when (hold) {
+    SendHold.Unsettled -> R.string.reason_unsettled
+    SendHold.Checking -> when (face) {
+        SlotFace.Send -> R.string.composer_checking
+        SlotFace.Queue -> R.string.composer_checking_queue
+        SlotFace.Steer -> R.string.composer_checking_steer
+    }
+    SendHold.CheckingResizing -> when (face) {
+        SlotFace.Send -> R.string.composer_checking_resizing
+        SlotFace.Queue -> R.string.composer_checking_resizing_queue
+        SlotFace.Steer -> R.string.composer_checking_resizing_steer
+    }
+}
 
 /**
  * A current, positive read that the pane's input box holds text: this

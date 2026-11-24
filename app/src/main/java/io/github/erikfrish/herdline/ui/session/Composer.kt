@@ -1798,6 +1798,8 @@ private fun Editor(
     // never from the text, so the slot's face does not flip while typing.
     // PTY steering is text-only, so staged files leave it Send.
     val steerRoute = endpointSteer || paneWorking && draft.attachments.isEmpty() && check?.steer?.ok == true
+    // Why Steer is off with text in the field, in Steer's own words: a disabled slot is never silent.
+    val steerHold = silentSendHold(steerEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.steer?.takeIf { !it.ok }?.reason))
     val rebind = NoticeAction(stringResource(R.string.composer_rebind)) {
         save(draft.rebound(boot, check?.agent, readInstance))
     }
@@ -1836,7 +1838,7 @@ private fun Editor(
 
     val panel = if (checkedPane) QueuePanel.Hidden else if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
     // Which single notice the slot shows, highest priority first.
-    val notice = when {
+    val primary = when {
         // Held while offline: the unconfirmed delivery stays said (R8).
         binding == Binding.Offline && holdsDraft -> Notice(
             stringResource(if (draft.unsettled) R.string.composer_offline_held else R.string.composer_offline),
@@ -1936,9 +1938,10 @@ private fun Editor(
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
         )
         // Steer has the slot, Queue this notice's labelled action: whichever
-        // the route allows stays one visible tap away. A refusal outranks it.
-        steerRoute && queueVerb && refusal == null -> Notice(
-            stringResource(R.string.steer_working_queue),
+        // the route allows stays one visible tap away. A refusal or held
+        // files outrank it; a held Steer says why here, in its words.
+        steerRoute && queueVerb && refusal == null && attachReady -> Notice(
+            steerHold?.let { stringResource(holdRes(it, SlotFace.Steer)) } ?: stringResource(R.string.steer_working_queue),
             NoticeAction(
                 stringResource(R.string.composer_queue),
                 tag = "composer:queue_action",
@@ -1960,7 +1963,7 @@ private fun Editor(
                 val noControl = !steerRoute && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
                 val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { !steerRoute && !noControl }
                 Notice(
-                    noSteer ?: stringResource(
+                    steerHold?.takeIf { steerRoute }?.let { stringResource(holdRes(it, SlotFace.Steer)) } ?: noSteer ?: stringResource(
                         when {
                             noControl -> R.string.omp_no_control
                             !steerRoute -> R.string.reason_agent_working
@@ -2052,21 +2055,21 @@ private fun Editor(
             )
         }
         else -> null
-    } ?: when (silentSendHold(sendEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason)).takeUnless {
-        // Where Steer has the slot, Send's own hold is not the slot's to say.
-        reading && !mismatched && panel is QueuePanel.Unsupported || steerRoute
-    }) {
-        // Never a silent dead Send: while a reason settles, or the tap is
-        // being checked, the slot says so (lab.8 Chat report), and names a
-        // resize the check sees right now (10018 RZ-text).
-        SendHold.Checking -> Notice(stringResource(R.string.composer_checking), warning = false)
-        SendHold.CheckingResizing -> Notice(stringResource(R.string.composer_checking_resizing), warning = false)
-        SendHold.Unsettled -> Notice(reasonText("unsettled"))
-        null -> null
     }
     // The slot's verb: Steer only where the shown notice leaves Queue in reach.
-    val face = slotFace(steerRoute, queueVerb, notice?.role ?: NoticeRole.None)
+    val face = slotFace(steerRoute, queueVerb, primary?.role ?: NoticeRole.None)
     val slotEnabled = if (face == SlotFace.Steer) steerEnabled else sendEnabled
+    val slotGate = if (face == SlotFace.Steer) check?.steer else check?.send
+    val notice = primary ?: when (val hold = silentSendHold(slotEnabled, holdsDraft, sending, draft.unsettled, resizingReason(slotGate?.takeIf { !it.ok }?.reason)).takeUnless {
+        reading && !mismatched && panel is QueuePanel.Unsupported
+    }) {
+        // Never a silent dead slot: while a reason settles, or the tap is
+        // being checked, the slot says so in its own verb (lab.8 Chat
+        // report), and names a resize the check sees right now (10018 RZ-text).
+        null -> null
+        SendHold.Unsettled -> Notice(stringResource(holdRes(hold, face)), role = if (face == SlotFace.Steer) NoticeRole.Working else NoticeRole.Other)
+        else -> Notice(stringResource(holdRes(hold, face)), warning = false, role = if (face == SlotFace.Steer) NoticeRole.Working else NoticeRole.Other)
+    }
     val slotHint = if (face == SlotFace.Steer) {
         stringResource(R.string.steer_route, draftTitle)
     } else {

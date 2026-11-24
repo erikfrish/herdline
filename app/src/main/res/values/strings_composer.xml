@@ -198,7 +198,6 @@
     <string name="ingress_promote_failed">Couldn\'t steer it: it may still be waiting as a follow-up.</string>
     <!-- A Withdraw or Steer tap on a queued request, on its way to the agent: the tap was taken, its answer follows. -->
     <string name="ingress_queue_asking">Asking the agent…</string>
-    <string name="steer_help_queue">The agent is working: Queue runs your message after this turn; Steer puts it into the turn.</string>
     <string name="omp_checked_pane_choose">Use checked pane input</string>
     <string name="omp_checked_pane_explain">This OMP has no direct control API. Send can instead type into this exact session’s pane, only while the native checks verify the agent, empty editor and absence of a dialog. Ambiguous states stay blocked. Delivery is confirmed by its history; an uncertain message is never resent automatically. This choice is reset on reconnect or session replacement. Queue management and Chat questionnaire replies remain unavailable.</string>
     <string name="omp_checked_pane_confirm">Use pane input</string>

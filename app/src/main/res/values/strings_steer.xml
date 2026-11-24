@@ -7,4 +7,9 @@
     <string name="steer_help_short">The agent is working. Steer pastes your text, then presses Enter once.</string>
     <!-- The pane never showed the paste: nothing says what its input box holds. -->
     <string name="steer_left_not_shown">The pane didn\'t show your text in time, so no Enter was sent and nothing was resent. Open Terminal to check.</string>
+    <!-- A slot held while its tap is checked, named for the verb it shows (Send's own words are composer_checking). -->
+    <string name="composer_checking_steer">Checking the pane before Steer…</string>
+    <string name="composer_checking_resizing_steer">Checking the pane before Steer: it is still resizing…</string>
+    <string name="composer_checking_queue">Checking the pane before Queue…</string>
+    <string name="composer_checking_resizing_queue">Checking the pane before Queue: it is still resizing…</string>
 </resources>
