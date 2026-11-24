@@ -1,5 +1,7 @@
 package io.github.erikfrish.herdline.ui.terminal
 
+import io.github.erikfrish.herdline.core.Pane
+import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.Viewport
 import kotlin.math.ceil
@@ -31,19 +33,36 @@ internal fun tapHintSettleMs(hiddenByChange: Boolean): Long =
 private const val ROUND_SLACK_PX = 0.5f
 
 /**
+ * What Terminal can offer on the pane it shows. [Ended]: no program runs
+ * there ([Pane.unsupported] other than `terminal_starting`), and its card
+ * says why. [Waiting]: a program is or will be there, but no frame has come,
+ * the core is still starting it, or this phone does not hold it yet.
+ * [Ready]: drawn and taking input, the only state that offers typing.
+ */
+internal enum class TerminalReadiness { Ended, Waiting, Ready }
+
+/** [pane] is the record of the pane Terminal shows, null before the view names it; [framed]: a frame has been drawn. */
+internal fun terminalReadiness(pane: Pane?, connected: Boolean, framed: Boolean): TerminalReadiness = when {
+    pane?.unsupported == ReasonCode.TERMINAL_STARTING -> TerminalReadiness.Waiting
+    pane?.unsupported != null -> TerminalReadiness.Ended
+    !connected || pane == null || !framed || !pane.takesInput -> TerminalReadiness.Waiting
+    else -> TerminalReadiness.Ready
+}
+
+/**
  * Whether the tap-to-type hint is wanted at all (QF-9): on Terminal, the
- * keyboard down, before the user first typed, connected with a view; and
- * (A-26) with no notice over the terminal, which would sit over the pill and
- * let its text peek out. Unwanted, it is not composed, so it leaves the
- * TalkBack tree; wanted again, it is placed only after the settle.
+ * keyboard down, before the user first typed, on a [TerminalReadiness.Ready]
+ * terminal; and (A-26) with no notice over the terminal, which would sit over
+ * the pill and let its text peek out. Unwanted, it is not composed, so it
+ * leaves the TalkBack tree; wanted again, it is placed only after the settle.
  */
 internal fun tapHintWanted(
     chatMode: Boolean,
     imeVisible: Boolean,
     typedOnce: Boolean,
-    connectedWithView: Boolean,
+    terminalReady: Boolean,
     noticeOver: Boolean,
-): Boolean = !chatMode && !imeVisible && !typedOnce && connectedWithView && !noticeOver
+): Boolean = !chatMode && !imeVisible && !typedOnce && terminalReady && !noticeOver
 
 /**
  * Where the tap-to-type hint's top goes, in px from the view's top, or null

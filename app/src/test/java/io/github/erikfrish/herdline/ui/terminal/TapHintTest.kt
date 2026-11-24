@@ -1,5 +1,7 @@
 package io.github.erikfrish.herdline.ui.terminal
 
+import io.github.erikfrish.herdline.core.Pane
+import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.Viewport
 import org.junit.Assert.assertEquals
@@ -174,13 +176,34 @@ class TapHintTest {
     @Test
     fun aNoticeOverTheTerminalHidesItAndItsGoingBringsItBack() {
         fun wanted(noticeOver: Boolean = false, typedOnce: Boolean = false, chatMode: Boolean = false) =
-            tapHintWanted(chatMode, imeVisible = false, typedOnce = typedOnce, connectedWithView = true, noticeOver = noticeOver)
+            tapHintWanted(chatMode, imeVisible = false, typedOnce = typedOnce, terminalReady = true, noticeOver = noticeOver)
         assertTrue(wanted())
         // A snackbar (Chat's refusal) or the no-room notice over it: not drawn.
         assertFalse(wanted(noticeOver = true))
         // Gone, it is wanted again only while still untyped, and never on Chat.
         assertFalse(wanted(typedOnce = true))
         assertFalse(wanted(chatMode = true))
+    }
+
+    @Test
+    fun onlyARunningDrawnTerminalThisPhoneHoldsOffersTyping() {
+        fun pane(unsupported: String? = null, interactive: Boolean? = true) =
+            Pane("p", "w", "t", null, null, true, unsupported = unsupported, interactive = interactive)
+        fun readiness(pane: Pane?, connected: Boolean = true, framed: Boolean = true) = terminalReadiness(pane, connected, framed)
+        // P1 audit: a shell that ended with the core's restart is ended, not an empty terminal to type into.
+        assertEquals(TerminalReadiness.Ended, readiness(pane(ReasonCode.TERMINAL_FINISHED)))
+        assertEquals(TerminalReadiness.Ended, readiness(pane(ReasonCode.TERMINAL_LOST)))
+        assertEquals(TerminalReadiness.Ended, readiness(pane(ReasonCode.MOD_PANEL)))
+        // A kept program the core has yet to start again waits for it.
+        assertEquals(TerminalReadiness.Waiting, readiness(pane(ReasonCode.TERMINAL_STARTING)))
+        // Running, but not yet held by this phone, not drawn, not connected, or not named by the view: waits.
+        assertEquals(TerminalReadiness.Waiting, readiness(pane(interactive = false)))
+        assertEquals(TerminalReadiness.Waiting, readiness(pane(), framed = false))
+        assertEquals(TerminalReadiness.Waiting, readiness(pane(), connected = false))
+        assertEquals(TerminalReadiness.Waiting, readiness(null))
+        // Held and drawn on herdr-core, or any drawn Herdr pane (no flag): ready.
+        assertEquals(TerminalReadiness.Ready, readiness(pane()))
+        assertEquals(TerminalReadiness.Ready, readiness(pane(interactive = null)))
     }
 
     private companion object {

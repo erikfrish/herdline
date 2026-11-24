@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -30,6 +31,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.BAD_REPLY
@@ -50,6 +54,8 @@ internal fun coreReasonRes(code: String): Int? = when (code) {
     ReasonCode.IDENTITY_UNKNOWN -> R.string.hc_reason_identity_unknown
     ReasonCode.MOD_PANEL -> R.string.hc_reason_mod_panel
     ReasonCode.TERMINAL_LOST -> R.string.hc_reason_terminal_lost
+    ReasonCode.TERMINAL_FINISHED -> R.string.hc_reason_terminal_finished
+    ReasonCode.TERMINAL_STARTING -> R.string.hc_reason_terminal_starting
     ReasonCode.UNSUPPORTED_BACKEND -> R.string.hc_reason_unsupported_backend
     Connection.State.Disconnected.INVALID_SESSION -> R.string.hc_reason_invalid_session
     Connection.State.Disconnected.CORE_RESTARTED -> R.string.hc_reason_core_restarted
@@ -78,9 +84,9 @@ internal fun chatReadable(view: ShellView?, pane: String): Boolean =
     view != null && isChatAgent(view.agentIn(pane)?.agent) && view.panes.firstOrNull { it.id == pane }?.chat == null
 
 /**
- * Over a herdr-core pane that has no terminal to show ([Pane.unsupported]):
- * why, in place of a blank screen. It covers the terminal, takes its taps,
- * and changes no grid.
+ * Over a herdr-core pane that has no running terminal ([Pane.unsupported]):
+ * why, in place of a blank screen, and never an offer to type. It covers the
+ * terminal, takes its taps, and changes no grid.
  */
 @Composable
 internal fun BoxScope.UnsupportedPaneCard(reason: String, accent: Color) {
@@ -96,10 +102,41 @@ internal fun BoxScope.UnsupportedPaneCard(reason: String, accent: Color) {
         CoreCard(
             icon = Icons.Default.Info,
             tone = accent,
-            title = stringResource(if (reason == ReasonCode.MOD_PANEL) R.string.hc_mod_panel_title else R.string.hc_terminal_lost_title),
+            title = stringResource(unsupportedTitle(reason)),
             body = coreReasonText(reason),
         )
     }
+}
+
+@StringRes
+private fun unsupportedTitle(reason: String): Int = when (reason) {
+    ReasonCode.MOD_PANEL -> R.string.hc_mod_panel_title
+    ReasonCode.TERMINAL_FINISHED -> R.string.hc_terminal_finished_title
+    ReasonCode.TERMINAL_STARTING -> R.string.hc_terminal_starting_title
+    else -> R.string.hc_terminal_lost_title
+}
+
+/**
+ * Over a live terminal this phone cannot type into yet: no frame drawn, or
+ * its control not yet held. Small and at the top, so what is drawn stays
+ * readable; no input, so a tap still reaches the terminal.
+ */
+@Composable
+internal fun BoxScope.TerminalWaitingPill() {
+    Text(
+        stringResource(R.string.terminal_waiting),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .testTag("session:terminal_waiting"),
+    )
 }
 
 /**

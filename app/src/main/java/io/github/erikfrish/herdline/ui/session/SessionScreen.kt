@@ -249,6 +249,8 @@ import io.github.erikfrish.herdline.ui.terminal.tapHintSpanPx
 import io.github.erikfrish.herdline.ui.terminal.tapHintTop
 import io.github.erikfrish.herdline.ui.terminal.tapHintWanted
 import io.github.erikfrish.herdline.ui.terminal.terminalDescription
+import io.github.erikfrish.herdline.ui.terminal.TerminalReadiness
+import io.github.erikfrish.herdline.ui.terminal.terminalReadiness
 
 /** Below this window height (a phone held sideways) the header and tab row share one 48 dp row. */
 private val MergedHeaderHeight: Dp = 480.dp
@@ -361,7 +363,8 @@ fun SessionScreen(
     // The pane last read in each tab on this phone, for a choice of the tab (paneForTab).
     val lastRead = remember { mutableStateMapOf<String, String>() }
     // A Terminal tab or workspace choice: the tab whose pane Herdr focuses next becomes the one read here.
-    var pendingTab by remember { mutableStateOf<String?>(null) }
+    // Per connection: one asked of a lost link never lands, and must not hold navigation after Retry.
+    var pendingTab by remember(connection) { mutableStateOf<String?>(null) }
     var createdTab by remember(connection) { mutableStateOf<Connection.CreatedTab?>(null) }
     var createdAtChoice by remember(connection) { mutableIntStateOf(0) }
     // An explicit Terminal from Chat on a pane the desktop isn't on (TerminalOpen.kt): Chat stays on that pane until
@@ -1315,13 +1318,15 @@ fun SessionScreen(
                         // QF-6c, QF9-N: Terminal on a pane Herdr leaves no row of its own, keyboard up or down;
                         // its notice covers the terminal. Not while the keyboard is up for the composer's field.
                         val noRoom = !chatMode && paneHasNoRoom(frame, composerTyping = imeVisible && composerField)
+                        // P1 audit: the pane ended, waits (no frame, not started, not held) or takes typing; only the last offers it.
+                        val readiness = terminalReadiness(desktopRecord, state is Connection.State.Connected, framed = frame != null)
                         // QF-9: the tap-to-type hint, until the user first opens the keyboard, sends a key or scrolls.
                         // A-26: never under a notice over the terminal (a snackbar, as Chat's refusal, or no-room).
                         val hintWanted = tapHintWanted(
                             chatMode = chatMode,
                             imeVisible = imeVisible,
                             typedOnce = typedOnce,
-                            connectedWithView = view != null && state is Connection.State.Connected,
+                            terminalReady = readiness == TerminalReadiness.Ready,
                             noticeOver = snackbar.currentSnackbarData != null || noRoom,
                         )
                         // Its top in the view, null while hidden; reset whenever it is wanted anew.
@@ -1500,6 +1505,11 @@ fun SessionScreen(
                                 trackColor = Color.Transparent,
                             )
                         }
+                        // herdr-core: a pane with no running terminal (a desktop mod panel, a lost or ended
+                        // terminal, one the core is still starting) says so, never blank. Only while connected,
+                        // and before the outage strip in source order: off the link, Not connected and its
+                        // Retry are what the user needs, and the card's tap-eating surface would cover them.
+                        if (state is Connection.State.Connected) paneUnsupported?.let { UnsupportedPaneCard(it, accent) }
                         // The node behind a rejected sign-in, so its password can be asked again.
                         val rejected = (state as? Connection.State.AuthRejected)?.let { rejection ->
                             app.nodes.route(app.nodes.get(node.id) ?: node).getOrNull()?.getOrNull(rejection.hop)
@@ -1549,8 +1559,12 @@ fun SessionScreen(
                                 }
                             }
                         }
-                        // herdr-core: a pane with no terminal (a desktop mod panel, a lost terminal) says so, never blank.
-                        paneUnsupported?.let { UnsupportedPaneCard(it, accent) }
+                        // A live terminal not yet drawn or held by this phone says it waits, and offers no typing.
+                        if (!chatMode && !noRoom && paneUnsupported == null && view != null &&
+                            state is Connection.State.Connected && readiness == TerminalReadiness.Waiting
+                        ) {
+                            TerminalWaitingPill()
+                        }
                         if (!lostLive) {
                             // A password host signs in with its saved password, which never enters the
                             // attempt's secrets: its rejection is the password's even when none was typed.

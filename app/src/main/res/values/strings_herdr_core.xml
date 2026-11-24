@@ -5,7 +5,9 @@
     <string name="hc_reason_core_managed">herdr-core is installed and updated on the host by you; Herdline never does it.</string>
     <string name="hc_reason_identity_unknown">herdr-core does not know which agent session runs in this pane, so Chat cannot read or send to it. Terminal still works.</string>
     <string name="hc_reason_mod_panel">This pane is a desktop mod panel. Only herdr-app on the desktop can show it; it has no terminal for the phone.</string>
-    <string name="hc_reason_terminal_lost">This pane’s terminal is gone on the host. Close the pane, or wait for herdr-core to restart its program.</string>
+    <string name="hc_reason_terminal_lost">This pane’s terminal is gone on the host, so there is nothing to type into. Close the pane.</string>
+    <string name="hc_reason_terminal_finished">The program in this pane has ended, so there is nothing to type into. Close the pane, or open a new tab.</string>
+    <string name="hc_reason_terminal_starting">herdr-core has not started this pane’s program yet. Typing turns on once it runs.</string>
     <string name="hc_reason_unsupported_backend">Not supported by this node’s server type, so nothing was done.</string>
     <string name="hc_reason_invalid_session">herdr-core refuses this node’s hc session name. Edit the node and choose another, or leave it empty for the default session.</string>
     <string name="hc_reason_core_restarted">herdr-core restarted on the host. Panes were read afresh; the phone’s own choices of pane were dropped.</string>
@@ -25,6 +27,8 @@
     <!-- herdr-core panes with no terminal. -->
     <string name="hc_mod_panel_title">Desktop mod panel</string>
     <string name="hc_terminal_lost_title">Terminal lost</string>
+    <string name="hc_terminal_finished_title">Terminal ended</string>
+    <string name="hc_terminal_starting_title">Waiting for the terminal</string>
 
     <!-- herdr-core agent identity and the opt-in Herdline hook. -->
     <string name="hc_identity_title">Chat needs the Herdline hook</string>

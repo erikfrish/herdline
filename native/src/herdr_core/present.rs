@@ -211,11 +211,7 @@ impl Pump {
                     if word.is_some() {
                         tab_statuses.push(status);
                     }
-                    let unsupported = match (kind, record) {
-                        ("mod", _) => Some("mod_panel"),
-                        (_, None) => Some("terminal_lost"),
-                        _ => None,
-                    };
+                    let unsupported = view::unsupported(kind, record);
                     let field = |key: &str| {
                         record
                             .and_then(|record| record[key].as_str())

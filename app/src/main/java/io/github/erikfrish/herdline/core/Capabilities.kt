@@ -20,6 +20,12 @@ object ReasonCode {
     /** The pane's terminal is gone on the core. */
     const val TERMINAL_LOST = "terminal_lost"
 
+    /** The pane's program ended on the core; nothing runs there to type into. */
+    const val TERMINAL_FINISHED = "terminal_finished"
+
+    /** The core has yet to start or restart the pane's kept program. */
+    const val TERMINAL_STARTING = "terminal_starting"
+
     /** The connected backend does not offer the action at all. */
     const val UNSUPPORTED_BACKEND = "unsupported_backend"
 }

@@ -4,7 +4,9 @@
     <string name="hc_reason_core_managed">herdr-core 由你在主机上安装和更新，Herdline 从不代劳。</string>
     <string name="hc_reason_identity_unknown">herdr-core 不知道此窗格中运行的是哪个代理会话，因此聊天无法读取或发送。终端仍可使用。</string>
     <string name="hc_reason_mod_panel">此窗格是桌面模组面板，只有桌面上的 herdr-app 能显示它；它没有可供手机使用的终端。</string>
-    <string name="hc_reason_terminal_lost">此窗格的终端已在主机上丢失。请关闭窗格，或等待 herdr-core 重启其程序。</string>
+    <string name="hc_reason_terminal_lost">此窗格的终端已在主机上丢失，无处可输入。请关闭窗格。</string>
+    <string name="hc_reason_terminal_finished">此窗格中的程序已结束，无处可输入。请关闭窗格，或打开新标签页。</string>
+    <string name="hc_reason_terminal_starting">herdr-core 尚未启动此窗格的程序。程序运行后即可输入。</string>
     <string name="hc_reason_unsupported_backend">此节点的服务端类型不支持，因此未执行任何操作。</string>
     <string name="hc_reason_invalid_session">herdr-core 拒绝此节点的 hc 会话名称。请编辑节点换一个名称，或留空以使用默认会话。</string>
     <string name="hc_reason_core_restarted">herdr-core 已在主机上重启。窗格已重新读取，手机上选择的窗格已清除。</string>
@@ -22,6 +24,8 @@
 
     <string name="hc_mod_panel_title">桌面模组面板</string>
     <string name="hc_terminal_lost_title">终端已丢失</string>
+    <string name="hc_terminal_finished_title">终端已结束</string>
+    <string name="hc_terminal_starting_title">正在等待终端</string>
 
     <string name="hc_identity_title">聊天需要 Herdline 钩子</string>
     <string name="hc_chat_off_title">此窗格的聊天已关闭</string>

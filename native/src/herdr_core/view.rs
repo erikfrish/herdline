@@ -57,7 +57,7 @@ pub struct Pane<'a> {
     pub kind: &'static str,
     /// `null` when Chat may read and send to the pane's agent, else why not.
     pub chat: Option<&'static str>,
-    /// `mod_panel` or `terminal_lost`; `null` for a drawable terminal.
+    /// Why the pane has no running terminal ([`unsupported`]); `null` for one.
     pub unsupported: Option<&'static str>,
     /// The phone holds an interactive stream: it owns the terminal's size.
     pub interactive: bool,
@@ -74,6 +74,26 @@ pub struct Agent<'a> {
     pub status: &'static str,
     pub state_seq: u64,
     pub focused: bool,
+}
+
+/// Why a pane of `kind` whose terminal `record` the pump holds has no
+/// running terminal, or `None` when its program runs. A record missing
+/// is `terminal_lost`. A `finished` record ended for good. A `live` one
+/// with no pid waits for the core to start or restart its kept program.
+pub fn unsupported(kind: &str, record: Option<&serde_json::Value>) -> Option<&'static str> {
+    if kind == "mod" {
+        return Some("mod_panel");
+    }
+    let Some(record) = record else {
+        return Some("terminal_lost");
+    };
+    if record["state"] != "live" {
+        Some("terminal_finished")
+    } else if record["pid"].as_u64().is_none() {
+        Some("terminal_starting")
+    } else {
+        None
+    }
 }
 
 /// The core's OSC 7501 root state in the view's words; `error` has no word
