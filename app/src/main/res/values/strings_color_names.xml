@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The node colour labels as TalkBack reads them, in NodeColors.all order. -->
+<resources>
+    <string name="color_teal">Teal</string>
+    <string name="color_coral">Coral</string>
+    <string name="color_rose">Rose</string>
+    <string name="color_violet">Violet</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_sky">Sky blue</string>
+    <string name="color_brass">Brass</string>
+    <string name="color_green">Green</string>
+</resources>

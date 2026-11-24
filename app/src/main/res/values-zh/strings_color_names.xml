@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="color_teal">青绿色</string>
+    <string name="color_coral">珊瑚色</string>
+    <string name="color_rose">玫红色</string>
+    <string name="color_violet">紫罗兰色</string>
+    <string name="color_blue">蓝色</string>
+    <string name="color_sky">天蓝色</string>
+    <string name="color_brass">黄铜色</string>
+    <string name="color_green">绿色</string>
+</resources>

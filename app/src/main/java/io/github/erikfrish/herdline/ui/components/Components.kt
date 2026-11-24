@@ -35,12 +35,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.ui.glass.GlassGroup
 import io.github.erikfrish.herdline.ui.glass.GlassPill
 import io.github.erikfrish.herdline.ui.glass.GlassSectionHeader
@@ -98,7 +102,7 @@ fun ItemRow(
     modifier: Modifier = Modifier,
 ) {
     ListItem(
-        headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         modifier = if (onClick != null) modifier.clickable(onClick = onClick, role = Role.Button) else modifier,
         supportingContent = detail?.let { { Text(it, maxLines = detailMaxLines, overflow = TextOverflow.Ellipsis) } },
         leadingContent = leading,
@@ -114,7 +118,13 @@ fun ItemRow(
     )
 }
 
-/** The node colour labels as tappable swatches; the chosen one grows a ring and a check. */
+/** The node colour labels, in [NodeColors.all] order, as TalkBack names them. */
+internal val NodeColorNames = listOf(
+    R.string.color_teal, R.string.color_coral, R.string.color_rose, R.string.color_violet,
+    R.string.color_blue, R.string.color_sky, R.string.color_brass, R.string.color_green,
+)
+
+/** The node colour labels as tappable, named swatches; the chosen one grows a ring and a check. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ColorPicker(selected: Int, onSelect: (Int) -> Unit) {
@@ -122,6 +132,7 @@ fun ColorPicker(selected: Int, onSelect: (Int) -> Unit) {
         NodeColors.all.forEachIndexed { index, color ->
             val chosen = index == selected
             val ring by animateDpAsState(if (chosen) 3.dp else 0.dp, label = "ring")
+            val name = stringResource(NodeColorNames[index])
             Box(
                 Modifier
                     .size(36.dp)
@@ -130,7 +141,8 @@ fun ColorPicker(selected: Int, onSelect: (Int) -> Unit) {
                     .padding(ring + if (chosen) 2.dp else 0.dp)
                     .clip(CircleShape)
                     .background(color)
-                    .selectable(chosen, remember { MutableInteractionSource() }, indication = null, role = Role.RadioButton) { onSelect(index) },
+                    .selectable(chosen, remember { MutableInteractionSource() }, indication = null, role = Role.RadioButton) { onSelect(index) }
+                    .semantics { contentDescription = name },
                 contentAlignment = Alignment.Center,
             ) {
                 if (chosen) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))

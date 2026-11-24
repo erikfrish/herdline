@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
@@ -877,13 +878,14 @@ private fun Toggle(
     tint: Color = Color(0xFF8A8F98),
     onChange: (Boolean) -> Unit,
 ) {
+    // One node per setting: the whole row is the switch, named by its title; the Switch only draws.
     ItemRow(
         title = title,
         detail = detail,
         detailMaxLines = Int.MAX_VALUE,
         leading = icon?.let { { IconBadge(it, tint) } },
-        onClick = { onChange(!checked) },
-        trailing = { Switch(checked, onChange) },
+        trailing = { Switch(checked, onCheckedChange = null) },
+        modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
     )
 }
 

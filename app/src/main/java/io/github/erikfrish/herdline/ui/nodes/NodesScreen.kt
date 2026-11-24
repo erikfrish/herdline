@@ -184,12 +184,15 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
         // The empty state offers its own buttons.
         floatingActionButton = {
             if (nodes.isNotEmpty()) {
+                val addNode = stringResource(R.string.add_node)
+                // Named on the button itself: TalkBack and uiautomator read its label as text-less (NAF).
                 ExtendedFloatingActionButton(
-                    text = { Text(stringResource(R.string.add_node)) },
+                    text = { Text(addNode, Modifier.clearAndSetSemantics {}) },
                     icon = { Icon(Icons.Default.Add, null) },
                     onClick = { navigation.edit(null) },
                     modifier = Modifier
                         .testTag("add_node")
+                        .semantics { contentDescription = addNode }
                         .onSizeChanged { fabHeight = with(density) { it.height.toDp() } },
                 )
             }
