@@ -377,6 +377,7 @@ impl Host {
             agent: "kimi".into(),
             source: "herdr:kimi".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

@@ -127,6 +127,7 @@ impl Host {
             agent: "kilo".into(),
             source: "herdr:kilo".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

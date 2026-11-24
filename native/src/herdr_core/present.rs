@@ -181,6 +181,7 @@ impl Pump {
         let mut tabs = Vec::new();
         let mut panes = Vec::new();
         let mut agents = Vec::new();
+        let mut hookless = HashMap::new();
         let mut registry = HashMap::new();
         for (s, space) in doc::space_list(&self.doc).iter().enumerate() {
             let space_id = doc::id(space);
@@ -234,6 +235,11 @@ impl Pump {
                         kind,
                         chat: if claim.is_some() {
                             None
+                        } else if let Some(terminal) =
+                            terminal.filter(|_| record.is_some_and(hookless_omp))
+                        {
+                            hookless.insert(pane_id.to_owned(), terminal.to_owned());
+                            Some(HOOKLESS_OMP)
                         } else {
                             Some("identity_unknown")
                         },
@@ -324,6 +330,7 @@ impl Pump {
         let encoded = serde_json::to_string(&shell);
         drop(shell);
         lock(&self.shared.registry).panes = registry;
+        *lock(&self.shared.hookless) = hookless;
         match encoded {
             Ok(json) => {
                 *lock(&self.shared.view) = Some(json);
@@ -461,4 +468,17 @@ impl Pump {
             self.verify(&terminal);
         }
     }
+}
+
+/// The reason a pane's Chat is read only: its live terminal runs OMP in
+/// the foreground without Herdline's hook labels. Whether that OMP is bound
+/// to a session is proved on the host at each read, never here.
+const HOOKLESS_OMP: &str = "hookless_omp";
+
+fn hookless_omp(record: &Value) -> bool {
+    record["state"] == "live"
+        && record["foreground"]["name"] == "omp"
+        && record["labels"]
+            .as_object()
+            .is_none_or(|labels| !labels.keys().any(|key| key.starts_with("herdline.")))
 }

@@ -104,6 +104,7 @@ impl Host {
             agent: "hermes".into(),
             source: "herdr:hermes".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

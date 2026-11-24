@@ -511,7 +511,15 @@ impl Host {
                 .map(|hash| (hash, expect.pid.unwrap())),
         };
         let (status, out) = self.run(Some(fetch));
-        media_outcome(status, &out, expect, media).unwrap()
+        media_outcome(
+            BackendSource::Herdr("lab"),
+            "w1:p1",
+            status,
+            &out,
+            expect,
+            media,
+        )
+        .unwrap()
     }
 }
 
@@ -865,7 +873,15 @@ fn each_engine_reads_only_its_reported_session_and_reopens_its_inline_image() {
         }));
         assert!(
             matches!(
-                media_outcome(exit, &bytes, &identity, &media).unwrap(),
+                media_outcome(
+                    BackendSource::Herdr("lab"),
+                    "w1:p1",
+                    exit,
+                    &bytes,
+                    &identity,
+                    &media
+                )
+                .unwrap(),
                 MediaOutcome::Image {
                     mime: "image/png",
                     ..
@@ -1362,6 +1378,7 @@ fn core_claim() -> Core {
             agent: "omp".into(),
             source: "herdline-core:omp".into(),
             kind: "path".into(),
+            start: None,
         },
         session_id: "s1".into(),
         argv: vec!["omp".into()],

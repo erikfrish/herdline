@@ -505,6 +505,7 @@ mod tests {
             agent: "qwen".into(),
             source: "herdr:qwen".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

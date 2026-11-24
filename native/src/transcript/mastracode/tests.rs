@@ -156,6 +156,7 @@ impl Host {
             agent: "mastracode".into(),
             source: "herdr:mastracode".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

@@ -114,6 +114,7 @@ fn expect() -> Identity {
         agent: "grok".into(),
         source: "herdr:grok".into(),
         kind: "id".into(),
+        start: None,
     }
 }
 

@@ -11,6 +11,7 @@ fn codex() -> Identity {
         agent: "codex".to_owned(),
         source: "herdr:codex".to_owned(),
         kind: "id".to_owned(),
+        start: None,
     }
 }
 

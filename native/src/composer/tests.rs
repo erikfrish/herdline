@@ -928,6 +928,7 @@ fn a_draft_goes_only_to_the_agent_instance_it_was_written_for() {
         agent: "omp".into(),
         source: "herdr:omp".into(),
         kind: "path".into(),
+        start: None,
     };
     assert_eq!(same_instance(&written, Some(&written.clone())), Ok(()));
     let fresh = Identity {
@@ -1163,6 +1164,7 @@ fn instance() -> Identity {
         agent: "omp".into(),
         source: "herdr:omp".into(),
         kind: "path".into(),
+        start: None,
     }
 }
 

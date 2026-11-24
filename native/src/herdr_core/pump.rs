@@ -397,6 +397,7 @@ impl Pump {
         *lock(&self.shared.closer) = None;
         *lock(&self.shared.registry) = Registry::default();
         lock(&self.shared.instances).clear();
+        lock(&self.shared.hookless).clear();
         lock(&self.shared.interactive).clear();
         self.shared.emit(UiEvent::Disconnected { reason });
     }

@@ -593,6 +593,7 @@ conn.commit()
             agent: "opencode".into(),
             source: "herdr:opencode".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

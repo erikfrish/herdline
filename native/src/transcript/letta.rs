@@ -59,6 +59,7 @@ pub(super) fn identity(pane: &Value, process: &Value) -> Result<Option<Identity>
         agent: "letta".into(),
         source: "herdr:letta".into(),
         kind: "id".into(),
+        start: None,
         path: text(&reference["value"])?,
     }))
 }

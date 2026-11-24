@@ -87,6 +87,7 @@ pub fn of(record: &Value, pane: &str) -> Result<Identity, Unknown> {
         agent: agent.to_owned(),
         source: format!("herdline-core:{agent}"),
         kind: "path".to_owned(),
+        start: None,
     })
 }
 

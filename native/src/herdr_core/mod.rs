@@ -190,6 +190,9 @@ struct Shared {
     exec: Mutex<Option<ssh::Exec>>,
     /// Confirmed agent instances, by pane: Chat reads and sends only these.
     instances: Mutex<HashMap<String, transcript::Core>>,
+    /// Panes whose live terminal runs an OMP without hook labels, by pane:
+    /// their terminal address. Chat only reads these, through the probe.
+    hookless: Mutex<HashMap<String, String>>,
     /// Panes whose terminal this phone holds interactively.
     interactive: Mutex<HashSet<String>>,
     /// A second handle on the link's socket, so a disconnect from the UI
@@ -284,6 +287,7 @@ impl Core {
             waiters: Mutex::default(),
             exec: Mutex::default(),
             instances: Mutex::default(),
+            hookless: Mutex::default(),
             interactive: Mutex::default(),
             closer: Mutex::default(),
             stop: AtomicBool::default(),
@@ -383,12 +387,33 @@ impl Core {
         lock(&self.shared.instances).get(pane).cloned()
     }
 
-    /// A chat view of a confirmed instance's transcript. Blocks on the host.
+    /// A chat view of a pane's transcript. Blocks on the host. A confirmed
+    /// instance is read through its claim; otherwise a hookless OMP is read
+    /// only through the probe: the terminal the view shows now for a first
+    /// read, and for a later one exactly the terminal the caller was shown.
     pub fn transcript(&self, request: &str) -> Result<String> {
         let exec = self.exec()?;
         let request: transcript::Request = serde_json::from_str(request)?;
-        let core = self.instance(&request.pane).ok_or(Error::NoTranscript)?;
-        let response = transcript::fetch(&exec, transcript::BackendSource::Core(&core), &request)?;
+        let response = match self.instance(&request.pane) {
+            Some(core) => {
+                transcript::fetch(&exec, transcript::BackendSource::Core(&core), &request)?
+            }
+            None => {
+                let terminal = match &request.expect {
+                    None => lock(&self.shared.hookless).get(&request.pane).cloned(),
+                    Some(expect) if expect.source == transcript::omp_probe::SOURCE => {
+                        Some(expect.terminal_id.clone())
+                    }
+                    Some(_) => None,
+                }
+                .ok_or(Error::NoTranscript)?;
+                let probe = transcript::Probe {
+                    terminal,
+                    session: self.shared.session.clone(),
+                };
+                transcript::fetch(&exec, transcript::BackendSource::Probe(&probe), &request)?
+            }
+        };
         Ok(serde_json::to_string(&response)?)
     }
 

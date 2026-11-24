@@ -115,6 +115,7 @@ pub(in crate::transcript) fn identity(pane: &Value, process: &Value) -> Result<O
         agent: "gemini".to_owned(),
         source: SOURCE.to_owned(),
         kind: "id".to_owned(),
+        start: None,
     }))
 }
 

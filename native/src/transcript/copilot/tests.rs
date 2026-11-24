@@ -86,6 +86,7 @@ impl Host {
             agent: "copilot".into(),
             source: "herdr:copilot".into(),
             kind: "id".into(),
+            start: None,
         }
     }
 

@@ -3,11 +3,19 @@ package io.github.erikfrish.herdline.core
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** One running agent and its reported session reference, never shared across programs. */
+/**
+ * One running agent and its reported session reference, never shared across programs.
+ * [start] is the process start time native knows only for a probed OMP ([readOnlyProbe]):
+ * the same pid with another start is another instance.
+ */
 data class TranscriptIdentity(
     val paneId: String, val terminalId: String, val pid: Long?, val path: String,
     val agent: String = "omp", val source: String = "herdr:omp", val kind: String = "path",
+    val start: Long? = null,
 ) {
+    /** A hookless OMP Chat only reads: no composer, no send, no keys to its terminal. */
+    val readOnlyProbe: Boolean get() = source == PROBE_SOURCE
+
     fun toJson(): JSONObject = JSONObject()
         .put("pane_id", paneId)
         .put("terminal_id", terminalId)
@@ -16,8 +24,12 @@ data class TranscriptIdentity(
         .put("agent", agent)
         .put("source", source)
         .put("kind", kind)
+        .apply { start?.let { put("start", it) } }
 
     companion object {
+        /** Native's `omp_probe::SOURCE`. */
+        const val PROBE_SOURCE = "probe:omp"
+
         fun parse(json: JSONObject) = TranscriptIdentity(
             paneId = json.getString("pane_id"),
             terminalId = json.getString("terminal_id"),
@@ -26,6 +38,7 @@ data class TranscriptIdentity(
             agent = json.optString("agent", "omp"),
             source = json.optString("source", "herdr:omp"),
             kind = json.optString("kind", "path"),
+            start = if (json.has("start") && !json.isNull("start")) json.getLong("start") else null,
         )
     }
 }
@@ -310,11 +323,15 @@ data class TranscriptPage(
     val hasOlder: Boolean = start > 0,
 ) {
     companion object {
-        /** Fails with [TranscriptRefused] when the core refuses the session by type. */
+        /**
+         * Fails with [TranscriptRefused] when the core refuses the session by type, and
+         * with [TranscriptDetached] when a read-only binding the request showed no longer holds.
+         */
         fun parse(text: String): TranscriptPage {
             val json = JSONObject(text)
             if (json.optJSONObject("pending")?.optString("agent") == "omp") throw TranscriptPending()
             json.optJSONObject("refused")?.let { refused -> TranscriptRefusal.parse(refused)?.let { throw TranscriptRefused(it) } }
+            json.optJSONObject("detached")?.let { throw TranscriptDetached(TranscriptDetachment.parse(it)) }
             return TranscriptPage(
                 identity = TranscriptIdentity.parse(json.getJSONObject("identity")),
                 reset = json.optBoolean("reset"),
@@ -340,6 +357,8 @@ sealed interface TranscriptRefusal {
      * [supported] is the one the reader reads.
      */
     data class UnsupportedVersion(val agent: String, val found: Int?, val supported: Int) : TranscriptRefusal
+    /** A hookless OMP no session is proved for, by [reason]; Chat stays Terminal. */
+    data class Unbound(val reason: UnboundReason) : TranscriptRefusal
 
     companion object {
         /** Null for a kind from a newer core: the read then fails as any other. */
@@ -354,6 +373,7 @@ sealed interface TranscriptRefusal {
                     supported,
                 )
             }
+            "unbound" -> Unbound(UnboundReason.parse(json.optString("reason")))
             else -> null
         }
     }
@@ -361,6 +381,49 @@ sealed interface TranscriptRefusal {
 
 /** A read the core refused by type; Chat says [refusal] in its own words, not the message. */
 class TranscriptRefused(val refusal: TranscriptRefusal) : java.io.IOException("chat cannot read this session: $refusal")
+
+/** Why native will not bind a hookless OMP to a session (native `omp_probe::Unbound`). */
+enum class UnboundReason(val wire: String) {
+    /** No live OMP is the terminal's foreground process. */
+    NoOmp("no_omp"),
+    /** OMP is the terminal's own program: a launcher started it, not a shell. */
+    LauncherStarted("launcher_started"),
+    /** Another profile, folder override or HOME than the SSH shell's defaults. */
+    ProfileMismatch("profile_mismatch"),
+    /** OMP reads another tty than the terminal's shell. */
+    TtyMismatch("tty_mismatch"),
+    /** OMP has not written its session yet, or its breadcrumb names no session that checks out. */
+    FreshOrBadBreadcrumb("fresh_or_bad_breadcrumb"),
+    /** Another process holds the session's lease, or none does. */
+    LeaseNotHeld("lease_not_held"),
+    /** The process's lease evidence could not be read. */
+    LeaseUnreadable("lease_unreadable"),
+    /** Hook labels, another parent or user, or an unreadable process: nothing proves the session. */
+    Ambiguous("ambiguous");
+
+    companion object {
+        /** A reason from a newer core proves nothing either: [Ambiguous]. */
+        fun parse(wire: String): UnboundReason = entries.firstOrNull { it.wire == wire } ?: Ambiguous
+    }
+}
+
+/** How a read-only binding ended (native `Detached`); nothing of the terminal's current session was read. */
+sealed interface TranscriptDetachment {
+    /** The terminal's OMP is no longer bound to any session Chat may read. */
+    data class Refused(val reason: UnboundReason) : TranscriptDetachment
+    /** Another process, session file or terminal holds it now; only a new read without `expect` binds it. */
+    data object Rebound : TranscriptDetachment
+
+    companion object {
+        fun parse(json: JSONObject): TranscriptDetachment = when (json.optString("kind")) {
+            "refused" -> Refused(UnboundReason.parse(json.optString("reason")))
+            else -> Rebound
+        }
+    }
+}
+
+/** A read-only Chat whose binding no longer holds: keep what is shown, stop reading. */
+class TranscriptDetached(val detachment: TranscriptDetachment) : java.io.IOException("chat's read-only binding ended: $detachment")
 
 /** A verified foreground OMP has not published a transcript reference yet. */
 class TranscriptPending : java.io.IOException("OMP session is not recorded yet")

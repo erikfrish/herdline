@@ -34,6 +34,7 @@ mod kilo;
 mod kimi;
 mod letta;
 mod mastracode;
+pub mod omp_probe;
 mod opencode;
 mod pi;
 mod qwen;
@@ -124,11 +125,24 @@ pub enum Read {
 }
 
 /// Where a pane's agent instance is read: Herdr's CLI in a Herdr session,
-/// or the verified hook labels of a herdr-core terminal.
+/// the verified hook labels of a herdr-core terminal, or the read-only
+/// probe of a hookless OMP in one.
 #[derive(Debug, Clone, Copy)]
 pub enum BackendSource<'a> {
     Herdr(&'a str),
     Core(&'a Core),
+    Probe(&'a Probe),
+}
+
+/// A herdr-core terminal without hook labels whose foreground OMP Chat may
+/// read only: every read asks the core in `session` for `terminal` and runs
+/// [`omp_probe`] on its foreground process in the same command, before any
+/// byte of the session file is read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Probe {
+    pub terminal: String,
+    /// The `HC_SESSION` of the core the terminal is read from.
+    pub session: String,
 }
 
 /// A herdr-core terminal's hook claim, already checked against its
@@ -166,12 +180,17 @@ pub struct Identity {
     /// `letta`.
     #[serde(default = "omp")]
     pub agent: String,
-    /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`.
+    /// Where Herdr got the ref, such as `herdr:omp` or `herdr:claude`, or
+    /// [`omp_probe::SOURCE`] for a hookless OMP Chat only reads.
     #[serde(default = "herdr_omp")]
     pub source: String,
     /// The ref Herdr stores: `path` or `id`.
     #[serde(default = "path_kind")]
     pub kind: String,
+    /// The process's start time in clock ticks after boot, known only for a
+    /// probed OMP: a reused pid is another instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u64>,
 }
 
 fn omp() -> String {
@@ -195,12 +214,14 @@ impl Default for Identity {
             agent: omp(),
             source: herdr_omp(),
             kind: path_kind(),
+            start: None,
         }
     }
 }
 
-/// What [`fetch`] answers: transcript lines, the one image asked for, or a
-/// typed refusal that Chat says in its own words.
+/// What [`fetch`] answers: transcript lines, the one image asked for, a
+/// typed refusal that Chat says in its own words, or a read-only binding
+/// that no longer holds.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Answer {
@@ -208,6 +229,19 @@ pub enum Answer {
     Media { media: MediaAnswer },
     Refused { refused: Refused },
     Pending { pending: Pending },
+    Detached { detached: Detached },
+}
+
+/// A read-only binding the caller showed no longer holds. Nothing of the
+/// session the terminal runs now is read: Chat keeps the last page and
+/// stops, and only a new read without `expect` binds again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Detached {
+    /// The terminal's OMP is no longer bound to any session Chat may read.
+    Refused { reason: omp_probe::Unbound },
+    /// Another process, session file, terminal or route holds it now.
+    Rebound,
 }
 
 /// Why Chat will never read this session, as opposed to an error that may
@@ -226,6 +260,8 @@ pub enum Refused {
         found: Option<u32>,
         supported: u32,
     },
+    /// A hookless OMP not bound to a session Chat may read.
+    Unbound { reason: omp_probe::Unbound },
 }
 
 /// A recognized foreground OMP has not reported its session reference yet.
@@ -486,6 +522,10 @@ pub fn fetch(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Resul
                 supported,
             },
         }),
+        Err(Error::Unbound(reason)) => Ok(Answer::Refused {
+            refused: Refused::Unbound { reason },
+        }),
+        Err(Error::Detached(detached)) => Ok(Answer::Detached { detached }),
         Err(error) => Err(error),
     }
 }
@@ -495,6 +535,12 @@ fn page(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Result<Res
     let mut read = request.read;
     let mut window = FIRST_WINDOW;
     let mut reset = false;
+    // A read-only binding the caller shows is never moved to what the pane
+    // runs now: it holds as it is, or the read is detached.
+    let bound = request
+        .expect
+        .as_ref()
+        .is_some_and(|expect| expect.source == omp_probe::SOURCE);
     for _ in 0..MAX_READS {
         let (script, limit) = match &expect {
             // OpenCode pages its own `seq` sequence, Qwen its whole active
@@ -581,10 +627,32 @@ fn page(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Result<Res
         let reply = match parse_reply(output.exit_status, &output.tail) {
             Ok(reply) => reply,
             Err(error) => {
+                if bound {
+                    // The facts printed before the failure still tell a
+                    // binding that no longer holds from one that failed to read.
+                    if let Ok(reply) = parse_reply(Some(0), &output.tail) {
+                        match reported(source, &request.pane, &reply.pane, &reply.process) {
+                            Err(Error::Unbound(reason)) => {
+                                return Err(Error::Detached(Detached::Refused { reason }));
+                            }
+                            Ok((current, _)) if expect.as_ref() != Some(&current) => {
+                                return Err(Error::Detached(Detached::Rebound));
+                            }
+                            _ => {}
+                        }
+                    }
+                    return Err(error);
+                }
                 // File resolution can refuse the old reference after a fork or
                 // restart. The already-emitted pane report still identifies the
                 // replacement; adopt it rather than polling the old path forever.
-                if let Ok(Some(current)) = parse_instance(Some(0), &output.tail)
+                let current = match source {
+                    BackendSource::Probe(_) => None,
+                    BackendSource::Herdr(_) | BackendSource::Core(_) => {
+                        parse_instance(Some(0), &output.tail).ok().flatten()
+                    }
+                };
+                if let Some(current) = current
                     && expect.as_ref() != Some(&current)
                 {
                     expect = Some(current);
@@ -596,8 +664,18 @@ fn page(exec: &Exec, source: BackendSource<'_>, request: &Request) -> Result<Res
                 return Err(error);
             }
         };
-        let (identity, status) = identity(&reply.pane, &reply.process)?;
+        let (identity, status) = match reported(source, &request.pane, &reply.pane, &reply.process)
+        {
+            Ok(reported) => reported,
+            Err(Error::Unbound(reason)) if bound => {
+                return Err(Error::Detached(Detached::Refused { reason }));
+            }
+            Err(error) => return Err(error),
+        };
         if expect.as_ref() != Some(&identity) {
+            if bound {
+                return Err(Error::Detached(Detached::Rebound));
+            }
             expect = Some(identity);
             read = Read::Tail;
             window = FIRST_WINDOW;
@@ -703,7 +781,14 @@ fn image(
         read_timeout(bytes),
         usize::try_from(bytes).unwrap_or(usize::MAX) + 1 + 2 * HEADER_ROOM,
     )?;
-    media_outcome(output.exit_status, &output.tail, expect, media)
+    media_outcome(
+        source,
+        pane,
+        output.exit_status,
+        &output.tail,
+        expect,
+        media,
+    )
 }
 
 /// How long a read of `bytes` may take: [`TIMEOUT`], plus a second for each 512 KiB.
@@ -714,6 +799,8 @@ fn read_timeout(bytes: u64) -> Duration {
 /// The image in a media script's reply, once the pane held `expect` before
 /// and after it and the line still names that image.
 fn media_outcome(
+    source: BackendSource<'_>,
+    pane: &str,
     exit_status: Option<u32>,
     bytes: &[u8],
     expect: &Identity,
@@ -732,7 +819,7 @@ fn media_outcome(
     };
     let reply = parse_reply(file_refusal.map_or(exit_status, |_| Some(0)), bytes)?;
     let refused = |error| Ok(MediaOutcome::Refused { error });
-    if !same_instance(&reply.pane, &reply.process, expect)? {
+    if !same_instance(source, pane, &reply.pane, &reply.process, expect)? {
         return refused(Refusal::InstanceChanged);
     }
     if let Some(error) = file_refusal {
@@ -767,10 +854,10 @@ fn media_outcome(
         None => (None, rest),
     };
     let after = rest.strip_prefix(b"\n@@after\n").ok_or(Error::BadReply)?;
-    let (pane, process) = split(after, b"\n@@proc\n").ok_or(Error::BadReply)?;
-    let pane = serde_json::from_slice(pane)?;
+    let (report, process) = split(after, b"\n@@proc\n").ok_or(Error::BadReply)?;
+    let report = serde_json::from_slice(report)?;
     let process = serde_json::from_slice(process).unwrap_or(Value::Null);
-    if !same_instance(&pane, &process, expect)? {
+    if !same_instance(source, pane, &report, &process, expect)? {
         return refused(Refusal::InstanceChanged);
     }
     let decoded = match image_part_bytes(&expect.agent, &file, line, blob, media) {
@@ -786,12 +873,36 @@ fn media_outcome(
     }
 }
 
-/// Whether Herdr's reports name the instance `expect`.
-fn same_instance(pane: &Value, process: &Value, expect: &Identity) -> Result<bool> {
-    match identity(pane, process) {
+/// Whether the reports name the instance `expect`.
+fn same_instance(
+    source: BackendSource<'_>,
+    pane_id: &str,
+    pane: &Value,
+    process: &Value,
+    expect: &Identity,
+) -> Result<bool> {
+    match reported(source, pane_id, pane, process) {
         Ok((identity, _)) => Ok(identity == *expect),
-        Err(Error::NoTranscript | Error::TranscriptUnconfined) => Ok(false),
+        Err(Error::NoTranscript | Error::TranscriptUnconfined | Error::Unbound(_)) => Ok(false),
         Err(error) => Err(error),
+    }
+}
+
+/// The instance a script's reports name, and its status: Herdr-shaped
+/// reports for Herdr and hooked core terminals, the probe's facts for a
+/// hookless OMP. Facts are judged only for a probe source, and a probe
+/// source is never read as a Herdr report.
+fn reported(
+    source: BackendSource<'_>,
+    pane_id: &str,
+    pane: &Value,
+    process: &Value,
+) -> Result<(Identity, String)> {
+    match source {
+        BackendSource::Probe(probe) => {
+            omp_probe::bind(pane, pane_id, &probe.terminal).map_err(Error::Unbound)
+        }
+        BackendSource::Herdr(_) | BackendSource::Core(_) => identity(pane, process),
     }
 }
 
@@ -1040,6 +1151,36 @@ printf '@@pane\n'
             );
             (report, script)
         }
+        // The terminal as the core reports it now, and the facts of its
+        // foreground process, for native to judge. A read of a file the
+        // breadcrumb does not name stops here, after the facts.
+        BackendSource::Probe(probe) => {
+            let address = shell_quote(&probe.terminal);
+            let wanted = match fetch {
+                Some(Fetch::Lines(target)) => Some(target.path),
+                Some(Fetch::Image { path, .. }) => Some(path),
+                None => None,
+            };
+            let report = format!(
+                r#"record=$(python3 -c {get} {session} {address} </dev/null) || exit {EXIT_NO_PANE}
+printf '%s' "$record" | python3 -c {collect} {pane} {address}{wanted} || {{ status=$?; printf '\n@@proc\n{{}}'; [ "$status" -eq {other} ] && exit {other}; exit {EXIT_NO_PANE}; }}
+printf '\n@@proc\n{{}}'
+"#,
+                collect = shell_quote(omp_probe::COLLECT),
+                get = shell_quote(CORE_GET),
+                session = shell_quote(&probe.session),
+                wanted = wanted
+                    .map(|path| format!(" {}", shell_quote(path)))
+                    .unwrap_or_default(),
+                other = omp_probe::EXIT_OTHER_FILE,
+            );
+            let script = format!(
+                r#"exec 2>/dev/null
+printf '@@pane\n'
+{report}"#
+            );
+            (report, script)
+        }
     };
     let (path, range, blob) = match fetch {
         None => return script,
@@ -1082,6 +1223,12 @@ printf '@@pane\n'
             path = shell_quote(path),
             id = shell_quote(&core.session_id),
             argv = shell_quote(&Value::from(core.argv.clone()).to_string()),
+        ),
+        // The probe confirmed OMP's default profile: no argv shifts a root.
+        BackendSource::Probe(_) => format!(
+            r#"python3 - --core-verify omp {path} {id} '[]' "$home""#,
+            path = shell_quote(path),
+            id = shell_quote(omp_probe::session_of(path).unwrap_or_default()),
         ),
     };
     script.push_str(&format!(
@@ -1150,6 +1297,7 @@ fn blob_store(source: BackendSource<'_>, pane: &str, pid: u32) -> String {
             r#"python3 - --core-blob-store {argv} "$home""#,
             argv = shell_quote(&Value::from(core.argv.clone()).to_string()),
         ),
+        BackendSource::Probe(_) => r#"python3 - --core-blob-store '[]' "$home""#.to_owned(),
     };
     format!(
         r#"store=$({resolve} <<'HERDLINE_RESOLVE'
@@ -1177,7 +1325,9 @@ struct File<'a> {
 
 fn parse_reply(exit_status: Option<u32>, bytes: &[u8]) -> Result<Reply<'_>> {
     match exit_status {
-        Some(0) => {}
+        // The probe's facts name another file than the one asked for: they
+        // are judged, and nothing of either file was read.
+        Some(0 | omp_probe::EXIT_OTHER_FILE) => {}
         Some(EXIT_UNCONFINED) => return Err(Error::TranscriptUnconfined),
         Some(EXIT_OUTSIDE_HOME) => return Err(Error::SessionRootOutsideHome),
         Some(EXIT_NO_HERDR) => return Err(Error::HerdrNotFound),
@@ -1303,6 +1453,7 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         agent: agent.to_owned(),
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
         kind: kind.to_owned(),
+        start: None,
     };
     Ok((identity, agent_status(pane)))
 }

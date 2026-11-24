@@ -58,6 +58,7 @@ impl Host {
             pid: Some(42),
             agent: "letta".into(),
             kind: "id".into(),
+            start: None,
             source: "herdr:letta".into(),
             path: reference.into(),
         };

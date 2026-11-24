@@ -14,6 +14,12 @@ object ReasonCode {
     /** The pane's program never reported its own session identity, so Chat cannot read or send to it. */
     const val IDENTITY_UNKNOWN = "identity_unknown"
 
+    /**
+     * The pane runs OMP without Herdline's hook: Chat may only read it, and only once a
+     * transcript read proves its session (a page, or `TranscriptRefusal.Unbound`).
+     */
+    const val HOOKLESS_OMP = "hookless_omp"
+
     /** A desktop JS mod panel: herdr-app draws it, the phone cannot. */
     const val MOD_PANEL = "mod_panel"
 

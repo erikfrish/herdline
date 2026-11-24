@@ -39,6 +39,8 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
             ?: RefusalWords(R.string.chat_refused_hermes_format_unknown, listOf(refusal.supported))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
+    // A hookless OMP no session is proved for; its reasons have no words of their own here.
+    is TranscriptRefusal.Unbound -> RefusalWords(R.string.chat_refused_general, listOf(agent))
 }
 
 /** Grok's store holds no one session Chat can stand behind: Chat refuses, and the card says so. */

@@ -27,6 +27,9 @@ pub enum Error {
     CoreMissing,
     #[error("herdr-core broke its protocol: {0}")]
     CoreProtocol(&'static str),
+    /// A read-only binding the caller showed no longer holds.
+    #[error("chat's read-only binding no longer holds: {0:?}")]
+    Detached(crate::transcript::Detached),
     #[error("the route has no hosts")]
     EmptyRoute,
     #[error("a transcript entry is larger than chat can load")]
@@ -75,6 +78,9 @@ pub enum Error {
     TranscriptPending,
     #[error("the session file is outside OMP's session folder")]
     TranscriptUnconfined,
+    /// A hookless OMP not bound to a session Chat may read.
+    #[error("this OMP is not bound to a session chat can read: {0:?}")]
+    Unbound(crate::transcript::omp_probe::Unbound),
     #[error("unknown endpoint method `{0}`")]
     UnknownMethod(String),
     #[error("chat cannot read this session's format: {0}")]
