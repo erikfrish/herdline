@@ -58,6 +58,8 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -76,6 +78,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.ui.components.pressScale
 import io.github.erikfrish.herdline.ui.theme.contrast
 import io.github.erikfrish.herdline.ui.theme.ensureContrast
 import io.github.erikfrish.herdline.ui.theme.onColor
@@ -285,11 +288,13 @@ fun GlassSegmented(
 ) {
     SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         options.forEachIndexed { index, label ->
+            val press = remember { MutableInteractionSource() }
             SegmentedButton(
                 selected = index == selected,
                 onClick = { onSelect(index) },
                 shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                modifier = Modifier.fillMaxHeight().testTag("segment:$label"),
+                modifier = Modifier.fillMaxHeight().pressScale(press, 0.92f).testTag("segment:$label"),
+                interactionSource = press,
                 label = { Text(label, textAlign = TextAlign.Center) },
             )
         }

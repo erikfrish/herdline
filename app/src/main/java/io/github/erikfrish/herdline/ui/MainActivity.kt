@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -54,6 +55,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -73,6 +77,8 @@ import io.github.erikfrish.herdline.data.Density as UiDensity
 import io.github.erikfrish.herdline.ui.components.AgentsIconFilled
 import io.github.erikfrish.herdline.ui.components.AgentsIconOutlined
 import io.github.erikfrish.herdline.ui.components.PasswordsDialog
+import io.github.erikfrish.herdline.ui.components.jelly
+import io.github.erikfrish.herdline.ui.components.motionAllowed
 import io.github.erikfrish.herdline.ui.inbox.InboxScreen
 import io.github.erikfrish.herdline.ui.nodes.ImportConfigScreen
 import io.github.erikfrish.herdline.ui.nodes.NodeEditor
@@ -413,20 +419,44 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
     }
 }
 
+/**
+ * Whether a tap on the bar's [target] bounces its icon: only one that moves to
+ * another item, never a re-tap. Settings is one item for both of its routes.
+ */
+internal fun navBounces(target: String, selected: String): Boolean = navItem(target) != navItem(selected)
+
+private fun navItem(route: String): String = if (route == "session-settings") "settings" else route
+
 @Composable
 private fun AppBottomBar(selected: String, needsYou: Int, updateDot: Boolean, onDestination: (String) -> Unit) {
+    val allowed = motionAllowed()
+    val scope = rememberCoroutineScope()
+    val bounce = remember { listOf(START, "inbox", "settings").associateWith { Animatable(1f) } }
+    // Only the tap path bounces: a deep link, restore or rotation changes the route without it.
+    // An impulse, so it is skipped rather than snapped when motion is off.
+    fun tap(target: String) {
+        if (allowed && navBounces(target, selected)) {
+            bounce[target]?.let { icon -> scope.launch { icon.animateTo(1f, jelly(), initialVelocity = 6.1f) } }
+        }
+        onDestination(target)
+    }
+    fun Modifier.bounced(target: String): Modifier = graphicsLayer {
+        val s = bounce.getValue(target).value
+        scaleX = s
+        scaleY = s
+    }
     NavigationBar {
         NavigationBarItem(
             selected = selected == START,
-            onClick = { onDestination(START) },
-            icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+            onClick = { tap(START) },
+            icon = { Icon(Icons.Filled.Home, contentDescription = null, modifier = Modifier.bounced(START)) },
             label = { Text(stringResource(R.string.dest_hosts)) },
         )
         NavigationBarItem(
             selected = selected == "inbox",
-            onClick = { onDestination("inbox") },
+            onClick = { tap("inbox") },
             icon = {
-                BadgedBox(badge = { if (needsYou > 0) Badge { Text(needsYou.toString()) } }) {
+                BadgedBox(badge = { if (needsYou > 0) Badge { Text(needsYou.toString()) } }, modifier = Modifier.bounced("inbox")) {
                     Icon(if (selected == "inbox") AgentsIconFilled else AgentsIconOutlined, contentDescription = null)
                 }
             },
@@ -434,8 +464,8 @@ private fun AppBottomBar(selected: String, needsYou: Int, updateDot: Boolean, on
         )
         NavigationBarItem(
             selected = selected == "settings" || selected == "session-settings",
-            onClick = { onDestination("settings") },
-            icon = { SettingsIcon(updateDot) },
+            onClick = { tap("settings") },
+            icon = { SettingsIcon(updateDot, Modifier.bounced("settings")) },
             label = { Text(stringResource(R.string.settings)) },
             modifier = settingsDescription(updateDot),
         )
@@ -475,8 +505,8 @@ private fun AppRail(selected: String?, needsYou: Int, updateDot: Boolean, onDest
 
 /** Settings' icon, with the stable-update dot while one is offered; a candidate never raises it. */
 @Composable
-private fun SettingsIcon(updateDot: Boolean) {
-    BadgedBox(badge = { if (updateDot) Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) }) {
+private fun SettingsIcon(updateDot: Boolean, modifier: Modifier = Modifier) {
+    BadgedBox(badge = { if (updateDot) Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) }, modifier = modifier) {
         Icon(Icons.Filled.Settings, contentDescription = null)
     }
 }

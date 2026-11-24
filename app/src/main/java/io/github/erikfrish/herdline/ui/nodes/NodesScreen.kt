@@ -103,6 +103,7 @@ import io.github.erikfrish.herdline.ui.components.Group
 import io.github.erikfrish.herdline.ui.components.ItemRow
 import io.github.erikfrish.herdline.ui.components.SectionHeader
 import io.github.erikfrish.herdline.ui.components.UpdateBanner
+import io.github.erikfrish.herdline.ui.components.pressScale
 import io.github.erikfrish.herdline.ui.glass.CapsuleAction
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassField
@@ -185,12 +186,15 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
         floatingActionButton = {
             if (nodes.isNotEmpty()) {
                 val addNode = stringResource(R.string.add_node)
+                val addPress = remember { MutableInteractionSource() }
                 // Named on the button itself: TalkBack and uiautomator read its label as text-less (NAF).
                 ExtendedFloatingActionButton(
                     text = { Text(addNode, Modifier.clearAndSetSemantics {}) },
                     icon = { Icon(Icons.Default.Add, null) },
                     onClick = { navigation.edit(null) },
+                    interactionSource = addPress,
                     modifier = Modifier
+                        .pressScale(addPress, 0.92f)
                         .testTag("add_node")
                         .semantics { contentDescription = addNode }
                         .onSizeChanged { fabHeight = with(density) { it.height.toDp() } },
@@ -516,6 +520,8 @@ private fun NodeCard(
         Row(
             Modifier
                 .fillMaxWidth()
+                // Held through a long press until the menu opens, then released.
+                .pressScale(interaction, if (menu) 1f else 0.97f)
                 .clip(GroupShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .combinedClickable(

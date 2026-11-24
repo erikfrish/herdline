@@ -1,6 +1,8 @@
 package io.github.erikfrish.herdline.ui.inbox
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -62,6 +64,7 @@ import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.ui.components.StatusGlyph
+import io.github.erikfrish.herdline.ui.components.pressScale
 import io.github.erikfrish.herdline.ui.components.statusSpoken
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GlassScreen
@@ -348,9 +351,12 @@ private fun ScopeMenuItem(
 /** A single-select status chip; Needs you and Working lead with their glyph, never colour alone. */
 @Composable
 private fun StatusChip(label: String, selected: Boolean, glyph: AgentStatus?, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
     FilterChip(
         selected = selected,
         onClick = onClick,
+        modifier = Modifier.pressScale(press, 0.92f),
+        interactionSource = press,
         label = { Text(label, maxLines = 1) },
         leadingIcon = when {
             glyph != null -> {
@@ -377,12 +383,14 @@ private fun Empty(text: String) {
 
 @Composable
 private fun InboxItem(row: InboxRow, pinned: Boolean, onPin: () -> Unit, onOpen: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
     Column(
         Modifier
             .weight(1f)
+            .pressScale(press, 0.97f)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onOpen)
+            .clickable(interactionSource = press, indication = LocalIndication.current, onClick = onOpen)
             .padding(horizontal = 20.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
