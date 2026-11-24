@@ -12,6 +12,7 @@
     <string name="disconnected">Disconnected</string>
     <string name="connecting">Connecting…</string>
     <string name="connect">Connect</string>
+    <string name="node_open">Open</string>
     <string name="reconnect">Reconnect</string>
     <string name="could_not_connect">Could not connect</string>
     <string name="incompatible_daemon_title">Update Herdr on the host</string>

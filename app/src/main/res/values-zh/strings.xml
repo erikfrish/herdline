@@ -11,6 +11,7 @@
     <string name="disconnected">已断开</string>
     <string name="connecting">正在连接…</string>
     <string name="connect">连接</string>
+    <string name="node_open">打开</string>
     <string name="reconnect">重新连接</string>
     <string name="could_not_connect">无法连接</string>
     <string name="incompatible_daemon_title">请升级主机上的 Herdr</string>

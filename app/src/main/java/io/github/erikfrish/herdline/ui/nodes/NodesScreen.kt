@@ -470,6 +470,20 @@ internal fun hostDetail(state: Connection.State): String? = when (state) {
  */
 internal fun hasBadge(reason: HostReason?): Boolean = reason?.tone != HostTone.Neutral && reason?.tone != HostTone.Step
 
+/** What a host card's menu offers besides Edit, Duplicate and Delete. */
+internal enum class NodeAction { Connect, Open, Disconnect }
+
+/**
+ * Connect and Disconnect never show together: a detached host, or one whose
+ * link failed or ended, offers Connect; an attached one Open and Disconnect;
+ * one still connecting or setting up only Disconnect, which stops it.
+ */
+internal fun nodeMenuActions(state: Connection.State?): List<NodeAction> = when (state) {
+    is Connection.State.Connected -> listOf(NodeAction.Open, NodeAction.Disconnect)
+    Connection.State.Connecting, Connection.State.SettingUp -> listOf(NodeAction.Disconnect)
+    else -> listOf(NodeAction.Connect)
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun NodeCard(
@@ -605,10 +619,16 @@ private fun NodeCard(
                     Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 GlassMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    MenuItem(R.string.connect, Icons.Default.PlayArrow) { menu = false; onOpen() }
+                    val actions = nodeMenuActions(state)
+                    if (NodeAction.Connect in actions) {
+                        MenuItem(R.string.connect, Icons.Default.PlayArrow) { menu = false; onOpen() }
+                    }
+                    if (NodeAction.Open in actions) {
+                        MenuItem(R.string.node_open, Icons.Default.PlayArrow) { menu = false; onOpen() }
+                    }
                     MenuItem(R.string.edit, Icons.Default.Edit) { menu = false; onEdit() }
                     MenuItem(R.string.duplicate, Icons.Default.Add) { menu = false; onDuplicate() }
-                    if (connection != null) {
+                    if (NodeAction.Disconnect in actions) {
                         MenuItem(R.string.disconnect, Icons.Default.Close) { menu = false; onDisconnect() }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
