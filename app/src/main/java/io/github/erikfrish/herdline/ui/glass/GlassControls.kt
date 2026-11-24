@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -68,6 +70,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -268,7 +271,10 @@ fun GlassButton(
     }
 }
 
-/** A single-choice segmented button row; each segment keeps its `segment:<label>` tag. */
+/**
+ * A single-choice segmented button row; each segment keeps its `segment:<label>` tag.
+ * A label never cuts: it wraps, and every segment takes the tallest one's height.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlassSegmented(
@@ -277,14 +283,14 @@ fun GlassSegmented(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
+    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         options.forEachIndexed { index, label ->
             SegmentedButton(
                 selected = index == selected,
                 onClick = { onSelect(index) },
                 shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                modifier = Modifier.testTag("segment:$label"),
-                label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                modifier = Modifier.fillMaxHeight().testTag("segment:$label"),
+                label = { Text(label, textAlign = TextAlign.Center) },
             )
         }
     }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -71,16 +73,26 @@ internal fun LazyListScope.notificationContentSettings(store: SettingsStore, set
                     "state" -> R.string.notification_requires_state
                     else -> R.string.notification_requires_full
                 }
-                ItemRow(title = label, detail = if (allowed) null else stringResource(help), onClick = if (allowed) toggle else null, trailing = {
-                    Row {
-                        if (selected.indexOf(id) > 0) {
-                            IconButton(enabled = allowed, onClick = { store.update { it.copy(notificationFields = NotificationFields.moveUp(it.notificationFields, id)) } }, modifier = Modifier.testTag("settings:notification:up:$id")) {
-                                Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.notification_field_up, label))
+                // One node per field: the row is the switch, named by its label, disabled while the lock detail
+                // forbids it; the help says why and is never cut. The move-up button stays its own node.
+                ItemRow(
+                    title = label,
+                    detail = if (allowed) null else stringResource(help),
+                    detailMaxLines = Int.MAX_VALUE,
+                    modifier = Modifier
+                        .toggleable(value = id in selected, enabled = allowed, role = Role.Switch, onValueChange = { toggle() })
+                        .testTag("settings:notification:field:$id"),
+                    trailing = {
+                        Row {
+                            if (selected.indexOf(id) > 0) {
+                                IconButton(enabled = allowed, onClick = { store.update { it.copy(notificationFields = NotificationFields.moveUp(it.notificationFields, id)) } }, modifier = Modifier.testTag("settings:notification:up:$id")) {
+                                    Icon(Icons.Default.KeyboardArrowUp, stringResource(R.string.notification_field_up, label))
+                                }
                             }
+                            Switch(id in selected, onCheckedChange = null, enabled = allowed)
                         }
-                        Switch(id in selected, { toggle() }, enabled = allowed, modifier = Modifier.testTag("settings:notification:field:$id"))
-                    }
-                })
+                    },
+                )
             }
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 NotificationPreview(settings, active, level)
