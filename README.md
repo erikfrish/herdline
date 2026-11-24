@@ -207,6 +207,25 @@ it. Tapping **Chat** there shows a compact hint with the reason; for OMP its
 new OMP session and does not resume or change the running one. This setup is
 for OMP, not Pi.
 
+To use Chat with an OMP you start yourself on the computer, in a herdr-core
+pane, install the integration into OMP once: tap **Install Chat into OMP on
+this computer** in that hint. Herdline then writes one private folder,
+`~/.omp/agent/extensions/herdline-chat/` (0700, files 0600), which OMP's own
+extension discovery loads at start. No OMP configuration file is changed and a
+running OMP is not changed: restart OMP on the computer, or in that pane type
+`/exit` and run the `omp --resume` command OMP prints, to keep the same
+session. Only the default agent folder is supported: with `PI_CODING_AGENT_DIR`
+or `PI_CONFIG_DIR` set the install is refused, and an OMP profile does not load it. A
+folder of that name Herdline did not write, or whose files were changed since,
+is never overwritten or removed. When the app's own copy is newer, the hint
+offers the install again. With both the installed copy and an **OMP with Chat**
+launch, OMP runs one copy of each extension. To uninstall, from a checkout on
+the computer:
+
+```sh
+python3 native/src/herdr_core/omp_discovery.py uninstall
+```
+
 ### Notifications
 
 - While Herdline is open, Herdr's own "needs input" and "finished"

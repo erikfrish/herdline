@@ -668,7 +668,23 @@ export function install(pi: ExtensionAPI, options: IngressOptions): Ingress {
 	return ingress;
 }
 
+/**
+ * Whether the copy at [url] (its `import.meta.url`) is this process's one
+ * [role]. With the Chat integration installed in OMP's discovery and the
+ * app's own `-e` launch, OMP loads two copies from two paths, so two
+ * modules; the first one bound keeps the role. The same file bound again (a
+ * subagent's rebinding, a re-import with a cache-busting query) keeps it.
+ */
+export function ownsRole(role: string, url: string): boolean {
+	const key = Symbol.for(`herdline.chat.${role}`);
+	const file = url.split("?")[0];
+	const roles = globalThis as unknown as Record<symbol, string | undefined>;
+	roles[key] ??= file;
+	return roles[key] === file;
+}
+
 export default function herdlineIngress(pi: ExtensionAPI): void {
+	if (!ownsRole("ingress", import.meta.url)) return;
 	install(pi, {
 		runtimeDir: process.env.XDG_RUNTIME_DIR,
 		stagingRoot: path.join(os.homedir(), ".cache", "herdline", "attachments"),

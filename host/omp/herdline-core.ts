@@ -1,18 +1,21 @@
 /** Opt-in OMP identity and status for Herdline's herdr-core backend.
- * Load explicitly with `omp -e /path/to/herdline-core.ts` inside an hc terminal.
- * No prompts, installation, or global configuration changes are performed.
+ * Loaded with `omp -e /path/to/herdline-core.ts` inside an hc terminal, or
+ * from OMP's own discovery once the user installed it there
+ * (native/src/herdr_core/omp_discovery.py); one copy per process acts.
+ * No prompts or configuration changes are performed.
  */
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { ownsRole } from "./herdline-ingress";
 
 const KEYS = ["herdline.agent", "herdline.session_file", "herdline.session_id", "herdline.pid"] as const;
 
 export default function herdlineCore(pi: ExtensionAPI): void {
 	const terminal = process.env.HC_TERMINAL_ID;
-	if (!terminal) return;
+	if (!terminal || !ownsRole("core", import.meta.url)) return;
 	const command = [...(process.env.PATH ?? "").split(":"), join(homedir(), ".local", "bin")]
 		.map(dir => join(dir, "herdr-core"))
 		.find(file => { try { accessSync(file, constants.X_OK); return true; } catch { return false; } });

@@ -4,7 +4,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { CUSTOM_TYPE, DIR_NAME, type Ingress, install } from "./herdline-ingress";
+import { CUSTOM_TYPE, DIR_NAME, type Ingress, install, ownsRole } from "./herdline-ingress";
 
 const PID = 4242;
 const ID = "0f8e7c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -453,4 +453,17 @@ test("live children keep exact call identity and close only from lifecycle, then
 	await s.ingress.publish(s.ctx);
 	reply = await s.send({ op: "status" });
 	expect(reply.state).toMatchObject({ subagents: [] });
+});
+
+test("one copy per process keeps a role: the discovered one and the -e one never both act", () => {
+	const role = `test-${process.hrtime.bigint()}`;
+	const discovered = "file:///home/u/.omp/agent/extensions/herdline-chat/herdline-ingress.ts";
+	const staged = "file:///run/user/1/herdline-omp/herdline-ingress.ts";
+	expect(ownsRole(role, discovered)).toBe(true);
+	expect(ownsRole(role, staged)).toBe(false);
+	// The same file bound again, as by a subagent or a cache-busting re-import, keeps it.
+	expect(ownsRole(role, discovered)).toBe(true);
+	expect(ownsRole(role, `${discovered}?mtime=123`)).toBe(true);
+	// Roles are separate: the staged core is free to act.
+	expect(ownsRole(`${role}-core`, staged)).toBe(true);
 });

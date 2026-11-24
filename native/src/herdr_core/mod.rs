@@ -15,6 +15,7 @@ pub mod keys;
 pub mod layout;
 pub mod link;
 pub mod modes;
+pub mod omp_discovery;
 mod present;
 mod pump;
 pub mod view;
@@ -368,6 +369,13 @@ impl Core {
             return Err(std::io::Error::other(message).into());
         }
         serde_json::from_str(text.lines().last().ok_or(Error::BadReply)?).map_err(Into::into)
+    }
+
+    /// The Chat integration in the host's OMP extension discovery: its
+    /// status, or the install or uninstall the user asked for, as the
+    /// contract JSON line of [`omp_discovery`]. Blocks on the host.
+    pub fn omp_chat_integration(&self, action: &str) -> Result<String> {
+        omp_discovery::run(&self.exec()?, omp_discovery::Action::parse(action)?)
     }
 
     /// The confirmed instance in `pane`, if the host confirmed one.

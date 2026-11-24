@@ -1035,6 +1035,14 @@ impl Herdr {
         launchers::catalogue(&exec)
     }
 
+    /// See [`crate::herdr_core::omp_discovery`]; the installer does not
+    /// depend on the backend. Blocks on the host.
+    pub fn omp_chat_integration(&self, action: &str) -> Result<String> {
+        use crate::herdr_core::omp_discovery;
+        let exec = lock(&self.shared.exec).clone().ok_or(Error::NotReady)?;
+        omp_discovery::run(&exec, omp_discovery::Action::parse(action)?)
+    }
+
     pub fn start_agent(&self, request: &str) -> Result<String> {
         let value: Value = serde_json::from_str(request)?;
         if value["boot"].as_str() != Some(self.boot()?.as_str()) {
@@ -1144,6 +1152,14 @@ impl Session {
         match &self.0 {
             Inner::Herdr(herdr) => herdr.ingress(request),
             Inner::Core(core) => core.ingress(request),
+            Inner::Closed(_) => Err(not_connected()),
+        }
+    }
+
+    pub fn omp_chat_integration(&self, action: &str) -> Result<String> {
+        match &self.0 {
+            Inner::Herdr(herdr) => herdr.omp_chat_integration(action),
+            Inner::Core(core) => core.omp_chat_integration(action),
             Inner::Closed(_) => Err(not_connected()),
         }
     }
