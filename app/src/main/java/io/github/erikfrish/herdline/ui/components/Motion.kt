@@ -22,8 +22,13 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.platform.LocalContext
 
-/** Presses, pops and bounces: a visible overshoot, about 12.6% of the move. */
-fun <T> jelly(): SpringSpec<T> = spring(dampingRatio = 0.55f, stiffness = 700f)
+/**
+ * Presses, pops and bounces: a visible overshoot, about 12.6% of the move.
+ * A move much shorter than 1 needs a [visibilityThreshold] below that
+ * overshoot, or the spring's default 0.01 ends it before the peak.
+ */
+fun <T> jelly(visibilityThreshold: T? = null): SpringSpec<T> =
+    spring(dampingRatio = 0.55f, stiffness = 700f, visibilityThreshold = visibilityThreshold)
 
 /** Movement and colour: Jelly's speed, barely any overshoot (about 1.5%). */
 fun <T> glide(): SpringSpec<T> = spring(dampingRatio = 0.8f, stiffness = 700f)
@@ -47,12 +52,21 @@ fun <T> motionSpec(allowed: Boolean, spec: AnimationSpec<T>): AnimationSpec<T> =
 fun Modifier.pressScale(interaction: InteractionSource, pressed: Float): Modifier = composed {
     val allowed = motionAllowed()
     val down by interaction.collectIsPressedAsState()
-    val squash = animateFloatAsState(if (down && allowed) pressed else 1f, motionSpec(allowed, jelly()), label = "pressScale")
+    val squash = animateFloatAsState(if (down && allowed) pressed else 1f, motionSpec(allowed, jelly(pressThreshold(pressed))), label = "pressScale")
     drawWithContent {
         val s = squash.value
         if (s == 1f) drawContent() else scale(s) { this@drawWithContent.drawContent() }
     }
 }
+
+/**
+ * Where a press spring of depth [pressed] may stop: a thirtieth of the squash,
+ * so every depth reaches its overshoot (peak at 142 ms) and settles in the
+ * same 246 ms. The default 0.01 is a third of a 0.97 squash and ended that
+ * release at 87 ms, short of the peak. A [pressed] of 1 (a press its menu
+ * released) springs back from a row's 0.97.
+ */
+internal fun pressThreshold(pressed: Float): Float = (1f - pressed).coerceAtLeast(0.03f) / 30f
 
 /**
  * Whether decorative motion may run: false while the system animator duration
