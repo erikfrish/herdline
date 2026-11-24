@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="filter_all">全部</string>
-    <string name="filter_needs_you">需要你 %1$d</string>
+    <string name="filter_needs_you">需要输入 %1$d</string>
     <string name="filter_working">工作中 %1$d</string>
-    <string name="filter_ready">就绪 %1$d</string>
+    <string name="filter_ready">已完成或空闲 %1$d</string>
     <string name="switcher_nothing">没有匹配项。</string>
     <string name="switcher">切换位置</string>
     <string name="switcher_search">搜索工作区、标签页、代理</string>

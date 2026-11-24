@@ -37,10 +37,10 @@
 
     <string name="section_tabs_list">Tabs list</string>
     <string name="start_filter">Start with filter</string>
-    <string name="start_filter_needs_you">Needs you</string>
+    <string name="start_filter_needs_you">Needs input</string>
     <string name="start_filter_working">Working</string>
     <string name="start_filter_help">The Tabs sheet and sidebar open on this filter each time, and Agents when it opens. Tapping a chip there changes only that open list.</string>
-    <string name="start_filter_ready">Ready</string>
+    <string name="start_filter_ready">Done or idle</string>
     <string name="tabs_view">Tabs view</string>
     <string name="tabs_view_list">List</string>
     <string name="tabs_view_columns">Two columns</string>

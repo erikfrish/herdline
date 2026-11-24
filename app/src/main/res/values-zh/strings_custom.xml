@@ -3,9 +3,9 @@
     <string name="section_tabs_list">标签页列表</string>
     <string name="start_filter">默认筛选</string>
     <string name="start_filter_help">标签页面板和侧边栏每次都以此筛选打开，代理页打开时也是如此。在那里点按筛选条件只会改变当前打开的列表。</string>
-    <string name="start_filter_needs_you">需要你</string>
+    <string name="start_filter_needs_you">需要输入</string>
     <string name="start_filter_working">工作中</string>
-    <string name="start_filter_ready">就绪</string>
+    <string name="start_filter_ready">已完成或空闲</string>
     <string name="hide_shells">隐藏 Shell 标签页</string>
     <string name="hide_idle_done">隐藏空闲和已完成的代理</string>
     <string name="tabs_view">标签页视图</string>

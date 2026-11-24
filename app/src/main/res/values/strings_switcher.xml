@@ -5,9 +5,9 @@
     <string name="switcher_clear_search">Clear search</string>
     <string name="switcher_nothing">Nothing matches.</string>
     <string name="filter_all">All</string>
-    <string name="filter_needs_you">Needs you %1$d</string>
+    <string name="filter_needs_you">Needs input %1$d</string>
     <string name="filter_working">Working %1$d</string>
-    <string name="filter_ready">Ready %1$d</string>
+    <string name="filter_ready">Done or idle %1$d</string>
     <string name="section_pinned">Pinned</string>
     <string name="section_recent">Recent</string>
     <string name="pin">Pin</string>

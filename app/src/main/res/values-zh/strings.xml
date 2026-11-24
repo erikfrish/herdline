@@ -161,7 +161,7 @@
     <string name="status_blocked">需要输入</string>
     <string name="status_done">已完成</string>
     <string name="status_idle">空闲</string>
-    <string name="status_blocked_spoken">需要你处理</string>
+    <string name="status_blocked_spoken">需要输入</string>
     <string name="held_state">送达未确认</string>
     <string name="connection_connected">已连接</string>
     <string name="connection_connecting">正在连接</string>
