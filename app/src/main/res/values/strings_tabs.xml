@@ -8,4 +8,6 @@
     <string name="tabs_filter_open">choose order and status</string>
     <!-- The heading over the status choices in the Filter menu. -->
     <string name="tabs_filter_status">Status</string>
+    <!-- A lone workspace's ⋮ at the end of the filters row; %1$s is the workspace. -->
+    <string name="workspace_actions">Workspace actions, %1$s</string>
 </resources>

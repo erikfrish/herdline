@@ -89,6 +89,7 @@ import io.github.erikfrish.herdline.core.Connection
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
+import io.github.erikfrish.herdline.core.readableTitle
 import io.github.erikfrish.herdline.data.DraftStore
 import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.data.SheetSection
@@ -324,31 +325,37 @@ fun Switcher(
                 SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = if (onClose != null && onShowGrid != null) tabsSearchMinHeight() else 44.dp)
             }
             // W10152: the workspace scope and one Filter control (Order and the status choices) share one row,
-            // so the first tab row starts high; the control's line wraps rather than cuts a long label.
+            // so the first tab row starts high; the control's line wraps rather than cuts a long label. With
+            // one workspace, its ⋮ ends this row too and its group header is a label only (T1: first row < 700 px).
             val scopeShown = onScope != null && view != null
             val filterShown = store != null || filtersShown
-            if (scopeShown || filterShown) {
+            val filtersRow = scopeShown || filterShown
+            val lone = shown.singleOrNull()?.workspace?.takeIf { !flat && filtersRow && view?.workspaces?.size == 1 }
+            if (filtersRow) {
                 item(key = "filters") {
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        if (scopeShown && view != null && onScope != null) {
-                            Box(Modifier.weight(1f, fill = false)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (scopeShown && view != null && onScope != null) {
+                                Box(Modifier.weight(1f, fill = false)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) }
+                            }
+                            if (filterShown) {
+                                FilterControl(
+                                    filter = filter,
+                                    onFilter = onFilter,
+                                    counts = counts,
+                                    statuses = filtersShown,
+                                    order = order.takeIf { store != null },
+                                    onOrder = store?.let { s -> { picked: TargetOrder -> s.update { it.copy(targetOrder = picked) } } },
+                                    tagPrefix = "switcher",
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                            }
                         }
-                        if (filterShown) {
-                            FilterControl(
-                                filter = filter,
-                                onFilter = onFilter,
-                                counts = counts,
-                                statuses = filtersShown,
-                                order = order.takeIf { store != null },
-                                onOrder = store?.let { s -> { picked: TargetOrder -> s.update { it.copy(targetOrder = picked) } } },
-                                tagPrefix = "switcher",
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                        }
+                        if (lone != null) WorkspaceMenu(lone, style, stringResource(R.string.workspace_actions, readableTitle(lone.label) ?: lone.label))
                     }
                 }
             }
@@ -369,7 +376,6 @@ fun Switcher(
                 }
             }
             if (flat) {
-                item(key = "order:limit") { LimitLine(compact) }
                 val ranked = onScreen.filter { it.seq != null && it.key in shownPlaces }
                 val unranked = onScreen.filter { it.seq == null && it.key in shownPlaces }
                 for (row in ranked) {
@@ -387,9 +393,11 @@ fun Switcher(
                         TargetRow(target, style, open = false, onToggle = null, flat = true, since = target.agentPane()?.let(seenAt::get), now = now, hidden = target.key in marked)
                     }
                 }
+                // W10152: a footnote under the rows whose times it qualifies, so the first row starts high (T1).
+                if (shownPlaces.isNotEmpty()) item(key = "order:limit") { LimitLine(compact) }
             }
             for (group in if (flat) emptyList() else shown) {
-                item(key = "w:" + group.workspace.id) { WorkspaceHeader(group.workspace, host, style) }
+                item(key = "w:" + group.workspace.id) { WorkspaceHeader(group.workspace, host, style, menu = group.workspace != lone) }
                 var i = 0
                 while (i < group.rows.size) {
                     when (val target = group.rows[i]) {
@@ -782,15 +790,18 @@ internal fun HostWorkspaceLabel(
     }
 }
 
-/** Section label: the host, then the workspace, not tappable, with a ⋮ for the workspace's actions. */
+/**
+ * Section label: the host, then the workspace, not tappable, with a ⋮ for the
+ * workspace's actions. Without its [menu] (a lone workspace, whose ⋮ ends the
+ * filters row, W10152) it is one text line, not a 48 dp row.
+ */
 @Composable
-private fun WorkspaceHeader(workspace: Workspace, host: String?, style: RowStyle) {
-    var menu by remember { mutableStateOf(false) }
+private fun WorkspaceHeader(workspace: Workspace, host: String?, style: RowStyle, menu: Boolean = true) {
     Row(
         Modifier
-            .padding(top = 12.dp)
+            .padding(top = if (menu) 12.dp else 4.dp, bottom = if (menu) 0.dp else 4.dp)
             .fillMaxWidth()
-            .heightIn(min = 32.dp),
+            .heightIn(min = if (menu) 32.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HostWorkspaceLabel(
@@ -800,20 +811,27 @@ private fun WorkspaceHeader(workspace: Workspace, host: String?, style: RowStyle
             Modifier.weight(1f).padding(start = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("workspace:${workspace.id}:menu")) {
-                Icon(Icons.Default.MoreVert, stringResource(R.string.more), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            GlassMenu(expanded = menu, onDismissRequest = { menu = false }, offset = DpOffset(0.dp, 0.dp)) {
-                GlassMenuItem(stringResource(R.string.new_tab), Icons.Default.Add, onClick = { menu = false; style.actions.newTab(workspace) })
-                GlassMenuItem(stringResource(R.string.rename_workspace), Icons.Default.Edit, onClick = { menu = false; style.actions.renameWorkspace(workspace) })
-                GlassMenuItem(
-                    stringResource(R.string.close_workspace),
-                    Icons.Default.Delete,
-                    onClick = { menu = false; style.actions.closeWorkspace(workspace) },
-                    destructive = true,
-                )
-            }
+        if (menu) WorkspaceMenu(workspace, style, stringResource(R.string.more))
+    }
+}
+
+/** A workspace's ⋮, spoken as [label]: New tab, Rename workspace, Close workspace. */
+@Composable
+private fun WorkspaceMenu(workspace: Workspace, style: RowStyle, label: String) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { menu = true }, modifier = Modifier.testTag("workspace:${workspace.id}:menu")) {
+            Icon(Icons.Default.MoreVert, label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        GlassMenu(expanded = menu, onDismissRequest = { menu = false }, offset = DpOffset(0.dp, 0.dp)) {
+            GlassMenuItem(stringResource(R.string.new_tab), Icons.Default.Add, onClick = { menu = false; style.actions.newTab(workspace) })
+            GlassMenuItem(stringResource(R.string.rename_workspace), Icons.Default.Edit, onClick = { menu = false; style.actions.renameWorkspace(workspace) })
+            GlassMenuItem(
+                stringResource(R.string.close_workspace),
+                Icons.Default.Delete,
+                onClick = { menu = false; style.actions.closeWorkspace(workspace) },
+                destructive = true,
+            )
         }
     }
 }

@@ -19,6 +19,14 @@ class HostPlaceTest {
     private fun shown(d: Destination, maxColumns: Int) = destinationLabel(d, emptyList(), maxColumns).shown
 
     @Test
+    fun two_hosts_with_one_name_draw_a_short_number_and_a_lone_one_its_bare_name() {
+        val a = Node(id = "a", name = "qa-p1-core", address = "10.0.0.1", user = "qa")
+        val b = Node(id = "b", name = "qa-p1-core", address = "10.0.0.2", user = "qa")
+        val c = Node(id = "c", name = "", address = "lab.local", user = "qa")
+        assertEquals(mapOf("a" to "qa-p1-core · 1", "b" to "qa-p1-core · 2", "c" to "lab.local"), shortHostLabels(listOf(a, b, c)))
+    }
+
+    @Test
     fun the_host_comes_before_the_path_and_the_path_keeps_its_end() {
         assertEquals("work · Working · qa-p1-core · …hc-p1/work", shown(pane("qa-p1-core"), 41))
     }

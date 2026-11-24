@@ -7,6 +7,7 @@ import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
 import io.github.erikfrish.herdline.data.StartFilter
+import io.github.erikfrish.herdline.data.Node
 
 /** One place the switcher can take the user: a tab, or one pane of it. */
 sealed interface SwitchTarget {
@@ -239,4 +240,19 @@ internal fun groupLabel(host: String?, workspace: String): Pair<String, String?>
     val node = host?.trim().orEmpty()
     if (node.isEmpty()) return place to null
     return node to place.takeIf { it.isNotEmpty() && it != node }
+}
+
+/**
+ * Each attached host's name as the session header draws it (W10152): its
+ * title, and when other attached hosts share that title, ` · ` and its
+ * 1-based place among them in [nodes] order, so two hosts called `lab` read
+ * `lab · 1` and `lab · 2`. The full qualifier ([hostLabels]) is spoken.
+ */
+internal fun shortHostLabels(nodes: List<Node>): Map<String, String> {
+    val shared = nodes.groupingBy { it.title }.eachCount()
+    val seen = mutableMapOf<String, Int>()
+    return nodes.associate { node ->
+        val copy = seen.merge(node.title, 1, Int::plus) ?: 1
+        node.id to if ((shared[node.title] ?: 0) < 2) node.title else "${node.title} · $copy"
+    }
 }

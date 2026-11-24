@@ -1088,9 +1088,11 @@ fun SessionScreen(
                                     )
                                 }
                                 val title = workspace?.let { readableTitle(it.label) } ?: node.title
-                                // W10152: the header's line names the node, qualified as Tabs does when two share a
-                                // name; the workspace (often a path) is spoken after it, not drawn.
-                                val hostName = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
+                                // W10152: the header's line names the node, "lab · 2" when two share a name;
+                                // the full qualifier and the workspace (often a path) are spoken, not drawn.
+                                val hosts = app.connections.value.values.map { it.node }
+                                val hostName = hostLabels(hosts)[node.id] ?: node.title
+                                val shownHost = shortHostLabels(hosts)[node.id] ?: node.title
                                 val placeWhere = listOf(hostName, title).distinct().joinToString(", ")
                                 // Up, the workspace label, the tabs, what needs the user, the one
                                 // Chat | Terminal control, and ⋮ (Herdr actions, Settings, Disconnect).
@@ -1265,7 +1267,7 @@ fun SessionScreen(
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
-                                        workspace = hostName,
+                                        workspace = shownHost,
                                         position = position,
                                         marked = changedElsewhere || heldElsewhere,
                                         desktopElsewhere = desktopOther != null,
@@ -2207,7 +2209,7 @@ private fun PlaceButton(
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
     val canMenu = onRename != null && onClose != null
-    BoxWithConstraints(
+    Box(
         modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(12.dp))
@@ -2230,8 +2232,7 @@ private fun PlaceButton(
             .testTag("session:place"),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // Narrow (a large font, the need-you chip shown): the workspace is spoken only.
-        val lineWorkspace = workspace.takeIf { maxWidth >= PlaceNarrow }
+        // W10152: the host is drawn at any width; n/N gives way first, then the host wraps (ContextLine.kt).
         Column(Modifier.clearAndSetSemantics { }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!twoLines) {
@@ -2252,7 +2253,7 @@ private fun PlaceButton(
             if (twoLines) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     ConnectionGlyph(state)
-                    PlaceLine(lineWorkspace, position, marked, desktopElsewhere, desktop, halo, Modifier.testTag("session:context"))
+                    PlaceLine(workspace, position, marked, desktopElsewhere, desktop, halo, Modifier.testTag("session:context"))
                 }
             }
         }

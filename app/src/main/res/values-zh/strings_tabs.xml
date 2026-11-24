@@ -4,4 +4,5 @@
     <string name="tabs_filter_value">筛选：%1$s</string>
     <string name="tabs_filter_open">选择排序和状态</string>
     <string name="tabs_filter_status">状态</string>
+    <string name="workspace_actions">工作区操作，%1$s</string>
 </resources>

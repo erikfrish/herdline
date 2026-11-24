@@ -23,19 +23,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 
-/** The px each span of the place line gets; 0 is not drawn. */
+/** The px each span of the place line gets; 0 is not drawn. [workspace] is the host's span (W10152). */
 internal data class ContextWidths(val workspace: Int, val position: Int, val icon: Int, val desktop: Int)
 
 /**
  * How [available] px are shared by the place line's spans, given each one's
- * full width, in rank order. The desktop [icon] is always kept: the desktop
- * being elsewhere is what the line must say. The position (n/N with its marks)
- * is never cut, since a cut number misleads (A-24): it is whole or gone. The
- * desktop's name comes next, only beside n/N, then the workspace, which
- * ellipsizes first. A text span is whole, cut no narrower than its
- * [workspaceMin] / [desktopMin] (four characters and "…"), or gone. The
- * workspace pays the [separator] that parts it from n/N; whatever is drawn
- * just left of the icon pays the [gap] before it, never a separator.
+ * full width, in rank order (W10152). The desktop [icon] is always kept: the
+ * desktop being elsewhere is what the line must say. The host's name (the
+ * [workspace] slot) comes next and is never dropped for n/N: it is whole, or
+ * narrower and wrapped to a second line, or gone only below its
+ * [workspaceMin] (four characters and "…"). The position (n/N with its
+ * marks) follows in what is left and is never cut, since a cut number
+ * misleads (A-24): it is whole or gone. The desktop's name comes last, only
+ * beside n/N, whole or cut no narrower than [desktopMin]. n/N pays the
+ * [separator] that parts it from the host; whatever is drawn just left of
+ * the icon pays the [gap] before it, never a separator.
  */
 internal fun contextWidths(
     available: Int,
@@ -49,16 +51,18 @@ internal fun contextWidths(
     desktopMin: Int,
 ): ContextWidths {
     var room = available.coerceAtLeast(0) - icon
-    val positionCost = position + if (icon > 0) gap else 0
+    val iconGap = if (icon > 0) gap else 0
+    val hostWidth = span(workspace, workspaceMin, room - iconGap)
+    if (hostWidth > 0) room -= hostWidth + iconGap
+    val positionCost = position + if (hostWidth > 0) separator else iconGap
     val kept = if (position > 0 && positionCost <= room) position else 0
     if (kept > 0) room -= positionCost
     val desktopWidth = if (position > 0 && kept == 0) 0 else span(desktop, desktopMin, room)
-    room -= desktopWidth
-    val workspaceWidth = span(workspace, workspaceMin, room - if (kept > 0) separator else if (icon > 0) gap else 0)
-    return ContextWidths(workspaceWidth, kept, icon, desktopWidth)
+    return ContextWidths(hostWidth, kept, icon, desktopWidth)
 }
 
 private fun span(full: Int, min: Int, room: Int) = when {
+    full <= 0 -> 0
     full <= room -> full
     room >= min -> room
     else -> 0
@@ -69,13 +73,14 @@ private fun shortest(text: String): String =
     if (text.codePointCount(0, text.length) <= 4) text else text.substring(0, text.offsetByCodePoints(0, 4)) + "…"
 
 /**
- * The session place button's line of context (HEADER-COMPACT): the
- * [workspace], then [position] ("3/8"), a changed mark when [marked], and
- * while [desktopElsewhere] a monitor glyph with, if given, the [desktop] tab's
- * name. Laid out by [contextWidths], so the workspace gives way first, then
- * the desktop's name; n/N, the mark and the glyph never ellipsize, and the
- * glyph is never dropped, so the desktop being elsewhere always shows, and not
- * by colour. The caller speaks the whole line.
+ * The session place button's line of context (HEADER-COMPACT, W10152): the
+ * node's [workspace] slot (the host's name), then [position] ("3/8"), a
+ * changed mark when [marked], and while [desktopElsewhere] a monitor glyph
+ * with, if given, the [desktop] tab's name. Laid out by [contextWidths], so
+ * n/N gives way before the host, which wraps to a second line rather than
+ * cut; n/N, the mark and the glyph never ellipsize, and the glyph is never
+ * dropped, so the desktop being elsewhere always shows, and not by colour.
+ * The caller speaks the whole line.
  */
 @Composable
 internal fun PlaceLine(
@@ -95,7 +100,7 @@ internal fun PlaceLine(
     Layout(
         // Fixed slots, each placed only when its width is not 0.
         content = {
-            Text(workspace.orEmpty(), style = style, color = muted, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Text(workspace.orEmpty(), style = style, color = muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("session:place_host"))
             Text(" · ", style = style, color = muted, maxLines = 1, softWrap = false)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (position != null) Text(position, style = style, color = muted, maxLines = 1, softWrap = false)
