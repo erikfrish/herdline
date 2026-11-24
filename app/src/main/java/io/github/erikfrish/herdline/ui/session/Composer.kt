@@ -1222,8 +1222,10 @@ private fun Editor(
     // In Chat the endpoint and its queue are read at the instance poll's
     // pace, also while nothing is queued: a steer queued at the desktop must
     // show here too. A failed read shows nothing rather than an old queue.
+    // Read again at once when Herdr's status turns: until then the slot
+    // holds on the earlier read (slotGates), so the wait is one read, not a poll.
     val probeTarget = composerTarget()?.takeIf { reading && it.instance != null && agentNamed(it.agent, Harness.endpointAgents) }
-    LaunchedEffect(probeTarget, connection) {
+    LaunchedEffect(probeTarget, connection, paneWorking) {
         val target = probeTarget ?: return@LaunchedEffect
         val instance = target.instance ?: return@LaunchedEffect
         while (true) {
@@ -1790,14 +1792,25 @@ private fun Editor(
         desktopElsewhere = reading && desktop != key.pane,
     )
     val insertEnabled = insertBlocked == null
-    val sendEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched && sendGate?.ok == true
-    // Endpoint steering accepts ready attachments; PTY steering stays text-only.
-    val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
-        draft.instance != null && (endpointSteer || draft.attachments.isEmpty() && check?.steer?.ok == true)
+    val endpoint = endpointRoute(reading, draft.instance, submit = true, checkedPane = checkedPane)
+    val gates = slotGates(
+        free = !busy && draft.mayDeliver(binding) && attachReady && !mismatched,
+        sendGate = sendGate,
+        check = check,
+        paneWorking = paneWorking,
+        endpoint = endpoint,
+        endpointSteer = endpointSteer,
+        probe = probe,
+        bound = draft.instance != null,
+        staged = draft.attachments.isNotEmpty(),
+        // The endpoint's steer where the program has one; the pane's paste is OMP's alone.
+        steers = if (endpoint) agentNamed(draft.agent, Harness.steerAgents) else check?.program == "omp",
+    )
+    val sendEnabled = gates.sendEnabled
+    val steerEnabled = gates.steerEnabled
     // Whether Steer is the working agent's verb here, from the route alone:
     // never from the text, so the slot's face does not flip while typing.
-    // PTY steering is text-only, so staged files leave it Send.
-    val steerRoute = endpointSteer || paneWorking && draft.attachments.isEmpty() && check?.steer?.ok == true
+    val steerRoute = gates.steerRoute
     // Why Steer is off with text in the field, in Steer's own words: a disabled slot is never silent.
     val steerHold = silentSendHold(steerEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.steer?.takeIf { !it.ok }?.reason))
     val rebind = NoticeAction(stringResource(R.string.composer_rebind)) {

@@ -2,7 +2,9 @@ package io.github.erikfrish.herdline.ui.session
 
 import androidx.annotation.StringRes
 import io.github.erikfrish.herdline.R
+import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.ComposerCheck
+import io.github.erikfrish.herdline.core.IngressProbe
 
 /** What the main slot right of the field is: the verb its one tap delivers. */
 internal enum class SlotFace { Send, Queue, Steer }
@@ -40,6 +42,49 @@ internal fun slotFace(steerRoute: Boolean, queueVerb: Boolean, notice: NoticeRol
 /** Queue, where the route offers it, is the slot's face or the shown notice's action. */
 internal fun queueReachable(face: SlotFace, queueVerb: Boolean, notice: NoticeRole): Boolean =
     !queueVerb || face == SlotFace.Queue || notice == NoticeRole.WorkingQueue
+
+/** Which verb the slot wears and whether each of its taps may go. */
+internal data class SlotGates(val steerRoute: Boolean, val sendEnabled: Boolean, val steerEnabled: Boolean)
+
+/**
+ * The slot's gates from the reads in hand. [free]: nothing else holds the
+ * draft back (a delivery, its binding, uploads, another pane). [endpoint]:
+ * Send goes through the program's endpoint; [steers]: the program takes a
+ * steer on that route. [bound]: the draft names its agent instance.
+ *
+ * F1: once Herdr reads the pane working ([paneWorking]), a read made before
+ * the turn began permits nothing: a check naming another status, or on the
+ * endpoint route a probe still reading the session idle (it is polled; the
+ * status is pushed). The slot then wears Steer where the program steers,
+ * disabled, until a read made in the current state answers. Nothing goes
+ * meanwhile, and nothing goes by itself when that read comes.
+ */
+internal fun slotGates(
+    free: Boolean,
+    sendGate: ComposerCheck.Gate?,
+    check: ComposerCheck?,
+    paneWorking: Boolean,
+    endpoint: Boolean,
+    endpointSteer: Boolean,
+    probe: IngressProbe?,
+    bound: Boolean,
+    staged: Boolean,
+    steers: Boolean,
+): SlotGates {
+    val checkedBefore = check?.status.let { it != null && it != AgentStatus.Working }
+    val probedBefore = endpoint && probe is IngressProbe.Live && probe.state.idle
+    if (paneWorking && (checkedBefore || probedBefore)) {
+        // PTY steering is text-only: staged files keep it Send there.
+        return SlotGates(steerRoute = steers && (endpoint || !staged), sendEnabled = false, steerEnabled = false)
+    }
+    // Endpoint steering accepts ready attachments; PTY steering stays text-only.
+    val paneSteer = !staged && check?.steer?.ok == true
+    return SlotGates(
+        steerRoute = endpointSteer || paneWorking && paneSteer,
+        sendEnabled = free && sendGate?.ok == true,
+        steerEnabled = free && bound && (endpointSteer || paneSteer),
+    )
+}
 
 /** A [hold]'s words for the slot's [face]: the verb shown is the verb named. */
 @StringRes
