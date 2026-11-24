@@ -18,6 +18,12 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import io.github.erikfrish.herdline.ui.components.glide
+import io.github.erikfrish.herdline.ui.components.motionSpec
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -2263,30 +2269,86 @@ private fun PlaceButton(
 
 /**
  * One segmented control for the viewed pane: Chat or Terminal, both always
- * labelled, the selected one tinted. Chat reads OMP's transcript, so on any
- * other pane it is dimmed and a tap explains why. [compact] (a header too
+ * labelled, the selected one under a pill. Chat reads OMP's transcript, so on
+ * any other pane it is dimmed and a tap explains why. [compact] (a header too
  * tight for the words, SESSION-HDR-308) draws each segment as its glyph,
  * still a selectable Tab spoken by its label.
+ *
+ * The pill is one indicator behind both segments, on the edges they were
+ * placed at: a tap glides it across, its leading edge first and the trailing
+ * one 25 ms after; anything else ([indicatorSnaps]) puts it there at once.
  */
 @Composable
 private fun ModeSwitch(chat: Boolean, chatAvailable: Boolean, accent: Color, compact: Boolean, onMode: (Boolean) -> Unit) {
     val outline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+    val pill = accent.copy(alpha = 0.24f)
+    val ring = MaterialTheme.colorScheme.onSurface
+    val allowed = motionAllowed()
+    var chatEdges by remember { mutableStateOf<Edges?>(null) }
+    var terminalEdges by remember { mutableStateOf<Edges?>(null) }
+    val geometry = chatEdges?.let { c -> terminalEdges?.let { SegmentGeometry(c, it) } }
+    val start = remember { Animatable(0f) }
+    val end = remember { Animatable(0f) }
+    // Effect-only bookkeeping: the geometry the pill was last put on, and the mode a tap asked for.
+    val placed = remember { mutableStateOf<SegmentGeometry?>(null) }
+    val tappedTo = remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(geometry, chat) {
+        val now = geometry ?: return@LaunchedEffect
+        val to = if (chat) now.chat else now.terminal
+        val tapped = tappedTo.value == chat
+        tappedTo.value = null
+        val snaps = indicatorSnaps(placed.value, now, tapped) || !allowed
+        placed.value = now
+        if (snaps) {
+            start.snapTo(to.start)
+            end.snapTo(to.end)
+            return@LaunchedEffect
+        }
+        val forward = to.end > end.value
+        val (lead, leadTo) = if (forward) end to to.end else start to to.start
+        val (trail, trailTo) = if (forward) start to to.start else end to to.end
+        coroutineScope {
+            launch { lead.animateTo(leadTo, motionSpec(allowed, glide())) }
+            launch {
+                delay(25)
+                trail.animateTo(trailTo, motionSpec(allowed, glide()))
+            }
+        }
+    }
+    val pick = { toChat: Boolean ->
+        tappedTo.value = toChat
+        onMode(toChat)
+    }
     Row(
         Modifier
             .height(36.dp)
             .clip(CircleShape)
             .border(1.dp, outline, CircleShape)
+            .drawBehind {
+                if (placed.value == null) return@drawBehind
+                val w = end.value - start.value
+                if (w <= 0f) return@drawBehind
+                val r = CornerRadius(size.height / 2)
+                drawRoundRect(pill, Offset(start.value, 0f), Size(w, size.height), r)
+                val s = 2.dp.toPx()
+                drawRoundRect(
+                    ring,
+                    Offset(start.value + s / 2, s / 2),
+                    Size(w - s, size.height - s),
+                    CornerRadius((size.height - s) / 2),
+                    style = Stroke(s),
+                )
+            }
             .selectableGroup()
             .testTag("session:mode"),
     ) {
-        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, accent, "session:chat", ChatGlyph.takeIf { compact }, state = stringResource(R.string.harness_chat_state)) { onMode(true) }
-        ModeSegment(stringResource(R.string.chat_terminal), !chat, true, accent, "session:terminal", TerminalGlyph.takeIf { compact }) { onMode(false) }
+        ModeSegment(stringResource(R.string.chat), chat, chatAvailable, "session:chat", ChatGlyph.takeIf { compact }, state = stringResource(R.string.harness_chat_state), onEdges = { chatEdges = it }) { pick(true) }
+        ModeSegment(stringResource(R.string.chat_terminal), !chat, true, "session:terminal", TerminalGlyph.takeIf { compact }, onEdges = { terminalEdges = it }) { pick(false) }
     }
 }
 
 @Composable
-private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, accent: Color, tag: String, glyph: ImageVector?, state: String? = null, onClick: () -> Unit) {
-    val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.24f) else Color.Transparent, label = "segment")
+private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, tag: String, glyph: ImageVector?, state: String? = null, onEdges: (Edges) -> Unit, onClick: () -> Unit) {
     val text = MaterialTheme.colorScheme.onSurface.let { if (enabled) it else it.copy(alpha = 0.38f) }
     // A stateDescription replaces the Tab's own Selected, so a selected unavailable
     // segment says both itself (M5-U1); unselected, it keeps the harness's reason (N1).
@@ -2299,12 +2361,14 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
         Modifier
             .fillMaxHeight()
             .widthIn(min = if (glyph != null) 48.dp else 52.dp)
+            .onPlaced {
+                val x = it.positionInParent().x
+                onEdges(Edges(x, x + it.size.width))
+            }
             .clip(CircleShape)
-            .background(fill)
-            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
             // Unavailable says so by shape too, not by the dimming alone: a dashed
-            // ring, drawn inside the segment, so it costs no width. The selected
-            // ring stays as it is.
+            // ring, drawn inside the segment, so it costs no width. A selected one
+            // has the switch's pill ring instead.
             .then(
                 if (enabled || selected) Modifier else Modifier.drawBehind {
                     val w = 1.dp.toPx()
@@ -2323,7 +2387,7 @@ private fun ModeSegment(label: String, selected: Boolean, enabled: Boolean, acce
             .then(if (unavailable != null) Modifier.semantics { stateDescription = unavailable } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        // The thick onSurface ring says which mode is on without the fill colour, at no
+        // The pill's thick onSurface ring says which mode is on without the fill colour, at no
         // width: both segments keep labelLarge's one weight, so switching never resizes them.
         // As a glyph, the label is still what TalkBack reads, with the Tab's selected state.
         if (glyph != null) {

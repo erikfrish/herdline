@@ -1,6 +1,16 @@
 package io.github.erikfrish.herdline.ui.session
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import io.github.erikfrish.herdline.ui.components.glide
+import io.github.erikfrish.herdline.ui.components.jelly
+import io.github.erikfrish.herdline.ui.components.motionAllowed
+import io.github.erikfrish.herdline.ui.components.motionSpec
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -975,6 +985,8 @@ private fun Editor(
     var pending by remember(key) { mutableStateOf<Pending?>(null) }
     // Between the tap and the native answer, which may read the host first.
     var sending by remember(key) { mutableStateOf(false) }
+    // Deliveries Send started here: each one flicks its icon, a refused tap none.
+    var sends by remember(key) { mutableIntStateOf(0) }
     var refusal by remember(key) { mutableStateOf<String?>(null) }
     // A steer: its phase, the text it took and the record that text replaced.
     var steer by remember(key) { mutableStateOf<SteerPhase>(SteerPhase.Idle) }
@@ -1536,6 +1548,13 @@ private fun Editor(
         } else {
             typeIn(submit)
         }
+    }
+
+    /** Send: a delivery with Enter, counted when the tap started one. */
+    fun send() {
+        val was = sending
+        deliver(submit = true)
+        sends = sendsAfterTap(sends, was, sending)
     }
 
     /**
@@ -2124,7 +2143,8 @@ private fun Editor(
         sendEnabled = sendEnabled,
         sendQueues = queueVerb,
         onInsert = { deliver(submit = false) },
-        onSend = { deliver(submit = true) },
+        onSend = ::send,
+        sends = sends,
         onTerminalKeyboard = {
             menu = false
             onTerminalKeyboard()
@@ -2215,7 +2235,8 @@ private fun Editor(
             sendQueues = queueVerb,
             insertEnabled = insertEnabled,
             onInsert = { deliver(submit = false) },
-            onSend = { deliver(submit = true) },
+            onSend = ::send,
+            sends = sends,
             onFieldFocus = onFieldFocus,
             onDismiss = { editorOpen = false },
             locked = draft.unsettled && !waiting,
@@ -2299,6 +2320,8 @@ internal fun ComposerBand(
     sendQueues: Boolean = false,
     onInsert: () -> Unit,
     onSend: () -> Unit,
+    /** Deliveries Send has started: the face flicks as it grows. */
+    sends: Int = 0,
     destinationMismatch: Boolean,
     onTerminalKeyboard: () -> Unit,
     onLargerEditor: () -> Unit,
@@ -2580,7 +2603,7 @@ internal fun ComposerBand(
                 .testTag("composer:send"),
             contentAlignment = Alignment.Center,
         ) {
-            SendFace(sendEnabled, accent, sendQueues)
+            SendFace(sendEnabled, accent, sendQueues, sends)
         }
     }
 }
@@ -2761,6 +2784,7 @@ private fun LargerEditor(
     insertEnabled: Boolean,
     onInsert: () -> Unit,
     onSend: () -> Unit,
+    sends: Int,
     onFieldFocus: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     /** The draft is held (unsettled): read-only, and shown so (R1). */
@@ -2825,7 +2849,7 @@ private fun LargerEditor(
                             )
                         }
                     }
-                    SendButton(sendEnabled, accent, sendHint, sendQueues, onSend)
+                    SendButton(sendEnabled, accent, sendHint, sendQueues, sends, onSend)
                 }
                 chips(Modifier.padding(horizontal = 16.dp))
                 BasicTextField(
@@ -2902,7 +2926,7 @@ private fun LargerEditor(
 
 /** The round 40 dp Send inside a 48 dp target. */
 @Composable
-private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: Boolean, onSend: () -> Unit) {
+private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: Boolean, sends: Int, onSend: () -> Unit) {
     Box(
         Modifier
             .heightIn(min = 48.dp)
@@ -2911,21 +2935,55 @@ private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: B
             .testTag("composer:send"),
         contentAlignment = Alignment.Center,
     ) {
-        SendFace(enabled, accent, queues)
+        SendFace(enabled, accent, queues, sends)
     }
 }
 
 /**
  * Send's face: the round arrow, or the word Queue while a send waits for
- * the running turn, so the verb is seen before the tap (§1 S).
+ * the running turn, so the verb is seen before the tap (§1 S). Its colour
+ * glides between on and off, it pops as it turns on, and the arrow flicks
+ * away once per delivery [sends] counts. The pop and flick only draw: the
+ * 48 dp target around it and the delivery itself never wait for them.
  */
 @Composable
-private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean) {
-    val fill = if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val ink = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean, sends: Int) {
+    val allowed = motionAllowed()
+    val fill by animateColorAsState(if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), motionSpec(allowed, glide()), label = "sendFill")
+    val ink by animateColorAsState(if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, motionSpec(allowed, glide()), label = "sendInk")
+    val pop = remember { Animatable(1f) }
+    // Read only by the effects, so a change never recomposes the face.
+    val shown = remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(enabled) {
+        val fire = popsOnEnable(shown.value, enabled)
+        shown.value = enabled
+        if (fire && allowed) pop.animateTo(1f, jelly(), initialVelocity = 5.1f) else pop.snapTo(1f)
+    }
+    val shift = remember { Animatable(0f) }
+    val fade = remember { Animatable(1f) }
+    val counted = remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(sends) {
+        val fire = flicksOnSend(counted.value, sends)
+        counted.value = sends
+        if (!fire || !allowed) {
+            shift.snapTo(0f)
+            fade.snapTo(1f)
+            return@LaunchedEffect
+        }
+        coroutineScope {
+            launch { shift.animateTo(1f, tween(80, easing = FastOutLinearInEasing)) }
+            fade.animateTo(0f, tween(80, easing = FastOutLinearInEasing))
+        }
+        shift.snapTo(0f)
+        fade.animateTo(1f, tween(120))
+    }
+    val popped = Modifier.graphicsLayer {
+        scaleX = pop.value
+        scaleY = pop.value
+    }
     if (queues) {
         Box(
-            Modifier
+            popped
                 .height(40.dp)
                 .background(fill, CircleShape)
                 .padding(horizontal = 14.dp)
@@ -2935,8 +2993,18 @@ private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean) {
             Text(stringResource(R.string.composer_queue), color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     } else {
-        Box(Modifier.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Send, stringResource(R.string.composer_send), tint = ink, modifier = Modifier.size(20.dp))
+        Box(popped.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Default.Send,
+                stringResource(R.string.composer_send),
+                tint = ink,
+                modifier = Modifier.size(20.dp).graphicsLayer {
+                    val away = shift.value * 10.dp.toPx()
+                    translationX = away
+                    translationY = -away
+                    alpha = fade.value
+                },
+            )
         }
     }
 }

@@ -1,7 +1,10 @@
 package io.github.erikfrish.herdline.ui.session
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import io.github.erikfrish.herdline.ui.components.pressScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -105,6 +108,7 @@ internal fun FilterControl(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    val press = remember { MutableInteractionSource() }
     val summary = filterSummary(if (statuses) filter else SwitcherFilter.All, order.takeIf { onOrder != null }, counts)
     val value = listOfNotNull(
         summary.status?.let { statusText(it, counts) },
@@ -118,9 +122,10 @@ internal fun FilterControl(
         Row(
             Modifier
                 .heightIn(min = 48.dp)
+                .pressScale(press, 0.92f)
                 .clip(RoundedCornerShape(24.dp))
                 .border(1.dp, outline, RoundedCornerShape(24.dp))
-                .clickable(role = Role.Button, onClickLabel = openLabel) { open = true }
+                .clickable(interactionSource = press, indication = LocalIndication.current, role = Role.Button, onClickLabel = openLabel) { open = true }
                 .semantics {
                     contentDescription = name
                     stateDescription = value
@@ -189,9 +194,14 @@ private fun MenuHeading(text: String) {
     )
 }
 
-/** One radio line of the Filter menu: its whole label, wrapping if it must, a check when [selected]. */
+/**
+ * One radio line of the Filter menu: its whole label, wrapping if it must, a
+ * check when [selected]. It squashes as it is pressed, as the trigger does:
+ * the one menu whose lines do (motion spec, Conflicts).
+ */
 @Composable
 private fun Choice(label: String, selected: Boolean, glyph: AgentStatus?, tag: String, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
     DropdownMenuItem(
         text = {
             Text(
@@ -203,9 +213,10 @@ private fun Choice(label: String, selected: Boolean, glyph: AgentStatus?, tag: S
         leadingIcon = if (glyph != null) ({ StatusGlyph(glyph, 10.dp, Modifier.clearAndSetSemantics { }, slot = 24.dp) }) else null,
         trailingIcon = { Icon(Icons.Filled.Check, null, Modifier.size(20.dp), tint = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent) },
         onClick = onClick,
-        modifier = Modifier.heightIn(min = 48.dp).semantics {
+        modifier = Modifier.pressScale(press, 0.92f).heightIn(min = 48.dp).semantics {
             this.selected = selected
             role = Role.RadioButton
         }.testTag(tag),
+        interactionSource = press,
     )
 }

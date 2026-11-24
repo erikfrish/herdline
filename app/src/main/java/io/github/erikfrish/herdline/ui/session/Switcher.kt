@@ -1,6 +1,9 @@
 package io.github.erikfrish.herdline.ui.session
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import io.github.erikfrish.herdline.ui.components.pressScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1019,6 +1022,8 @@ private fun Entry(
     val fill by animateColorAsState(if (selected) accent.copy(alpha = 0.18f) else Color.Transparent, label = "row")
     val haptics = LocalHapticFeedback.current
     var open by remember { mutableStateOf(false) }
+    // Shared with the clickable: the row squashes while pressed, held through a long press until its menu opens.
+    val press = remember { MutableInteractionSource() }
     val compact = LocalCompact.current
     // Set on the row, which merges its children, so it carries the glyph's status too.
     val state = changedFirst(changed, listOf(extraState, if (held != null) heldDescription(status) else null))
@@ -1028,9 +1033,12 @@ private fun Entry(
                 .padding(vertical = 1.dp)
                 .fillMaxWidth()
                 .heightIn(min = minHeight)
+                .pressScale(press, if (open) 1f else 0.97f)
                 .clip(MaterialTheme.shapes.large)
                 .background(fill)
                 .combinedClickable(
+                    interactionSource = press,
+                    indication = LocalIndication.current,
                     onClick = onClick,
                     onLongClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)

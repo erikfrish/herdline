@@ -2,6 +2,9 @@ package io.github.erikfrish.herdline.ui.session
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import io.github.erikfrish.herdline.ui.components.pressScale
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -439,6 +442,8 @@ private fun OverviewRow(
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     var menu by remember { mutableStateOf(false) }
+    // Shared with the clickable: the card squashes while pressed, held through a long press until its menu opens.
+    val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(16.dp)
     val border = if (card.current) BorderStroke(2.dp, scheme.primary) else BorderStroke(1.dp, scheme.outlineVariant)
     val open = { if (card.split) onPick(card) else actions.go(card.row) }
@@ -470,6 +475,7 @@ private fun OverviewRow(
         modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .pressScale(press, if (menu) 1f else 0.97f)
             .clip(shape)
             .background(scheme.surfaceContainerHigh)
             .border(border, shape)
@@ -492,6 +498,8 @@ private fun OverviewRow(
                     )
                 }
                 .combinedClickable(
+                    interactionSource = press,
+                    indication = LocalIndication.current,
                     onClick = open,
                     onLongClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
