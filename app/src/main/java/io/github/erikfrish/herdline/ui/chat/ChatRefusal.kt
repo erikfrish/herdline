@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.StringRes
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.TranscriptRefusal
+import io.github.erikfrish.herdline.core.UnboundReason
 
 /** A refusal's string and the arguments it is formatted with. */
 internal data class RefusalWords(@StringRes val res: Int, val args: List<Any> = emptyList())
@@ -39,8 +40,21 @@ internal fun refusalWords(refusal: TranscriptRefusal, agent: String): RefusalWor
             ?: RefusalWords(R.string.chat_refused_hermes_format_unknown, listOf(refusal.supported))
         else -> RefusalWords(R.string.chat_refused_general, listOf(agent))
     }
-    // A hookless OMP no session is proved for; its reasons have no words of their own here.
-    is TranscriptRefusal.Unbound -> RefusalWords(R.string.chat_refused_general, listOf(agent))
+    // A hookless OMP no session is proved for: why, by its reason.
+    is TranscriptRefusal.Unbound -> RefusalWords(unboundRes(refusal.reason))
+}
+
+/** Why no session is proved for a hookless OMP, in one line: the compact Terminal reason and the Detached cause. */
+@StringRes
+internal fun unboundRes(reason: UnboundReason): Int = when (reason) {
+    UnboundReason.NoOmp -> R.string.chat_probe_no_omp
+    UnboundReason.LauncherStarted -> R.string.chat_probe_launcher
+    UnboundReason.ProfileMismatch -> R.string.chat_probe_profile
+    UnboundReason.TtyMismatch -> R.string.chat_probe_tty
+    UnboundReason.FreshOrBadBreadcrumb -> R.string.chat_probe_fresh
+    UnboundReason.LeaseNotHeld -> R.string.chat_probe_lease
+    UnboundReason.LeaseUnreadable -> R.string.chat_probe_lease_unreadable
+    UnboundReason.Ambiguous -> R.string.chat_probe_ambiguous
 }
 
 /** Grok's store holds no one session Chat can stand behind: Chat refuses, and the card says so. */

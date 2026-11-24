@@ -58,6 +58,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -90,6 +91,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
@@ -139,6 +142,8 @@ import io.github.erikfrish.herdline.core.TranscriptRefusal
 import io.github.erikfrish.herdline.core.TranscriptRefused
 import io.github.erikfrish.herdline.core.TranscriptPage
 import io.github.erikfrish.herdline.core.TranscriptPending
+import io.github.erikfrish.herdline.core.TranscriptDetached
+import io.github.erikfrish.herdline.core.TranscriptDetachment
 import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.session.Outage
 import io.github.erikfrish.herdline.ui.session.controlReason
@@ -326,6 +331,36 @@ internal class ChatKept {
     }
 
     /**
+     * One read of [pane]'s newest page that names no session (`expect`
+     * null), so the host identifies the pane's session afresh: the Chat tap
+     * on a hookless OMP, and a tap on Detached. A page replaces what was
+     * shown, never merged, so no entry of another session joins the frozen
+     * one; a failure keeps the frozen page and its Detached.
+     */
+    suspend fun identify(transcript: (JSONObject) -> Result<TranscriptPage>, pane: String): Result<TranscriptPage> = reading.withLock {
+        read.identifying = true
+        try {
+            val page = withContext(Dispatchers.IO) { transcript(transcriptRequest(pane, null, TranscriptRead.Tail)) }
+            page.onSuccess { got ->
+                if (history?.identity != got.identity) expanded.clear()
+                history = ChatHistory.of(got)
+                read.succeeded()
+            }.onFailure { error ->
+                val refusal = (error as? TranscriptRefused)?.refusal
+                when {
+                    read.detached == null -> read.failed(error)
+                    // Still no session proved: the reason it gives now.
+                    refusal is TranscriptRefusal.Unbound -> read.detached = TranscriptDetachment.Refused(refusal.reason)
+                    error is TranscriptDetached -> read.detached = error.detachment
+                }
+            }
+            page
+        } finally {
+            read.identifying = false
+        }
+    }
+
+    /**
      * One read while Chat is not composed to poll (F-OBS1); null when one is
      * already in flight, so repeated asks never stack reads.
      */
@@ -349,6 +384,14 @@ internal class ChatReadState {
     /** Set with [problem] when the core refused the session by type; it never clears by itself. */
     var refusal by mutableStateOf<TranscriptRefusal?>(null)
     var pending by mutableStateOf(false)
+    /**
+     * Set when a read-only binding stopped holding: what is shown stays, as
+     * the last confirmed page, and nothing is read until a tap identifies
+     * the pane again ([ChatKept.identify]).
+     */
+    var detached by mutableStateOf<TranscriptDetachment?>(null)
+    /** A read without `expect` is in flight. */
+    var identifying by mutableStateOf(false)
     /** The failed refresh the cached history shows under. */
     val outage = mutableStateOf(Outage())
 
@@ -356,9 +399,15 @@ internal class ChatReadState {
         problem = null
         refusal = null
         pending = false
+        detached = null
     }
 
     fun failed(error: Throwable) {
+        // Not a failed refresh: the page shown is the last confirmed one, and says so.
+        if (error is TranscriptDetached) {
+            detached = error.detachment
+            return
+        }
         pending = error is TranscriptPending
         problem = if (pending) null else error.message ?: error.javaClass.simpleName
         refusal = lastingRefusal(error)
@@ -419,9 +468,17 @@ private fun ChatContent(
     // (another pane read, or Chat closed meanwhile) says nothing about the pane now.
     var readHere by remember { mutableStateOf(false) }
 
+    // A tap on Detached: one read that identifies the pane's session afresh.
+    val identifyTap = remember { Channel<Unit>(Channel.CONFLATED) }
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
+                // Detached: the last confirmed page stays and nothing is read until a tap.
+                if (kept.read.detached != null) {
+                    identifyTap.receive()
+                    kept.identify(connection::transcript, pane)
+                    continue
+                }
                 val ok = kept.readNext(connection::transcript, pane)
                 readHere = true
                 withTimeoutOrNull(
@@ -448,15 +505,17 @@ private fun ChatContent(
     // OpenCode and Kilo ask through their own server: read it only while the agent waits on the user.
     val serverAgent = identity?.agent == "opencode" || identity?.agent == "kilo"
     val asked = status == AgentStatus.Blocked
+    // An OMP read only through the host's probe has no control endpoint: no dialogs to answer, no Stop.
+    val readOnlyProbe = identity?.readOnlyProbe == true
     val dialogTarget = remember(connection, view?.boot, identity, pane, serverAgent && asked) {
         val boot = view?.boot
-        val reads = identity?.agent == "omp" || serverAgent && asked
+        val reads = identity?.agent == "omp" && !readOnlyProbe || serverAgent && asked
         if (boot == null || identity == null || !reads) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
     // Stop goes where the program's Harness row says: its server, or one key in its pane.
     val stopTarget = remember(connection, view?.boot, identity, pane) {
         val boot = view?.boot
-        if (boot == null || identity == null || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
+        if (boot == null || identity == null || readOnlyProbe || Harness.of(identity.agent).stop == StopRoute.None) null else Connection.ComposerTarget(connection.node.id, connection.node.session, boot, pane, identity.agent, identity)
     }
     // OpenCode's server says which of its sessions it runs (GET /api/session/active); a read that
     // fails or isn't Live says nothing, so the pane's own status stands.
@@ -646,7 +705,7 @@ private fun ChatContent(
             }.onSuccess { page -> history = history?.merge(page, appended = false) ?: ChatHistory.of(page) }
                 .onFailure {
                     anchor = null
-                    problem = it.message
+                    if (it is TranscriptDetached) kept.read.detached = it.detachment else problem = it.message
                 }
             loadingOlder = false
         }
@@ -760,6 +819,10 @@ private fun ChatContent(
             )
         }
         moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
+        // The read-only binding ended: the page below is the last confirmed one, and a tap identifies anew.
+        kept.read.detached?.let { detachment ->
+            DetachedStrip(detachment, kept.read.identifying, dense) { identifyTap.trySend(Unit) }
+        }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
                 kept.read.pending -> Text(
@@ -872,8 +935,13 @@ private fun ChatContent(
                         status == AgentStatus.Blocked && dialogs.isEmpty() -> item(key = "blocked") {
                             // An OMP with no control endpoint: why Chat can't answer, never the raw read failure.
                             val noControl = ompControlMissing(identity?.agent, ompProbe)
-                            val answerReason = if (noControl) stringResource(R.string.omp_no_control) else controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
-                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem.takeUnless { noControl }, answerReason) }
+                            val answerReason = when {
+                                // Read through the probe: shown to read only, chosen in the terminal.
+                                readOnlyProbe -> stringResource(R.string.chat_blocked_question)
+                                noControl -> stringResource(R.string.omp_no_control)
+                                else -> controlReason(identity?.agent, HarnessKey.Questions, R.string.control_answer_unavailable)
+                            }
+                            LiveGap { NeedsInputRow(asking, colors, onTerminal, dialogProblem.takeUnless { noControl || readOnlyProbe }, answerReason) }
                         }
                         status == AgentStatus.Working && !footerByEditor -> item(key = "working") {
                             Box(Modifier.padding(top = ChatSpace.tool)) {
@@ -1819,5 +1887,44 @@ private fun ErrorRow(tool: ChatItem.Tool, colors: ChatColors, onTerminal: () -> 
             overflow = TextOverflow.Ellipsis,
         )
         GlassButton(stringResource(R.string.chat_open_terminal), onClick = onTerminal, accent = colors.err)
+    }
+}
+
+/** What a [detachment] adds to Detached: the reason no session is proved now, or nothing when another holds it. */
+@StringRes
+internal fun detachedCauseRes(detachment: TranscriptDetachment): Int? = when (detachment) {
+    is TranscriptDetachment.Refused -> unboundRes(detachment.reason)
+    TranscriptDetachment.Rebound -> null
+}
+
+/**
+ * Over a read-only Chat whose binding ended: Detached, why, and Check
+ * again, which identifies the pane's session afresh. The words wrap, so a
+ * large font only adds lines; the page below stays as last confirmed.
+ */
+@Composable
+private fun DetachedStrip(detachment: TranscriptDetachment, checking: Boolean, dense: Boolean, onCheck: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth().testTag("chat:detached"),
+    ) {
+        Row(
+            Modifier.heightIn(min = 48.dp).padding(start = if (dense) 12.dp else 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Column(Modifier.weight(1f).padding(vertical = 6.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+                Text(stringResource(R.string.chat_detached), style = MaterialTheme.typography.labelLarge)
+                detachedCauseRes(detachment)?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall) }
+            }
+            if (checking) {
+                CircularProgressIndicator(Modifier.padding(horizontal = 16.dp).size(18.dp), strokeWidth = 2.dp)
+            } else {
+                TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp).testTag("chat:detached:check")) {
+                    Text(stringResource(R.string.chat_detached_check))
+                }
+            }
+        }
     }
 }

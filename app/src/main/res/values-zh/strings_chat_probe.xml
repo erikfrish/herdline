@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_probe_checking">正在检查此 OMP 运行的会话…</string>
+    <string name="chat_probe_no_omp">聊天无法读取此窗格：其前台没有运行 OMP。</string>
+    <string name="chat_probe_launcher">聊天无法读取此 OMP：它由启动器启动，而不是窗格的 shell。</string>
+    <string name="chat_probe_profile">聊天无法读取此 OMP：它使用了其他配置文件或主目录。</string>
+    <string name="chat_probe_tty">聊天无法读取此 OMP：它读取的终端不是此窗格。</string>
+    <string name="chat_probe_fresh">聊天暂时无法读取此 OMP：它尚未写入会话。请在第一条消息后重试。</string>
+    <string name="chat_probe_lease">聊天无法读取此 OMP：此进程未持有该会话。</string>
+    <string name="chat_probe_lease_unreadable">聊天无法读取此 OMP：无法检查其会话锁。</string>
+    <string name="chat_probe_ambiguous">聊天无法确定此 OMP 运行的会话，因此保持终端模式。</string>
+    <string name="chat_probe_failed">聊天无法检查此 OMP。请再次点按“聊天”重试。</string>
+    <string name="chat_probe_subline">在聊天集成之前启动：只读</string>
+    <string name="chat_detached">已分离：此 OMP 不再运行该会话。</string>
+    <string name="chat_detached_check">重新检查</string>
+</resources>

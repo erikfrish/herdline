@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A Chat tap on an OMP pane without Herdline's hook: the host checks which session it runs. -->
+    <string name="chat_probe_checking">Checking which session this OMP runs…</string>
+    <!-- Why Chat stays in Terminal for an OMP no session is proved for, one line per reason. -->
+    <string name="chat_probe_no_omp">Chat can\'t read this pane: no OMP runs in its foreground.</string>
+    <string name="chat_probe_launcher">Chat can\'t read this OMP: a launcher started it, not the pane\'s shell.</string>
+    <string name="chat_probe_profile">Chat can\'t read this OMP: it uses another profile or home folder.</string>
+    <string name="chat_probe_tty">Chat can\'t read this OMP: it reads another terminal than this pane.</string>
+    <string name="chat_probe_fresh">Chat can\'t read this OMP yet: it has not written its session. Try after its first message.</string>
+    <string name="chat_probe_lease">Chat can\'t read this OMP: this process does not hold the session.</string>
+    <string name="chat_probe_lease_unreadable">Chat can\'t read this OMP: its session lock could not be checked.</string>
+    <string name="chat_probe_ambiguous">Chat can\'t tell which session this OMP runs, so it stays in Terminal.</string>
+    <string name="chat_probe_failed">Chat couldn\'t check this OMP. Tap Chat to try again.</string>
+    <!-- Under the read-only footer of a Chat over an OMP started without Herdline's hook. -->
+    <string name="chat_probe_subline">Started before the Chat integration: read only</string>
+    <!-- The binding a read-only Chat read through no longer holds: the page shown is the last confirmed one. -->
+    <string name="chat_detached">Detached: this OMP no longer runs that session.</string>
+    <string name="chat_detached_check">Check again</string>
+</resources>

@@ -345,6 +345,10 @@ fun SessionScreen(
     // A herdr-core agent pane Chat cannot read yet: a compact hint, the reason and the way to a Chat session.
     // Shown only on a Chat tap; per connection, so a reconnect never brings it back.
     var chatHint by remember(connection) { mutableStateOf<String?>(null) }
+    // For a hookless OMP pane, the hint's own line: checking, or why no session is proved (ProbeOutcome).
+    var probeHint by remember(connection) { mutableStateOf<Pair<String, Int>?>(null) }
+    // The pane a Chat tap is identifying now: one read at a time.
+    var probing by remember(connection) { mutableStateOf<String?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
     // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
     val bareBanners = remember { HashMap<Long, Long>() }
@@ -594,6 +598,8 @@ fun SessionScreen(
     val confirmedSessions = remember(connection) { mutableStateMapOf<String, Pair<String?, String>>() }
     fun sessionOf(pane: String): String? =
         confirmedSessions[pane]?.takeIf { it.first == modeRun(view?.boot) }?.second
+    // Hookless OMP panes a Chat tap bound to a proved session, with the boot they were bound in (chatOpens).
+    val probeBound = remember(connection) { mutableStateMapOf<String, String>() }
     for (pane in setOfNotNull(reading?.pane, desktopPane)) {
         key(pane) {
             val run = modeRun(view?.boot)
@@ -620,11 +626,11 @@ fun SessionScreen(
         val agent = pane?.let { shown.agentIn(it)?.agent }
         return pane != null && showsChat(
             stored, ModeKey(node.id, node.session, pane), shown.boot, agent,
-            chatAvailable = chatReadable(shown, pane), remembered = sessionModes[sessionKey],
+            chatAvailable = chatOpens(shown, pane, probeBound[pane]), remembered = sessionModes[sessionKey],
             session = sessionOf(pane),
         )
     }
-    val chatPane = reading?.pane?.takeIf { chatReadable(view, it) }
+    val chatPane = reading?.pane?.takeIf { chatOpens(view, it, probeBound[it]) }
     // A choice holds for one daemon run and agent session (or program, where no session is confirmed):
     // a restarted daemon or another confirmed session in a pane forgets it, so a mode never carries
     // over to a replaced process. A view still loading or a shell in between changes nothing.
@@ -640,9 +646,11 @@ fun SessionScreen(
     var chatShown by remember { mutableStateOf(false) }
     LaunchedEffect(chatWanted, closed) { if (!closed) chatShown = chatWanted }
     val chatMode = if (closed) chatShown else chatWanted
-    // A program whose history Chat only shows (Harness.readOnlyHistory): no composer, a footer says so.
+    // A program whose history Chat only shows (Harness.readOnlyHistory), or an OMP read through the host's
+    // probe (no hook, so no control): no composer, a footer says so.
     val chatAgentName = reading?.pane?.let { view?.agentIn(it) }?.displayName.orEmpty()
-    val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory
+    val chatProbed = chatMode && reading?.pane?.let { hooklessOmp(view, it) } == true
+    val chatReadOnly = chatMode && Harness.of(reading?.pane?.let { view?.agentIn(it)?.agent }.orEmpty()).readOnlyHistory || chatProbed
     // What is on screen: the pane read here in Chat, the desktop's in Terminal.
     val focusedPane = if (chatMode) reading?.pane?.takeIf { !closed } else desktopPane
     val viewedPane = focusedPane
@@ -944,11 +952,52 @@ fun SessionScreen(
         if (result == SnackbarResult.ActionPerformed && chatPane == pane) openTerminal()
     }
 
+    /**
+     * A Chat tap on a hookless OMP: one read that names no session asks the host to prove which one the
+     * pane runs. Proved, Chat opens read only and the mode is kept; otherwise the pane stays in Terminal
+     * with the reason in the compact hint, and no mode is remembered.
+     */
+    fun identifyHookless(pane: String) {
+        val boot = view?.boot ?: return
+        chatHint = pane
+        probeHint = pane to R.string.chat_probe_checking
+        if (probing != null) return
+        probing = pane
+        val tap = choices
+        val memory = chatMemory
+        scope.launch {
+            try {
+                val outcome = probeOutcome(memory.of(pane).identify(connection::transcript, pane))
+                val still = connection.view.value?.takeIf { it.boot == boot }
+                if (outcome == ProbeOutcome.Bound && still != null && hooklessOmp(still, pane)) {
+                    probeBound[pane] = boot
+                    if (chatHint == pane) chatHint = null
+                    probeHint = null
+                    // Only where nothing else was chosen meanwhile.
+                    if (choices == tap) {
+                        readHere(pane)
+                        showChat(true, pane)
+                    }
+                } else if (chatHint == pane) {
+                    probeHint = pane to (probeHintRes(outcome) ?: R.string.chat_probe_failed)
+                }
+            } finally {
+                probing = null
+            }
+        }
+    }
+
     /** Chat reads a supported agent; Terminal always types directly in its own editor. Only these taps write a mode. */
     fun chooseMode(chat: Boolean) {
         if (chat) choices++
+        // A hookless OMP no session is proved for yet: Chat only once the host proves one; never a remembered Chat before.
+        val hookless = focusedPane?.takeIf { chat && !chatMode && hooklessOmp(view, it) && !chatOpens(view, it, probeBound[it]) }
+        if (hookless != null) {
+            identifyHookless(hookless)
+            return
+        }
         modes.prefer(sessionKey, chat)
-        val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && chatReadable(view, it) }
+        val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && chatOpens(view, it, probeBound[it]) }
         when {
             desktopAgent != null -> {
                 readHere(desktopAgent)
@@ -1677,7 +1726,10 @@ fun SessionScreen(
                         }
                         chatHint?.takeIf { it == focusedPane }?.let {
                             chatReason?.let { reason ->
-                                val content = chatHintContent(reason, currentProgram.equals("omp", ignoreCase = true), chatSetup)
+                                // A hookless OMP's line, while its pane is the one shown: checking, or why it stays here.
+                                val probed = probeHint?.takeIf { it.first == focusedPane && hooklessOmp(view, it.first) }
+                                val content = probed?.let { ChatHintContent(it.second, null, null) }
+                                    ?: chatHintContent(reason, currentProgram.equals("omp", ignoreCase = true), chatSetup)
                                 val target = workspace?.id
                                 ChatHint(
                                     content = content.takeIf { it.action != ChatHintAction.NewTab || target != null } ?: content.copy(action = null),
@@ -1731,7 +1783,8 @@ fun SessionScreen(
                     } else if (chatReadOnly) {
                         ReadOnlyFooter(
                             chatAgentName, accent,
-                            controlReason(reading?.pane?.let { view?.agentIn(it)?.agent }, HarnessKey.Send, R.string.control_send_unavailable),
+                            controlReason(reading?.pane?.let { view?.agentIn(it)?.agent }, HarnessKey.Send, R.string.control_send_unavailable).takeUnless { chatProbed },
+                            subline = if (chatProbed) stringResource(R.string.chat_probe_subline) else null,
                         )
                     } else {
                         val density = LocalDensity.current
@@ -2718,18 +2771,17 @@ private fun SessionColumn(side: Dp?, modifier: Modifier, onRoom: (Int) -> Unit, 
 /**
  * Where the composer is for a program whose history Chat only shows
  * (design NIGHT-READONLY-HARNESS section 1): plain text, not tappable;
- * the mode toggle above is the way to Terminal. One TalkBack node, no
- * live region, no animation, never cut short.
+ * the mode toggle above is the way to Terminal. [subline], under it, says
+ * why this one is read only. One TalkBack node, no live region, no
+ * animation, never cut short.
  */
 @Composable
-private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = null) {
+private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = null, subline: String? = null) {
     val colors = chatColors(accent)
     // Where the card says why Send is not here (§3.5), that line, read as is.
-    val spoken = sendReason ?: stringResource(R.string.chat_readonly_footer_spoken, agent)
-    Text(
-        sendReason ?: stringResource(R.string.chat_readonly_footer),
-        style = ChatType.body.copy(color = colors.muted),
-        modifier = Modifier
+    val spoken = (sendReason ?: stringResource(R.string.chat_readonly_footer_spoken, agent)) + subline?.let { "\n$it" }.orEmpty()
+    Column(
+        Modifier
             .fillMaxWidth()
             .background(colors.bg)
             .navigationBarsPadding()
@@ -2737,7 +2789,10 @@ private fun ReadOnlyFooter(agent: String, accent: Color, sendReason: String? = n
             .padding(horizontal = 16.dp, vertical = 13.dp)
             .clearAndSetSemantics { contentDescription = spoken }
             .testTag("chat:readonly"),
-    )
+    ) {
+        Text(sendReason ?: stringResource(R.string.chat_readonly_footer), style = ChatType.body.copy(color = colors.muted))
+        subline?.let { Text(it, style = ChatType.meta.copy(color = colors.muted), modifier = Modifier.testTag("chat:readonly:subline")) }
+    }
 }
 
 /** The windows a session on screen holds awake, and by how many sessions: two overlap while one cross-fades into the next. */
