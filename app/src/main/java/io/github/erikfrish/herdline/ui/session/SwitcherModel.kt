@@ -227,3 +227,16 @@ const val RECENT_LIMIT = 5
 /** [recent] after visiting [key]: it moves to the front, once. */
 fun recentAfter(recent: List<String>, key: String): List<String> =
     (listOf(key) + recent.filter { it != key }).take(RECENT_LIMIT)
+
+/**
+ * A workspace group's label as the node's name and what follows it
+ * (W10152): the [host] leads, the [workspace] (often a path) follows unless
+ * it is blank or says the same. With no host the workspace leads alone.
+ * Neither is upper-cased.
+ */
+internal fun groupLabel(host: String?, workspace: String): Pair<String, String?> {
+    val place = workspace.trim()
+    val node = host?.trim().orEmpty()
+    if (node.isEmpty()) return place to null
+    return node to place.takeIf { it.isNotEmpty() && it != node }
+}

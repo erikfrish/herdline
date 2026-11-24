@@ -18,6 +18,8 @@ import io.github.erikfrish.herdline.core.readableTitle
  *   unique within the workspace, for "pane N".
  * - [title] (the task title) goes only into the spoken description.
  * - [state] is "Sending…" or the status label; it is never cut.
+ * - [host] is the node's name, qualified as hostLabels does; it leads the
+ *   place part, and the [workspace] follows it, cut at its start (W10152).
  */
 data class Destination(
     val pane: String,
@@ -29,14 +31,18 @@ data class Destination(
     val number: Int,
     val title: String? = null,
     val state: String? = null,
+    val host: String = "",
 )
 
 /**
  * [shown] fits the room. The rest is uncut, for the spoken description
  * (`composer_destination_description`): [who] with the task title after it,
- * [workspace] and [state].
+ * [host], [workspace] and [state].
  */
-data class DestinationLabel(val shown: String, val who: String, val workspace: String, val state: String?)
+data class DestinationLabel(val shown: String, val who: String, val workspace: String, val state: String?, val host: String = "") {
+    /** Where the pane is, spoken: the host, then its workspace when that says more. */
+    val place: String get() = listOf(host, workspace).filter { it.isNotEmpty() }.distinct().joinToString(DESTINATION_SEPARATOR)
+}
 
 /** Between the parts of the line. */
 const val DESTINATION_SEPARATOR = " · "
@@ -60,9 +66,9 @@ fun destinationLabel(target: Destination, siblings: List<Destination>, maxColumn
 /**
  * [paneId]'s line among the panes of its workspace in this view; null for a
  * pane not in view. [state] is the target's own; siblings are compared by
- * `who` only, so theirs does not matter.
+ * `who` only, so theirs does not matter. [host] names the node.
  */
-fun ShellView.destinationOf(paneId: String, state: String?, maxColumns: Int): DestinationLabel? {
+fun ShellView.destinationOf(paneId: String, state: String?, maxColumns: Int, host: String = ""): DestinationLabel? {
     val workspace = panes.firstOrNull { it.id == paneId }?.workspace ?: return null
     val where = workspaces.firstOrNull { it.id == workspace }?.let { readableTitle(it.label) }.orEmpty()
     val group = panes.filter { it.workspace == workspace }.mapIndexed { i, p ->
@@ -79,6 +85,7 @@ fun ShellView.destinationOf(paneId: String, state: String?, maxColumns: Int): De
             number = i + 1,
             title = paneTitle(p.id),
             state = state.takeIf { p.id == paneId },
+            host = host,
         )
     }
     return destinationLabels(group, maxColumns)[paneId]
@@ -86,11 +93,11 @@ fun ShellView.destinationOf(paneId: String, state: String?, maxColumns: Int): De
 
 /**
  * Every pane of one workspace, labelled together (§B):
- * `{who} · {state} · {where}`. `who` is the tab, with ` › ` and the first
- * of pane label, program, `pane N` that tells it apart when its tab has more
- * than one pane or another tab has the same name. A cut that makes two
- * `who` read alike first drops the workspace, then adds ` › pane N`, which
- * is never cut.
+ * `{who} · {state} · {host} · {workspace}`. `who` is the tab, with ` › ` and
+ * the first of pane label, program, `pane N` that tells it apart when its tab
+ * has more than one pane or another tab has the same name. A cut that makes
+ * two `who` read alike first drops the host and workspace, then adds
+ * ` › pane N`, which is never cut.
  */
 fun destinationLabels(group: List<Destination>, maxColumns: Int): Map<String, DestinationLabel> {
     val who = group.associate { it.pane to whoOf(it, group) }
@@ -101,7 +108,8 @@ fun destinationLabels(group: List<Destination>, maxColumns: Int): Map<String, De
         who.getValue(d.pane),
         if (d.pane in numbered) "${DESTINATION_WITHIN}pane ${d.number}" else "",
         d.state,
-        d.workspace.takeIf { d.pane !in dropWhere }.orEmpty(),
+        if (d.pane in dropWhere) "" else d.host,
+        if (d.pane in dropWhere) "" else d.workspace,
         maxColumns,
     )
 
@@ -115,7 +123,7 @@ fun destinationLabels(group: List<Destination>, maxColumns: Int): Map<String, De
     return group.associate { d ->
         val fitted = lines.getValue(d.pane)
         val spokenWho = who.getValue(d.pane) + (d.title?.takeIf { it.isNotEmpty() && it != d.tab }?.let { "$DESTINATION_SEPARATOR$it" } ?: "")
-        d.pane to DestinationLabel(fitted.shown, spokenWho, d.workspace, d.state)
+        d.pane to DestinationLabel(fitted.shown, spokenWho, d.workspace, d.state, d.host)
     }
 }
 
@@ -132,25 +140,47 @@ private data class Line(val shown: String, val who: String)
 
 /**
  * The line in at most [maxColumns]: [state] and [protected] whole; `who`
- * whole when it fits, and the workspace after it only in the room left,
- * when that is at least `min(len, 8)` columns. Otherwise the workspace is
- * dropped first, since the header names it, and `who` takes all the room
- * (A-29, audit 2.9).
+ * whole when it fits, and the place after it only in the room left, when
+ * that is at least `min(len, 8)` columns. Otherwise the place is dropped
+ * first, since the header names it, and `who` takes all the room (A-29,
+ * audit 2.9). The place is the [host], then the [workspace] in what is left,
+ * cut at its start so a path keeps its end, or dropped below `min(len, 8)`;
+ * with no host the workspace alone, cut in the middle.
  */
-private fun fitLine(who: String, protected: String, state: String?, where: String, maxColumns: Int): Line {
+private fun fitLine(who: String, protected: String, state: String?, host: String, workspace: String, maxColumns: Int): Line {
     val sep = columns(DESTINATION_SEPARATOR)
     val stateCols = state?.let { columns(it) + sep } ?: 0
+    val lead = host.ifEmpty { workspace }
+    val after = workspace.takeIf { host.isNotEmpty() && it != host }.orEmpty()
 
-    fun build(whoW: Int, whereW: Int?): Line {
+    fun build(whoW: Int, place: String?): Line {
         val shownWho = middleEllipsis(who, whoW.coerceAtLeast(1)) + protected
-        val parts = listOfNotNull(shownWho, state, whereW?.let { middleEllipsis(where, it) })
+        val parts = listOfNotNull(shownWho, state, place)
         return Line(parts.joinToString(DESTINATION_SEPARATOR), shownWho)
     }
 
     val alone = maxColumns - stateCols - columns(protected)
     val left = alone - columns(who) - sep
-    if (where.isEmpty() || left < minOf(columns(where), WHERE_MIN)) return build(alone, null)
-    return build(columns(who), left)
+    if (lead.isEmpty() || left < minOf(columns(lead), WHERE_MIN)) return build(alone, null)
+    val shownLead = middleEllipsis(lead, left)
+    val rest = left - columns(shownLead) - sep
+    if (after.isEmpty() || rest < minOf(columns(after), WHERE_MIN)) return build(columns(who), shownLead)
+    return build(columns(who), shownLead + DESTINATION_SEPARATOR + startEllipsis(after, rest))
+}
+
+/**
+ * [text] in at most [maxColumns] columns, cut at its start: "…" and the
+ * longest tail that fits, so a path keeps its last folders. A text that fits
+ * is returned unchanged; a cut never splits a character.
+ */
+fun startEllipsis(text: String, maxColumns: Int): String {
+    if (columns(text) <= maxColumns) return text
+    val clusters = clusters(text)
+    val room = (maxColumns - 1).coerceAtLeast(0)
+    var tail = clusters.size
+    var tailWidth = 0
+    while (tail > 0 && tailWidth + width(clusters[tail - 1]) <= room) tailWidth += width(clusters[--tail])
+    return "…" + clusters.subList(tail, clusters.size).joinToString("")
 }
 
 /**

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tabs: the one Filter control that holds Order and the status choices (W10152). -->
+    <string name="tabs_filter">Filter</string>
+    <!-- The control's line: "Filter: Needs input 2 · Last activity"; %1$s is the active choices, or All. -->
+    <string name="tabs_filter_value">Filter: %1$s</string>
+    <!-- TalkBack's action on the control. -->
+    <string name="tabs_filter_open">choose order and status</string>
+    <!-- The heading over the status choices in the Filter menu. -->
+    <string name="tabs_filter_status">Status</string>
+</resources>

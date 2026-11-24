@@ -1088,6 +1088,10 @@ fun SessionScreen(
                                     )
                                 }
                                 val title = workspace?.let { readableTitle(it.label) } ?: node.title
+                                // W10152: the header's line names the node, qualified as Tabs does when two share a
+                                // name; the workspace (often a path) is spoken after it, not drawn.
+                                val hostName = hostLabels(app.connections.value.values.map { it.node })[node.id] ?: node.title
+                                val placeWhere = listOf(hostName, title).distinct().joinToString(", ")
                                 // Up, the workspace label, the tabs, what needs the user, the one
                                 // Chat | Terminal control, and ⋮ (Herdr actions, Settings, Disconnect).
                                 // The need-you count stays finite: past 99 it shows 99+, and TalkBack says the exact count.
@@ -1205,7 +1209,7 @@ fun SessionScreen(
                                     else -> R.string.session_place_spoken_wide
                                 }
                                 val placeSpoken = buildString {
-                                    append(if (at < 0) title else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, title))
+                                    append(if (at < 0) placeWhere else stringResource(placeSpokenRes, tabName, at + 1, tabs.size, placeWhere))
                                     // S2: the desktop's pane, said whole even where the line cuts it; both named by their tab, as the header shows them.
                                     desktopOther?.let { other ->
                                         append(stringResource(R.string.session_spoken_sentence_joiner))
@@ -1261,7 +1265,7 @@ fun SessionScreen(
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
                                     PlaceButton(
                                         tabName = tabName,
-                                        workspace = title,
+                                        workspace = hostName,
                                         position = position,
                                         marked = changedElsewhere || heldElsewhere,
                                         desktopElsewhere = desktopOther != null,

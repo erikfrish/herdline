@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tabs_filter">筛选</string>
+    <string name="tabs_filter_value">筛选：%1$s</string>
+    <string name="tabs_filter_open">选择排序和状态</string>
+    <string name="tabs_filter_status">状态</string>
+</resources>

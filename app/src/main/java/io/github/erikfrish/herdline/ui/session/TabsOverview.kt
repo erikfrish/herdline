@@ -235,24 +235,24 @@ fun TabsOverview(
             }
             BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 val menuWidth = maxWidth
+                // W10152: the scope and one Filter control in place of four chips that scrolled off at a large font.
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                        .selectableGroup().testTag("overview:filters"),
+                    Modifier.fillMaxWidth().testTag("overview:filters"),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (view != null) ScopeSelector(view, groups, chosen, scoped.gone, onScope, menuWidth)
                     if (filtersShown) {
-                    OverviewChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, null, "all") { onFilter(SwitcherFilter.All) }
-                    OverviewChip(stringResource(R.string.filter_needs_you, counts.needsYou), filter == SwitcherFilter.NeedsYou, AgentStatus.Blocked, "needs_you") {
-                        onFilter(SwitcherFilter.NeedsYou)
-                    }
-                    OverviewChip(stringResource(R.string.filter_working, counts.working), filter == SwitcherFilter.Working, AgentStatus.Working, "working") {
-                        onFilter(SwitcherFilter.Working)
-                    }
-                    OverviewChip(stringResource(R.string.filter_ready, counts.ready), filter == SwitcherFilter.Ready, null, "ready") {
-                        onFilter(SwitcherFilter.Ready)
-                    }
+                        FilterControl(
+                            filter = filter,
+                            onFilter = onFilter,
+                            counts = counts,
+                            statuses = true,
+                            order = null,
+                            onOrder = null,
+                            tagPrefix = "overview",
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
                     }
                 }
             }
@@ -272,7 +272,7 @@ fun TabsOverview(
                     OverviewRails(railList, rails, narrowing, pins, monitored, actions, unseen, onRailNewTab, hidden, { showHidden = true }) { picking = it.tab.id }
                 }
                 sections.isEmpty() && hidden.count == 0 -> NoneMatch(clear)
-                else -> OverviewRows(sections, headers, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }, hidden, { showHidden = true }) { picking = it.tab.id }
+                else -> OverviewRows(sections, headers, host, rows, pins, monitored, actions, unseen, currentTab, placed, { placed = true }, hidden, { showHidden = true }) { picking = it.tab.id }
             }
         }
     }
@@ -283,6 +283,7 @@ fun TabsOverview(
 private fun OverviewRows(
     sections: List<OverviewSection>,
     headers: Boolean,
+    host: String,
     rows: LazyGridState,
     pins: List<String>,
     monitored: (String) -> Boolean,
@@ -315,7 +316,7 @@ private fun OverviewRows(
             for (section in sections) {
                 if (headers) {
                     item(key = "ws:" + section.workspace.id, span = { GridItemSpan(maxLineSpan) }) {
-                        OverviewWorkspaceHeader(section.workspace, section.suffix, section.cards.size, actions)
+                        OverviewWorkspaceHeader(section.workspace, section.suffix, section.cards.size, actions, host = host)
                     }
                 }
                 val pairs = section.cards.chunked(columns)
@@ -363,6 +364,8 @@ private fun OverviewWorkspaceHeader(
     needsYou: Int = 0,
     current: Boolean = false,
     spokenHeading: Boolean = false,
+    /** The node's name, drawn before the workspace's (W10152); null where the rail names it elsewhere. */
+    host: String? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     val name = workspaceName(workspace, suffix)
@@ -370,7 +373,7 @@ private fun OverviewWorkspaceHeader(
     val needs = if (needsYou > 0) stringResource(R.string.filter_needs_you, needsYou) else null
     val currentSpoken = if (current) stringResource(R.string.overview_current_ws_spoken) else null
     val heading = if (spokenHeading) {
-        val spoken = listOfNotNull(name, count, needs, currentSpoken).joinToString(", ")
+        val spoken = listOfNotNull(host, name, count, needs, currentSpoken).joinToString(", ")
         Modifier.clearAndSetSemantics {
             heading()
             contentDescription = spoken
@@ -382,13 +385,7 @@ private fun OverviewWorkspaceHeader(
         Column(Modifier.weight(1f).then(heading)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (current) CurrentPill()
-                Text(
-                    name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                HostWorkspaceLabel(host, name, MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
             Text(
                 listOfNotNull(workspace.branch?.takeIf { it.isNotBlank() }, count, needs).joinToString(" · "),
@@ -828,17 +825,6 @@ internal fun ScopeItem(name: String, detail: String, selected: Boolean, leading:
         leadingIcon = leading,
         onClick = onClick,
     )
-}
-
-/** Shared compact category pills; the selected state and full label remain accessible. */
-@Composable
-private fun OverviewChip(label: String, selected: Boolean, glyph: AgentStatus?, tag: String, onClick: () -> Unit) {
-    val color = glyph?.color() ?: MaterialTheme.colorScheme.primary
-    FilterChip(label, selected, color, tag, leading = when {
-        glyph != null -> ({ StatusGlyph(glyph, 8.dp, Modifier.clearAndSetSemantics { }, slot = 18.dp) })
-        selected -> ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) })
-        else -> null
-    }, tagPrefix = "overview", onClick = onClick)
 }
 
 @Composable

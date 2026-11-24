@@ -75,6 +75,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -322,38 +323,37 @@ fun Switcher(
             item(key = "search") {
                 SearchField(query, onQuery, stringResource(R.string.switcher_search), minHeight = if (onClose != null && onShowGrid != null) tabsSearchMinHeight() else 44.dp)
             }
-            if (onScope != null && view != null) {
-                item(key = "scope") { Box(Modifier.padding(vertical = 4.dp)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) } }
-            }
-            if (store != null) {
-                item(key = "order:select") {
-                    OrderSelector(order, accent) { picked -> store.update { it.copy(targetOrder = picked) } }
+            // W10152: the workspace scope and one Filter control (Order and the status choices) share one row,
+            // so the first tab row starts high; the control's line wraps rather than cuts a long label.
+            val scopeShown = onScope != null && view != null
+            val filterShown = store != null || filtersShown
+            if (scopeShown || filterShown) {
+                item(key = "filters") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (scopeShown && view != null && onScope != null) {
+                            Box(Modifier.weight(1f, fill = false)) { ScopeSelector(view, groups, scoped.chosen, scoped.gone, onScope) }
+                        }
+                        if (filterShown) {
+                            FilterControl(
+                                filter = filter,
+                                onFilter = onFilter,
+                                counts = counts,
+                                statuses = filtersShown,
+                                order = order.takeIf { store != null },
+                                onOrder = store?.let { s -> { picked: TargetOrder -> s.update { it.copy(targetOrder = picked) } } },
+                                tagPrefix = "switcher",
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                    }
                 }
             }
-            if (filtersShown) item(key = "filters") {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(stringResource(R.string.filter_all), filter == SwitcherFilter.All, accent, "all") { onFilter(SwitcherFilter.All) }
-                    FilterChip(
-                        stringResource(R.string.filter_needs_you, counts.needsYou),
-                        filter == SwitcherFilter.NeedsYou,
-                        AgentStatus.Blocked.color(),
-                        "needs_you",
-                    ) { onFilter(SwitcherFilter.NeedsYou) }
-                    FilterChip(
-                        stringResource(R.string.filter_working, counts.working),
-                        filter == SwitcherFilter.Working,
-                        AgentStatus.Working.color(),
-                        "working",
-                    ) { onFilter(SwitcherFilter.Working) }
-                    FilterChip(
-                        stringResource(R.string.filter_ready, counts.ready),
-                        filter == SwitcherFilter.Ready,
-                        AgentStatus.Done.color(),
-                        "ready",
-                    ) { onFilter(SwitcherFilter.Ready) }
-                }
-            }
-            if (browsing && placesShown) {
+            // Recent and pinned places only while searching (W10152): browsing, the list itself is the way in.
+            if (query.isNotBlank() && filter == SwitcherFilter.All && placesShown) {
                 item(key = "places") { PlacesRow(pinnedTitle, recentTitle, places, pinnedPlaces, style) }
             }
             if (scoped.gone && onScope != null) {
@@ -389,7 +389,7 @@ fun Switcher(
                 }
             }
             for (group in if (flat) emptyList() else shown) {
-                item(key = "w:" + group.workspace.id) { WorkspaceHeader(group.workspace, style) }
+                item(key = "w:" + group.workspace.id) { WorkspaceHeader(group.workspace, host, style) }
                 var i = 0
                 while (i < group.rows.size) {
                     when (val target = group.rows[i]) {
@@ -635,30 +635,6 @@ internal fun FilterChip(
     }
 }
 
-/** "Order" and the Workspace | Last activity choice, which writes the same setting as Settings › Layout. */
-@Composable
-private fun OrderSelector(order: TargetOrder, accent: Color, onPick: (TargetOrder) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())
-            .selectableGroup().testTag("switcher:order"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            stringResource(R.string.order_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp),
-        )
-        FilterChip(stringResource(R.string.order_workspace), order == TargetOrder.Workspace, accent, "order:workspace") { onPick(TargetOrder.Workspace) }
-        FilterChip(stringResource(R.string.order_last_activity), order == TargetOrder.LastActivity, accent, "order:last_activity") {
-            onPick(TargetOrder.LastActivity)
-        }
-    }
-}
-
 /** The honest limit of Last activity: where the order comes from, and what any time means. */
 @Composable
 private fun LimitLine(compact: Boolean) {
@@ -775,9 +751,40 @@ private fun PlaceChip(target: SwitchTarget, pinned: Boolean, accent: Color, held
     }
 }
 
-/** Section label: 11 sp caps, not tappable, with a ⋮ for the workspace's actions. */
+/**
+ * A workspace group's label (W10152): the node's [host] first and whole
+ * where it fits, then the workspace, often a path, cut at its start so its
+ * last folders show; never upper-cased. With no host, the workspace alone.
+ */
 @Composable
-private fun WorkspaceHeader(workspace: Workspace, style: RowStyle) {
+internal fun HostWorkspaceLabel(
+    host: String?,
+    workspace: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+) {
+    val (lead, after) = groupLabel(host, workspace)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(lead, style = style, color = color, fontWeight = fontWeight, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("group:host"))
+        if (after != null) {
+            Text(DESTINATION_SEPARATOR, style = style, color = color, maxLines = 1, softWrap = false)
+            Text(
+                after,
+                style = style,
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.StartEllipsis,
+                modifier = Modifier.weight(1f, fill = false).testTag("group:workspace"),
+            )
+        }
+    }
+}
+
+/** Section label: the host, then the workspace, not tappable, with a ⋮ for the workspace's actions. */
+@Composable
+private fun WorkspaceHeader(workspace: Workspace, host: String?, style: RowStyle) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier
@@ -786,13 +793,12 @@ private fun WorkspaceHeader(workspace: Workspace, style: RowStyle) {
             .heightIn(min = 32.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            workspace.label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
+        HostWorkspaceLabel(
+            host,
+            workspace.label,
+            MaterialTheme.typography.labelSmall,
+            Modifier.weight(1f).padding(start = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
         )
         Box {
             IconButton(onClick = { menu = true }, modifier = Modifier.testTag("workspace:${workspace.id}:menu")) {

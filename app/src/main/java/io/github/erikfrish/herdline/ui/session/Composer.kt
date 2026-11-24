@@ -95,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.github.erikfrish.herdline.HerdlineApp
+import io.github.erikfrish.herdline.ui.inbox.hostLabels
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.AgentStatus
 import io.github.erikfrish.herdline.core.AttachmentKind
@@ -2092,6 +2093,9 @@ private fun Editor(
     // counts the files and the larger editor shows their chips (§2.6).
     if (fit.chips) chips(Modifier)
     beforeInput?.invoke()
+    // The To-line names the node first, qualified as Inbox and Tabs do when two share a name (W10152).
+    val toHost = hostLabels((context.applicationContext as? HerdlineApp)?.connections?.collectAsState()?.value?.values?.map { it.node }.orEmpty())[connection.node.id]
+        ?: connection.node.title
     ComposerBand(
         value = value,
         onValueChange = ::edit,
@@ -2099,6 +2103,7 @@ private fun Editor(
         title = draftTitle,
         destinationMismatch = mismatched,
         view = view,
+        toHost = toHost,
         toPane = viewed,
         sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
         agentStatus = check?.status,
@@ -2202,6 +2207,7 @@ private fun Editor(
             title = draftTitle,
             agentStatus = check?.status,
             view = view,
+            toHost = toHost,
             toPane = viewed,
             sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
             readOnly = busy,
@@ -2264,6 +2270,8 @@ internal fun ComposerBand(
     /** The draft's pane title, for the placeholder and the field's spoken hint. */
     title: String,
     view: ShellView?,
+    /** The node the To-line names after the pane, qualified as hostLabels does. */
+    toHost: String = "",
     /** The pane the To-line names: the one on screen (CT-1: in Chat, the one read here). */
     toPane: String? = view?.focusedPane,
     /** Send's spoken hint, in Chat "Sends into ‹pane›'s terminal" (CT-1). */
@@ -2465,7 +2473,7 @@ internal fun ComposerBand(
                         // What leads the line on it takes its own columns and a separator first.
                         val ahead = listOfNotNull(attachmentsLine, inlineNotice).sumOf { columns(it) + DESTINATION_SEPARATOR.length }
                         val toColumns = columnsIn(fieldPx - toEnd, toFont) - ahead
-                        val label = if (to && !lockLine) toLabel(view, toPane, agentStatus, inFlight, toColumns) else null
+                        val label = if (to && !lockLine) toLabel(view, toPane, agentStatus, inFlight, toColumns, toHost) else null
                         val spoken = label?.let { destinationDescription(it) }
                         val line = listOfNotNull(
                             attachmentsLine,
@@ -2584,17 +2592,17 @@ internal fun ComposerBand(
  * beside it would read as nothing happening.
  */
 @Composable
-private fun toLabel(view: ShellView?, pane: String?, status: AgentStatus?, inFlight: Boolean, maxColumns: Int): DestinationLabel? {
+private fun toLabel(view: ShellView?, pane: String?, status: AgentStatus?, inFlight: Boolean, maxColumns: Int, host: String): DestinationLabel? {
     pane ?: return null
     val state = if (inFlight) stringResource(R.string.composer_sending) else status?.let { statusLabel(it) }
-    return view?.destinationOf(pane, state, maxColumns.coerceAtLeast(1))
+    return view?.destinationOf(pane, state, maxColumns.coerceAtLeast(1), host)
 }
 
 /** The To-line spoken uncut: pane, workspace and state, whatever the room cut from the line. */
 @Composable
 private fun destinationDescription(label: DestinationLabel): String = label.state?.let {
-    stringResource(R.string.composer_destination_description, label.who, label.workspace, it)
-} ?: stringResource(R.string.composer_destination_description_nostate, label.who, label.workspace)
+    stringResource(R.string.composer_destination_description, label.who, label.place, it)
+} ?: stringResource(R.string.composer_destination_description_nostate, label.who, label.place)
 
 /** How many digit-wide display columns fit [widthPx] at [fontSize]. */
 @Composable
@@ -2743,6 +2751,7 @@ private fun LargerEditor(
     /** The draft's pane title, for the field's spoken hint. */
     title: String,
     view: ShellView?,
+    toHost: String = "",
     toPane: String? = view?.focusedPane,
     sendHint: String? = null,
     agentStatus: AgentStatus?,
@@ -2804,7 +2813,7 @@ private fun LargerEditor(
                         Text(stringResource(R.string.composer_draft), style = MaterialTheme.typography.titleMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (locked) LockGlyph()
-                            val label = if (locked) null else toLabel(view, toPane, agentStatus, inFlight, columnsIn(titlePx, MaterialTheme.typography.labelSmall.fontSize))
+                            val label = if (locked) null else toLabel(view, toPane, agentStatus, inFlight, columnsIn(titlePx, MaterialTheme.typography.labelSmall.fontSize), toHost)
                             val spoken = label?.let { destinationDescription(it) }
                             Text(
                                 if (locked) stringResource(R.string.composer_locked_line) else label?.shown.orEmpty(),
