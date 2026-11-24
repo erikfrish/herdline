@@ -103,6 +103,11 @@ A text field in **Chat mode** for dictation, autocorrect and multiline editing.
 Terminal uses the agent's own editor instead. Nothing leaves the phone while
 you write a Chat draft.
 
+- The mode you last tapped, **Chat** or **Terminal**, is remembered per host
+  and session across navigation, reconnects and restarts; a pane you set
+  yourself keeps its own mode while the same program runs in it. Where Chat
+  can't read the agent, the pane shows Terminal and the remembered mode is
+  left as it is.
 - Each draft belongs to one pane and is kept per host, session and pane,
   across navigation, reconnects and restarts. The composer names its
   destination; a draft for another pane says so and offers **Move here**.
@@ -195,8 +200,10 @@ The identity hook publishes the active OMP session file and process ID, and
 updates or clears them when the session changes. Herdline checks both the
 foreground process and the session file before using them. An OMP already
 running without these extensions stays Terminal-only: Chat cannot read it, and
-Herdline does not restart it or load extensions into it. To use Chat, open
-**More options**, then **New tab**, and choose **OMP with Chat**; that starts a
+Herdline does not restart it or load extensions into it. Such a pane opens in
+Terminal with no card and keeps your remembered mode for when Chat can read
+it. Tapping **Chat** there shows a compact hint with the reason; for OMP its
+**New tab** button opens the New tab form on **OMP with Chat**, which starts a
 new OMP session and does not resume or change the running one. This setup is
 for OMP, not Pi.
 

@@ -27,10 +27,7 @@
     <string name="hc_terminal_finished_title">终端已结束</string>
     <string name="hc_terminal_starting_title">正在等待终端</string>
 
-    <string name="hc_identity_title">聊天无法读取此 OMP 会话</string>
-    <string name="hc_identity_title_other">聊天无法读取此会话</string>
-    <string name="hc_chat_off_title">此窗格的聊天已关闭</string>
-    <string name="hc_identity_launch_hint">要使用聊天，请打开更多选项，然后选择新建标签页，再选择 OMP（支持聊天）。这会启动一个新的 OMP 会话；当前运行的会话不会改变。</string>
-    <string name="hc_identity_close">关闭</string>
-    <string name="hc_identity_terminal">打开终端</string>
+    <string name="hc_chat_hint_omp">聊天无法读取此 OMP 会话。请在新建标签页中启动 OMP（支持聊天）。</string>
+    <string name="hc_chat_hint_other">聊天无法读取此会话。</string>
+    <string name="hc_chat_hint_close">关闭</string>
 </resources>

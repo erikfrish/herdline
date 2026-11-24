@@ -64,7 +64,7 @@ internal fun PromptDialog(
     onCreated: (Connection.CreatedTab, String?) -> Unit, onDone: () -> Unit,
 ) {
     when (prompt) {
-        is Prompt.NewTab -> key(connection, prompt.workspaceId) { NewTabDialog(connection, prompt.workspaceId, onDone, onCreated) }
+        is Prompt.NewTab -> key(connection, prompt.workspaceId) { NewTabDialog(connection, prompt.workspaceId, prompt.kind, onDone, onCreated) }
         is Prompt.NewWorkspace -> key(connection) { NewWorkspaceDialog(connection, prompt.current, onDone, onCreated) }
         is Prompt.RenameTab -> RenameDialog(stringResource(R.string.rename_tab), prompt.label, onDone) {
             connection.renameTab(prompt.id, it)
@@ -103,10 +103,13 @@ internal fun PromptDialog(
     }
 }
 
-/** Creates exactly once, then opens the reply's pane before any explicitly selected agent starts. */
+/** The New tab launcher that stages Herdline's Chat extensions and starts OMP with them. */
+internal const val HERDLINE_OMP = "herdline-omp"
+
+/** Creates exactly once, then opens the reply's pane before any explicitly selected agent starts; starts on [kind] if offered. */
 @Composable
 private fun NewTabDialog(
-    connection: Connection, workspace: String, onDone: () -> Unit,
+    connection: Connection, workspace: String, kind: String?, onDone: () -> Unit,
     onCreated: (Connection.CreatedTab, String?) -> Unit,
 ) {
     var label by remember { mutableStateOf("") }
@@ -121,12 +124,15 @@ private fun NewTabDialog(
     val scope = rememberCoroutineScope()
     LaunchedEffect(connection) {
         withContext(Dispatchers.IO) { connection.agentLaunchers() }
-            .onSuccess { launchers = it }
+            .onSuccess { found ->
+                launchers = found
+                if (selected == null && !attempted && found.any { it.kind == kind }) selected = kind
+            }
             .onFailure { discoveryError = it.message }
         discovering = false
     }
     @Composable
-    fun launcherLabel(launcher: AgentLauncher): String = if (launcher.kind == "herdline-omp") {
+    fun launcherLabel(launcher: AgentLauncher): String = if (launcher.kind == HERDLINE_OMP) {
         stringResource(R.string.new_tab_omp_chat)
     } else launcher.label
     val create = {
@@ -178,7 +184,7 @@ private fun NewTabDialog(
                     }
                 }
                 Text(
-                    stringResource(if (selected == "herdline-omp") R.string.new_tab_omp_chat_help else R.string.new_tab_program_help),
+                    stringResource(if (selected == HERDLINE_OMP) R.string.new_tab_omp_chat_help else R.string.new_tab_program_help),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (discovering) Text(stringResource(R.string.new_tab_discovering), style = MaterialTheme.typography.bodySmall)

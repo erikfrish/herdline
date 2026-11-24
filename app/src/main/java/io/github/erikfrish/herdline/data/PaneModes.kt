@@ -19,6 +19,16 @@ data class ModeKey(val nodeId: String, val session: String, val pane: String) {
     }
 }
 
+/** One Herdr session on one saved node, as its last tapped mode is remembered for. */
+data class SessionKey(val nodeId: String, val session: String) {
+    /** Unambiguous: node IDs and session names never hold a NUL. */
+    fun encode(): String = "$nodeId\u0000$session"
+
+    companion object {
+        fun decode(encoded: String): SessionKey? = encoded.split('\u0000').takeIf { it.size == 2 }?.let { SessionKey(it[0], it[1]) }
+    }
+}
+
 /**
  * [chat] (Chat, else Terminal) was chosen for a pane while [boot] was the
  * daemon run and [agent] the program in it. Pane IDs are unique only within
@@ -44,24 +54,42 @@ fun staleChoices(
 }.keys.toList()
 
 /**
- * Whether the pane at [key] shows Chat: the user's choice while it still
- * matches [boot] and [agent], otherwise the default, Chat wherever Chat can
- * read the agent ([chatAvailable]). Never Chat where it cannot.
+ * Whether the pane at [key] shows Chat: the pane's own choice while it still
+ * matches [boot] and [agent]; else [remembered], the mode last tapped in this
+ * host's session; else Chat. Never Chat where Chat cannot read the agent
+ * ([chatAvailable]), and that fallback changes nothing stored, so the choice
+ * applies again once Chat can read it.
  */
-fun showsChat(stored: Map<ModeKey, ModeChoice>, key: ModeKey, boot: String?, agent: String?, chatAvailable: Boolean): Boolean {
+fun showsChat(
+    stored: Map<ModeKey, ModeChoice>,
+    key: ModeKey,
+    boot: String?,
+    agent: String?,
+    chatAvailable: Boolean,
+    remembered: Boolean?,
+): Boolean {
     if (!chatAvailable) return false
-    val choice = stored[key]?.takeIf { it.boot == boot && it.agent == agent } ?: return true
-    return choice.chat
+    stored[key]?.takeIf { it.boot == boot && it.agent == agent }?.let { return it.chat }
+    return remembered ?: true
 }
 
 /**
- * Each pane's Chat or Terminal choice, kept across navigation, reconnects and
- * restarts. Writes go through [SharedPreferences.Editor.apply], so the UI
- * thread never waits on disk.
+ * Each pane's Chat or Terminal choice, and each session's last tapped one,
+ * kept across navigation, reconnects and restarts. Only explicit taps call
+ * [set] and [prefer]. Writes go through [SharedPreferences.Editor.apply], so
+ * the UI thread never waits on disk.
  */
-class PaneModes private constructor(private val prefs: SharedPreferences) {
+class PaneModes internal constructor(private val prefs: SharedPreferences, private val sessionPrefs: SharedPreferences) {
     private val _choices = MutableStateFlow(load())
     val choices: StateFlow<Map<ModeKey, ModeChoice>> = _choices.asStateFlow()
+    private val _sessions = MutableStateFlow(
+        sessionPrefs.all.entries.mapNotNull { (encoded, value) ->
+            SessionKey.decode(encoded)?.let { key -> (value as? Boolean)?.let { key to it } }
+        }.toMap(),
+    )
+
+    /** Each session's last tapped mode (true: Chat). A daemon restart or a new program keeps it. */
+    val sessions: StateFlow<Map<SessionKey, Boolean>> = _sessions.asStateFlow()
 
     private fun load(): Map<ModeKey, ModeChoice> = prefs.all.entries.mapNotNull { (encoded, value) ->
         val key = ModeKey.decode(encoded) ?: return@mapNotNull null
@@ -82,6 +110,13 @@ class PaneModes private constructor(private val prefs: SharedPreferences) {
         prefs.edit().putString(key.encode(), json.toString()).apply()
     }
 
+    /** Remembers [chat] as the mode last tapped in [key]'s session. */
+    fun prefer(key: SessionKey, chat: Boolean) {
+        if (_sessions.value[key] == chat) return
+        _sessions.update { it + (key to chat) }
+        sessionPrefs.edit().putBoolean(key.encode(), chat).apply()
+    }
+
     /** Drops [nodeId]/[session] choices that no longer match the daemon's view; see [staleChoices]. */
     fun forget(nodeId: String, session: String, boot: String, agentOf: (pane: String) -> String?) {
         val stale = staleChoices(_choices.value, nodeId, session, boot, agentOf)
@@ -95,7 +130,10 @@ class PaneModes private constructor(private val prefs: SharedPreferences) {
         private var instance: PaneModes? = null
 
         fun get(context: Context): PaneModes = instance ?: synchronized(this) {
-            instance ?: PaneModes(context.applicationContext.getSharedPreferences("pane_modes", Context.MODE_PRIVATE))
+            instance ?: PaneModes(
+                context.applicationContext.getSharedPreferences("pane_modes", Context.MODE_PRIVATE),
+                context.applicationContext.getSharedPreferences("session_modes", Context.MODE_PRIVATE),
+            )
                 .also { instance = it }
         }
     }

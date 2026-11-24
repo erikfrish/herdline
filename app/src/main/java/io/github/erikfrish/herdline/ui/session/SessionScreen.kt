@@ -160,6 +160,7 @@ import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.RenderFrame
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Native
+import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.Routes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -184,6 +185,7 @@ import io.github.erikfrish.herdline.data.DraftStore
 import io.github.erikfrish.herdline.data.composerDestination
 import io.github.erikfrish.herdline.data.ModeKey
 import io.github.erikfrish.herdline.data.PaneModes
+import io.github.erikfrish.herdline.data.SessionKey
 import io.github.erikfrish.herdline.data.showsChat
 import io.github.erikfrish.herdline.data.Backend
 import io.github.erikfrish.herdline.data.Node
@@ -283,7 +285,8 @@ internal fun headerFit(width: Dp, modeWords: Dp, chip: Dp?): HeaderFit {
 
 /** What a confirmation or text dialog is for. */
 internal sealed interface Prompt {
-    data class NewTab(val workspaceId: String) : Prompt
+    /** [kind]: the program the form starts on, when this host offers it. */
+    data class NewTab(val workspaceId: String, val kind: String? = null) : Prompt
     /** `current` is the workspace on screen, the form's Current workspace source. */
     data class NewWorkspace(val current: String?) : Prompt
     data class RenameTab(val id: String, val label: String) : Prompt
@@ -329,9 +332,9 @@ fun SessionScreen(
     var banners by remember { mutableStateOf(BannerQueue()) }
     // Why Chat is off for the pane's program (N1): shown on a Chat tap, dropped on ✕, Open Terminal, or a pane, tab or program change.
     var harnessCard by remember { mutableStateOf<HarnessCardKey?>(null) }
-    // A herdr-core agent pane Chat cannot read yet (identity_unknown): why, and the hook that turns Chat on.
+    // A herdr-core agent pane Chat cannot read yet: a compact hint, the reason and the way to a Chat session.
     // Shown only on a Chat tap; per connection, so a reconnect never brings it back.
-    var identityCard by remember(connection) { mutableStateOf<String?>(null) }
+    var chatHint by remember(connection) { mutableStateOf<String?>(null) }
     var noteCount by remember { mutableLongStateOf(0L) }
     // When each pane-less banner arrived, by its id: a pane notification just after it shows it was Herdr's echo.
     val bareBanners = remember { HashMap<Long, Long>() }
@@ -401,9 +404,10 @@ fun SessionScreen(
     // Per orientation, the space last seen with the keyboard down.
     val openSpace = remember { mutableStateMapOf<Int, SessionSpace>() }
     val orientation = LocalConfiguration.current.orientation
-    // Chat or Terminal per pane, persisted; Chat is the default where Chat can read the agent.
+    // Chat or Terminal per pane, and the last one tapped per host session, persisted; Chat is the default where Chat can read the agent.
     val modes = remember { PaneModes.get(context) }
     val modeChoices by modes.choices.collectAsState()
+    val sessionModes by modes.sessions.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
     val keyboard = LocalSoftwareKeyboardController.current
     // Once the keyboard has opened here, the user knows the way in; the hint never comes back (D3-2).
@@ -411,6 +415,7 @@ fun SessionScreen(
     LaunchedEffect(imeVisible) { if (imeVisible) typedOnce = true }
     val monitored by app.monitor.monitored.collectAsState()
     val node = connection.node
+    val sessionKey = SessionKey(node.id, node.session)
     // The Tabs overview's chosen workspace (TB1 §4): kept across closing the sheet, Grid ⇄ List and rotation.
     var tabsScope by rememberSaveable(node.id, node.session) { mutableStateOf<String?>(null) }
     // Rails' two scroll axes (F2 §5), the same way: never keyed by the view, a status or the view mode.
@@ -493,7 +498,7 @@ fun SessionScreen(
                     terminalLate = null
                     terminalFailed = null
                     harnessCard = null
-                    identityCard = null
+                    chatHint = null
                 }
                 // The service makes the same decision and posts the system notification instead (BN-1 §2).
                 is Connection.Event.Notification -> {
@@ -581,7 +586,10 @@ fun SessionScreen(
     fun chatFor(pane: String?, stored: Map<ModeKey, ModeChoice> = modeChoices): Boolean {
         val shown = view ?: return false
         val agent = pane?.let { shown.agentIn(it)?.agent }
-        return pane != null && showsChat(stored, ModeKey(node.id, node.session, pane), shown.boot, agent, chatAvailable = chatReadable(shown, pane))
+        return pane != null && showsChat(
+            stored, ModeKey(node.id, node.session, pane), shown.boot, agent,
+            chatAvailable = chatReadable(shown, pane), remembered = sessionModes[sessionKey],
+        )
     }
     val chatPane = reading?.pane?.takeIf { chatReadable(view, it) }
     // A choice holds for one daemon run and program: a restarted daemon or a new
@@ -656,12 +664,12 @@ fun SessionScreen(
     LaunchedEffect(focusedPane, tab?.id, currentProgram) {
         if (harnessCard != null && harnessCard != HarnessCardKey(focusedPane, currentProgram)) harnessCard = null
     }
-    // herdr-core: an agent pane Chat cannot read says why on a Chat tap (chooseMode), never by itself; the card
-    // goes on ✕, Open Terminal, a pane change, or once the view says Chat reads it.
+    // herdr-core: an agent pane Chat cannot read shows Terminal; a Chat tap (chooseMode) says why in a compact
+    // hint, never by itself. The hint goes on ✕, its action, a pane change, or once the view says Chat reads it.
     val focusedRecord = focusedPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
     val chatReason = focusedRecord?.chat?.takeIf { isChatAgent(currentProgram) }
     LaunchedEffect(focusedPane, chatReason) {
-        if (identityCard != focusedPane || chatReason == null) identityCard = null
+        if (chatHint != focusedPane || chatReason == null) chatHint = null
     }
     // The pane Terminal shows, as herdr-core reports it: no terminal at all, or watched without control.
     val desktopRecord = desktopPane?.let { p -> view?.panes?.firstOrNull { it.id == p } }
@@ -779,10 +787,12 @@ fun SessionScreen(
     LaunchedEffect(focusPane, linked) {
         if (linked != null && focusPane != null) readHere(focusPane)
     }
+    /** An explicit Chat or Terminal for [pane]: kept for the pane, and as the mode last tapped in this session. */
     fun showChat(on: Boolean, pane: String? = chatPane) {
         pane ?: return
         val boot = view?.boot ?: return
         val agent = view?.agentIn(pane)?.agent ?: return
+        modes.prefer(sessionKey, on)
         modes.set(ModeKey(node.id, node.session, pane), ModeChoice(boot, agent, on))
     }
 
@@ -883,9 +893,10 @@ fun SessionScreen(
         if (result == SnackbarResult.ActionPerformed && chatPane == pane) openTerminal()
     }
 
-    /** Chat reads a supported agent; Terminal always types directly in its own editor. */
+    /** Chat reads a supported agent; Terminal always types directly in its own editor. Only these taps write a mode. */
     fun chooseMode(chat: Boolean) {
         if (chat) choices++
+        modes.prefer(sessionKey, chat)
         val desktopAgent = desktopPane?.takeIf { chat && !chatMode && chatPane == null && chatReadable(view, it) }
         when {
             desktopAgent != null -> {
@@ -893,8 +904,8 @@ fun SessionScreen(
                 showChat(true, desktopAgent)
             }
             chat == chatWanted -> Unit
-            // herdr-core names why Chat cannot read this agent: that, and the way to turn it on.
-            chat && chatPane == null && chatReason != null -> identityCard = focusedPane
+            // herdr-core names why Chat cannot read this agent, in a compact hint with the way to a Chat session.
+            chat && chatPane == null && chatReason != null -> chatHint = focusedPane
             chat && chatPane == null -> {
                 // Herdr's program name only, never the pane's own label; a repeat tap sets the same card.
                 harnessCard = HarnessCardKey(focusedPane, focusedPane?.let { view?.agentIn(it) }?.agent)
@@ -1607,14 +1618,15 @@ fun SessionScreen(
                                 )
                             }
                         }
-                        identityCard?.takeIf { it == focusedPane }?.let { pane ->
+                        chatHint?.takeIf { it == focusedPane }?.let {
                             chatReason?.let { reason ->
-                                IdentityCard(
+                                val omp = currentProgram.equals("omp", ignoreCase = true)
+                                val target = workspace?.id?.takeIf { omp && reason == ReasonCode.IDENTITY_UNKNOWN }
+                                ChatHint(
                                     reason = reason,
-                                    accent = accent,
-                                    omp = currentProgram.equals("omp", ignoreCase = true),
-                                    onTerminal = { identityCard = null; openTerminal() },
-                                    onClose = { identityCard = null },
+                                    omp = omp,
+                                    onSetup = target?.let { id -> { chatHint = null; prompt = Prompt.NewTab(id, kind = HERDLINE_OMP) } },
+                                    onClose = { chatHint = null },
                                 )
                             }
                         }

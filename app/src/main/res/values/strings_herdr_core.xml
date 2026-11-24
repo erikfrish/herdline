@@ -30,11 +30,9 @@
     <string name="hc_terminal_finished_title">Terminal ended</string>
     <string name="hc_terminal_starting_title">Waiting for the terminal</string>
 
-    <!-- herdr-core agent identity and the opt-in Herdline hook. -->
-    <string name="hc_identity_title">Chat can\'t read this OMP session</string>
-    <string name="hc_identity_title_other">Chat can\'t read this session</string>
-    <string name="hc_chat_off_title">Chat is off for this pane</string>
-    <string name="hc_identity_launch_hint">To use Chat, open More options, then New tab, and choose OMP with Chat. That starts a new OMP session; this running session is not changed.</string>
-    <string name="hc_identity_close">Close</string>
-    <string name="hc_identity_terminal">Open Terminal</string>
+    <!-- herdr-core: the compact hint on a Chat tap where Chat cannot read the agent. -->
+    <string name="hc_chat_hint_omp">Chat can\'t read this OMP session. Start OMP with Chat in a new tab.</string>
+    <string name="hc_chat_hint_other">Chat can\'t read this session.</string>
+    <string name="hc_chat_hint_setup" translatable="false">@string/new_tab</string>
+    <string name="hc_chat_hint_close">Close</string>
 </resources>

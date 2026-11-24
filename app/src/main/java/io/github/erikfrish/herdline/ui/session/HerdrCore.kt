@@ -18,10 +18,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -42,7 +45,6 @@ import io.github.erikfrish.herdline.core.REQUEST_FAILED
 import io.github.erikfrish.herdline.core.ReasonCode
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.isChatAgent
-import io.github.erikfrish.herdline.ui.glass.GlassButton
 import io.github.erikfrish.herdline.ui.glass.GroupShape
 import io.github.erikfrish.herdline.ui.glass.IconBadge
 
@@ -140,40 +142,45 @@ internal fun BoxScope.TerminalWaitingPill() {
 }
 
 /**
- * Why Chat is off for this herdr-core agent pane.
+ * Why Chat cannot read this herdr-core agent pane, as one compact row over
+ * the terminal's top edge: the reason, and for OMP [onSetup], the way to a
+ * Chat session. Text wraps rather than cuts, so a large font only adds a line.
  */
 @Composable
-internal fun BoxScope.IdentityCard(reason: String, accent: Color, omp: Boolean, onTerminal: () -> Unit, onClose: () -> Unit) {
-    val hook = reason == ReasonCode.IDENTITY_UNKNOWN
-    Box(
+internal fun BoxScope.ChatHint(reason: String, omp: Boolean, onSetup: (() -> Unit)?, onClose: () -> Unit) {
+    val text = when {
+        reason != ReasonCode.IDENTITY_UNKNOWN -> coreReasonText(reason)
+        omp -> stringResource(R.string.hc_chat_hint_omp)
+        else -> stringResource(R.string.hc_chat_hint_other)
+    }
+    Row(
         Modifier
             .align(Alignment.TopCenter)
-            .padding(12.dp)
-            .testTag("session:identity_card"),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 460.dp)
+            .fillMaxWidth()
+            .shadow(1.dp, GroupShape)
+            .clip(GroupShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, GroupShape)
+            .padding(start = 14.dp, end = 2.dp, top = 2.dp, bottom = 2.dp)
+            .testTag("session:chat_hint"),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        CoreCard(
-            icon = Icons.Default.Warning,
-            tone = accent,
-            title = stringResource(
-                when {
-                    !hook -> R.string.hc_chat_off_title
-                    omp -> R.string.hc_identity_title
-                    else -> R.string.hc_identity_title_other
-                },
-            ),
-            body = coreReasonText(reason),
-        ) {
-            if (hook && omp) Text(stringResource(R.string.hc_identity_launch_hint), style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassButton(stringResource(R.string.hc_identity_close), onClick = onClose, modifier = Modifier.weight(1f))
-                GlassButton(
-                    stringResource(R.string.hc_identity_terminal),
-                    onClick = onTerminal,
-                    primary = true,
-                    accent = accent,
-                    modifier = Modifier.weight(1.4f).testTag("session:identity_terminal"),
-                )
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 8.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        onSetup?.let {
+            TextButton(onClick = it, modifier = Modifier.testTag("session:chat_hint_setup")) {
+                Text(stringResource(R.string.hc_chat_hint_setup))
             }
+        }
+        IconButton(onClick = onClose, modifier = Modifier.testTag("session:chat_hint_close")) {
+            Icon(Icons.Default.Close, stringResource(R.string.hc_chat_hint_close))
         }
     }
 }
