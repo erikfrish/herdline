@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="steer_route">引导到 %1$s 的本回合</string>
+    <string name="steer_working_queue">代理正在工作。“引导”把消息放进本回合；“排队”在本回合结束后运行。</string>
+    <string name="steer_help_short">代理正在工作。“引导”会粘贴你的文字，然后按一次 Enter。</string>
+    <string name="steer_left_not_shown">窗格未及时显示你的文本，因此未发送回车，也未重新发送。请打开终端查看。</string>
+</resources>

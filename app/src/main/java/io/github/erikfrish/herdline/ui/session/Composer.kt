@@ -73,6 +73,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1617,6 +1621,13 @@ private fun Editor(
         }
     }
 
+    /** The slot's Steer: one tap, one steer; it flicks as Send does. */
+    fun steerTap() {
+        val was = sending || steer.active
+        steerStart()
+        sends = sendsAfterTap(sends, was, sending || steer.active)
+    }
+
     /**
      * Check on an uncertain endpoint send: OMP's own durable record for its
      * id. It sends nothing; only a stored accept or refusal settles the
@@ -1783,6 +1794,10 @@ private fun Editor(
     // Endpoint steering accepts ready attachments; PTY steering stays text-only.
     val steerEnabled = !busy && draft.mayDeliver(binding) && attachReady && !mismatched &&
         draft.instance != null && (endpointSteer || draft.attachments.isEmpty() && check?.steer?.ok == true)
+    // Whether Steer is the working agent's verb here, from the route alone:
+    // never from the text, so the slot's face does not flip while typing.
+    // PTY steering is text-only, so staged files leave it Send.
+    val steerRoute = endpointSteer || paneWorking && draft.attachments.isEmpty() && check?.steer?.ok == true
     val rebind = NoticeAction(stringResource(R.string.composer_rebind)) {
         save(draft.rebound(boot, check?.agent, readInstance))
     }
@@ -1801,13 +1816,13 @@ private fun Editor(
         MoveHereOffer.TargetHeld, MoveHereOffer.Hidden -> null
     }
     val checkDescription = stringResource(R.string.composer_check_description)
-    // The agent's own input box already holds text (lab.3 D9), seen by a
-    // check or by a steer whose paste never showed. Append inserts this draft
-    // after it, without Enter; replacing it means clearing it in Terminal
-    // first, since no remote clear exists that could not also reach an empty
-    // OMP prompt (where Ctrl+C arms exit). Append is an Insert, so it shows
-    // only while Insert is enabled; without it the notice names only the
-    // clear (TC-RCPT-5).
+    // The agent's own input box already holds text (lab.3 D9), seen by the
+    // current check of this pane. Append inserts this draft after it, without
+    // Enter; replacing it means clearing it in Terminal first, since no remote
+    // clear exists that could not also reach an empty OMP prompt (where
+    // Ctrl+C arms exit). Append is an Insert, so it shows only while Insert is
+    // enabled; without it the notice names only the clear (TC-RCPT-5). Without
+    // a current read of text in the box, nothing advises a clear.
     val remoteDraft = Notice(
         stringResource(if (insertEnabled) R.string.composer_remote_draft else R.string.composer_remote_draft_no_append),
         // The one action here that delivers the draft: filled.
@@ -1817,7 +1832,7 @@ private fun Editor(
             description = stringResource(R.string.composer_clear_in_terminal_description),
             onClick = onOpenTerminal,
         ),
-    )
+    ).takeIf { remoteDraftConfirmed(check) }
 
     val panel = if (checkedPane) QueuePanel.Hidden else if (unlistedSteers) unlistedQueuePanel(probe, draft, draft.instance?.path) else queuePanel(probe)
     // Which single notice the slot shows, highest priority first.
@@ -1832,15 +1847,21 @@ private fun Editor(
                 if ((steer as? SteerPhase.Entering)?.waiting == "steer_not_shown") R.string.steer_not_shown else R.string.steer_pending,
             ),
             warning = false,
+            // Steer's own progress keeps it in the slot.
+            role = NoticeRole.Working,
         )
-        // The paste is in the pane's input box and no Enter went.
-        steer is SteerPhase.Left -> when ((steer as SteerPhase.Left).reason) {
-            "steer_not_shown" -> remoteDraft
-            "steer_expired" -> Notice(
+        // No Enter went: the paste may sit in the pane's input box.
+        steer is SteerPhase.Left -> when (steerLeft((steer as SteerPhase.Left).reason)) {
+            // Only the paste's confirmation is missing: what the box holds is unknown.
+            SteerLeft.NotShown -> Notice(
+                stringResource(R.string.steer_left_not_shown),
+                NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
+            )
+            SteerLeft.Expired -> Notice(
                 stringResource(R.string.steer_expired),
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
-            else -> Notice(
+            SteerLeft.Left -> Notice(
                 stringResource(R.string.steer_left),
                 NoticeAction(stringResource(R.string.composer_open_terminal), onClick = onOpenTerminal),
             )
@@ -1914,11 +1935,17 @@ private fun Editor(
             NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled },
             NoticeAction(stringResource(R.string.focus_reading_shared, draftTitle), tag = "composer:show_shared") { onShowShared(key.pane) },
         )
-        // The endpoint queues text and images; the PTY wording (paste, then Enter) is not its.
-        // Where Send says Queue, the help names both verbs.
-        endpointSteer && steerEnabled && holdsDraft -> Notice(
-            stringResource(if (queueVerb) R.string.steer_help_queue else R.string.steer_help_endpoint),
-            NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() },
+        // Steer has the slot, Queue this notice's labelled action: whichever
+        // the route allows stays one visible tap away. A refusal outranks it.
+        steerRoute && queueVerb && refusal == null -> Notice(
+            stringResource(R.string.steer_working_queue),
+            NoticeAction(
+                stringResource(R.string.composer_queue),
+                tag = "composer:queue_action",
+                enabled = sendEnabled,
+            ) { send() },
+            warning = false,
+            role = NoticeRole.WorkingQueue,
         )
         blocked != null -> when (val code = blocked) {
             // The compact panel already explains this refusal and opens its full hook diagnostic.
@@ -1926,24 +1953,23 @@ private fun Editor(
             // Insert goes only where its own check passes; Send stays disabled.
             "agent_working" -> {
                 val insert = NoticeAction(stringResource(R.string.composer_insert_no_enter), tag = "composer:insert_no_enter") { deliver(submit = false) }.takeIf { insertEnabled }
-                // Steer is its own labelled action; Send stays disabled.
-                val steerAction = NoticeAction(stringResource(R.string.composer_steer), tag = "composer:steer") { steerStart() }.takeIf { steerEnabled }
+                // Steer, where the route has it, is the slot's own face.
                 // Staged images on an OMP pane need a usable control endpoint: that is why there is
                 // no Steer, ahead of any other reason. Else, where there is no Steer, the reason the
                 // card gives for it (§3.5), else the plain one.
-                val noControl = steerAction == null && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
-                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { steerAction == null && !noControl }
+                val noControl = !steerRoute && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
+                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { !steerRoute && !noControl }
                 Notice(
                     noSteer ?: stringResource(
                         when {
                             noControl -> R.string.omp_no_control
-                            steerAction == null -> R.string.reason_agent_working
+                            !steerRoute -> R.string.reason_agent_working
                             endpointSteer -> R.string.steer_help_endpoint
-                            else -> R.string.steer_help
+                            else -> R.string.steer_help_short
                         },
                     ),
-                    insert ?: steerAction,
-                    steerAction?.takeIf { insert != null },
+                    insert,
+                    role = if (steerRoute) NoticeRole.Working else NoticeRole.Other,
                 )
             }
             // The reason with the pane's actual rows; the offers are optional
@@ -1978,7 +2004,8 @@ private fun Editor(
                 }.takeIf { imeVisible }
                 Notice(reasonText(code ?: ""), hide)
             }
-            "remote_draft" -> remoteDraft
+            // Advice to clear the box needs a current read of text in it.
+            REMOTE_DRAFT -> remoteDraft
             // UR4: each unreadable-box cause says what was measured. Only rows
             // measured under the box, or OMP's measured question (UR4b), send
             // the user to Terminal. Insert, Steer's start and the precheck all
@@ -2026,7 +2053,8 @@ private fun Editor(
         }
         else -> null
     } ?: when (silentSendHold(sendEnabled, holdsDraft, sending, draft.unsettled, resizingReason(check?.send?.takeIf { !it.ok }?.reason)).takeUnless {
-        reading && !mismatched && panel is QueuePanel.Unsupported
+        // Where Steer has the slot, Send's own hold is not the slot's to say.
+        reading && !mismatched && panel is QueuePanel.Unsupported || steerRoute
     }) {
         // Never a silent dead Send: while a reason settles, or the tap is
         // being checked, the slot says so (lab.8 Chat report), and names a
@@ -2036,6 +2064,15 @@ private fun Editor(
         SendHold.Unsettled -> Notice(reasonText("unsettled"))
         null -> null
     }
+    // The slot's verb: Steer only where the shown notice leaves Queue in reach.
+    val face = slotFace(steerRoute, queueVerb, notice?.role ?: NoticeRole.None)
+    val slotEnabled = if (face == SlotFace.Steer) steerEnabled else sendEnabled
+    val slotHint = if (face == SlotFace.Steer) {
+        stringResource(R.string.steer_route, draftTitle)
+    } else {
+        stringResource(R.string.chat_send_route, draftTitle).takeIf { reading }
+    }
+    val slotTap: () -> Unit = if (face == SlotFace.Steer) ::steerTap else ::send
 
     // U6-WRONG-TAB: the panel speaks of the draft's pane (its probe, queue and
     // withdraw); while the draft is for a pane other than the one read, it
@@ -2124,7 +2161,7 @@ private fun Editor(
         view = view,
         toHost = toHost,
         toPane = viewed,
-        sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
+        sendHint = slotHint,
         agentStatus = check?.status,
         readOnly = busy,
         menu = menu,
@@ -2140,10 +2177,10 @@ private fun Editor(
         onMenu = { menu = it },
         insertEnabled = insertEnabled,
         insertReason = insertBlocked?.let { stringResource(insertBlockRes(it)) },
-        sendEnabled = sendEnabled,
-        sendQueues = queueVerb,
+        sendEnabled = slotEnabled,
+        face = face,
         onInsert = { deliver(submit = false) },
-        onSend = ::send,
+        onSend = slotTap,
         sends = sends,
         onTerminalKeyboard = {
             menu = false
@@ -2229,13 +2266,13 @@ private fun Editor(
             view = view,
             toHost = toHost,
             toPane = viewed,
-            sendHint = stringResource(R.string.chat_send_route, draftTitle).takeIf { reading },
+            sendHint = slotHint,
             readOnly = busy,
-            sendEnabled = sendEnabled,
-            sendQueues = queueVerb,
+            sendEnabled = slotEnabled,
+            face = face,
             insertEnabled = insertEnabled,
             onInsert = { deliver(submit = false) },
-            onSend = ::send,
+            onSend = slotTap,
             sends = sends,
             onFieldFocus = onFieldFocus,
             onDismiss = { editorOpen = false },
@@ -2316,8 +2353,8 @@ internal fun ComposerBand(
     /** Why Insert is off, shown in its menu item instead of its help; null while it is on. */
     insertReason: String? = null,
     sendEnabled: Boolean,
-    /** Send queues behind the running turn: the button says Queue (§1 S). */
-    sendQueues: Boolean = false,
+    /** The slot's verb: Send, Queue behind the running turn (§1 S), or Steer into it. */
+    face: SlotFace = SlotFace.Send,
     onInsert: () -> Unit,
     onSend: () -> Unit,
     /** Deliveries Send has started: the face flicks as it grows. */
@@ -2584,6 +2621,7 @@ internal fun ComposerBand(
         noticeActions.forEach { a ->
             TextButton(
                 onClick = a.onClick,
+                enabled = a.enabled,
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .then(a.tag?.let { Modifier.testTag(it) } ?: Modifier),
@@ -2603,7 +2641,7 @@ internal fun ComposerBand(
                 .testTag("composer:send"),
             contentAlignment = Alignment.Center,
         ) {
-            SendFace(sendEnabled, accent, sendQueues, sends)
+            SendFace(sendEnabled, accent, face, sends)
         }
     }
 }
@@ -2660,18 +2698,21 @@ private data class Notice(
     val second: NoticeAction? = null,
     val warning: Boolean = true,
     val cause: String? = null,
+    /** Which notice this is, as far as the slot's face cares ([slotFace]). */
+    val role: NoticeRole = NoticeRole.Other,
 )
 
 /**
  * [primary] marks the action that delivers the draft (filled); the rest are
  * outlined. [description] replaces [label] for TalkBack when the label alone
- * would not say where the action leads.
+ * would not say where the action leads. A disabled action stays shown.
  */
 internal data class NoticeAction(
     val label: String,
     val tag: String? = null,
     val primary: Boolean = false,
     val description: String? = null,
+    val enabled: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -2745,6 +2786,7 @@ private fun NoticeButton(action: NoticeAction, colors: ChatColors, modifier: Mod
         val dark = colors.bg.luminance() < 0.5f
         Button(
             onClick = action.onClick,
+            enabled = action.enabled,
             modifier = target,
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.accentText,
@@ -2754,6 +2796,7 @@ private fun NoticeButton(action: NoticeAction, colors: ChatColors, modifier: Mod
     } else {
         OutlinedButton(
             onClick = action.onClick,
+            enabled = action.enabled,
             modifier = target,
             // The raw accent is under 3:1 on the light warning block (Teal 2.85).
             border = BorderStroke(1.dp, colors.accentText),
@@ -2780,7 +2823,7 @@ private fun LargerEditor(
     agentStatus: AgentStatus?,
     readOnly: Boolean,
     sendEnabled: Boolean,
-    sendQueues: Boolean,
+    face: SlotFace,
     insertEnabled: Boolean,
     onInsert: () -> Unit,
     onSend: () -> Unit,
@@ -2849,7 +2892,7 @@ private fun LargerEditor(
                             )
                         }
                     }
-                    SendButton(sendEnabled, accent, sendHint, sendQueues, sends, onSend)
+                    SendButton(sendEnabled, accent, sendHint, face, sends, onSend)
                 }
                 chips(Modifier.padding(horizontal = 16.dp))
                 BasicTextField(
@@ -2924,9 +2967,9 @@ private fun LargerEditor(
     }
 }
 
-/** The round 40 dp Send inside a 48 dp target. */
+/** The 40 dp slot face inside a 48 dp target. */
 @Composable
-private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: Boolean, sends: Int, onSend: () -> Unit) {
+private fun SendButton(enabled: Boolean, accent: Color, hint: String?, face: SlotFace, sends: Int, onSend: () -> Unit) {
     Box(
         Modifier
             .heightIn(min = 48.dp)
@@ -2935,22 +2978,41 @@ private fun SendButton(enabled: Boolean, accent: Color, hint: String?, queues: B
             .testTag("composer:send"),
         contentAlignment = Alignment.Center,
     ) {
-        SendFace(enabled, accent, queues, sends)
+        SendFace(enabled, accent, face, sends)
     }
 }
 
 /**
- * Send's face: the round arrow, or the word Queue while a send waits for
- * the running turn, so the verb is seen before the tap (§1 S). Its colour
- * glides between on and off, it pops as it turns on, and the arrow flicks
- * away once per delivery [sends] counts. The pop and flick only draw: the
- * 48 dp target around it and the delivery itself never wait for them.
+ * The slot's face: the round Send arrow; the solid word Queue while a send
+ * waits for the running turn (§1 S); or the tonal, outlined Steer pill, its
+ * glyph and word, while a steer goes into it. The verb is seen before the
+ * tap. Its colour glides between on and off and between faces, it pops as
+ * it turns on, never on a face change alone, and its mark flicks away once
+ * per delivery [sends] counts. The pop and flick only draw: the 48 dp target
+ * around it and the delivery itself never wait for them.
  */
 @Composable
-private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean, sends: Int) {
+private fun SendFace(enabled: Boolean, accent: Color, face: SlotFace, sends: Int) {
     val allowed = motionAllowed()
-    val fill by animateColorAsState(if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), motionSpec(allowed, glide()), label = "sendFill")
-    val ink by animateColorAsState(if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, motionSpec(allowed, glide()), label = "sendInk")
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val steers = face == SlotFace.Steer
+    val fillTarget = when {
+        steers && enabled -> accent.copy(alpha = 0.16f)
+        steers -> Color.Transparent
+        enabled -> accent
+        else -> onSurface.copy(alpha = 0.08f)
+    }
+    // Steer's ink is onSurface: the accent over its own 16% tint falls under
+    // 4.5:1 in several themes, and the border carries the accent instead.
+    val inkTarget = when {
+        steers && enabled -> onSurface
+        steers -> onSurface.copy(alpha = 0.38f)
+        enabled -> Color.White
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val fill by animateColorAsState(fillTarget, motionSpec(allowed, glide()), label = "sendFill")
+    val ink by animateColorAsState(inkTarget, motionSpec(allowed, glide()), label = "sendInk")
+    val edge by animateColorAsState(if (enabled) accent else onSurface.copy(alpha = 0.12f), motionSpec(allowed, glide()), label = "steerEdge")
     val pop = remember { Animatable(1f) }
     // Read only by the effects, so a change never recomposes the face.
     val shown = remember { mutableStateOf<Boolean?>(null) }
@@ -2981,8 +3043,30 @@ private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean, sends: In
         scaleX = pop.value
         scaleY = pop.value
     }
-    if (queues) {
-        Box(
+    val flicked = Modifier.graphicsLayer {
+        val away = shift.value * 10.dp.toPx()
+        translationX = away
+        translationY = -away
+        alpha = fade.value
+    }
+    when (face) {
+        SlotFace.Steer -> Row(
+            popped
+                .height(40.dp)
+                .background(fill, CircleShape)
+                .border(1.5.dp, edge, CircleShape)
+                .padding(horizontal = 14.dp)
+                .testTag("composer:steer"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // The word never truncates: at large font the glyph goes first.
+            if (LocalDensity.current.fontScale < STEER_GLYPH_FONT_SCALE) {
+                Icon(SteerGlyph, null, tint = ink, modifier = Modifier.size(18.dp).then(flicked))
+            }
+            Text(stringResource(R.string.composer_steer), color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+        }
+        SlotFace.Queue -> Box(
             popped
                 .height(40.dp)
                 .background(fill, CircleShape)
@@ -2992,21 +3076,36 @@ private fun SendFace(enabled: Boolean, accent: Color, queues: Boolean, sends: In
         ) {
             Text(stringResource(R.string.composer_queue), color = ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
-    } else {
-        Box(popped.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
+        SlotFace.Send -> Box(popped.size(40.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
             Icon(
                 Icons.Default.Send,
                 stringResource(R.string.composer_send),
                 tint = ink,
-                modifier = Modifier.size(20.dp).graphicsLayer {
-                    val away = shift.value * 10.dp.toPx()
-                    translationX = away
-                    translationY = -away
-                    alpha = fade.value
-                },
+                modifier = Modifier.size(20.dp).then(flicked),
             )
         }
     }
+}
+
+/** At this font scale and above, Steer's face is its word alone. */
+private const val STEER_GLYPH_FONT_SCALE = 1.3f
+
+/**
+ * Steer's mark: a course that runs straight, then bends 45° up and right;
+ * not a plane, an arrow forward, or a clock. Mirrored right to left. Drawn
+ * here, since the app keeps only the core icons dependency.
+ */
+private val SteerGlyph: ImageVector by lazy {
+    ImageVector.Builder(name = "Steer", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f, autoMirror = true)
+        .addPath(
+            pathData = addPathNodes("M7,21V13L16,4M10,4H16V10"),
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2.2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        )
+        .build()
 }
 
 /** The target's pane height in rows, when this client's frame shows it. */

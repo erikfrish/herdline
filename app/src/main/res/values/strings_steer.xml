@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The slot's click label while it says Steer. -->
+    <string name="steer_route">Steer into %1$s\'s turn</string>
+    <!-- The working notice while Steer has the slot and Queue is its action. -->
+    <string name="steer_working_queue">The agent is working. Steer puts your message into this turn; Queue runs it after.</string>
+    <string name="steer_help_short">The agent is working. Steer pastes your text, then presses Enter once.</string>
+    <!-- The pane never showed the paste: nothing says what its input box holds. -->
+    <string name="steer_left_not_shown">The pane didn\'t show your text in time, so no Enter was sent and nothing was resent. Open Terminal to check.</string>
+</resources>
