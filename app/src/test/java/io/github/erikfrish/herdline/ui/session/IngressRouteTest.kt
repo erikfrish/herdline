@@ -2,6 +2,8 @@ package io.github.erikfrish.herdline.ui.session
 
 import io.github.erikfrish.herdline.R
 import io.github.erikfrish.herdline.core.ComposerCheck
+import io.github.erikfrish.herdline.core.Connection
+import io.github.erikfrish.herdline.data.Node
 import io.github.erikfrish.herdline.core.Harness
 import io.github.erikfrish.herdline.core.IngressProbe
 import io.github.erikfrish.herdline.core.IngressQueued
@@ -185,6 +187,25 @@ class IngressRouteTest {
         )
         // Without the panel's line, Send's own general words.
         assertEquals(listOf(R.string.reason_endpoint_unusable), shown(IngressProbe.Absent, refusal = refused))
+    }
+
+    @Test
+    fun aLateUnsafeEndpointRefusalCannotReplaceTheNewLinksReadiness() {
+        val node = Node(name = "qa", address = "localhost", user = "qa")
+        val old = Connection(node)
+        val fresh = Connection(node)
+        val refused = IngressSend.Refused(REASON_UNUSABLE, detail = "discovery")
+        val priorNotice = requireNotNull(ComposerRefusal.endpoint(refused, old, old))
+        assertEquals(REASON_UNUSABLE, priorNotice.on(old))
+        assertNull(priorNotice.on(fresh))
+        assertNull(ComposerRefusal.endpoint(refused, old, fresh))
+        val live = IngressProbe.Live(IngressState(idle = true, queued = emptyList()))
+        assertTrue(composerSendGate(true, live, null)?.ok == true)
+        assertEquals("not_visible", ComposerRefusal("not_visible").on(fresh))
+        assertEquals(before, sentAfterIngress(refused, before, "draft", 9))
+        val unresolved = sentAfterIngress(IngressSend.Uncertain("id-cut"), before, "draft", 10)
+        assertEquals(SentState.Uncertain, unresolved?.state)
+        assertEquals("id-cut", ingressId(unresolved))
     }
 
     @Test

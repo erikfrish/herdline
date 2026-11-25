@@ -12,6 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.text.TextRange
@@ -54,6 +59,7 @@ class ComposerBaselineTest {
     private var width by mutableStateOf(360)
     private var scale by mutableFloatStateOf(1f)
     private var text by mutableStateOf("")
+    private var sessionReady by mutableStateOf(true)
 
     @Test
     fun theFieldAndItsRowsDoNotMoveOnTheFirstKeystrokeOrTheLastDelete() {
@@ -93,10 +99,24 @@ class ComposerBaselineTest {
         }
     }
 
+    @Test
+    fun reconnectKeepsTheFieldButDoesNotRestoreItsFocus() {
+        compose.setContent {
+            HerdlineTheme(dark = false) { Band(ComposerFit.Regular, TextFieldValue("draft kept")) }
+        }
+        val field = compose.onNodeWithTag("composer:field", useUnmergedTree = true)
+        field.performTouchInput { click() }.assertIsFocused()
+        compose.runOnIdle { sessionReady = false }
+        field.assertIsNotFocused().assertTextContains("draft kept")
+        compose.runOnIdle { sessionReady = true }
+        field.assertIsNotFocused().assertTextContains("draft kept")
+        field.performTouchInput { click() }.assertIsFocused()
+    }
+
     @Composable
     private fun Band(fit: ComposerFit, value: TextFieldValue) = ComposerBand(
         value = value, onValueChange = {}, accent = Color.Blue, title = "HERDR: herdr-mobile", view = view, agentStatus = AgentStatus.Idle,
-        readOnly = false, menu = false, menuItems = emptyList(), fit = fit, noticeActions = emptyList(), inlineNotice = null,
+        readOnly = !sessionReady, fieldCanFocus = sessionReady, menu = false, menuItems = emptyList(), fit = fit, noticeActions = emptyList(), inlineNotice = null,
         onMenu = {}, insertEnabled = true, sendEnabled = true, onInsert = {}, onSend = {}, destinationMismatch = false,
         onTerminalKeyboard = {}, onLargerEditor = {}, onFieldFocus = {}, locked = false, inFlight = false,
     )

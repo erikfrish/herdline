@@ -110,7 +110,8 @@ you write a Chat draft.
   left as it is.
 - Opening the same host session returns to its last selected tab and pane if
   they still exist in the same daemon run. Retry keeps the last Chat and draft
-  visible while the new connection is checked; it does not restore Fit or send.
+  visible while the new connection is checked. Retry does not reopen the
+  keyboard, restore Fit, or send the draft.
 - Each draft belongs to one pane and is kept per host, session and pane,
   across navigation, reconnects and restarts. The composer names its
   destination; a draft for another pane says so and offers **Move here**.

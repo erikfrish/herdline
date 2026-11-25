@@ -98,6 +98,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -354,6 +355,18 @@ internal fun ingressRefusalCode(outcome: IngressSend.Refused): String =
         "needs_server", "server_discovery" -> outcome.detail.takeIf { outcome.reason == REASON_UNUSABLE } ?: outcome.reason
         else -> outcome.reason
     }
+
+/** The generic unsafe-route result describes its link, not a delivery receipt. */
+internal data class ComposerRefusal(val code: String, val link: Connection? = null) {
+    fun on(current: Connection): String? = code.takeIf { link == null || link === current }
+
+    companion object {
+        fun endpoint(outcome: IngressSend.Refused, from: Connection, current: Connection): ComposerRefusal? {
+            val code = ingressRefusalCode(outcome)
+            return if (code != REASON_UNUSABLE) ComposerRefusal(code) else if (from === current) ComposerRefusal(code, from) else null
+        }
+    }
+}
 
 /**
  * The draft after an edit to [text] with the selection [start]..[end], or
@@ -1012,7 +1025,8 @@ private fun Editor(
     var sending by remember(key) { mutableStateOf(false) }
     // Deliveries Send started here: each one flicks its icon, a refused tap none.
     var sends by remember(key) { mutableIntStateOf(0) }
-    var refusal by remember(key) { mutableStateOf<String?>(null) }
+    var refusalNotice by remember(key) { mutableStateOf<ComposerRefusal?>(null) }
+    val refusal = refusalNotice?.on(connection)
     // A steer: its phase, the text it took and the record that text replaced.
     var steer by remember(key) { mutableStateOf<SteerPhase>(SteerPhase.Idle) }
     var steerText by remember(key) { mutableStateOf("") }
@@ -1106,7 +1120,7 @@ private fun Editor(
         val edited = editedDraft(draft, sending || pending != null || steer.active, next.text, next.selection.start, next.selection.end)
             ?: return
         value = next
-        refusal = null
+        refusalNotice = null
         // An ended steer's notice goes with the user's next edit.
         steer = SteerPhase.Idle
         save(edited)
@@ -1128,7 +1142,7 @@ private fun Editor(
             MoveOutcome.Refused -> {
                 moveConflict = null
                 // Name the held side: this tab's own delivery, or the draft's (lab.8.1 N3).
-                refusal = if (store.get(key.copy(pane = to))?.unsettled == true) MOVE_TARGET_HELD else MOVE_UNSETTLED
+                refusalNotice = ComposerRefusal(if (store.get(key.copy(pane = to))?.unsettled == true) MOVE_TARGET_HELD else MOVE_UNSETTLED)
             }
             MoveOutcome.Conflict -> moveConflict = to
             MoveOutcome.Unchanged -> {}
@@ -1386,7 +1400,7 @@ private fun Editor(
             SteerPhase.Uncertain -> save(draft.copy(sent = SentRecord(steerText, was.awaiting ?: "", true, SentState.Uncertain, now)))
             is SteerPhase.Refused -> {
                 save(draft.copy(sent = steerBefore))
-                refusal = phase.reason
+                refusalNotice = ComposerRefusal(phase.reason)
             }
             // The paste sits in the pane's box, settled; the draft stays here.
             is SteerPhase.Left -> save(draft.copy(sent = steerBefore))
@@ -1471,7 +1485,7 @@ private fun Editor(
         val before = draft.sent
         val via = connection
         val id = UUID.randomUUID().toString()
-        refusal = null
+        refusalNotice = null
         sending = true
         onDeliveryStart()
         // As for the pane route: on disk before the request may leave, so a
@@ -1503,7 +1517,7 @@ private fun Editor(
             sending = false
             when (outcome) {
                 IngressSend.Absent -> typeIn()
-                is IngressSend.Refused -> refusal = ingressRefusalCode(outcome)
+                is IngressSend.Refused -> ComposerRefusal.endpoint(outcome, via, liveConnection)?.let { refusalNotice = it }
                 is IngressSend.Accepted, is IngressSend.Uncertain -> {}
             }
         }
@@ -1522,7 +1536,7 @@ private fun Editor(
         val via = connection
         // TC-RCPT-3: the name the composer shows now, kept for the notices about this delivery.
         val to = view?.composerTitle(key.pane)
-        refusal = null
+        refusalNotice = null
         sending = true
         onDeliveryStart()
         val seen = captureViewport()
@@ -1561,7 +1575,7 @@ private fun Editor(
                         else -> pending = p
                     }
                 }
-                is Connection.Delivery.Refused -> refusal = outcome.reason
+                is Connection.Delivery.Refused -> refusalNotice = ComposerRefusal(outcome.reason)
                 // Never "not sent": the Uncertain notice offers Check and Unlock.
                 is Connection.Delivery.Uncertain -> {}
             }
@@ -1592,14 +1606,14 @@ private fun Editor(
      */
     fun pasteSteer() {
         if (draft.attachments.isNotEmpty()) {
-            refusal = "attachment_steer"
+            refusalNotice = ComposerRefusal("attachment_steer")
             return
         }
         if (sending || pending != null || steer.active || withdrawing != null || !draft.mayDeliver(binding)) return
         val target = composerTarget() ?: return
         val text = value.text
         val via = connection
-        refusal = null
+        refusalNotice = null
         steerText = text
         steerBefore = draft.sent
         steerTarget = target
@@ -1680,7 +1694,7 @@ private fun Editor(
                 is IngressCheck.Refused -> {
                     save(draft.copy(sent = null))
                     via.unlock(key.nodeId, key.session, key.pane)
-                    refusal = found.reason
+                    refusalNotice = ComposerRefusal(found.reason)
                 }
                 IngressCheck.Unknown -> checkUnknown = true
             }
@@ -2148,7 +2162,7 @@ private fun Editor(
             title = { Text(stringResource(R.string.omp_checked_pane_choose)) },
             text = { Text(stringResource(R.string.omp_checked_pane_explain)) },
             confirmButton = {
-                TextButton(onClick = { checkedPaneChosen = true; chooseCheckedPane = false; refusal = null }, modifier = Modifier.testTag("composer:confirm_checked_pane")) {
+                TextButton(onClick = { checkedPaneChosen = true; chooseCheckedPane = false; refusalNotice = null }, modifier = Modifier.testTag("composer:confirm_checked_pane")) {
                     Text(stringResource(R.string.omp_checked_pane_confirm))
                 }
             },
@@ -2200,6 +2214,7 @@ private fun Editor(
         sendHint = slotHint,
         agentStatus = check?.status,
         readOnly = busy || !sessionReady,
+        fieldCanFocus = sessionReady,
         menu = menu,
         menuItems = menuItems,
         fit = fit,
@@ -2304,6 +2319,7 @@ private fun Editor(
             toPane = if (mismatched) key.pane else viewed,
             sendHint = slotHint,
             readOnly = busy || !sessionReady,
+            fieldCanFocus = sessionReady,
             sendEnabled = slotEnabled,
             face = face,
             insertEnabled = insertEnabled,
@@ -2408,6 +2424,7 @@ internal fun ComposerBand(
     onAttachFile: () -> Unit = {},
     /** Why files can't be attached now, shown under both attach items; null when they can. */
     attachReason: String? = null,
+    fieldCanFocus: Boolean = true,
 ) {
     val lockedDescription = stringResource(R.string.composer_locked_description)
     val sendingDescription = stringResource(R.string.composer_sending_description)
@@ -2535,6 +2552,7 @@ internal fun ComposerBand(
                 .weight(1f)
                 .heightIn(min = 48.dp)
                 .padding(horizontal = 6.dp)
+                .focusProperties { canFocus = fieldCanFocus }
                 .onFieldFocus(onFieldFocus)
                 .fieldState(locked, inFlight, lockedDescription, sendingDescription, hint)
                 .onSizeChanged { fieldPx = it.width }
@@ -2901,6 +2919,7 @@ private fun LargerEditor(
     notice: Notice?,
     /** The draft's attachment chips, shown above the field in every fit. */
     chips: @Composable (Modifier) -> Unit,
+    fieldCanFocus: Boolean,
 ) {
     val lockedDescription = stringResource(R.string.composer_locked_description)
     val sendingDescription = stringResource(R.string.composer_sending_description)
@@ -2974,6 +2993,7 @@ private fun LargerEditor(
                         .weight(1f)
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .focusProperties { canFocus = fieldCanFocus }
                         .onFieldFocus(onFieldFocus)
                         .fieldState(locked, inFlight, lockedDescription, sendingDescription, hint)
                         .testTag("composer:field"),

@@ -52,6 +52,10 @@ internal fun sessionEntryReady(
 ): Boolean = view != null && !chatPending &&
     (entry == null || chat || (view.focusedPane == entry.id && frameFocus == entry.id))
 
+/** No mode is selected before entry unless this screen has a valid retained presentation. */
+internal fun sessionHeaderMode(ready: Boolean, chat: Boolean, retained: Boolean?): Boolean? =
+    if (ready) chat else retained
+
 /** Acknowledging focus is not landing: wait for the matching frame within the same deadline. */
 internal suspend fun restoreTerminal(timeoutMs: Long, focus: suspend () -> Boolean, landed: Flow<Boolean>): Boolean =
     withTimeoutOrNull(timeoutMs) { focus() && landed.first { it } } == true

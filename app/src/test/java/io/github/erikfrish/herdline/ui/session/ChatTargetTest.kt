@@ -67,6 +67,16 @@ class ChatTargetTest {
     }
 
     @Test
+    fun reopenDoesNotSelectTerminalBeforeTheSavedChatIsValidated() {
+        val saved = SessionPlace("b1", "t2", "p2")
+        assertNull(sessionEntry(null, saved))
+        assertNull(sessionHeaderMode(ready = false, chat = false, retained = null))
+        assertEquals(true, sessionHeaderMode(ready = false, chat = false, retained = true))
+        assertEquals(true, sessionHeaderMode(ready = true, chat = true, retained = null))
+        assertEquals(false, sessionHeaderMode(ready = true, chat = false, retained = null))
+    }
+
+    @Test
     fun aMissingOrReusedPaneFallsBackOnlyWithAnAuthoritativeView() {
         val saved = SessionPlace("b1", "t2", "p2")
         val first = view(listOf(pane("p1", "t1", true), pane("p2", "t2")))

@@ -125,6 +125,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -439,6 +440,7 @@ fun SessionScreen(
     val sessionModes by modes.sessions.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     // Once the keyboard has opened here, the user knows the way in; the hint never comes back (D3-2).
     var typedOnce by remember { mutableStateOf(false) }
     LaunchedEffect(imeVisible) { if (imeVisible) typedOnce = true }
@@ -457,11 +459,17 @@ fun SessionScreen(
     var typefaces by remember { mutableStateOf<TerminalTypefaces?>(null) }
     LaunchedEffect(settings.font, fontChanges) { typefaces = app.fonts.typefaces(settings.font) }
 
+    fun reconnect(secrets: Map<String, String>, remember: Boolean = false) {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        app.reconnect(node, secrets, dark, remember)
+    }
+
     /** Reconnect along the node's route, asking for any unsaved passwords it needs first. */
     fun retry() {
         if (connection.state.value is Connection.State.Connecting) return
         val needed = app.passwordsToAsk(app.nodes.get(node.id) ?: node)
-        if (needed.isEmpty()) app.reconnect(node, emptyMap(), dark) else askPasswords = needed
+        if (needed.isEmpty()) reconnect(emptyMap()) else askPasswords = needed
     }
 
     // Set while the passwords dialog collects sign-ins for installing or updating Herdr.
@@ -703,6 +711,7 @@ fun SessionScreen(
     val retained = presented?.takeIf { saved -> !ready && (view == null || modeRun(saved.view.boot) == modeRun(view?.boot) &&
         view?.panes?.any { pane -> pane.id == saved.pane } == true && (entry == null || entry.id == saved.pane)) }
     val chatMode = retained?.chat ?: if (closed) presented?.chat == true else ready && chatWanted
+    val headerMode = sessionHeaderMode(ready, chatMode, retained?.chat)
     val inputReady by rememberUpdatedState(terminalReady && (!chatMode || rawKeys))
     val displayView = retained?.view ?: view.takeIf { ready }
     val displayReading = retained?.takeIf { it.chat }?.pane ?: reading?.pane
@@ -1261,7 +1270,9 @@ fun SessionScreen(
                                                 groups.nextNeedingInput(focusedPane)?.let(::go)
                                             }
                                         }
-                                        ModeSwitch(chat = chatMode, chatAvailable = chatMode || chatPane != null, accent = accent, compact = compactMode, onMode = ::chooseMode)
+                                        if (headerMode != null) {
+                                            ModeSwitch(chat = headerMode, chatAvailable = headerMode || chatPane != null, accent = accent, compact = compactMode, onMode = ::chooseMode)
+                                        }
                                         Box {
                                             GlassIconButton(
                                                 Icons.Default.MoreVert,
@@ -1412,23 +1423,31 @@ fun SessionScreen(
                                     }
                                 }
                                 val place = @Composable { twoLines: Boolean, modifier: Modifier ->
-                                    PlaceButton(
-                                        tabName = tabName,
-                                        workspace = shownHost,
-                                        position = position,
-                                        marked = changedElsewhere || heldElsewhere,
-                                        desktopElsewhere = desktopOther != null,
-                                        desktop = desktopText,
-                                        state = state,
-                                        twoLines = twoLines,
-                                        halo = headerColor,
-                                        spoken = placeSpoken,
-                                        marks = placeMarks,
-                                        onClick = if (wide) ::toggleSidebar else ::openSwitcher,
-                                        onRename = tab?.let { t -> { prompt = Prompt.RenameTab(t.id, t.label) } },
-                                        onClose = tab?.let { t -> { prompt = Prompt.CloseTab(t.id, t.label) } },
-                                        modifier = modifier.then(headerGestures),
-                                    )
+                                    if (headerMode == null) {
+                                        if (state is Connection.State.Connecting || state is Connection.State.Connected) {
+                                            Text(stringResource(R.string.connecting), modifier, style = MaterialTheme.typography.titleSmall)
+                                        } else {
+                                            Spacer(modifier)
+                                        }
+                                    } else {
+                                        PlaceButton(
+                                            tabName = tabName,
+                                            workspace = shownHost,
+                                            position = position,
+                                            marked = changedElsewhere || heldElsewhere,
+                                            desktopElsewhere = desktopOther != null,
+                                            desktop = desktopText,
+                                            state = state,
+                                            twoLines = twoLines,
+                                            halo = headerColor,
+                                            spoken = placeSpoken,
+                                            marks = placeMarks,
+                                            onClick = if (wide) ::toggleSidebar else ::openSwitcher,
+                                            onRename = tab?.let { t -> { prompt = Prompt.RenameTab(t.id, t.label) } },
+                                            onClose = tab?.let { t -> { prompt = Prompt.CloseTab(t.id, t.label) } },
+                                            modifier = modifier.then(headerGestures),
+                                        )
+                                    }
                                 }
                                 if (typingShort) {
                                     // Nothing: the keyboard is up in a short window (see typingShort).
@@ -2158,7 +2177,7 @@ fun SessionScreen(
             onConnect = { secrets, remember ->
                 askPasswords = null
                 askKeyRejectedBy = null
-                if (setupAfterPasswords) app.setupHerdr(node, secrets, dark, remember) else app.reconnect(node, secrets, dark, remember)
+                if (setupAfterPasswords) app.setupHerdr(node, secrets, dark, remember) else reconnect(secrets, remember)
                 setupAfterPasswords = false
             },
             onDismiss = {
