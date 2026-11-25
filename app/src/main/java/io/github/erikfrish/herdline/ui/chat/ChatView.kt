@@ -219,12 +219,13 @@ fun ChatView(
     /** A stacked editable Chat places metadata next to its editor instead. */
     footerByEditor: Boolean = false,
     historyModifier: Modifier = Modifier,
+    sessionReady: Boolean = true,
 ) {
     // A reconnect is a new Connection and starts over, as a restarted daemon is a new
     // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
     // loaded (ChatHistory.merge).
     key(connection, pane, memory) {
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense, footerByEditor, historyModifier)
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense, footerByEditor, historyModifier, sessionReady)
     }
 }
 
@@ -428,7 +429,8 @@ internal fun lastingRefusal(error: Throwable): TranscriptRefusal? = (error as? T
  * kept in the pane's memory from before is no report on the pane now: Chat
  * opened again reads first, and only then says so.
  */
-internal fun chatUnavailable(loaded: Boolean, failed: Boolean, readHere: Boolean): Boolean = !loaded && failed && readHere
+internal fun chatUnavailable(loaded: Boolean, failed: Boolean, readHere: Boolean, live: Boolean = true): Boolean =
+    live && !loaded && failed && readHere
 
 @Composable
 private fun ChatContent(
@@ -442,6 +444,7 @@ private fun ChatContent(
     dense: Boolean,
     footerByEditor: Boolean,
     historyModifier: Modifier,
+    sessionReady: Boolean,
 ) {
     var history by kept::history
     var problem by kept.read::problem
@@ -458,7 +461,8 @@ private fun ChatContent(
     val colors = chatColors(accent)
     // What the agent does now: the live view's agent in this pane, never the last poll's answer,
     // and the agent's own server where it has one, for exactly the instance shown.
-    val linkLive = connection.state.collectAsState().value is Connection.State.Connected
+    val connected = connection.state.collectAsState().value is Connection.State.Connected
+    val linkLive = sessionReady && connected
     val view by connection.view.collectAsState()
     var serverRunning by remember { mutableStateOf<Pair<io.github.erikfrish.herdline.core.TranscriptIdentity, Boolean>?>(null) }
     // The sessions the program's own server says this one started, for exactly the instance shown.
@@ -472,7 +476,8 @@ private fun ChatContent(
 
     // A tap on Detached: one read that identifies the pane's session afresh.
     val identifyTap = remember { Channel<Unit>(Channel.CONFLATED) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(linkLive) {
+        if (!linkLive) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 // Detached: the last confirmed page stays and nothing is read until a tap.
@@ -689,14 +694,14 @@ private fun ChatContent(
     // Runs a reply ended, drawn as the "Worked" fold, each with that reply.
     val runs = remember(lines) { lines.completedRuns() }
     val titled = remember(lines) { lines.titledKey }
-    val unavailable = chatUnavailable(shown != null, problem != null, readHere)
+    val unavailable = chatUnavailable(shown != null, problem != null, readHere, live = linkLive)
     val refused = refusal.takeIf { unavailable }
     // Rows above the first line: Load older, then the new-session divider (R1).
     val header = (if (shown?.hasOlder == true) 1 else 0) + (if (shown?.newSession == true) 1 else 0)
 
     fun loadOlder() {
         val known = history ?: return
-        if (loadingOlder || !known.hasOlder) return
+        if (!linkLive || loadingOlder || !known.hasOlder) return
         loadingOlder = true
         anchor = list.layoutInfo.visibleItemsInfo.firstNotNullOfOrNull { info ->
             lines.firstOrNull { it.key == info.key }?.let { it.anchorKey to info.offset }
@@ -822,12 +827,13 @@ private fun ChatContent(
         }
         moreCause?.let { words -> StaleCauseDialog(words, onDismiss = { moreCause = null }) }
         // The read-only binding ended: the page below is the last confirmed one, and a tap identifies anew.
-        kept.read.detached?.let { detachment ->
+        kept.read.detached?.takeIf { linkLive }?.let { detachment ->
             DetachedStrip(detachment, kept.read.identifying, dense) { identifyTap.trySend(Unit) }
         }
         Box(Modifier.fillMaxWidth().weight(1f).then(historyModifier)) {
             when {
-                kept.read.pending -> Text(
+                !linkLive && shown == null -> Unit
+                linkLive && kept.read.pending -> Text(
                     stringResource(R.string.chat_empty),
                     style = ChatType.body.copy(color = colors.muted),
                     textAlign = TextAlign.Center,

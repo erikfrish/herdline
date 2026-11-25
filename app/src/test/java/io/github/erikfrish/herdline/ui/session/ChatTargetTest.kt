@@ -6,6 +6,9 @@ import io.github.erikfrish.herdline.core.Pane
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.Tab
 import io.github.erikfrish.herdline.core.Workspace
+import io.github.erikfrish.herdline.data.SessionPlace
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -44,6 +47,46 @@ class ChatTargetTest {
         assertEquals(ReadingTarget("p3", "b2"), readingFor(null, "b2", opened = "p3", desktop = "p2"))
         assertEquals(read, readingFor(read, null, opened = "p3", desktop = "p2"))
         assertNull(readingFor(null, "b1", opened = null, desktop = null))
+    }
+
+    @Test
+    fun retryKeepsTheExactPaneRatherThanTheNewLinksDesktopFocus() {
+        val saved = SessionPlace("core-id-42+host:1:2-7", "t2", "p3")
+        val first = view(listOf(pane("p1", "t1", true), pane("p2", "t2"), pane("p3", "t2")), boot = "core-id-42+host:1:2-8")
+        assertNull(sessionEntry(null, saved))
+        val resumed = requireNotNull(sessionEntry(first, saved))
+        assertEquals("p3", resumed.id)
+        assertEquals("t2", first.spokenTab(resumed.tab, "host")?.title)
+        assertEquals("p2", sessionEntry(first, saved, opened = "p2")?.id)
+        assertFalse(sessionEntryReady(first, resumed, chat = false, chatPending = true, frameFocus = "p1"))
+        assertTrue(sessionEntryReady(first, resumed, chat = true, chatPending = false, frameFocus = "p1"))
+        // A focus acknowledgement alone cannot expose Terminal while its frame is still for tab 1.
+        val focused = first.copy(focusedPane = "p3", focusedTab = "t2")
+        assertFalse(sessionEntryReady(focused, resumed, chat = false, chatPending = false, frameFocus = "p1"))
+        assertTrue(sessionEntryReady(focused, resumed, chat = false, chatPending = false, frameFocus = "p3"))
+    }
+
+    @Test
+    fun aMissingOrReusedPaneFallsBackOnlyWithAnAuthoritativeView() {
+        val saved = SessionPlace("b1", "t2", "p2")
+        val first = view(listOf(pane("p1", "t1", true), pane("p2", "t2")))
+        assertNull(sessionEntry(null, saved, opened = "p2"))
+        assertNull(sessionEntry(first.copy(boot = ""), saved))
+        assertEquals("p1", sessionEntry(first.copy(boot = "b2"), saved)?.id)
+        val gone = first.copy(panes = first.panes.take(1), tabs = first.tabs.take(1))
+        assertEquals("p1", sessionEntry(gone, saved, opened = "p2")?.id)
+        assertNull(sessionEntry(gone.copy(panes = emptyList(), tabs = emptyList()), saved))
+    }
+
+    @Test
+    fun acknowledgedRestoreWithoutAMatchingFrameExpiresWithoutRefocusing() = runBlocking {
+        val landed = MutableStateFlow(false)
+        var requests = 0
+        val focus = suspend { requests++; true }
+        assertFalse(restoreTerminal(50, focus, landed))
+        assertEquals(1, requests)
+        landed.value = true
+        assertTrue(restoreTerminal(1_000, { true }, landed))
     }
 
     @Test

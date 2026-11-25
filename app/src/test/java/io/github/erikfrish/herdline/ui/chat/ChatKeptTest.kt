@@ -111,6 +111,8 @@ class ChatKeptTest {
         assertFalse(kept.readNext({ Result.failure(IOException("the pane is not an OMP agent with a session file")) }, "w1:p2"))
         // Chat opened on the pane again: nothing loaded and the failure kept, but not read here yet.
         assertFalse(chatUnavailable(loaded = false, failed = kept.read.problem != null, readHere = false))
+        // A retained session lets only its connection strip offer Retry.
+        assertFalse(chatUnavailable(loaded = false, failed = true, readHere = true, live = false))
         // Its own read fails too: now it says so.
         assertTrue(chatUnavailable(loaded = false, failed = kept.read.problem != null, readHere = true))
     }

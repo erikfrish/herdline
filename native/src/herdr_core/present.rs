@@ -243,6 +243,7 @@ impl Pump {
                         } else {
                             Some("identity_unknown")
                         },
+                        chat_pending: claim.is_none() && terminal.is_some_and(|t| self.claims.inflight.contains(t)),
                         unsupported,
                         interactive: interactive.contains(pane_id),
                     });

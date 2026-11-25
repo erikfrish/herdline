@@ -108,6 +108,9 @@ you write a Chat draft.
   yourself keeps its own mode while the same program runs in it. Where Chat
   can't read the agent, the pane shows Terminal and the remembered mode is
   left as it is.
+- Opening the same host session returns to its last selected tab and pane if
+  they still exist in the same daemon run. Retry keeps the last Chat and draft
+  visible while the new connection is checked; it does not restore Fit or send.
 - Each draft belongs to one pane and is kept per host, session and pane,
   across navigation, reconnects and restarts. The composer names its
   destination; a draft for another pane says so and offers **Move here**.

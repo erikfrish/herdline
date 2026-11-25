@@ -236,7 +236,7 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
     }
 
     fun openSession(nodeId: String, pane: String?) {
-        if (pane != null) opened.value = nodeId to pane
+        opened.value = pane?.let { nodeId to it }
         replace(listOf(START, "session:$nodeId"))
     }
 
@@ -335,17 +335,21 @@ private fun Root(app: HerdlineApp, dark: Boolean, opened: MutableState<Pair<Stri
                 if (connection == null) {
                     pop()
                 } else {
-                    SessionScreen(
-                        app = app,
-                        connection = connection,
-                        focusPane = opened.value?.takeIf { it.first == nodeId }?.second,
-                        dark = dark,
-                        onLeave = {
-                            opened.value = null
-                            replace(listOf(START))
-                        },
-                        onSettings = { push("session-settings") },
-                    )
+                    androidx.compose.runtime.key(connection.node.session) {
+                        val requested = opened.value?.takeIf { it.first == nodeId }
+                        SessionScreen(
+                            app = app,
+                            connection = connection,
+                            focusPane = requested?.second,
+                            onFocusPaneRead = { if (opened.value == requested) opened.value = null },
+                            dark = dark,
+                            onLeave = {
+                                opened.value = null
+                                replace(listOf(START))
+                            },
+                            onSettings = { push("session-settings") },
+                        )
+                    }
                 }
             }
             // "inbox" stays the route key of Agents, so saved stacks and deep links keep landing here.

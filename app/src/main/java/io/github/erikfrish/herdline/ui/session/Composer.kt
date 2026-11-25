@@ -889,6 +889,8 @@ fun Composer(
     /** Read-only metadata below notices and attachments, immediately above the input band. */
     beforeInput: (@Composable () -> Unit)? = null,
     fittedChat: Boolean = false,
+    presentation: ShellView? = view,
+    sessionReady: Boolean = true,
 ) {
     val context = LocalContext.current
     val store = remember { DraftStore.get(context) }
@@ -935,6 +937,8 @@ fun Composer(
                     onShowShared = onShowShared,
                     view = view,
                     frame = frame,
+                    presentation = presentation,
+                    sessionReady = sessionReady,
                     accent = accent,
                     menuItems = menuItems,
                     fit = fit,
@@ -975,6 +979,8 @@ private fun Editor(
     onShowShared: (String) -> Unit,
     view: ShellView?,
     frame: RenderFrame?,
+    presentation: ShellView?,
+    sessionReady: Boolean,
     accent: Color,
     menuItems: List<ComposerAction>,
     fit: ComposerFit,
@@ -1040,8 +1046,8 @@ private fun Editor(
     var withdrawing by remember(key) { mutableStateOf<String?>(null) }
     var withdrawNote by remember(key) { mutableStateOf<Int?>(null) }
     val state = connection.state.value
-    val check: ComposerCheck? = remember(connection, view, frame, state, key.pane, viewport, draft.boot, draft.instance) {
-        connection.composerCheck(key.pane, viewport, draft.boot, draft.instance)
+    val check: ComposerCheck? = remember(connection, sessionReady, view, frame, state, key.pane, viewport, draft.boot, draft.instance) {
+        if (sessionReady && state is Connection.State.Connected) connection.composerCheck(key.pane, viewport, draft.boot, draft.instance) else null
     }
     val boot = check?.boot
     val agentNow = check?.agent
@@ -1096,6 +1102,7 @@ private fun Editor(
     // Every edit, typed, IME-committed or pasted, goes through here and reads
     // the state when it arrives: a frozen draft ignores it (lab.8.1 M1).
     fun edit(next: TextFieldValue) {
+        if (!sessionReady) return
         val edited = editedDraft(draft, sending || pending != null || steer.active, next.text, next.selection.start, next.selection.end)
             ?: return
         value = next
@@ -1110,6 +1117,7 @@ private fun Editor(
      * draft of its own, which the user is then asked about. Nothing is sent.
      */
     fun moveHere(to: String, resolution: MoveResolution = MoveResolution.Ask) {
+        if (!sessionReady) return
         val there = connection.composerCheck(to, viewport)
         val moving = draft.copy(text = value.text, selectionStart = value.selection.start, selectionEnd = value.selection.end)
         val outcome = moveDraft(
@@ -1225,7 +1233,7 @@ private fun Editor(
     val keyboard = LocalSoftwareKeyboardController.current
 
     /** Exactly this pane, agent and instance, as the draft was bound to them. */
-    fun composerTarget(): Connection.ComposerTarget? = Connection.ComposerTarget(
+    fun composerTarget(): Connection.ComposerTarget? = if (!sessionReady || connection.state.value !is Connection.State.Connected) null else Connection.ComposerTarget(
         nodeId = key.nodeId,
         session = key.session,
         boot = draft.boot ?: boot ?: return null,
@@ -1741,8 +1749,9 @@ private fun Editor(
     }
 
     // The draft's target title, for the placeholder, the field's hint and the notices: its tab, as the header says it.
-    val titleWhere = view?.paneWhere(key.pane) ?: ""
-    val draftTitle = view?.composerTitle(key.pane) ?: ""
+    // The displayed destination can outlive its transport, but never grants it permission.
+    val titleWhere = presentation?.paneWhere(key.pane) ?: ""
+    val draftTitle = presentation?.composerTitle(key.pane) ?: ""
     // The "Draft for …" strip names the destination in Herdr's own terms
     // ("workspace › tab"), never the agent's task title, which changes as
     // the agent works (lab.3 D2).
@@ -2185,12 +2194,12 @@ private fun Editor(
         accent = accent,
         title = draftTitle,
         destinationMismatch = mismatched,
-        view = view,
+        view = presentation,
         toHost = toHost,
-        toPane = viewed,
+        toPane = if (mismatched) key.pane else viewed,
         sendHint = slotHint,
         agentStatus = check?.status,
-        readOnly = busy,
+        readOnly = busy || !sessionReady,
         menu = menu,
         menuItems = menuItems,
         fit = fit,
@@ -2290,11 +2299,11 @@ private fun Editor(
             accent = accent,
             title = draftTitle,
             agentStatus = check?.status,
-            view = view,
+            view = presentation,
             toHost = toHost,
-            toPane = viewed,
+            toPane = if (mismatched) key.pane else viewed,
             sendHint = slotHint,
-            readOnly = busy,
+            readOnly = busy || !sessionReady,
             sendEnabled = slotEnabled,
             face = face,
             insertEnabled = insertEnabled,

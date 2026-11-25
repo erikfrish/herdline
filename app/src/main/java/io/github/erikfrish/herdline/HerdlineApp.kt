@@ -140,6 +140,10 @@ class HerdlineApp : Application() {
      */
     fun connect(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean = false): Connection {
         _connections.value[node.id]?.takeIf { it.isOpen }?.let { return it }
+        return attach(node, passwords, dark, remember)
+    }
+
+    private fun attach(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean): Connection {
         _connections.value[node.id]?.close()
         val connection = Connection(node)
         _connections.value = _connections.value + (node.id to connection)
@@ -263,8 +267,8 @@ class HerdlineApp : Application() {
      * ones replace them for the retries that follow.
      */
     fun reconnect(node: Node, passwords: Map<String, String>, dark: Boolean, remember: Boolean = false): Connection {
-        drop(node.id, keepSecrets = true)
-        return connect(nodes.get(node.id) ?: node, passwords, dark, remember)
+        // Keep the route mounted while replacing the transport, never publish an absent session.
+        return attach(nodes.get(node.id) ?: node, passwords, dark, remember)
     }
 
     fun disconnect(nodeId: String) {

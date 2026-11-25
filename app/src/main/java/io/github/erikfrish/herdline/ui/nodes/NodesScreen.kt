@@ -115,6 +115,10 @@ import io.github.erikfrish.herdline.ui.theme.NodeColors
 import io.github.erikfrish.herdline.ui.theme.color
 import io.github.erikfrish.herdline.ui.session.coreReasonRes
 import io.github.erikfrish.herdline.ui.session.paneTitle
+import io.github.erikfrish.herdline.ui.session.sessionEntry
+import io.github.erikfrish.herdline.ui.session.spokenTab
+import io.github.erikfrish.herdline.data.SessionKey
+import io.github.erikfrish.herdline.data.SessionPlace
 import io.github.erikfrish.herdline.ui.session.paneWhere
 import kotlinx.coroutines.launch
 
@@ -254,7 +258,8 @@ fun NodesScreen(app: HerdlineApp, navigation: NodesNavigation) {
             // connection stays attached behind it.
             attached.forEach { connection ->
                 item(key = "return:${connection.node.id}") {
-                    ReturnCard(connection, onOpen = { navigation.open(connection.node) })
+                    val places by app.targets.places.collectAsState()
+                    ReturnCard(connection, places[SessionKey(connection.node.id, connection.node.session)], onOpen = { navigation.open(connection.node) })
                 }
             }
             // Attention across every attached host, in front of the host list.
@@ -651,11 +656,14 @@ private fun NodeCard(
  * tap on the host card.
  */
 @Composable
-private fun ReturnCard(connection: Connection, onOpen: () -> Unit) {
+private fun ReturnCard(connection: Connection, saved: SessionPlace?, onOpen: () -> Unit) {
     val view = connection.view.collectAsState().value
     val state = connection.state.collectAsState().value
-    val focus: String? = view?.focusedPane
-    val title = focus?.let { paneId -> view?.paneTitle(paneId) } ?: connection.node.title
+    val host = connection.node.title
+    val place = view?.let { shown ->
+        (sessionEntry(shown, saved)?.tab ?: shown.focusedTab)?.let { shown.spokenTab(it, host) }
+    }
+    val title = place?.title ?: host
     Row(
         Modifier
             .fillMaxWidth()
@@ -674,7 +682,7 @@ private fun ReturnCard(connection: Connection, onOpen: () -> Unit) {
             )
             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                connection.node.title,
+                listOfNotNull(place?.workspace, host).distinct().joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

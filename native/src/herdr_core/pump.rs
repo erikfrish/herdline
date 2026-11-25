@@ -138,6 +138,7 @@ pub(super) struct Pump {
     pub server: Option<(String, u64, u64)>,
     pub core_run: Option<String>,
     pub doc: Value,
+    doc_loaded: bool,
     pub version: u64,
     pub fetching: bool,
     pub records: HashMap<String, Value>,
@@ -241,6 +242,7 @@ pub(super) fn run(
         server: None,
         core_run: None,
         doc: Value::Null,
+        doc_loaded: false,
         version: 0,
         fetching: false,
         records: HashMap::new(),
@@ -922,6 +924,7 @@ impl Pump {
                 if flow.is_some() || version >= self.version {
                     self.doc = result.get("value").cloned().unwrap_or(Value::Null);
                     self.version = version;
+                    self.doc_loaded = true;
                     self.document_changed();
                 }
                 match flow {
@@ -931,6 +934,9 @@ impl Pump {
             }
             Err((kind, message)) => {
                 tracing::warn!(%kind, %message, "document not read");
+                if !self.doc_loaded {
+                    return Err(Error::CoreError { kind, message });
+                }
                 // The refusal stands, but nothing proves the created
                 // terminal unreferenced: it is left running.
                 if let Some(flow) = flow {
@@ -1169,7 +1175,7 @@ impl Pump {
             self.dirty_sync = false;
             self.sync()?;
         }
-        if self.dirty_view {
+        if self.doc_loaded && self.dirty_view {
             self.dirty_view = false;
             self.publish_view();
         }

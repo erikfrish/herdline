@@ -57,6 +57,8 @@ pub struct Pane<'a> {
     pub kind: &'static str,
     /// `null` when Chat may read and send to the pane's agent, else why not.
     pub chat: Option<&'static str>,
+    /// A claim is being checked for this pane; its Chat capability is not decided yet.
+    pub chat_pending: bool,
     /// Why the pane has no running terminal ([`unsupported`]); `null` for one.
     pub unsupported: Option<&'static str>,
     /// The phone holds an interactive stream: it owns the terminal's size.

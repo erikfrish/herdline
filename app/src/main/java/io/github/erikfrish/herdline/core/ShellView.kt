@@ -70,6 +70,7 @@ data class Pane(
      * they always take input.
      */
     val interactive: Boolean? = null,
+    val chatPending: Boolean = false,
 ) {
     /** Whether typing and paste may go to this pane now. */
     val takesInput: Boolean get() = interactive != false && unsupported == null
@@ -179,6 +180,7 @@ data class ShellView(
                         chat = str("chat"),
                         unsupported = str("unsupported"),
                         interactive = if (has("interactive") && !isNull("interactive")) optBoolean("interactive") else null,
+                        chatPending = optBoolean("chat_pending"),
                     )
                 },
                 agents = o.list("agents") {

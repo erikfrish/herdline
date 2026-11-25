@@ -16,6 +16,20 @@ class TargetStore(context: Context) {
     private val _recent = MutableStateFlow(load(RECENT))
     val pins: StateFlow<Map<String, List<String>>> = _pins
     val recent: StateFlow<Map<String, List<String>>> = _recent
+    private val _places = MutableStateFlow(prefs.all.mapNotNull { (encoded, value) ->
+        if (!encoded.startsWith(PLACE) || value !is String) return@mapNotNull null
+        val key = SessionKey.decode(encoded.removePrefix(PLACE)) ?: return@mapNotNull null
+        val (boot, tab, pane) = value.split('\u0000').takeIf { it.size == 3 && it.none(String::isEmpty) } ?: return@mapNotNull null
+        key to SessionPlace(boot, tab, pane)
+    }.toMap())
+    val places: StateFlow<Map<SessionKey, SessionPlace>> = _places
+
+    /** Only a settled selection from an authoritative view becomes the next entry target. */
+    fun settled(key: SessionKey, place: SessionPlace) {
+        if (_places.value[key] == place) return
+        prefs.edit().putString(PLACE + key.encode(), listOf(place.boot, place.tab, place.pane).joinToString("\u0000")).apply()
+        _places.value = _places.value + (key to place)
+    }
 
     private fun load(prefix: String): Map<String, List<String>> = prefs.all.mapNotNull { (key, value) ->
         if (!key.startsWith(prefix) || value !is String) return@mapNotNull null
@@ -34,6 +48,9 @@ class TargetStore(context: Context) {
     fun forget(nodeId: String) {
         put(_pins, PIN, nodeId, emptyList())
         put(_recent, RECENT, nodeId, emptyList())
+        val old = _places.value.keys.filter { it.nodeId == nodeId }
+        prefs.edit().apply { old.forEach { remove(PLACE + it.encode()) } }.apply()
+        _places.value = _places.value - old.toSet()
     }
 
     private fun put(flow: MutableStateFlow<Map<String, List<String>>>, prefix: String, nodeId: String, keys: List<String>) {
@@ -46,6 +63,10 @@ class TargetStore(context: Context) {
     private companion object {
         const val PIN = "pin:"
         const val RECENT = "recent:"
+        const val PLACE = "place:"
         const val SEPARATOR = "\n"
     }
 }
+
+/** Presentation/navigation only: never a draft binding or native delivery epoch. */
+data class SessionPlace(val boot: String, val tab: String, val pane: String)

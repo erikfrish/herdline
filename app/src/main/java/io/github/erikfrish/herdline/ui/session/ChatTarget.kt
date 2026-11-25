@@ -3,6 +3,12 @@ package io.github.erikfrish.herdline.ui.session
 import io.github.erikfrish.herdline.core.ShellView
 import io.github.erikfrish.herdline.core.isChatAgent
 import io.github.erikfrish.herdline.core.readableTitle
+import io.github.erikfrish.herdline.core.Pane
+import io.github.erikfrish.herdline.data.SessionPlace
+import io.github.erikfrish.herdline.data.modeRun
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * CT-1: the pane this phone reads ("Reading here"), kept apart from Herdr's
@@ -29,6 +35,27 @@ fun readingFor(current: ReadingTarget?, boot: String?, opened: String?, desktop:
     current != null && current.boot == boot -> current
     else -> (opened ?: desktop)?.let { ReadingTarget(it, boot) }
 }
+
+/** A validated entry: explicit opens win, then the exact saved tab/pane, then the live desktop. */
+internal fun sessionEntry(view: ShellView?, saved: SessionPlace?, opened: String? = null): Pane? {
+    if (view == null || view.boot.isBlank()) return null
+    fun pane(id: String?) = view.panes.firstOrNull { it.id == id && view.tabs.any { tab -> tab.id == it.tab } }
+    return pane(opened)
+        ?: saved?.takeIf { modeRun(it.boot) == modeRun(view.boot) }?.let { place -> pane(place.pane)?.takeIf { it.tab == place.tab } }
+        ?: pane(view.focusedPane)
+        ?: view.focusedTab?.let { tab -> pane(paneForTab(view, tab, emptyMap())) }
+}
+
+/** A first snapshot can establish topology before an asynchronous core Chat claim settles. */
+internal fun sessionEntryReady(
+    view: ShellView?, entry: Pane?, chat: Boolean, chatPending: Boolean, frameFocus: String?,
+): Boolean = view != null && !chatPending &&
+    (entry == null || chat || (view.focusedPane == entry.id && frameFocus == entry.id))
+
+/** Acknowledging focus is not landing: wait for the matching frame within the same deadline. */
+internal suspend fun restoreTerminal(timeoutMs: Long, focus: suspend () -> Boolean, landed: Flow<Boolean>): Boolean =
+    withTimeoutOrNull(timeoutMs) { focus() && landed.first { it } } == true
+
 
 /** True when the [target]'s pane is no longer in [view] (S5). Unknown without a view of the same run. */
 fun readingClosed(target: ReadingTarget?, view: ShellView?): Boolean =
