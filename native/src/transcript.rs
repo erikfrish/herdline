@@ -162,6 +162,8 @@ pub struct Core {
     pub status: String,
     /// The `HC_SESSION` of the core the claim was read from.
     pub session: String,
+    /// Host-proven core incarnation, when the socket and /proc can prove it.
+    pub run: Option<String>,
 }
 
 /// Which agent the transcript belongs to; any change starts over.
@@ -187,8 +189,8 @@ pub struct Identity {
     /// The ref Herdr stores: `path` or `id`.
     #[serde(default = "path_kind")]
     pub kind: String,
-    /// The process's start time in clock ticks after boot, known only for a
-    /// probed OMP: a reused pid is another instance.
+    /// The process's start time in clock ticks after boot, when the host can
+    /// prove it: a reused pid is another instance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<u64>,
 }
@@ -1133,16 +1135,18 @@ printf '@@pane\n'
             let identity = &core.identity;
             let address = shell_quote(&identity.terminal_id);
             let report = format!(
-                r#"record=$(python3 -c {get} {session} {address} </dev/null) || exit {EXIT_NO_PANE}
-printf '%s' "$record" | python3 -c {checker} {pane} {address} {agent} {path} {id} {pid} || exit {EXIT_NO_PANE}
+                r#"record=$(python3 -c {get} {session} {address}{run} </dev/null) || exit {EXIT_NO_PANE}
+printf '%s' "$record" | python3 -c {checker} {pane} {address} {agent} {path} {id} {pid} {start} || exit {EXIT_NO_PANE}
 "#,
                 checker = shell_quote(CORE_REPORT),
                 get = shell_quote(CORE_GET),
                 session = shell_quote(&core.session),
+                run = core.run.as_ref().map_or_else(String::new, |run| format!(" {}", shell_quote(run))),
                 agent = shell_quote(&identity.agent),
                 path = shell_quote(&identity.path),
                 id = shell_quote(&core.session_id),
                 pid = shell_quote(&identity.pid.map(|pid| pid.to_string()).unwrap_or_default()),
+                start = shell_quote(&identity.start.map(|start| start.to_string()).unwrap_or_default()),
             );
             let script = format!(
                 r#"exec 2>/dev/null
@@ -1279,6 +1283,42 @@ pub(crate) const RESOLVER: &str = include_str!("transcript/resolve_session.py");
 /// the host, and only then reports it as Herdr would.
 const CORE_REPORT: &str = include_str!("transcript/core_report.py");
 const CORE_GET: &str = include_str!("transcript/core_get.py");
+
+/// The linked core's incarnation, obtained from its local socket peer and Linux procfs.
+pub(crate) fn core_run(exec: &Exec, session: &str, id: &str, pid: u64) -> Option<String> {
+    if id.is_empty() || pid == 0 {
+        return None;
+    }
+    let command = format!(
+        "python3 -c {} {} --run {} {pid}",
+        shell_quote(CORE_GET), shell_quote(session), shell_quote(id),
+    );
+    let output = exec.run(command, Duration::from_secs(3), 128).ok()?;
+    if output.exit_status != Some(0) {
+        return None;
+    }
+    let run = std::str::from_utf8(&output.tail).ok()?.trim();
+    let (boot, process) = run.split_once(':')?;
+    let (ns, start) = process.split_once(':')?;
+    (boot.len() == 32
+        && boot.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && ns.parse::<u64>().ok().is_some_and(|ns| ns > 0)
+        && start.parse::<u64>().ok().is_some_and(|start| start > 0))
+    .then(|| run.to_owned())
+}
+
+/// Read the current core agent through the live record, checking its claim.
+pub(crate) fn core_instance(exec: &Exec, core: &Core) -> Result<Option<Identity>> {
+    let output = exec.run(
+        format!(
+            "/bin/sh -c {}",
+            shell_quote(&report_script(BackendSource::Core(core), &core.identity.pane_id)),
+        ),
+        TIMEOUT,
+        HEADER_ROOM,
+    )?;
+    parse_instance(output.exit_status, &output.tail)
+}
 
 /// Sets `$store`: the blob store OMP process `pid` writes to, resolved by
 /// [`RESOLVER`]'s `--blob-store` from the same profile and agent dir as the
@@ -1453,7 +1493,11 @@ fn identity(pane: &Value, process: &Value) -> Result<(Identity, String)> {
         agent: agent.to_owned(),
         source: text(&session["source"]).unwrap_or_else(|_| format!("herdr:{agent}")),
         kind: kind.to_owned(),
-        start: None,
+        start: if session["source"].as_str().is_some_and(|source| source.starts_with("herdline-core:")) {
+            process["result"]["process_info"]["foreground_processes"][0]["start"].as_u64()
+        } else {
+            None
+        },
     };
     Ok((identity, agent_status(pane)))
 }

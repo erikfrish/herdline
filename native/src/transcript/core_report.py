@@ -2,8 +2,8 @@
 from the record a live `herdr-core get` just returned, and only while that
 record still makes exactly the confirmed claim.
 
-argv: pane, address, agent, session file, session id, pid, as native
-confirmed them. stdin: the terminal record. Prints the pane report, a
+argv: pane, address, agent, session file, session id, pid and expected
+process start (empty when unbound), as native confirmed them. stdin: the terminal record. Prints the pane report, a
 `@@proc` line, then the process report. A record that is not that claim
 (another terminal, finished, relabelled, another session or another
 foreground process) prints nothing and exits 3, so the command stops
@@ -21,9 +21,9 @@ def mapping(value):
 
 
 def main():
-    if len(sys.argv) != 7:
+    if len(sys.argv) != 8:
         return 1
-    pane, address, agent, path, session_id, pid = sys.argv[1:]
+    pane, address, agent, path, session_id, pid, start = sys.argv[1:]
     try:
         record = json.load(sys.stdin)
     except ValueError:
@@ -34,6 +34,7 @@ def main():
     foreground = mapping(record.get("foreground"))
     state = mapping(record.get("status")).get("state")
     live_pid = foreground.get("pid")
+    live_start = record.pop('_phone_start', None)
     held = (
         record.get("address") == address
         and record.get("state") == "live"
@@ -43,6 +44,7 @@ def main():
         and labels.get("herdline.pid") == pid
         and type(live_pid) is int
         and str(live_pid) == pid
+        and (not start or (type(live_start) is int and str(live_start) == start))
     )
     if not held:
         return 3
@@ -59,6 +61,8 @@ def main():
         },
     }
     processes = [{"name": agent, "pid": live_pid}]
+    if type(live_start) is int and live_start > 0:
+        processes[0]['start'] = live_start
     sys.stdout.write(json.dumps({"result": {"pane": report}}))
     sys.stdout.write("\n@@proc\n")
     sys.stdout.write(

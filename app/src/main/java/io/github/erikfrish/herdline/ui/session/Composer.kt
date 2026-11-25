@@ -1037,7 +1037,7 @@ private fun Editor(
     // Which OMP process and session run in the pane: only the host knows, so
     // it is read there, again on any change Herdr reports for the agent and
     // every few seconds while the composer shows.
-    var instanceNow by remember(key, connection) { mutableStateOf<InstanceRead>(InstanceRead.Unread) }
+    var instanceNow by remember(key, connection, boot) { mutableStateOf<InstanceRead>(InstanceRead.Unread) }
     val stateSeq = view?.agentIn(key.pane)?.stateSeq
     LaunchedEffect(key, connection, boot, agentNow, stateSeq) {
         if (boot == null) return@LaunchedEffect
@@ -1122,10 +1122,10 @@ private fun Editor(
         }
     }
 
-    // An empty draft follows the pane; a written one keeps its binding, and
-    // one written before the instance was read stays held until Rebind.
-    LaunchedEffect(boot, agentNow, instanceNow, draft.blank) {
-        draft.followed(boot, agentNow, instanceNow)?.let(::save)
+    // An empty draft follows the pane. A written one never changes instance; after a proved reconnect
+    // it can renew only the link, and only once the host reads that very instance again.
+    LaunchedEffect(boot, agentNow, instanceNow, draft.blank, draft.unsettled, waiting) {
+        if (!waiting) draft.followed(boot, agentNow, instanceNow)?.let(::save)
     }
 
     // The last delivery was never confirmed: the native core holds the pane

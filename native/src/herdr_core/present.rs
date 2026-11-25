@@ -459,6 +459,7 @@ impl Pump {
                         argv: claim.argv,
                         status,
                         session: self.shared.session.clone(),
+                        run: self.core_run.clone(),
                     },
                 );
             }

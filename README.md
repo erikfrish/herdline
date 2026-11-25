@@ -111,6 +111,8 @@ you write a Chat draft.
 - Each draft belongs to one pane and is kept per host, session and pane,
   across navigation, reconnects and restarts. The composer names its
   destination; a draft for another pane says so and offers **Move here**.
+  A herdr-core draft follows a new link only after the host proves it is
+  the same daemon run and agent process; reconnect never sends the draft.
 - **Insert without Enter** pastes the text into the pane as one bracketed
   paste; you press Enter yourself.
 - **Send** uses the supported live agent interface, or a validated empty editor

@@ -387,6 +387,31 @@ impl Core {
         lock(&self.shared.instances).get(pane).cloned()
     }
 
+    /// A draft and a delivery both need the current agent, not an earlier
+    /// foreground sample with the same numeric PID. On hosts without the
+    /// kernel proof, keep the existing claim for this link only.
+    fn current_identity(&self, pane: &str) -> Option<transcript::Identity> {
+        let core = self.instance(pane)?;
+        if core.run.is_none() {
+            return Some(core.identity);
+        }
+        let current = transcript::core_instance(&self.exec().ok()?, &core).ok()??;
+        let latest = self.instance(pane)?;
+        (current.start.is_some()
+            && latest.identity == core.identity
+            && latest.session_id == core.session_id
+            && latest.run == core.run)
+            .then_some(current)
+    }
+
+    fn check_instance(
+        &self,
+        pane: &str,
+        expected: &transcript::Identity,
+    ) -> std::result::Result<(), Refusal> {
+        composer::same_instance(expected, self.current_identity(pane).as_ref())
+    }
+
     /// A chat view of a pane's transcript. Blocks on the host. A confirmed
     /// instance is read through its claim; otherwise a hookless OMP is read
     /// only through the probe: the terminal the view shows now for a first
@@ -506,15 +531,10 @@ impl Core {
             json!({"route": "pty", "outcome": "uncertain", "reason": Refusal::Unconfirmed})
                 .to_string();
         let pane = request.pane.as_str();
-        let fenced = |now: Option<transcript::Core>| {
-            now.filter(|core| {
-                composer::same_instance(&request.instance, Some(&core.identity)).is_ok()
-            })
-        };
-        let Some(core) = fenced(self.instance(pane)) else {
+        if self.check_instance(pane, &request.instance).is_err() {
             return refused(pty::Refusal::AgentChanged);
-        };
-        let terminal = core.identity.terminal_id.clone();
+        }
+        let terminal = request.instance.terminal_id.clone();
         let fence = Some((pane.to_owned(), terminal.clone()));
         // Off the drawn surface, the core's own read of its screen decides.
         let screen = if self.with_surface(|_, surface| pty::on_surface(surface, pane)) {
@@ -534,7 +554,7 @@ impl Core {
                 _ => return refused(pty::Refusal::ScreenUnread),
             }
         };
-        if screen.is_some() && fenced(self.instance(pane)).is_none() {
+        if screen.is_some() && self.check_instance(pane, &request.instance).is_err() {
             return refused(pty::Refusal::AgentChanged);
         }
         let target = request.target();
@@ -593,8 +613,7 @@ impl Core {
     }
 
     pub fn composer_instance(&self, pane: &str) -> Result<String> {
-        let instance = self.instance(pane).map(|core| core.identity);
-        Ok(json!({"instance": instance}).to_string())
+        Ok(json!({"instance": self.current_identity(pane)}).to_string())
     }
 
     fn input(&self, pane: Option<&str>, events: Vec<ClientPaneInputEvent>) -> Result<()> {
@@ -684,14 +703,6 @@ impl Core {
         if !request.submit && !interactive {
             return Ok(refused("takes_size"));
         }
-        if let Some(expected) = &request.instance
-            && let Err(reason) = composer::same_instance(
-                expected,
-                self.instance(&request.pane).map(|core| core.identity).as_ref(),
-            )
-        {
-            return Ok(delivery::refused(reason));
-        }
         // terminal.send has one text paste; it cannot send the separate
         // image pastes OMP needs. Do not submit an incomplete draft.
         if request.submit && request.attachments.iter().any(|file| file.kind == attach::Kind::Image) {
@@ -709,6 +720,11 @@ impl Core {
                     return Ok(delivery::refused(Refusal::AttachmentMissing));
                 }
             }
+        }
+        if let Some(expected) = &request.instance
+            && let Err(reason) = self.check_instance(&request.pane, expected)
+        {
+            return Ok(delivery::refused(reason));
         }
         let target = request.target();
         let mut holds = hold::holds();
@@ -781,10 +797,7 @@ impl Core {
         let Some(expected) = request.instance.clone() else {
             return Ok(refused_as(Refusal::InstanceUnknown));
         };
-        if let Err(reason) = composer::same_instance(
-            &expected,
-            self.instance(&request.pane).map(|core| core.identity).as_ref(),
-        ) {
+        if let Err(reason) = self.check_instance(&request.pane, &expected) {
             return Ok(refused_as(reason));
         }
         if !lock(&self.shared.interactive).contains(&request.pane) {
@@ -838,7 +851,7 @@ impl Core {
             Some(json) => serde_json::from_str(json)?,
             None => None,
         };
-        let now = self.instance(&target.pane).map(|core| core.identity);
+        let now = self.current_identity(&target.pane);
         let mut holds = hold::holds();
         let mut steers = steer::steers();
         let staged = steers.get(&target);

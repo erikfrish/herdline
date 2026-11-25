@@ -22,6 +22,41 @@ class DraftsTest {
     }
 
     @Test
+    fun reconnectRenewsOnlyTheLinkOfTheSameProvedCoreAgent() {
+        val run = "core-node-42+0123456789abcdef0123456789abcdef:13:456"
+        val current = "$run-2"
+        val instance = alice.copy(source = "herdline-core:omp", start = 123)
+        val saved = forAlice.copy(boot = "$run-1", instance = instance)
+        val draft = Draft.fromJson(JSONObject(saved.toJson().toString()))
+        val same = InstanceRead.Read(instance)
+        assertEquals(Binding.InstanceUnknown, draft.binding(current, "omp", unread))
+        assertFalse(draft.mayDeliver(draft.binding(current, "omp", same)))
+        val renewed = requireNotNull(draft.followed(current, "omp", same))
+        assertEquals(saved.copy(boot = current), renewed)
+        assertTrue(renewed.mayDeliver(renewed.binding(current, "omp", same)))
+
+        // The same numeric PID and session path do not identify a replacement process.
+        val reusedPid = InstanceRead.Read(instance.copy(start = 124))
+        assertEquals(Binding.AgentRestarted, draft.binding(current, "omp", reusedPid))
+        assertNull(draft.followed(current, "omp", reusedPid))
+
+        val missingBirth = InstanceRead.Read(instance.copy(start = null))
+        assertEquals(Binding.InstanceUnknown, draft.binding(current, "omp", missingBirth))
+        assertNull(draft.followed(current, "omp", missingBirth))
+        // The server PID itself can also be reused after a core restart.
+        for (other in listOf("${run.substringBeforeLast(':')}:457-2", "core-node-42-2")) {
+            assertEquals(Binding.BootChanged, draft.binding(other, "omp", same))
+            assertNull(draft.followed(other, "omp", same))
+        }
+        assertNull(draft.copy(instance = instance.copy(start = null)).followed(current, "omp", same))
+        assertNull(draft.copy(boot = "core-node-42-1").followed(current, "omp", same))
+
+        val queued = draft.copy(sent = SentRecord(draft.text, "r1", true, SentState.Queued, at = 5))
+        assertNull(queued.followed(current, "omp", same))
+        assertNull(queued.copy(text = "").followed(current, "omp", same))
+    }
+
+    @Test
     fun aWrittenDraftNeedsConfirmingWhenAnotherProgramRunsInThePane() {
         assertEquals(Binding.AgentChanged, written.binding("boot-1", null, unread))
         assertEquals(Binding.AgentChanged, written.binding("boot-1", "claude", unread))

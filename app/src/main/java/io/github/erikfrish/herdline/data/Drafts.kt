@@ -103,7 +103,14 @@ data class Draft(
         current == null -> Binding.Offline
         // Nothing written yet: follow the pane as it is.
         blank -> Binding.Bound
-        boot != null && boot != current -> Binding.BootChanged
+        boot != null && boot != current -> when {
+            !canCheckReconnect(current) -> Binding.BootChanged
+            !agent.equals(currentAgent, ignoreCase = true) -> Binding.AgentChanged
+            now !is InstanceRead.Read || now.identity?.start == null -> Binding.InstanceUnknown
+            now.identity != instance -> Binding.AgentRestarted
+            // The old link cannot be used even after the identity matches. Wait for followed().
+            else -> Binding.InstanceUnknown
+        }
         !agent.equals(currentAgent, ignoreCase = true) -> Binding.AgentChanged
         // Written for a chat agent before its session could be read, so
         // no session vouches for it; held until the user rebinds it. A plain
@@ -122,12 +129,17 @@ data class Draft(
     /**
      * This draft brought up to date with the pane as read now, or null when
      * nothing changes. An empty draft follows the pane, so the text written
-     * next is bound to the agent the user saw. A written one never changes
-     * binding here, nor gains an instance it lacks: the first one read may
-     * already be a later session than the one it was written for.
+     * next is bound to the agent the user saw. A written one can renew its
+     * link only for the same proved instance; it never gains one it lacked.
      */
     fun followed(current: String?, currentAgent: String?, now: InstanceRead): Draft? {
-        if (current == null || !blank) return null
+        if (current == null) return null
+        if (!blank) {
+            return if (canCheckReconnect(current) && agent.equals(currentAgent, ignoreCase = true) &&
+                now is InstanceRead.Read && now.identity == instance
+            ) copy(boot = current) else null
+        }
+        if (unsettled) return null
         val sameProgram = boot == current && agent.equals(currentAgent, ignoreCase = true)
         val known = when (now) {
             is InstanceRead.Read -> now.identity
@@ -135,6 +147,20 @@ data class Draft(
             InstanceRead.Unread -> instance.takeIf { sameProgram }
         }
         return rebound(current, currentAgent, known).takeIf { it != this }
+    }
+
+    /** Never mask the link on a delivery. Renew it only after matching the host-proved run and instance. */
+    private fun canCheckReconnect(current: String): Boolean {
+        val saved = boot ?: return false
+        val identity = instance ?: return false
+        if (unsettled || saved == current || identity.pid == null || identity.start == null ||
+            identity.start <= 0 || identity.source != "herdline-core:$agent"
+        ) return false
+        val run = modeRun(saved) ?: return false
+        if (run == saved || run == current || run != modeRun(current) || !run.startsWith("core-")) return false
+        val proof = run.substringAfterLast('+', "").split(':')
+        return proof.size == 3 && proof[0].length == 32 && proof[0].all { it in '0'..'9' || it in 'a'..'f' } &&
+            proof[1].toULongOrNull()?.let { it > 0u } == true && proof[2].toULongOrNull()?.let { it > 0u } == true
     }
 
     /** The last delivery's outcome is unknown: nothing may go to the pane until the user unlocks it. */

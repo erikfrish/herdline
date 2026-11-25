@@ -136,6 +136,7 @@ pub(super) struct Pump {
     pub boot: String,
     /// The core run: its id, pid and uptime at the last `server.status`.
     pub server: Option<(String, u64, u64)>,
+    pub core_run: Option<String>,
     pub doc: Value,
     pub version: u64,
     pub fetching: bool,
@@ -238,6 +239,7 @@ pub(super) fn run(
         reader,
         server_version: hello.version,
         server: None,
+        core_run: None,
         doc: Value::Null,
         version: 0,
         fetching: false,
@@ -874,7 +876,15 @@ impl Pump {
         }
         self.server = Some((id.clone(), pid, uptime));
         if startup {
-            self.boot = format!("core-{id}-{pid}-{}", self.shared.link);
+            self.core_run = crate::transcript::core_run(&self.exec, &self.shared.session, &id, pid);
+            // Persisted drafts outlive the phone process and its link counter.
+            let mut epoch = [0; 16];
+            getrandom::fill(&mut epoch).map_err(Error::Random)?;
+            let epoch = u128::from_le_bytes(epoch);
+            self.boot = match self.core_run.as_deref() {
+                Some(run) => format!("core-{id}-{pid}+{run}-{epoch}"),
+                None => format!("core-{id}-{pid}-{epoch}"),
+            };
             *lock(&self.shared.boot) = Some(self.boot.clone());
             lock(&self.shared.registry).boot = Some(self.boot.clone());
             self.emit(UiEvent::Connected {

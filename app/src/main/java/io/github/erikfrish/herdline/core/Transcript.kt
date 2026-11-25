@@ -5,8 +5,7 @@ import org.json.JSONObject
 
 /**
  * One running agent and its reported session reference, never shared across programs.
- * [start] is the process start time native knows only for a probed OMP ([readOnlyProbe]):
- * the same pid with another start is another instance.
+ * [start] is the host-proved process start time, where available: the same PID with another start is another instance.
  */
 data class TranscriptIdentity(
     val paneId: String, val terminalId: String, val pid: Long?, val path: String,

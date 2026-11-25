@@ -1384,6 +1384,7 @@ fn core_claim() -> Core {
         argv: vec!["omp".into()],
         status: "working".into(),
         session: "lab".into(),
+        run: None,
     }
 }
 
@@ -1405,7 +1406,7 @@ fn core_record() -> Value {
 }
 
 /// An existing core socket answers the real wire request; no CLI is executed.
-fn core_report(record: Option<&Value>) -> (Result<Option<Identity>>, String) {
+fn core_query(record: Option<&Value>, run: impl FnOnce(&Exec)) -> String {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixListener;
     let home = tempfile::tempdir().unwrap();
@@ -1436,23 +1437,23 @@ fn core_report(record: Option<&Value>) -> (Result<Option<Identity>>, String) {
             }
         }
     });
-    let core = core_claim();
-    let output = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(report_script(BackendSource::Core(&core), "w1:p1"))
-        .env_remove("HC_SESSION")
-        .env("HOME", home.path())
-        .env("HC_SOCKET", &socket)
-        .output()
-        .unwrap();
-    let status = output.status.code().and_then(|code| u32::try_from(code).ok());
-    let asked = server.join().unwrap();
-    (parse_instance(status, &output.stdout), asked)
+    let exec = Exec::local(vec![
+        ("HOME".to_owned(), home.path().display().to_string()),
+        ("HC_SOCKET".to_owned(), socket.display().to_string()),
+    ]);
+    run(&exec);
+    server.join().unwrap()
+}
+
+fn core_report(core: &Core, record: Option<&Value>) -> (Result<Option<Identity>>, String) {
+    let mut instance = Err(Error::BadReply);
+    let asked = core_query(record, |exec| instance = core_instance(exec, core));
+    (instance, asked)
 }
 
 #[test]
 fn core_report_reads_the_live_terminal_of_the_exact_session() {
-    let (instance, asked) = core_report(Some(&core_record()));
+    let (instance, asked) = core_report(&core_claim(), Some(&core_record()));
     assert_eq!(instance.unwrap(), Some(core_claim().identity));
     let request: Value = serde_json::from_str(&asked).unwrap();
     assert_eq!(request["method"], "terminal.get");
@@ -1475,7 +1476,7 @@ fn core_report_rejects_the_old_claim_once_the_terminal_is_replaced() {
     for (pointer, value) in replaced {
         let mut record = core_record();
         *record.pointer_mut(pointer).unwrap() = value;
-        let (instance, _) = core_report(Some(&record));
+        let (instance, _) = core_report(&core_claim(), Some(&record));
         // The command stops before any read: the old claim never holds.
         assert!(
             matches!(instance, Err(Error::PaneGone)),
@@ -1486,6 +1487,57 @@ fn core_report_rejects_the_old_claim_once_the_terminal_is_replaced() {
 
 #[test]
 fn core_report_of_a_terminal_the_core_no_longer_has_is_pane_gone() {
-    let (instance, _) = core_report(None);
+    let (instance, _) = core_report(&core_claim(), None);
+    assert!(matches!(instance, Err(Error::PaneGone)));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn core_report_fences_the_socket_peer_and_the_foreground_birth() {
+    let pid = std::process::id();
+    let ns = std::os::unix::fs::MetadataExt::ino(&fs::metadata("/proc/self/ns/pid").unwrap());
+    let stat = fs::read_to_string("/proc/self/stat").unwrap();
+    let start: u64 = stat.rsplit_once(')').unwrap().1
+        .split_whitespace().nth(19).unwrap().parse().unwrap();
+    let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap();
+    let run = format!("{}:{ns}:{start}", boot.trim().replace('-', ""));
+    let status = json!({"core": {"id": "lab"}, "pid": pid});
+    core_query(Some(&status), |exec| {
+        assert_eq!(core_run(exec, "lab", "lab", u64::from(pid)), Some(run.clone()));
+    });
+    let reported_other = json!({"core": {"id": "lab"}, "pid": i32::MAX});
+    core_query(Some(&reported_other), |exec| {
+        assert_eq!(core_run(exec, "lab", "lab", i32::MAX as u64), None);
+    });
+    let mut core = core_claim();
+    core.run = Some(run.clone());
+    core.identity.pid = Some(pid);
+    let mut record = core_record();
+    record["foreground"]["pid"] = json!(pid);
+    record["labels"]["herdline.pid"] = json!(pid.to_string());
+    let (instance, _) = core_report(&core, Some(&record));
+    let current = instance.unwrap().unwrap();
+    assert_eq!(current.start, Some(start));
+    assert_eq!(current.pid, Some(pid));
+
+    // The record is unchanged, including the numeric PID, but its birth differs.
+    core.identity.start = Some(start + 1);
+    let (instance, _) = core_report(&core, Some(&record));
+    assert!(matches!(instance, Err(Error::PaneGone)));
+
+    // An absent process cannot be proved by an unchanged core claim.
+    record["foreground"]["pid"] = json!(i32::MAX);
+    record["labels"]["herdline.pid"] = json!(i32::MAX.to_string());
+    core.identity.pid = Some(i32::MAX as u32);
+    core.identity.start = None;
+    let (instance, _) = core_report(&core, Some(&record));
+    assert!(matches!(instance, Err(Error::PaneGone)));
+    record["foreground"]["pid"] = json!(pid);
+    record["labels"]["herdline.pid"] = json!(pid.to_string());
+    core.identity.pid = Some(pid);
+
+    core.identity.start = Some(start);
+    core.run = Some(format!("{}:{}", run.rsplit_once(':').unwrap().0, start + 1));
+    let (instance, _) = core_report(&core, Some(&record));
     assert!(matches!(instance, Err(Error::PaneGone)));
 }
