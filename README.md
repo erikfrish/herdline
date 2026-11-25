@@ -126,6 +126,10 @@ you write a Chat draft.
   exact instance. It is not selected after a failed or uncertain send.
   Reconnect or session replacement resets the choice. Queue management and
   remote questionnaires still require the upstream control API.
+- On herdr-core, **Fit to this phone** in Chat sizes the pane to the visible
+  history area, not the composer or keyboard. Leaving that pane, switching
+  to Terminal or putting the app in the background releases the Chat fit;
+  returning to Chat does not take it again.
 - A failed or unconfirmed send preserves its draft and is never resent
   automatically. Check asks for its status; Unlock is an explicit user action.
 

@@ -1,5 +1,6 @@
 package io.github.erikfrish.herdline.ui.terminal
 
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -74,6 +75,8 @@ internal class GridFreeze {
  * under Chat. That grid takes the rows of the session's column under its
  * header ([roomPx]), the composer's height included, so the keyboard, a
  * notice or the composer there never resize the pane.
+ * An explicit herdr-core Fit instead follows the measured Chat body for
+ * as long as the screen holds that pane, with or without the keyboard.
  */
 internal class GridTurn {
     var terminal = true
@@ -87,6 +90,11 @@ internal class GridTurn {
 
     /** The height of the session's column under its header, as last laid out; 0 before. */
     var roomPx = 0
+
+    /** Null without an explicit Fit; zero while its Chat body has no visible bounds yet. */
+    var fitViewport: IntSize? = null
+
+    val fittingChat: Boolean get() = !terminal && fitViewport != null
 
     /** Under Chat: its one grid is still to go. */
     private var owed = false
@@ -102,10 +110,17 @@ internal class GridTurn {
     fun reports(): Boolean = terminal || chatDue()
 
     /** Whether Chat's one grid is due now, to report once its layout is done. */
-    fun chatDue(): Boolean = !terminal && owed && settled && fonts && roomPx > 0
+    fun chatDue(): Boolean = !terminal && fonts && (fitViewport?.let { it.width > 0 && it.height > 0 } ?: (owed && settled && roomPx > 0))
 
-    /** The height whose rows the grid takes: the view's in Terminal, the column's under Chat. */
-    fun heightPx(viewPx: Int): Int = if (terminal) viewPx else roomPx
+    fun widthPx(viewPx: Int): Int = if (fittingChat) fitViewport?.width ?: viewPx else viewPx
+
+    fun rows(viewPx: Int, cell: Float, hold: Boolean, holdHeightPx: Int, lastRows: Int, capPx: Float, keep: Boolean = false, chrome: Boolean = false): Int {
+        val fitted = fitViewport.takeUnless { terminal }
+        val heightPx = if (terminal) viewPx else fitted?.height ?: roomPx
+        // The keyboard's hold does not keep pre-IME rows in an explicitly fitted Chat.
+        // The cap for a delivery in flight still applies.
+        return gridRows(heightPx, cell, fitted == null && hold, holdHeightPx, lastRows, capPx, keep, chrome)
+    }
 
     /** A grid went to Herdr. */
     fun reported() {

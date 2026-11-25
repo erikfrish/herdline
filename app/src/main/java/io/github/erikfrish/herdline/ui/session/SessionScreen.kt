@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.isImeVisible
@@ -54,6 +55,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
@@ -144,12 +147,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.viewinterop.AndroidView
@@ -234,6 +241,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -251,6 +259,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+import kotlin.math.roundToInt
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
@@ -1446,6 +1455,7 @@ fun SessionScreen(
                     // tab row and its accent line: overscroll stretch and bubble
                     // shadows would otherwise spill up (lab.7 L3).
                     Box(Modifier.layoutId(ContentSlot).fillMaxSize().clipToBounds().onSizeChanged { contentPx = it.height }) {
+                        var historyBounds by remember(connection, view?.boot, chatPane, chatWanted) { mutableStateOf<Rect?>(null) }
                         // QF-6c, QF9-N: Terminal on a pane Herdr leaves no row of its own, keyboard up or down;
                         // its notice covers the terminal. Not while the keyboard is up for the composer's field.
                         val noRoom = !chatMode && paneHasNoRoom(frame, composerTyping = imeVisible && composerField)
@@ -1478,6 +1488,22 @@ fun SessionScreen(
                                 (composerHidden || composerPane != null)
                             // Until the session's view is in, the mode is not known: neither mode's grid goes yet.
                             val terminalShown = view != null && !chatMode
+                            // The layout already accounts for the composer and IME. Clip only where the history
+                            // actually overlaps a system bar or cutout (e.g. beside a landscape composer).
+                            val fitViewport = if (chatMode && controlPane != null && controlPane == chatPane) {
+                                val density = LocalDensity.current
+                                val direction = LocalLayoutDirection.current
+                                val insets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+                                val root = hostView.rootView
+                                val safe = Rect(
+                                    insets.getLeft(density, direction).toFloat(), insets.getTop(density).toFloat(),
+                                    (root.width - insets.getRight(density, direction)).toFloat(),
+                                    (root.height - insets.getBottom(density)).toFloat(),
+                                )
+                                historyBounds?.intersect(safe)?.let {
+                                    IntSize(it.width.roundToInt().coerceAtLeast(0), it.height.roundToInt().coerceAtLeast(0))
+                                } ?: IntSize.Zero
+                            } else null
                             AndroidView(
                                 // TerminalView fills its canvas with drawColor; unclipped it would paint over the header.
                                 modifier = Modifier.fillMaxSize().clipToBounds().testTag("terminal"),
@@ -1506,6 +1532,7 @@ fun SessionScreen(
                                     // Terminal on screen owns Herdr's grid; under Chat one grid goes per visit, Chat's settled one.
                                     view.sharesGrid = terminalShown
                                     view.chatSettled = chatSettled
+                                    view.chatFitViewport = fitViewport
                                     view.scheme = scheme
                                     view.frame = frame
                                     // While the hint is hidden, TalkBack hears it on the terminal instead (QF-9b S2).
@@ -1626,6 +1653,9 @@ fun SessionScreen(
                                     dense = typingShort,
                                     memory = chatMemory,
                                     footerByEditor = !typingShort && !chatReadOnly,
+                                    historyModifier = if (core && !leaving && shown == chatPane) {
+                                        Modifier.onGloballyPositioned { historyBounds = it.boundsInWindow() }
+                                    } else Modifier
                                 )
                             }
                         }

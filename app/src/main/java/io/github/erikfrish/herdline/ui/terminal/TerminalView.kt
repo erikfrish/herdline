@@ -248,9 +248,17 @@ class TerminalView(context: Context) : View(context) {
             reportChat()
         }
 
+    internal var chatFitViewport: androidx.compose.ui.unit.IntSize?
+        get() = turn.fitViewport
+        set(value) {
+            if (turn.fitViewport == value) return
+            turn.fitViewport = value
+            reportChat()
+        }
+
     private val turn = GridTurn()
 
-    /** Chat's one grid, once the layout under way is done; a report before then takes it instead. */
+    /** A due Chat grid, once the layout under way is done; a report before then takes it instead. */
     private fun reportChat() {
         if (turn.chatDue()) post { if (turn.chatDue()) reportGrid(fit = true) }
     }
@@ -399,18 +407,21 @@ class TerminalView(context: Context) : View(context) {
         if (width == 0 || height == 0 || cellWidth <= 0f) return
         if (!turn.reports()) return
         val chat = !turn.terminal
-        val cols = max(1, floor(width / cellWidth).toInt())
+        val cols = max(1, floor(turn.widthPx(width) / cellWidth).toInt())
         // Chat's one grid is its layout's own: no rows kept from the grid Terminal left.
         val keep = !chat && keepsRows(keepRows, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
         // A new width or cell size is never chrome: keepsRows checks both.
         val chrome = !chat && !fit && !windowMoved && keepsRows(true, cols, cellWidth.toInt(), cellHeight.toInt(), lastGrid)
-        val rows = gridRows(turn.heightPx(height), cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
-        val grid = intArrayOf(cols, rows, cellWidth.toInt(), cellHeight.toInt())
-        if (!owed && !chat && grid.contentEquals(lastGrid)) return
+        val rows = turn.rows(height, cellHeight, holdGrid, holdHeightPx, lastGrid[1], freeze.cap(width), keep, chrome)
+        val cw = cellWidth.toInt()
+        val ch = cellHeight.toInt()
+        if (!owed && (!chat || turn.fittingChat) &&
+            lastGrid[0] == cols && lastGrid[1] == rows && lastGrid[2] == cw && lastGrid[3] == ch
+        ) return
         owed = false
         turn.reported()
-        lastGrid = grid
-        listener?.onGrid(grid[0], grid[1], grid[2], grid[3])
+        lastGrid = intArrayOf(cols, rows, cw, ch)
+        listener?.onGrid(cols, rows, cw, ch)
     }
 
     // Drawing

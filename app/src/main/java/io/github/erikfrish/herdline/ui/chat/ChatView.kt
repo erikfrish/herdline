@@ -218,12 +218,13 @@ fun ChatView(
     memory: ChatMemory,
     /** A stacked editable Chat places metadata next to its editor instead. */
     footerByEditor: Boolean = false,
+    historyModifier: Modifier = Modifier,
 ) {
     // A reconnect is a new Connection and starts over, as a restarted daemon is a new
     // memory (the caller's is keyed on both). A new OMP instance in the pane resets what it
     // loaded (ChatHistory.merge).
     key(connection, pane, memory) {
-        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense, footerByEditor)
+        ChatContent(connection, pane, memory.of(pane), accent, onTerminal, modifier, tabTitle, dense, footerByEditor, historyModifier)
     }
 }
 
@@ -440,6 +441,7 @@ private fun ChatContent(
     tabTitle: String?,
     dense: Boolean,
     footerByEditor: Boolean,
+    historyModifier: Modifier,
 ) {
     var history by kept::history
     var problem by kept.read::problem
@@ -823,7 +825,7 @@ private fun ChatContent(
         kept.read.detached?.let { detachment ->
             DetachedStrip(detachment, kept.read.identifying, dense) { identifyTap.trySend(Unit) }
         }
-        Box(Modifier.fillMaxWidth().weight(1f)) {
+        Box(Modifier.fillMaxWidth().weight(1f).then(historyModifier)) {
             when {
                 kept.read.pending -> Text(
                     stringResource(R.string.chat_empty),
