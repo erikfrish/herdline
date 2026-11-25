@@ -108,6 +108,29 @@ class IngressRouteTest {
         assertEquals(allowed, composerSendGate(false, unsupported, allowed))
     }
 
+    @Test
+    fun fittedWorkingNoticeReservesSpaceWhenBoundChatFallsBackToThePane() {
+        val pane = ComposerCheck.Gate(false, "agent_working")
+        val unsupported = IngressProbe.Unsupported(listOf("getOpenDialogs"))
+        val live = IngressProbe.Live(IngressState(false, emptyList()))
+        val unusable = IngressProbe.Unusable("stale")
+        val regular = ComposerFit.Regular
+
+        // Bound Chat's absent endpoint still gets the first attempt at delivery.
+        assertTrue(endpointRoute(reading = true, instance = instance, submit = true))
+        assertEquals(pane, composerSendGate(true, IngressProbe.Absent, pane))
+        assertTrue(regular.reservesWorkingNotice(true, instance.agent, IngressProbe.Absent, checkedPane = false))
+        assertTrue(regular.reservesWorkingNotice(true, instance.agent, unsupported, checkedPane = true))
+
+        for (probe in listOf(null, unsupported, live, unusable)) {
+            assertFalse("Unconfirmed pane route: $probe", regular.reservesWorkingNotice(true, instance.agent, probe, checkedPane = false))
+        }
+        for (probe in listOf(null, live, unusable)) {
+            assertFalse("Stale checked-pane choice: $probe", regular.reservesWorkingNotice(true, instance.agent, probe, checkedPane = true))
+        }
+        assertFalse(regular.reservesWorkingNotice(false, instance.agent, IngressProbe.Absent, checkedPane = false))
+    }
+
     /**
      * The endpoint's words Chat shows above the field: the queue panel's status line, then the
      * composer's notice of a refused Send's code [refusal] or Send's [precheck]. [slot] is the cause

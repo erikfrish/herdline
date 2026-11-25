@@ -635,6 +635,10 @@ internal fun composerFit(landscape: Boolean, imeVisible: Boolean, screenHeightDp
     else -> ComposerFit.Regular
 }
 
+/** The regular fitted Working notice reserves space only for an OMP pane route. */
+internal fun ComposerFit.reservesWorkingNotice(fittedChat: Boolean, agent: String?, probe: IngressProbe?, checkedPane: Boolean): Boolean =
+    fittedChat && this == ComposerFit.Regular && agent.equals("omp", ignoreCase = true) && confirmedPaneRoute(probe, checkedPane)
+
 /**
  * A landscape phone while the keyboard shows: the window's current height
  * ([Configuration.screenHeightDp], so a split-screen or freeform window counts
@@ -1759,9 +1763,9 @@ private fun Editor(
     // Why Send is off before it is tapped: a disabled button cannot be
     // tapped to learn the reason, so the precheck's reason shows as the
     // same notice a refusal would, held steady by PrecheckHold.
-    // Match the route delivery actually uses; only an absent endpoint permits the pane fallback.
+    // Core images need ingress; neither confirmed pane route can send them.
     val coreImageFallback = connection.node.backend == Backend.HerdrCore &&
-        (probe == IngressProbe.Absent || checkedPane) && draft.attachments.any { it.kind == AttachmentKind.IMAGE }
+        confirmedPaneRoute(probe, checkedPane) && draft.attachments.any { it.kind == AttachmentKind.IMAGE }
     val sendGate = if (coreImageFallback) ComposerCheck.Gate(false, "core_image_needs_ingress") else
         composerSendGate(reading, probe, if (reading) check?.chatSend else check?.send, checkedPane)
     val precheck = sendGate?.takeIf { !it.ok && holdsDraft && binding == Binding.Bound && pending == null && !steer.active }?.reason
@@ -1993,7 +1997,7 @@ private fun Editor(
                     text = if (!steerRoute) working else steerHold?.let { stringResource(holdRes(it, SlotFace.Steer)) } ?: steering,
                     first = insert,
                     role = if (steerRoute) NoticeRole.Working else NoticeRole.Other,
-                    fittedWorkingTexts = if (fittedChat && fit == ComposerFit.Regular && !endpoint && draft.agent.equals("omp", ignoreCase = true)) listOf(
+                    fittedWorkingTexts = if (fit.reservesWorkingNotice(fittedChat, draft.agent, probe, checkedPane)) listOf(
                         working, steering, stringResource(R.string.composer_checking_steer),
                         stringResource(R.string.composer_checking_resizing_steer), stringResource(R.string.reason_unsettled),
                     ) else emptyList(),

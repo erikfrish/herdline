@@ -130,8 +130,9 @@ you write a Chat draft.
   history area, not the composer or keyboard. Leaving that pane, switching
   to Terminal or putting the app in the background releases the Chat fit;
   returning to Chat does not take it again.
-  While a fitted core pane works, the composer keeps its notice space when
-  Insert or Steer availability changes, so those checks do not resize the pane.
+  While a fitted OMP pane works on the checked terminal route, the composer
+  keeps its notice space when Insert or Steer availability changes, so those
+  checks do not resize the pane.
 - A failed or unconfirmed send preserves its draft and is never resent
   automatically. Check asks for its status; Unlock is an explicit user action.
 

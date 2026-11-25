@@ -108,6 +108,10 @@ internal data class ProbeRead(val instance: TranscriptIdentity, val probe: Ingre
 internal fun probeFor(read: ProbeRead?, instance: TranscriptIdentity?): IngressProbe? =
     read?.takeIf { instance != null && it.instance == instance }?.probe
 
+/** A proved pane route: absence, or an explicit choice for this unsupported endpoint. */
+internal fun confirmedPaneRoute(probe: IngressProbe?, checkedPane: Boolean): Boolean =
+    probe == IngressProbe.Absent || (checkedPane && probe is IngressProbe.Unsupported)
+
 /** A pane route is selected explicitly for this stock OMP instance, never as a send-error fallback. */
 internal fun composerSendGate(reading: Boolean, probe: IngressProbe?, pane: ComposerCheck.Gate?, checkedPane: Boolean = false): ComposerCheck.Gate? {
     if (!reading || checkedPane && probe is IngressProbe.Unsupported) return pane
