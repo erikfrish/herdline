@@ -23,8 +23,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -46,6 +48,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -104,6 +107,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -880,6 +884,7 @@ fun Composer(
     onShowShared: (String) -> Unit = { connection.focusPane(it) },
     /** Read-only metadata below notices and attachments, immediately above the input band. */
     beforeInput: (@Composable () -> Unit)? = null,
+    fittedChat: Boolean = false,
 ) {
     val context = LocalContext.current
     val store = remember { DraftStore.get(context) }
@@ -944,6 +949,7 @@ fun Composer(
                     captureViewport = captureViewport,
                     imeVisible = imeVisible,
                     beforeInput = beforeInput,
+                    fittedChat = fittedChat,
                 )
             }
         }
@@ -983,6 +989,7 @@ private fun Editor(
     captureViewport: () -> Viewport?,
     imeVisible: Boolean,
     beforeInput: (@Composable () -> Unit)?,
+    fittedChat: Boolean,
 ) {
     val context = LocalContext.current
     var draft by remember(key) { mutableStateOf(store.get(key) ?: Draft()) }
@@ -1977,19 +1984,19 @@ private fun Editor(
                 // Staged images on an OMP pane need a usable control endpoint: that is why there is
                 // no Steer, ahead of any other reason. Else, where there is no Steer, the reason the
                 // card gives for it (§3.5), else the plain one.
-                val noControl = !steerRoute && draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
-                val noSteer = controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable).takeIf { !steerRoute && !noControl }
+                val noControl = draft.attachments.isNotEmpty() && ompControlMissing(draft.agent, probe)
+                val working = if (noControl) stringResource(R.string.omp_no_control) else
+                    controlReason(draft.agent, HarnessKey.SteerQueue, R.string.control_steer_unavailable)
+                        ?: stringResource(R.string.reason_agent_working)
+                val steering = stringResource(if (endpointSteer) R.string.steer_help_endpoint else R.string.steer_help_short)
                 Notice(
-                    steerHold?.takeIf { steerRoute }?.let { stringResource(holdRes(it, SlotFace.Steer)) } ?: noSteer ?: stringResource(
-                        when {
-                            noControl -> R.string.omp_no_control
-                            !steerRoute -> R.string.reason_agent_working
-                            endpointSteer -> R.string.steer_help_endpoint
-                            else -> R.string.steer_help_short
-                        },
-                    ),
-                    insert,
+                    text = if (!steerRoute) working else steerHold?.let { stringResource(holdRes(it, SlotFace.Steer)) } ?: steering,
+                    first = insert,
                     role = if (steerRoute) NoticeRole.Working else NoticeRole.Other,
+                    fittedWorkingTexts = if (fittedChat && fit == ComposerFit.Regular && !endpoint && draft.agent.equals("omp", ignoreCase = true)) listOf(
+                        working, steering, stringResource(R.string.composer_checking_steer),
+                        stringResource(R.string.composer_checking_resizing_steer), stringResource(R.string.reason_unsettled),
+                    ) else emptyList(),
                 )
             }
             // The reason with the pane's actual rows; the offers are optional
@@ -2140,16 +2147,12 @@ private fun Editor(
     // actions sit in the band. Side: its own unpadded block above the band.
     if (fit.noticeBlock) {
         notice?.let {
-            NoticeRow(
-                it,
-                accent,
-                padded = fit.noticePadded,
-                lines = fit.noticeLines(LocalDensity.current.fontScale),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = fit.noticeGap.dp)
-                    .testTag("composer:notice"),
-            )
+            val modifier = Modifier.fillMaxWidth().padding(bottom = fit.noticeGap.dp).testTag("composer:notice")
+            if (it.fittedWorkingTexts.isNotEmpty()) {
+                FittedWorkingNotice(it.text, it.fittedWorkingTexts, it.first, accent, modifier)
+            } else {
+                NoticeRow(it, accent, modifier, padded = fit.noticePadded, lines = fit.noticeLines(LocalDensity.current.fontScale))
+            }
         }
     }
 
@@ -2720,6 +2723,7 @@ private data class Notice(
     val cause: String? = null,
     /** Which notice this is, as far as the slot's face cares ([slotFace]). */
     val role: NoticeRole = NoticeRole.Other,
+    val fittedWorkingTexts: List<String> = emptyList(),
 )
 
 /**
@@ -2784,6 +2788,33 @@ private fun NoticeRow(notice: Notice, accent: Color, modifier: Modifier = Modifi
         Row(block, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             text(Modifier.weight(1f))
             actions.forEach { NoticeButton(it, colors) }
+        }
+    }
+}
+
+/** Fit follows this actual layout. A frame losing Insert/Steer must not give the history extra rows. */
+@Composable
+internal fun FittedWorkingNotice(text: String, alternatives: List<String>, insert: NoticeAction?, accent: Color, modifier: Modifier = Modifier) {
+    val colors = chatColors(accent)
+    val style = MaterialTheme.typography.bodySmall
+    val measurer = rememberTextMeasurer()
+    val insertLabel = stringResource(R.string.composer_insert_no_enter)
+    val buttonPadding = ButtonDefaults.ContentPadding
+    val touchHeight = LocalMinimumInteractiveComponentSize.current
+    BoxWithConstraints(
+        modifier.background(colors.warnBg, MaterialTheme.shapes.medium)
+            .padding(start = NOTICE_PAD_SIDE.dp, end = NOTICE_PAD_SIDE.dp, top = NOTICE_PAD_TOP.dp, bottom = NOTICE_PAD_UNDER_ACTIONS.dp),
+    ) {
+        val density = LocalDensity.current
+        val width = Constraints(maxWidth = constraints.maxWidth)
+        val textHeight = with(density) { alternatives.maxOf { measurer.measure(it, style, constraints = width).size.height }.toDp() }
+        val labelHeight = with(density) { measurer.measure(insertLabel, ChatType.button, maxLines = 1).size.height.toDp() }
+        val actionHeight = maxOf(NOTICE_ACTION.dp, touchHeight, labelHeight + buttonPadding.calculateTopPadding() + buttonPadding.calculateBottomPadding())
+        Column(verticalArrangement = Arrangement.spacedBy(NOTICE_GAP.dp)) {
+            Text(text, Modifier.heightIn(min = textHeight), color = colors.blocked, style = style)
+            // Space only: no invisible button or stale action for TalkBack or taps.
+            if (insert == null) Spacer(Modifier.height(actionHeight))
+            else NoticeButton(insert, colors, Modifier.heightIn(min = actionHeight))
         }
     }
 }

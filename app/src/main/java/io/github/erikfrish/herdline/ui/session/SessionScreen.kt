@@ -759,6 +759,7 @@ fun SessionScreen(
         readInteractive = focusedRecord?.interactive.takeIf { focusedRecord?.unsupported == null },
         fitPane = fitPane,
     )
+    val fittedChatPane = controlPane?.takeIf { chatMode && it == chatPane }
     LaunchedEffect(fitPane, controlPane, chatMode) { fitPane = keptFit(chatMode, fitPane, controlPane) }
     if (controlPane != null) {
         LifecycleResumeEffect(connection, controlPane, view?.boot, chatMode) {
@@ -1490,7 +1491,7 @@ fun SessionScreen(
                             val terminalShown = view != null && !chatMode
                             // The layout already accounts for the composer and IME. Clip only where the history
                             // actually overlaps a system bar or cutout (e.g. beside a landscape composer).
-                            val fitViewport = if (chatMode && controlPane != null && controlPane == chatPane) {
+                            val fitViewport = if (fittedChatPane != null) {
                                 val density = LocalDensity.current
                                 val direction = LocalLayoutDirection.current
                                 val insets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
@@ -1890,6 +1891,7 @@ fun SessionScreen(
                             },
                             // In Chat the pane read here, also once it has closed (S5): the draft never drifts to the desktop's.
                             reading = reading?.pane?.takeIf { chatMode },
+                            fittedChat = fittedChatPane != null && fittedChatPane == composerPane,
                             onOpenPane = { if (chatMode) choosePane(it) else connection.focusPane(it) },
                             onShowShared = { connection.focusPane(it) },
                             onZoom = {
